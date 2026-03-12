@@ -83,7 +83,6 @@ checkoutBuyer = "https://fastrr-boost-ui.pickrr.com/";
 </script>
 <input id="sellerDomain" type="hidden" value="www.reneecosmetics.in"/>
 <link href="https://fastrr-boost-ui.pickrr.com/assets/styles/shopify.css" rel="stylesheet"/>
-
 <script src="https://fastrr-boost-ui.pickrr.com/assets/js/channels/shiprocketMarketing.js"></script>
 <input id="template" type="hidden" value="rz"/>
 <!-- <input type="hidden" value="percent" id="discountType"/>
@@ -290,7 +289,6 @@ Shopify.routes.root = "/";</script>
 <script type="module">!function(o){(o.Shopify=o.Shopify||{}).modules=!0}(window);</script>
 <script>!function(o){function n(){var o=[];function n(){o.push(Array.prototype.slice.apply(arguments))}return n.q=o,n}var t=o.Shopify=o.Shopify||{};t.loadFeatures=n(),t.autoloadFeatures=n()}(window);</script>
 <script id="shop-js-analytics" type="application/json">{"pageType":"index"}</script>
-
 <script type="module">
   await import("//www.reneecosmetics.in/cdn/shopifycloud/shop-js/modules/v2/loader.init-shop-cart-sync.en.esm.js");
 
@@ -326,7 +324,6 @@ Shopify.routes.root = "/";</script>
 <script id="__st">var __st={"a":59794227350,"offset":19800,"reqid":"30f32f03-4e8b-405f-9f1c-74dec06b8d17-1773328626","pageurl":"www.reneecosmetics.in\/?utm_source=instaprofile","u":"92f27047916d","p":"home"};</script>
 <script>window.ShopifyPaypalV4VisibilityTracking = true;</script>
 <script id="captcha-bootstrap">!function(){'use strict';const t='contact',e='account',n='new_comment',o=[[t,t],['blogs',n],['comments',n],[t,'customer']],c=[[e,'customer_login'],[e,'guest_login'],[e,'recover_customer_password'],[e,'create_customer']],r=t=>t.map((([t,e])=>`form[action*='/${t}']:not([data-nocaptcha='true']) input[name='form_type'][value='${e}']`)).join(','),a=t=>()=>t?[...document.querySelectorAll(t)].map((t=>t.form)):[];function s(){const t=[...o],e=r(t);return a(e)}const i='password',u='form_key',d=['recaptcha-v3-token','g-recaptcha-response','h-captcha-response',i],f=()=>{try{return window.sessionStorage}catch{return}},m='__shopify_v',_=t=>t.elements[u];function p(t,e,n=!1){try{const o=window.sessionStorage,c=JSON.parse(o.getItem(e)),{data:r}=function(t){const{data:e,action:n}=t;return t[m]||n?{data:e,action:n}:{data:t,action:n}}(c);for(const[e,n]of Object.entries(r))t.elements[e]&&(t.elements[e].value=n);n&&o.removeItem(e)}catch(o){console.error('form repopulation failed',{error:o})}}const l='form_type',E='cptcha';function T(t){t.dataset[E]=!0}const w=window,h=w.document,L='Shopify',v='ce_forms',y='captcha';let A=!1;((t,e)=>{const n=(g='f06e6c50-85a8-45c8-87d0-21a2b65856fe',I='https://cdn.shopify.com/shopifycloud/storefront-forms-hcaptcha/ce_storefront_forms_captcha_hcaptcha.v1.5.2.iife.js',D={infoText:'Protected by hCaptcha',privacyText:'Privacy',termsText:'Terms'},(t,e,n)=>{const o=w[L][v],c=o.bindForm;if(c)return c(t,g,e,D).then(n);var r;o.q.push([[t,g,e,D],n]),r=I,A||(h.body.append(Object.assign(h.createElement('script'),{id:'captcha-provider',async:!0,src:r})),A=!0)});var g,I,D;w[L]=w[L]||{},w[L][v]=w[L][v]||{},w[L][v].q=[],w[L][y]=w[L][y]||{},w[L][y].protect=function(t,e){n(t,void 0,e),T(t)},Object.freeze(w[L][y]),function(t,e,n,w,h,L){const[v,y,A,g]=function(t,e,n){const i=e?o:[],u=t?c:[],d=[...i,...u],f=r(d),m=r(i),_=r(d.filter((([t,e])=>n.includes(e))));return[a(f),a(m),a(_),s()]}(w,h,L),I=t=>{const e=t.target;return e instanceof HTMLFormElement?e:e&&e.form},D=t=>v().includes(t);t.addEventListener('submit',(t=>{const e=I(t);if(!e)return;const n=D(e)&&!e.dataset.hcaptchaBound&&!e.dataset.recaptchaBound,o=_(e),c=g().includes(e)&&(!o||!o.value);(n||c)&&t.preventDefault(),c&&!n&&(function(t){try{if(!f())return;!function(t){const e=f();if(!e)return;const n=_(t);if(!n)return;const o=n.value;o&&e.removeItem(o)}(t);const e=Array.from(Array(32),(()=>Math.random().toString(36)[2])).join('');!function(t,e){_(t)||t.append(Object.assign(document.createElement('input'),{type:'hidden',name:u})),t.elements[u].value=e}(t,e),function(t,e){const n=f();if(!n)return;const o=[...t.querySelectorAll(`input[type='${i}']`)].map((({name:t})=>t)),c=[...d,...o],r={};for(const[a,s]of new FormData(t).entries())c.includes(a)||(r[a]=s);n.setItem(e,JSON.stringify({[m]:1,action:t.action,data:r}))}(t,e)}catch(e){console.error('failed to persist form',e)}}(e),e.submit())}));const S=(t,e)=>{t&&!t.dataset[E]&&(n(t,e.some((e=>e===t))),T(t))};for(const o of['focusin','change'])t.addEventListener(o,(t=>{const e=I(t);D(e)&&S(e,y())}));const B=e.get('form_key'),M=e.get(l),P=B&&M;t.addEventListener('DOMContentLoaded',(()=>{const t=y();if(P)for(const e of t)e.elements[l].value===M&&p(e,B);[...new Set([...A(),...v().filter((t=>'true'===t.dataset.shopifyCaptcha))])].forEach((e=>S(e,t)))}))}(h,new URLSearchParams(w.location.search),n,t,e,['guest_login'])})(!1,!0)}();</script>
-
 <script data-source-attribution="shopify.dynamic_checkout.dynamic.init">var Shopify=Shopify||{};Shopify.PaymentButton=Shopify.PaymentButton||{isStorefrontPortableWallets:!0,init:function(){window.Shopify.PaymentButton.init=function(){};var t=document.createElement("script");t.src="https://www.reneecosmetics.in/cdn/shopifycloud/portable-wallets/latest/portable-wallets.en.js",t.type="module",document.head.appendChild(t)}};
 </script>
 <script data-source-attribution="shopify.dynamic_checkout.buyer_consent">
@@ -829,18 +826,18 @@ Shopify.routes.root = "/";</script>
         }
       }
     </style>
-<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/swiper-bundle.min.css?v=150587207334211009051770962673" media="all" rel="stylesheet" type="text/css">
-<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/base.css?v=105745615074170600561770962569" media="all" rel="stylesheet" type="text/css">
-<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/custom.css?v=54382" media="all" rel="stylesheet" type="text/css">
-<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-cart-items.css?v=123238115697927560811770962576" media="print" onload="this.media='all'" rel="stylesheet"/>
-<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/global.css?v=133064544952490356911770962601" media="all" rel="stylesheet" type="text/css">
-<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/quick-add.css?v=130590836869345997561770962659" media="all" rel="stylesheet" type="text/css">
-<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-cart-drawer.css?v=112801333748515159671770962575" media="all" rel="stylesheet" type="text/css">
-<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-cart.css?v=164708765130180853531770962577" media="all" rel="stylesheet" type="text/css"/>
-<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-totals.css?v=15906652033866631521770962591" media="all" rel="stylesheet" type="text/css"/>
-<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-price.css?v=70172745017360139101770962586" media="all" rel="stylesheet" type="text/css"/>
-<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-discounts.css?v=152760482443307489271770962579" media="all" rel="stylesheet" type="text/css"/>
-<link as="font" crossorigin="" href="//www.reneecosmetics.in/cdn/fonts/assistant/assistant_n4.9120912a469cad1cc292572851508ca49d12e768.woff2" rel="preload" type="font/woff2"/>
+<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/swiper-bundle.min.css?v=150587207334211009051770962673" media="all" rel="stylesheet" type="text/css"/>
+<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/base.css?v=105745615074170600561770962569" media="all" rel="stylesheet" type="text/css"/>
+<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/custom.css?v=54382" media="all" rel="stylesheet" type="text/css"/>
+<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-cart-items.css?v=123238115697927560811770962576" media="print" onload="this.media='all'" rel="stylesheet">
+<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/global.css?v=133064544952490356911770962601" media="all" rel="stylesheet" type="text/css"/>
+<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/quick-add.css?v=130590836869345997561770962659" media="all" rel="stylesheet" type="text/css"/>
+<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-cart-drawer.css?v=112801333748515159671770962575" media="all" rel="stylesheet" type="text/css"/>
+<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-cart.css?v=164708765130180853531770962577" media="all" rel="stylesheet" type="text/css">
+<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-totals.css?v=15906652033866631521770962591" media="all" rel="stylesheet" type="text/css">
+<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-price.css?v=70172745017360139101770962586" media="all" rel="stylesheet" type="text/css">
+<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-discounts.css?v=152760482443307489271770962579" media="all" rel="stylesheet" type="text/css">
+<link as="font" crossorigin="" href="//www.reneecosmetics.in/cdn/fonts/assistant/assistant_n4.9120912a469cad1cc292572851508ca49d12e768.woff2" rel="preload" type="font/woff2">
 <link as="font" crossorigin="" href="//www.reneecosmetics.in/cdn/fonts/assistant/assistant_n4.9120912a469cad1cc292572851508ca49d12e768.woff2" rel="preload" type="font/woff2"/>
 <link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-predictive-search.css?v=118923337488134913561770962586" media="print" onload="this.media='all'" rel="stylesheet"/><script>
       if (Shopify.designMode) {
@@ -874,15 +871,6 @@ Shopify.routes.root = "/";</script>
   window.PAGEFLY_CRO['GA4'] = { enabled: false}
 </script>
 <!-- END app snippet -->
-
-
-
-
-
-
-
-
-
 <script id="pagefly-helper-data" type="application/json">
   {
     "page_optimization": {
@@ -998,7 +986,7 @@ jdgm.loadCSS(jdgm.CDN_HOST+"widget/base.css"):jdgm.loadCSS(jdgm.CDN_HOST+"shopif
 <!-- END app block --><!-- BEGIN app block: shopify://apps/blotout-edgetag/blocks/app-embed/ae22d985-ba57-41f5-94c5-18d3dd98ea3c -->
 <script>window.edgetagSharedVariables = {...window.edgetagSharedVariables,tagUrl: 'https://agrep.reneecosmetics.in'};</script><script async="" src="https://agrep.reneecosmetics.in/load" type="text/javascript"></script><script>/* Copyright (c) Blotout, Inc. | Version 24-33 */window.edgetag = window.edgetag || function() {(edgetag.stubs = edgetag.stubs || []).push(arguments);};!function() {const url = new URL(window.location.href);const params = new URLSearchParams(url.search);const userId =params.get('et_u_id') ||params.get('tag_user_id') ||params.get('_glc[tag_user_id]') ||'';edgetag("init", {edgeURL: window.edgetagSharedVariables.tagUrl,disableConsentCheck: true,userId});}();/* Set session_id to sessionStorage */window.addEventListener('edgetag-initialized', (/** @type CustomEvent<{ session: { sessionId: string } }> */ e) => {sessionStorage.setItem('tag_session', e.detail.session.sessionId);});edgetag("tag", "PageView", {}, {}, { destination: window.edgetagSharedVariables.tagUrl });</script><!-- BEGIN app snippet: page-capture --><script>!function() {const newsletterFormSelectors = ["#ContactFooter","#wisepops-root","#contact_form","form[id*=\"newsletter\" i]","form[id*=\"subscribe\" i]","form.ml-block-form","#email_signup","form[id^=omnisend-form]"];const newsletterForm = newsletterFormSelectors.join(",");const sendNewsletterEvent = (beacon) => {let name = 'Lead';if (!name) {return;}if (name === 'Subscribe') {name = 'Lead';}if (beacon) {edgetag("tag", name, {}, {}, { method: "beacon", destination: window.edgetagSharedVariables.tagUrl });} else {edgetag("tag", name, {}, {}, { destination: window.edgetagSharedVariables.tagUrl });}};const getUser = (form, selectors) => {const user = {};if (!selectors) {return user;}Object.entries(selectors).forEach(([userKey, selector]) => {if (!selector || selector.length === 0) {return;}const selectorArray = Array.isArray(selector) ? selector : [selector];for (const selector of selectorArray) {if (!selector) {continue;}const inputUserValue = form.querySelector(selector);const userValue = (inputUserValue && inputUserValue.value) || "";if (userValue) {user[userKey] = userValue;break;}}});return user;};const sendUserData = (userData,isBeacon) => {if (!userData || !Object.keys(userData).length) {return;}if (isBeacon) {edgetag('data', userData, {}, { method: 'beacon', destination: window.edgetagSharedVariables.tagUrl });return;}edgetag("data", userData, {}, { destination: window.edgetagSharedVariables.tagUrl });};const actions = [{selectors: ["[type=\"submit\"]", newsletterForm],length: 2,fun: (ele) => {const user = getUser(ele, {email: ["input[type=\"email\"]", "input[name*=\"email\" i]:not([type=\"hidden\" i])"],phone: ["input[type=\"tel\"]", "input[name*=\"phone\" i]:not([type=\"hidden\" i])"],firstName: "input[name*=\"name\" i]:not([type=\"hidden\" i])",dateOfBirth: "input[name*=\"birthday\" i]:not([type=\"hidden\" i])"});sendUserData(user);sendNewsletterEvent(true);},current: 0},{selectors: ["button:not([role='combobox'])", newsletterForm],length: 2,fun: (ele) => {const user = getUser(ele, {email: ["input[type=\"email\"]", "input[name*=\"email\" i]:not([type=\"hidden\" i])"],phone: ["input[type=\"tel\"]", "input[name*=\"phone\" i]:not([type=\"hidden\" i])"],firstName: "input[name*=\"name\" i]:not([type=\"hidden\" i])",dateOfBirth: "input[name*=\"birthday\" i]:not([type=\"hidden\" i])"});sendUserData(user);sendNewsletterEvent(true);},current: 0},{selectors: ["[type=\"submit\"]", "form[action=\"/account/login\"]"],length: 2,fun: (ele) => {const user = getUser(ele, {email: ['input[type=\"email\"]', "#CustomerEmail"]});sendUserData(user);},current: 0},{selectors: ["[type=\"submit\"]", "form[action=\"/account\"]"],length: 2,fun: (ele) => {let user = getUser(ele, {email: [ 'input[type=\"email\"]', 'input[name=\"customer[email]\"]', '#RegisterForm-email' ],phone: "input[type=\"tel\"]",firstName: [ '#RegisterForm-FirstName', 'input[name=\"customer[first_name]\"]','input[name*=\"first\" i]:not([type=\"hidden\" i])' ],lastName: [ '#RegisterForm-LastName', 'input[name=\"customer[last_name]\"]','input[name*=\"last\" i]:not([type=\"hidden\" i])' ]});if (!user.firstName && !user.lastName) {user = {...user,...getUser(ele, { firstName: "input[name*=\"name\" i]:not([type=\"hidden\" i])" })};}sendUserData(user);edgetag("tag", "CompleteRegistration", {}, {}, { destination: window.edgetagSharedVariables.tagUrl });},current: 0},{selectors: ["[type=\"submit\"]", "form[action^=\"/contact\"]"],length: 2,fun: (ele) => {const user = getUser(ele, {email: ["input[type=\"email\"]", "input[name*=\"email\" i]:not([type=\"hidden\" i])"],phone: ["input[type=\"tel\"]", "input[name*=\"phone\" i]:not([type=\"hidden\" i])"],firstName: ["input[name*=\"first\" i]:not([type=\"hidden\" i])", "input[name*=\"name\" i]:not([type=\"hidden\" i])", "input[name*=\"nom\" i]:not([type=\"hidden\" i])"],lastName: "input[id*=\"last\" i]:not([type=\"hidden\" i])"});sendUserData(user);edgetag("tag", "Contact", {}, {}, { destination: window.edgetagSharedVariables.tagUrl });},current: 0}];const resetActions = () => {for (let i = 0; i < actions.length; i++) {actions[i].current = 0;}};const checkElement = (element) => {if (!element || element.nodeName === "BODY") {resetActions();return;}if (element.nodeName !== "DIV" && element.nodeName !== "INPUT" && element.nodeName !== "A" && element.nodeName !== "BUTTON" && element.nodeName !== "FORM") {checkElement(element.parentElement);return;}for (let i = 0; i < actions.length; ++i) {if (element.matches(actions[i].selectors[actions[i].current])) {++actions[i].current;if (actions[i].length === actions[i].current) {actions[i].fun(element);resetActions();return;}}}checkElement(element.parentElement);};document.addEventListener("click", (e) => {checkElement(e.target);}, { capture: true });window.addEventListener("message",(event) => {if (event.origin !== "https://creatives.attn.tv") {return;}if (!event.data || !event.data.__attentive) {return;}try {const data = event.data.__attentive;if (!data.action || !data.action.includes("LEAD")) {return;}const user = {};if (data.email) {user.email = data.email;}if (data.phone) {user.phone = data.phone.replace(/[^0-9]/g, "");}sendUserData(user);sendNewsletterEvent();} catch (e) {console.log("[Edgetag]", e);}},false);window.addEventListener("message", (event) => {if (!event || !event.origin || !event.data || !event.origin.includes("postscript")) {return;}const user = {};if (event.data.values?.phone) {user.phone = event.data.values.phone;}if (event.data.CollectedEmailEvent?.email) {user.email = event.data.CollectedEmailEvent.email;}if (user.email || user.phone) {sendUserData(user);sendNewsletterEvent();}});window.juapp = window.juapp||function(){(window.juapp.q=window.juapp.q||[]).push(arguments)};juapp("trackFunc", "engagement", function(email, eventname, promotitle, cmid, options, form) {if (!email) {return;}const userData = { email };form.forEach((item) => {if (item.name === "phone_number" && item.value) {userData["phone"] = item.value;}});edgetag("data", userData);sendNewsletterEvent();});document.addEventListener('click', (e) => {if (!e.target.closest('form[action*="api.bounceexchange.com"] [type="submit"]')) {return;}const form = e.target.closest('form[action*="api.bounceexchange.com"]');if (!form) {return;}const user = getUser(form, {email: 'input[type="email"]',phone: 'input[type="tel"]',});sendUserData(user);if (user && Object.keys(user).length > 0) {sendNewsletterEvent();}}, { capture: true });document.addEventListener('submit', (e) => {if (!e.target.matches('form#customer_login')) {return;}if (e.target.getAttribute('action') === '/account/login' && e.target.querySelector('[type="submit"]')) {return;}const user = getUser(e.target, {email: ['input[type="email"]','#CustomerEmail'],});if (!user.email) {return;}sendUserData(user, true);});document.addEventListener('submit', (e) => {if (!e.target.matches('form#create_customer')) {return;}if (e.target.getAttribute('action') === '/account' && e.target.querySelector('[type="submit"]')) {return;}const user = getUser(e.target, {email: [ 'input[type=\"email\"]', 'input[name=\"customer[email]\"]', '#RegisterForm-email' ],phone: "input[type=\"tel\"]",firstName: [ '#RegisterForm-FirstName', 'input[name=\"customer[first_name]\"]','input[name*=\"first\" i]:not([type=\"hidden\" i])' ],lastName: [ '#RegisterForm-LastName', 'input[name=\"customer[last_name]\"]','input[name*=\"last\" i]:not([type=\"hidden\" i])' ]});sendUserData(user, true);edgetag("tag", "CompleteRegistration", {}, {}, { method: 'beacon', destination: window.edgetagSharedVariables.tagUrl });});window.addEventListener('emotiveForms', ({ detail }) => {if (detail?.type !== 'SUBMITTED' || !detail?.metadata) {return;}const { email, phone_number: phone } = detail.metadata;const user = {};if (email) {user.email = email;}if (phone) {user.phone = phone;}if (Object.keys(user).length === 0) {return;}sendUserData(user);sendNewsletterEvent();});window.addEventListener('load', () => {let wisepopsCheckAttempts = 0;const captureWisepops = () => {wisepopsCheckAttempts++;if (typeof window.wisepops === 'function') {wisepops('listen', 'after-form-submit', function (event) {const eveEle = event.target.elements;const emailEle = eveEle['email'] || eveEle['email_address'];const email = emailEle && emailEle.value;const phone =(eveEle['phone-dialcode'] ? eveEle['phone-dialcode'].value : '') +(eveEle['phone-number'] ? eveEle['phone-number'].value : '');const firstName = eveEle['first_name'] && eveEle['first_name'].value;const lastName = eveEle['last_name'] && eveEle['last_name'].value;const data = {};if (email) {data.email = email;}if (phone) {data.phone = phone;}if (firstName) {data.firstName = firstName;}if (lastName) {data.lastName = lastName;}sendUserData(data);if (email || phone ) {sendNewsletterEvent();}});} else if (wisepopsCheckAttempts <= 10) {setTimeout(captureWisepops, 1000);}};captureWisepops();if (window.OptiMonk) {OptiMonk.addListener(document,'optimonk#campaign-before_mark_filled',function (event) {const campaign = event.parameters?.campaignId ?OptiMonk.campaigns[event.parameters.campaignId] :undefined;if (!campaign) {return;}const data = campaign.data;if (!data) {return;}const user = {};const email = data['visitor[email]'];if (email) {user.email = email;}const firstName = data['visitor[firstname]'];if (firstName) {user.firstName = firstName;}const [_, phone] = Object.entries(data).find(([key, value]) => key.includes('custom_fields') && value.startsWith('+')) ?? [];if (phone) {user.phone = phone;}sendUserData(user);if (phone || email) {sendNewsletterEvent();}});}});window.addEventListener('FORMTORO_FORM_LOADED', (t) => {const formToroIframe = document.querySelector(`[data-formtoro-form="${t.detail}"]`);if (!formToroIframe) {return;}const formToroRoot = formToroIframe.shadowRoot;const formToroForm =formToroRoot?.querySelector('ft-form-container');if (!formToroForm) {return;}formToroForm.addEventListener('submit',(e) => {const formData = new FormData(e.target);const email = formData.get('email');const user = {};if (email) {user.email = email;}const countryCodeEle = e.target.querySelector('div[class$="phone-number"] [class*="dropdown"]');const countryCode = countryCodeEle?.value;const phone = formData.get('phone-number')?.replace(/\D/g, '');if (phone) {user.phone = phone;if (countryCode) {user.phone = countryCode + phone;}}if (Object.keys(user).length == 0) {return;}sendUserData(user);sendNewsletterEvent();},{ capture: true });}, { once: true });document.addEventListener('octane.quiz.completed',(e) => {if (!e || !e.detail) {return;}const email = e.detail.email;if (!email) {return;}sendUserData({ email });sendNewsletterEvent();},{ capture: true });document.addEventListener('alia:signup', (e) => {const data = e.detail;if (!data) {return;}sendUserData({ email: data.email, phone: data.phone });sendNewsletterEvent();});window.addEventListener('klaviyoForms', function (e) {if (e.detail?.type === 'submit') {const data = e.detail.metaData;if (!data) {return;}sendUserData({ email: data.$email, phone: data.$phone_number });sendNewsletterEvent();}});const cartUrl = new URL("/cart", window.location.href);const parseCookies = (/**@type {string} */ cookie) => Object.fromEntries(cookie.split(/;\s+/).map((r) => r.split('=').map((str) => str.trim())).map(([cookieKey, ...cookieValues]) => {const cookieValue = cookieValues.join('=');if (!cookieKey) {return []}let decodedValue = '';if (cookieValue) {try {decodedValue = decodeURIComponent(cookieValue)} catch (e) {decodedValue = cookieValue}}return [cookieKey, decodedValue]}));const detectCheckout = (/**@type {SubmitEvent}*/ ev) => {const actionUrl = new URL(ev.target.action, window.location.href);if (actionUrl.pathname != cartUrl.pathname) {/* submitted form is not a checkout */return;}const submitter = ev.submitter;if (submitter?.getAttribute('name') != 'checkout') {/* the intended action is not a checkout */return;}if (ev.defaultPrevented) {/* the action will not be submitted */return;}/* since default is not prevented, we know this will eventually */const cartCookie = parseCookies(document.cookie).cart ?? null;if (!cartCookie) {/* no cart cookie, nothing to do */return;}/* grab the cart contents based on the current cart cookie value */let data = null;try {data = JSON.parse(localStorage.getItem('_workerCartCache'))[cartCookie]} catch (e) {}if (!data) {/* cannot determine cart contents since the value isn't cached */return;}edgetag('tag', 'InitiateCheckout', data, {}, { beacon: true });/* record cart cookie and session to deduplicate the event in the case of app pixeltriggering another checkout */let dedup = {};try {dedup = JSON.parse(localStorage.getItem('_workerEventDeduplication') ?? '{}')} catch (e) {}localStorage.setItem('_workerEventDeduplication', JSON.stringify({...dedup,InitiateCheckout: { cart: cartCookie, sessionId: sessionStorage.getItem('tag_session') || '' }}))};document.addEventListener('submit', detectCheckout)}();</script><!-- END app snippet -->
 <!-- END app block --><!-- BEGIN app block: shopify://apps/smart-filter-search/blocks/app-embed/5cc1944c-3014-4a2a-af40-7d65abc0ef73 --><link as="script" href="https://cdn.shopify.com/extensions/019ce0da-a85f-7ade-b89f-1dd6dc182e2c/smart-product-filters-777/assets/globo.filter.min.js" rel="preload"/><link crossorigin="" href="https://filter-eu9.globo.io" rel="preconnect"/>
-<link href="https://filter-eu9.globo.io" rel="dns-prefetch"/><link href="https://cdn.shopify.com/extensions/019ce0da-a85f-7ade-b89f-1dd6dc182e2c/smart-product-filters-777/assets/globo.search.css" media="print" onload="this.media='all'" rel="stylesheet"/><meta content="" id="search_terms_value">
+<link href="https://filter-eu9.globo.io" rel="dns-prefetch"/><link href="https://cdn.shopify.com/extensions/019ce0da-a85f-7ade-b89f-1dd6dc182e2c/smart-product-filters-777/assets/globo.search.css" media="print" onload="this.media='all'" rel="stylesheet"/><meta content="" id="search_terms_value"/>
 <!-- BEGIN app snippet: global.variables --><script>
   window.shopCurrency = "INR";
   window.shopCountry = "IN";
@@ -1130,7 +1118,6 @@ jdgm.loadCSS(jdgm.CDN_HOST+"widget/base.css"):jdgm.loadCSS(jdgm.CDN_HOST+"shopif
 <script class="globo-filter-settings-js">
       try {GloboEmbedFilterConfig.shop.settings["page_width"] = "1440";GloboEmbedFilterConfig.shop.settings["animations_reveal_on_scroll"] = "false";GloboEmbedFilterConfig.shop.settings["card_style"] = "standard";GloboEmbedFilterConfig.shop.settings["card_color_scheme"] = "scheme-2";GloboEmbedFilterConfig.shop.settings["collection_card_color_scheme"] = "scheme-2";GloboEmbedFilterConfig.shop.settings["blog_card_color_scheme"] = "scheme-2";GloboEmbedFilterConfig.shop.settings["badge_position"] = "top left";GloboEmbedFilterConfig.shop.settings["sale_badge_color_scheme"] = "scheme-4";GloboEmbedFilterConfig.shop.settings["sold_out_badge_color_scheme"] = "scheme-3";GloboEmbedFilterConfig.shop.settings["currency_code_enabled"] = "false";GloboEmbedFilterConfig.shop.settings["cart_color_scheme"] = "scheme-1";} catch (error) {}
     </script>
-
 <style>.gf-block-title h3,
 .gf-block-title .h3,
 .gf-form-input-inner label {
@@ -1285,7 +1272,6 @@ span.spf-product-card__saleprice, span.gfqv-product-card__saleprice{
 }
 </style>
 <script class="globo-filter-custom-js">if(window.AVADA_SPEED_WHITELIST){const spfs_w = new RegExp("smart-product-filter-search", 'i'); if(Array.isArray(window.AVADA_SPEED_WHITELIST)){window.AVADA_SPEED_WHITELIST.push(spfs_w);}else{window.AVADA_SPEED_WHITELIST = [spfs_w];}} </script><!-- END app block -->
-
 <link href="https://monorail-edge.shopifysvc.com" rel="dns-prefetch"/>
 <script>(function(){if ("sendBeacon" in navigator && "performance" in window) {try {var session_token_from_headers = performance.getEntriesByType('navigation')[0].serverTiming.find(x => x.name == '_s').description;} catch {var session_token_from_headers = undefined;}var session_cookie_matches = document.cookie.match(/_shopify_s=([^;]*)/);var session_token_from_cookie = session_cookie_matches && session_cookie_matches.length === 2 ? session_cookie_matches[1] : "";var session_token = session_token_from_headers || session_token_from_cookie || "";function handle_abandonment_event(e) {var entries = performance.getEntries().filter(function(entry) {return /monorail-edge.shopifysvc.com/.test(entry.name);});if (!window.abandonment_tracked && entries.length === 0) {window.abandonment_tracked = true;var currentMs = Date.now();var navigation_start = performance.timing.navigationStart;var payload = {shop_id: 59794227350,url: window.location.href,navigation_start,duration: currentMs - navigation_start,session_token,page_type: "index"};window.navigator.sendBeacon("https://monorail-edge.shopifysvc.com/v1/produce", JSON.stringify({schema_id: "online_store_buyer_site_abandonment/1.1",payload: payload,metadata: {event_created_at_ms: currentMs,event_sent_at_ms: currentMs}}));}}window.addEventListener('pagehide', handle_abandonment_event);}}());</script>
 <script id="web-pixels-manager-setup">(function e(e,d,r,n,o){if(void 0===o&&(o={}),!Boolean(null===(a=null===(i=window.Shopify)||void 0===i?void 0:i.analytics)||void 0===a?void 0:a.replayQueue)){var i,a;window.Shopify=window.Shopify||{};var t=window.Shopify;t.analytics=t.analytics||{};var s=t.analytics;s.replayQueue=[],s.publish=function(e,d,r){return s.replayQueue.push([e,d,r]),!0};try{self.performance.mark("wpm:start")}catch(e){}var l=function(){var e={modern:/Edge?\/(1{2}[4-9]|1[2-9]\d|[2-9]\d{2}|\d{4,})\.\d+(\.\d+|)|Firefox\/(1{2}[4-9]|1[2-9]\d|[2-9]\d{2}|\d{4,})\.\d+(\.\d+|)|Chrom(ium|e)\/(9{2}|\d{3,})\.\d+(\.\d+|)|(Maci|X1{2}).+ Version\/(15\.\d+|(1[6-9]|[2-9]\d|\d{3,})\.\d+)([,.]\d+|)( \(\w+\)|)( Mobile\/\w+|) Safari\/|Chrome.+OPR\/(9{2}|\d{3,})\.\d+\.\d+|(CPU[ +]OS|iPhone[ +]OS|CPU[ +]iPhone|CPU IPhone OS|CPU iPad OS)[ +]+(15[._]\d+|(1[6-9]|[2-9]\d|\d{3,})[._]\d+)([._]\d+|)|Android:?[ /-](13[3-9]|1[4-9]\d|[2-9]\d{2}|\d{4,})(\.\d+|)(\.\d+|)|Android.+Firefox\/(13[5-9]|1[4-9]\d|[2-9]\d{2}|\d{4,})\.\d+(\.\d+|)|Android.+Chrom(ium|e)\/(13[3-9]|1[4-9]\d|[2-9]\d{2}|\d{4,})\.\d+(\.\d+|)|SamsungBrowser\/([2-9]\d|\d{3,})\.\d+/,legacy:/Edge?\/(1[6-9]|[2-9]\d|\d{3,})\.\d+(\.\d+|)|Firefox\/(5[4-9]|[6-9]\d|\d{3,})\.\d+(\.\d+|)|Chrom(ium|e)\/(5[1-9]|[6-9]\d|\d{3,})\.\d+(\.\d+|)([\d.]+$|.*Safari\/(?![\d.]+ Edge\/[\d.]+$))|(Maci|X1{2}).+ Version\/(10\.\d+|(1[1-9]|[2-9]\d|\d{3,})\.\d+)([,.]\d+|)( \(\w+\)|)( Mobile\/\w+|) Safari\/|Chrome.+OPR\/(3[89]|[4-9]\d|\d{3,})\.\d+\.\d+|(CPU[ +]OS|iPhone[ +]OS|CPU[ +]iPhone|CPU IPhone OS|CPU iPad OS)[ +]+(10[._]\d+|(1[1-9]|[2-9]\d|\d{3,})[._]\d+)([._]\d+|)|Android:?[ /-](13[3-9]|1[4-9]\d|[2-9]\d{2}|\d{4,})(\.\d+|)(\.\d+|)|Mobile Safari.+OPR\/([89]\d|\d{3,})\.\d+\.\d+|Android.+Firefox\/(13[5-9]|1[4-9]\d|[2-9]\d{2}|\d{4,})\.\d+(\.\d+|)|Android.+Chrom(ium|e)\/(13[3-9]|1[4-9]\d|[2-9]\d{2}|\d{4,})\.\d+(\.\d+|)|Android.+(UC? ?Browser|UCWEB|U3)[ /]?(15\.([5-9]|\d{2,})|(1[6-9]|[2-9]\d|\d{3,})\.\d+)\.\d+|SamsungBrowser\/(5\.\d+|([6-9]|\d{2,})\.\d+)|Android.+MQ{2}Browser\/(14(\.(9|\d{2,})|)|(1[5-9]|[2-9]\d|\d{3,})(\.\d+|))(\.\d+|)|K[Aa][Ii]OS\/(3\.\d+|([4-9]|\d{2,})\.\d+)(\.\d+|)/},d=e.modern,r=e.legacy,n=navigator.userAgent;return n.match(d)?"modern":n.match(r)?"legacy":"unknown"}(),u="modern"===l?"modern":"legacy",c=(null!=n?n:{modern:"",legacy:""})[u],f=function(e){return[e.baseUrl,"/wpm","/b",e.hashVersion,"modern"===e.buildTarget?"m":"l",".js"].join("")}({baseUrl:d,hashVersion:r,buildTarget:u}),m=function(e){var d=e.version,r=e.bundleTarget,n=e.surface,o=e.pageUrl,i=e.monorailEndpoint;return{emit:function(e){var a=e.status,t=e.errorMsg,s=(new Date).getTime(),l=JSON.stringify({metadata:{event_sent_at_ms:s},events:[{schema_id:"web_pixels_manager_load/3.1",payload:{version:d,bundle_target:r,page_url:o,status:a,surface:n,error_msg:t},metadata:{event_created_at_ms:s}}]});if(!i)return console&&console.warn&&console.warn("[Web Pixels Manager] No Monorail endpoint provided, skipping logging."),!1;try{return self.navigator.sendBeacon.bind(self.navigator)(i,l)}catch(e){}var u=new XMLHttpRequest;try{return u.open("POST",i,!0),u.setRequestHeader("Content-Type","text/plain"),u.send(l),!0}catch(e){return console&&console.warn&&console.warn("[Web Pixels Manager] Got an unhandled error while logging to Monorail."),!1}}}}({version:r,bundleTarget:l,surface:e.surface,pageUrl:self.location.href,monorailEndpoint:e.monorailEndpoint});try{o.browserTarget=l,function(e){var d=e.src,r=e.async,n=void 0===r||r,o=e.onload,i=e.onerror,a=e.sri,t=e.scriptDataAttributes,s=void 0===t?{}:t,l=document.createElement("script"),u=document.querySelector("head"),c=document.querySelector("body");if(l.async=n,l.src=d,a&&(l.integrity=a,l.crossOrigin="anonymous"),s)for(var f in s)if(Object.prototype.hasOwnProperty.call(s,f))try{l.dataset[f]=s[f]}catch(e){}if(o&&l.addEventListener("load",o),i&&l.addEventListener("error",i),u)u.appendChild(l);else{if(!c)throw new Error("Did not find a head or body element to append the script");c.appendChild(l)}}({src:f,async:!0,onload:function(){if(!function(){var e,d;return Boolean(null===(d=null===(e=window.Shopify)||void 0===e?void 0:e.analytics)||void 0===d?void 0:d.initialized)}()){var d=window.webPixelsManager.init(e)||void 0;if(d){var r=window.Shopify.analytics;r.replayQueue.forEach((function(e){var r=e[0],n=e[1],o=e[2];d.publishCustomEvent(r,n,o)})),r.replayQueue=[],r.publish=d.publishCustomEvent,r.visitor=d.visitor,r.initialized=!0}}},onerror:function(){return m.emit({status:"failed",errorMsg:"".concat(f," has failed to load")})},sri:function(e){var d=/^sha384-[A-Za-z0-9+/=]+$/;return"string"==typeof e&&d.test(e)}(c)?c:"",scriptDataAttributes:o}),m.emit({status:"loading"})}catch(e){m.emit({status:"failed",errorMsg:(null==e?void 0:e.message)||"Unknown error"})}}})({shopId: 59794227350,storefrontBaseUrl: "https://www.reneecosmetics.in",extensionsBaseUrl: "https://extensions.shopifycdn.com/cdn/shopifycloud/web-pixels-manager",monorailEndpoint: "https://monorail-edge.shopifysvc.com/unstable/produce_batch",surface: "storefront-renderer",enabledBetaFlags: ["2dca8a86","5476ea20","ed8389fc"],webPixelsConfigList: [{"id":"1629716630","configuration":"{\"focusDuration\":\"3\"}","eventPayloadVersion":"v1","runtimeContext":"STRICT","scriptVersion":"78f180345468801b73943f50de9e9980","type":"APP","apiClientId":1743893,"privacyPurposes":["ANALYTICS","SALE_OF_DATA"],"dataSharingAdjustments":{"protectedCustomerApprovalScopes":["read_customer_personal_data"],"dataSharingControls":["share_all_events"]},"dataSharingState":"optimized"},{"id":"1386381462","configuration":"{\"url\":\"https:\/\/agrep.reneecosmetics.in\",\"consent\":\"DISABLED\",\"skipVariantName\":\"0\",\"customTagRules\":\"[]\"}","eventPayloadVersion":"v1","runtimeContext":"LAX","scriptVersion":"31857cf49bfe2d447f7f24a92837906d","type":"APP","apiClientId":6861761,"privacyPurposes":[],"dataSharingAdjustments":{"protectedCustomerApprovalScopes":["read_customer_address","read_customer_email","read_customer_name","read_customer_personal_data","read_customer_phone"],"dataSharingControls":["share_all_events"]},"dataSharingState":"unrestricted"},{"id":"1202258070","configuration":"{\"projectId\":\"spzh3pzixy\"}","eventPayloadVersion":"v1","runtimeContext":"STRICT","scriptVersion":"3f95c569dcd8d256ed20e00a12567bee","type":"APP","apiClientId":240074326017,"privacyPurposes":[],"capabilities":["advanced_dom_events"],"dataSharingAdjustments":{"protectedCustomerApprovalScopes":["read_customer_personal_data"],"dataSharingControls":["share_all_events"]},"dataSharingState":"unrestricted"},{"id":"1044021398","configuration":"{\"businessID\":\"b6333eb8-4839-11f0-83b7-0a58a9feac03\"}","eventPayloadVersion":"v1","runtimeContext":"STRICT","scriptVersion":"918f9922b843777d2a33873eae87a000","type":"APP","apiClientId":115788808193,"privacyPurposes":["ANALYTICS","MARKETING","SALE_OF_DATA"],"dataSharingAdjustments":{"protectedCustomerApprovalScopes":["read_customer_address","read_customer_email","read_customer_name","read_customer_personal_data","read_customer_phone"],"dataSharingControls":["share_all_events"]},"dataSharingState":"optimized"},{"id":"941785238","configuration":"{\"pixelId\":\"730e69f5-20fd-42d6-b4a6-31000a5377bb\"}","eventPayloadVersion":"v1","runtimeContext":"STRICT","scriptVersion":"c119f01612c13b62ab52809eb08154bb","type":"APP","apiClientId":2556259,"privacyPurposes":["ANALYTICS","MARKETING","SALE_OF_DATA"],"dataSharingAdjustments":{"protectedCustomerApprovalScopes":["read_customer_address","read_customer_email","read_customer_name","read_customer_personal_data","read_customer_phone"],"dataSharingControls":["share_all_events"]},"dataSharingState":"optimized","enabledFlags":["3b5414a6"]},{"id":"938475670","configuration":"{\"accountID\":\"reneeofficial.myshopify.com\"}","eventPayloadVersion":"v1","runtimeContext":"STRICT","scriptVersion":"38afed2d2efdbd19caf2208d571fc103","type":"APP","apiClientId":3128379,"privacyPurposes":["ANALYTICS","MARKETING","SALE_OF_DATA"],"dataSharingAdjustments":{"protectedCustomerApprovalScopes":["read_customer_address","read_customer_email","read_customer_name","read_customer_personal_data","read_customer_phone"],"dataSharingControls":["share_all_events"]},"dataSharingState":"optimized"},{"id":"868253846","configuration":"{\"config\":\"{\\\"google_tag_ids\\\":[\\\"AW-471005337\\\",\\\"GT-WFMM85VH\\\",\\\"GTM-P3T9NSW\\\"],\\\"target_country\\\":\\\"IN\\\",\\\"gtag_events\\\":[{\\\"type\\\":\\\"search\\\",\\\"action_label\\\":\\\"AW-471005337\\\/F9J0COTlv7MaEJnxy-AB\\\"},{\\\"type\\\":\\\"begin_checkout\\\",\\\"action_label\\\":\\\"AW-471005337\\\/Yl-tCOLgv7MaEJnxy-AB\\\"},{\\\"type\\\":\\\"view_item\\\",\\\"action_label\\\":[\\\"AW-471005337\\\/EUf8COHlv7MaEJnxy-AB\\\",\\\"MC-4EKYFC09M2\\\"]},{\\\"type\\\":\\\"purchase\\\",\\\"action_label\\\":[\\\"AW-471005337\\\/A3iXCI-Cp-sBEJnxy-AB\\\",\\\"MC-4EKYFC09M2\\\"]},{\\\"type\\\":\\\"page_view\\\",\\\"action_label\\\":[\\\"AW-471005337\\\/hz-nCN7lv7MaEJnxy-AB\\\",\\\"MC-4EKYFC09M2\\\"]},{\\\"type\\\":\\\"add_payment_info\\\",\\\"action_label\\\":\\\"AW-471005337\\\/D_yOCOflv7MaEJnxy-AB\\\"},{\\\"type\\\":\\\"add_to_cart\\\",\\\"action_label\\\":\\\"AW-471005337\\\/x6YoCOXgv7MaEJnxy-AB\\\"}],\\\"enable_monitoring_mode\\\":false}\"}","eventPayloadVersion":"v1","runtimeContext":"OPEN","scriptVersion":"6b33379668fd964ef67c850d23f6cbac","type":"APP","apiClientId":1780363,"privacyPurposes":[],"dataSharingAdjustments":{"protectedCustomerApprovalScopes":["read_customer_address","read_customer_email","read_customer_name","read_customer_personal_data","read_customer_phone"],"dataSharingControls":["share_all_events"]},"dataSharingState":"unrestricted","enabledFlags":["9a3ed68a"]},{"id":"847380630","configuration":"{\"webPixelName\":\"Judge.me\"}","eventPayloadVersion":"v1","runtimeContext":"STRICT","scriptVersion":"34ad157958823915625854214640f0bf","type":"APP","apiClientId":683015,"privacyPurposes":["ANALYTICS"],"dataSharingAdjustments":{"protectedCustomerApprovalScopes":["read_customer_email","read_customer_name","read_customer_personal_data","read_customer_phone"],"dataSharingControls":["share_all_events"]},"dataSharingState":"unrestricted"},{"id":"268107926","configuration":"{\"pixel_id\":\"468780820677949\",\"pixel_type\":\"facebook_pixel\",\"metaapp_system_user_token\":\"-\"}","eventPayloadVersion":"v1","runtimeContext":"OPEN","scriptVersion":"ca16bc87fe92b6042fbaa3acc2fbdaa6","type":"APP","apiClientId":2329312,"privacyPurposes":["ANALYTICS","MARKETING","SALE_OF_DATA"],"dataSharingAdjustments":{"protectedCustomerApprovalScopes":["read_customer_address","read_customer_email","read_customer_name","read_customer_personal_data","read_customer_phone"],"dataSharingControls":["share_all_events"]},"dataSharingState":"unrestricted","enabledFlags":["9a3ed68a"]},{"id":"156893334","eventPayloadVersion":"1","runtimeContext":"LAX","scriptVersion":"1","type":"CUSTOM","privacyPurposes":["ANALYTICS","MARKETING","SALE_OF_DATA"],"name":"Razorpay Magic Pixel"},{"id":"shopify-app-pixel","configuration":"{}","eventPayloadVersion":"v1","runtimeContext":"STRICT","scriptVersion":"0450","apiClientId":"shopify-pixel","type":"APP","privacyPurposes":["ANALYTICS","MARKETING"]},{"id":"shopify-custom-pixel","eventPayloadVersion":"v1","runtimeContext":"LAX","scriptVersion":"0450","apiClientId":"shopify-pixel","type":"CUSTOM","privacyPurposes":["ANALYTICS","MARKETING"]}],isMerchantRequest: false,initData: {"shop":{"name":"Renee Cosmetics","paymentSettings":{"currencyCode":"INR"},"myshopifyDomain":"reneeofficial.myshopify.com","countryCode":"IN","storefrontUrl":"https:\/\/www.reneecosmetics.in"},"customer":null,"cart":null,"checkout":null,"productVariants":[],"purchasingCompany":null},},"https://www.reneecosmetics.in/cdn","df8d3400wef50681bp68ad6cf7m44c53f1a",{"modern":"","legacy":""},{"shopId":"59794227350","storefrontBaseUrl":"https:\/\/www.reneecosmetics.in","extensionBaseUrl":"https:\/\/extensions.shopifycdn.com\/cdn\/shopifycloud\/web-pixels-manager","surface":"storefront-renderer","enabledBetaFlags":"[\"2dca8a86\", \"5476ea20\", \"ed8389fc\"]","isMerchantRequest":"false","hashVersion":"df8d3400wef50681bp68ad6cf7m44c53f1a","publish":"custom","events":"[[\"page_viewed\",{}]]"});</script><script>
@@ -1469,8 +1455,7 @@ span.spf-product-card__saleprice, span.gfqv-product-card__saleprice{
     }
   }
 </script>
-
-</meta></link></link></link></link></link></link></head><body class="template-index gradient">
+</link></link></link></link></link></link></head><body class="template-index gradient">
 <!-- Google tag (gtag.js) -->
 <amp-analytics data-credentials="include" type="gtag">
 <script type="application/json">
@@ -1481,8 +1466,8 @@ span.spf-product-card__saleprice, span.gfqv-product-card__saleprice{
 <a class="skip-to-content-link button visually-hidden" href="#MainContent">
       Skip to content
     </a>
-<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/quantity-popover.css?v=160630540099520878331770962658" media="all" rel="stylesheet" type="text/css">
-<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-card.css?v=170777532757697087151770962575" media="all" rel="stylesheet" type="text/css">
+<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/quantity-popover.css?v=160630540099520878331770962658" media="all" rel="stylesheet" type="text/css"/>
+<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-card.css?v=170777532757697087151770962575" media="all" rel="stylesheet" type="text/css"/>
 <script defer="defer" src="//www.reneecosmetics.in/cdn/shop/t/169/assets/cart.js?v=25986244538023964561770962572"></script>
 <script defer="defer" src="//www.reneecosmetics.in/cdn/shop/t/169/assets/quantity-popover.js?v=987015268078116491770962658"></script>
 <style>
@@ -1490,51 +1475,9 @@ span.spf-product-card__saleprice, span.gfqv-product-card__saleprice{
     visibility: hidden;
   }
 </style>
-
 <!-- BEGIN sections: header-group -->
-<div class="shopify-section shopify-section-group-header-group announcement-bar-section" id="shopify-section-sections--19373324730518__announcement-bar"><link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-slideshow.css?v=17933591812325749411770962590" media="all" rel="stylesheet" type="text/css">
-<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-slider.css?v=14039311878856620671770962590" media="all" rel="stylesheet" type="text/css">
-<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-list-social.css?v=35792976012981934991770962581" media="all" rel="stylesheet" type="text/css">
-<div class="utility-bar color-scheme-4 gradient utility-bar--bottom-border">
-<div class="page-width utility-bar__grid"><div aria-label="Announcement" class="announcement-bar" role="region"><p class="announcement-bar__message h5"><svg fill="none" height="31" viewbox="0 0 31 31" width="31" xmlns="http://www.w3.org/2000/svg">
-<g filter="url(#filter0_d_5142_622)">
-<path d="M15.5 8L17.5257 13.4743L23 15.5L17.5257 17.5257L15.5 23L13.4743 17.5257L8 15.5L13.4743 13.4743L15.5 8Z" fill="white"></path>
-</g>
-<defs>
-<filter color-interpolation-filters="sRGB" filterunits="userSpaceOnUse" height="31" id="filter0_d_5142_622" width="31" x="0" y="0">
-<feflood flood-opacity="0" result="BackgroundImageFix"></feflood>
-<fecolormatrix in="SourceAlpha" result="hardAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0"></fecolormatrix>
-<feoffset></feoffset>
-<fegaussianblur stddeviation="4"></fegaussianblur>
-<fecomposite in2="hardAlpha" operator="out"></fecomposite>
-<fecolormatrix type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.35 0"></fecolormatrix>
-<feblend in2="BackgroundImageFix" mode="normal" result="effect1_dropShadow_5142_622"></feblend>
-<feblend in="SourceGraphic" in2="effect1_dropShadow_5142_622" mode="normal" result="shape"></feblend>
-</filter>
-</defs>
-</svg><span>FREE Gift On Orders Above ₹799</span><svg fill="none" height="31" viewbox="0 0 31 31" width="31" xmlns="http://www.w3.org/2000/svg">
-<g filter="url(#filter0_d_5142_622)">
-<path d="M15.5 8L17.5257 13.4743L23 15.5L17.5257 17.5257L15.5 23L13.4743 17.5257L8 15.5L13.4743 13.4743L15.5 8Z" fill="white"></path>
-</g>
-<defs>
-<filter color-interpolation-filters="sRGB" filterunits="userSpaceOnUse" height="31" id="filter0_d_5142_622" width="31" x="0" y="0">
-<feflood flood-opacity="0" result="BackgroundImageFix"></feflood>
-<fecolormatrix in="SourceAlpha" result="hardAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0"></fecolormatrix>
-<feoffset></feoffset>
-<fegaussianblur stddeviation="4"></fegaussianblur>
-<fecomposite in2="hardAlpha" operator="out"></fecomposite>
-<fecolormatrix type="matrix" values="0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.35 0"></fecolormatrix>
-<feblend in2="BackgroundImageFix" mode="normal" result="effect1_dropShadow_5142_622"></feblend>
-<feblend in="SourceGraphic" in2="effect1_dropShadow_5142_622" mode="normal" result="shape"></feblend>
-</filter>
-</defs>
-</svg>
-</p></div><div class="localization-wrapper">
-</div>
-</div>
-</div>
-</link></link></link></div><div class="shopify-section shopify-section-group-header-group section-header site-header-wrapper" id="shopify-section-sections--19373324730518__header"><link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-list-menu.css?v=151968516119678728991770962580" media="print" onload="this.media='all'" rel="stylesheet"/>
-<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-search.css?v=143269277167587909141770962589" media="print" onload="this.media='all'" rel="stylesheet"/>
+<div class="shopify-section shopify-section-group-header-group section-header site-header-wrapper" id="shopify-section-sections--19373324730518__header"><link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-list-menu.css?v=151968516119678728991770962580" media="print" onload="this.media='all'" rel="stylesheet">
+<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-search.css?v=143269277167587909141770962589" media="print" onload="this.media='all'" rel="stylesheet">
 <link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-menu-drawer.css?v=4674471902301618031770962583" media="print" onload="this.media='all'" rel="stylesheet"/>
 <link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-cart-notification.css?v=54116361853792938221770962576" media="print" onload="this.media='all'" rel="stylesheet"/><link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-price.css?v=70172745017360139101770962586" media="print" onload="this.media='all'" rel="stylesheet"/><link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-mega-menu.css?v=12340208887069946321770962582" media="print" onload="this.media='all'" rel="stylesheet"/><style>
   header-drawer {
@@ -1604,819 +1547,79 @@ span.spf-product-card__saleprice, span.gfqv-product-card__saleprice{
     }
   }</style><script defer="defer" src="//www.reneecosmetics.in/cdn/shop/t/169/assets/cart-notification.js?v=133508293167896966491770962572"></script>
 <sticky-header class="header-wrapper color-scheme-1 gradient header-wrapper--border-bottom" data-sticky-type="always"><header class="header header--middle-left header--mobile-left page-width header--has-menu header--has-social header--has-account">
-<header-drawer data-breakpoint="tablet">
-<details class="menu-drawer-container" id="Details-menu-drawer-container">
-<summary aria-label="Menu" class="header__icon header__icon--menu header__icon--summary link focus-inset">
-<span><svg class="icon icon-hamburger" fill="none" height="24" viewbox="0 0 24 24" width="24" xmlns="http://www.w3.org/2000/svg">
-<path d="M3 12H21" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path>
-<path d="M3 6H21" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path>
-<path d="M3 18H21" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"></path>
-</svg><svg class="icon icon-close" fill="none" height="16" viewbox="0 0 16 16" width="16" xmlns="http://www.w3.org/2000/svg">
-<path d="M7.99935 8.70976L5.51519 11.1939C5.42225 11.2869 5.30395 11.3333 5.16031 11.3333C5.01667 11.3333 4.89838 11.2869 4.80543 11.1939C4.71249 11.101 4.66602 10.9827 4.66602 10.839C4.66602 10.6954 4.71249 10.5771 4.80543 10.4842L7.28959 8L4.80543 5.51584C4.71249 5.4229 4.66602 5.3046 4.66602 5.16096C4.66602 5.01732 4.71249 4.89903 4.80543 4.80608C4.89838 4.71314 5.01667 4.66667 5.16031 4.66667C5.30395 4.66667 5.42225 4.71314 5.51519 4.80608L7.99935 7.29024L10.4835 4.80608C10.5765 4.71314 10.6947 4.66667 10.8384 4.66667C10.982 4.66667 11.1003 4.71314 11.1933 4.80608C11.2862 4.89903 11.3327 5.01732 11.3327 5.16096C11.3327 5.3046 11.2862 5.4229 11.1933 5.51584L8.70911 8L11.1933 10.4842C11.2862 10.5771 11.3327 10.6954 11.3327 10.839C11.3327 10.9827 11.2862 11.101 11.1933 11.1939C11.1003 11.2869 10.982 11.3333 10.8384 11.3333C10.6947 11.3333 10.5765 11.2869 10.4835 11.1939L7.99935 8.70976Z" fill="currentColor"></path>
-</svg>
-</span>
-</summary>
-<div class="gradient menu-drawer motion-reduce color-scheme-1" id="menu-drawer">
-<div class="menu-drawer__inner-container">
-<div class="menu-drawer__navigation-container">
-<div class="inner-body">
-<div class="nav-header">
-<div class="user-icon"><svg fill="none" height="40" viewbox="0 0 40 40" width="40" xmlns="http://www.w3.org/2000/svg">
-<path d="M0 5C0 2.23858 2.23858 0 5 0H35C37.7614 0 40 2.23858 40 5V35C40 37.7614 37.7614 40 35 40H5C2.23858 40 0 37.7614 0 35V5Z" fill="#FEF5B4"></path>
-<g clip-path="url(#clip0_5049_2389)">
-<path clip-rule="evenodd" d="M22.9045 18.694C22.9045 20.2184 22.1834 21.5775 21.0647 22.4485C24.0788 23.6323 26.2183 26.5709 26.2183 30H24.6589C24.6589 26.3885 21.7207 23.4503 18.1092 23.4503C14.4976 23.4503 11.5595 26.3885 11.5595 30H10C10 26.5512 12.1644 23.5988 15.206 22.4286C14.1018 21.5568 13.3918 20.2068 13.3918 18.694C13.3918 16.0713 15.5255 13.9376 18.1481 13.9376C20.7708 13.9376 22.9045 16.0713 22.9045 18.694ZM21.345 18.694C21.345 16.9312 19.9109 15.4971 18.1481 15.4971C16.3854 15.4971 14.9513 16.9312 14.9513 18.694C14.9513 20.4567 16.3854 21.8908 18.1481 21.8908C19.9109 21.8908 21.345 20.4567 21.345 18.694Z" fill="black" fill-rule="evenodd"></path>
-<path d="M26.4502 15.614H23.5673L27.8947 10L27.0544 14.0546H30L25.6725 19.2788L26.4502 15.614Z" fill="#D53692"></path>
-</g>
-<defs>
-<clippath id="clip0_5049_2389">
-<rect fill="white" height="20" transform="translate(10 10)" width="20"></rect>
-</clippath>
-</defs>
-</svg>
-</div>
-<div class="box-text">
-<a class="login-register-link" href="/account/login">
-<strong>Log in / Register</strong> <span class="offer-note">Login for exclusive offers!</span>
-</a>
-</div>
-<button class="nav-exit"><svg class="icon icon-close" fill="none" height="16" viewbox="0 0 16 16" width="16" xmlns="http://www.w3.org/2000/svg">
-<path d="M7.99935 8.70976L5.51519 11.1939C5.42225 11.2869 5.30395 11.3333 5.16031 11.3333C5.01667 11.3333 4.89838 11.2869 4.80543 11.1939C4.71249 11.101 4.66602 10.9827 4.66602 10.839C4.66602 10.6954 4.71249 10.5771 4.80543 10.4842L7.28959 8L4.80543 5.51584C4.71249 5.4229 4.66602 5.3046 4.66602 5.16096C4.66602 5.01732 4.71249 4.89903 4.80543 4.80608C4.89838 4.71314 5.01667 4.66667 5.16031 4.66667C5.30395 4.66667 5.42225 4.71314 5.51519 4.80608L7.99935 7.29024L10.4835 4.80608C10.5765 4.71314 10.6947 4.66667 10.8384 4.66667C10.982 4.66667 11.1003 4.71314 11.1933 4.80608C11.2862 4.89903 11.3327 5.01732 11.3327 5.16096C11.3327 5.3046 11.2862 5.4229 11.1933 5.51584L8.70911 8L11.1933 10.4842C11.2862 10.5771 11.3327 10.6954 11.3327 10.839C11.3327 10.9827 11.2862 11.101 11.1933 11.1939C11.1003 11.2869 10.982 11.3333 10.8384 11.3333C10.6947 11.3333 10.5765 11.2869 10.4835 11.1939L7.99935 8.70976Z" fill="currentColor"></path>
-</svg>
-</button>
-</div>
-<div class="serach-box-wrapper"><predictive-search class="search-modal__form search-box" data-loading-text="Loading..."><form action="/search" class="search search-modal__form" method="get" role="search">
-<div class="field">
-<input aria-autocomplete="list" aria-controls="predictive-search-results" aria-expanded="false" aria-haspopup="listbox" aria-owns="predictive-search-results" autocapitalize="off" autocomplete="off" autocorrect="off" class="search__input field__input" id="" name="q" placeholder="Search for lipstick" role="combobox" spellcheck="false" type="search" value=""/>
-<label class="field__label" for="">Search for lipstick</label>
-<input name="options[prefix]" type="hidden" value="last"/>
-<button aria-label="Clear search term " class="reset__button field__button hidden" type="reset">
-<span class="svg-wrapper"><svg class="icon icon-close" fill="none" stroke="currentColor" viewbox="0 0 18 18"><circle cx="9" cy="9" r="8.5" stroke-opacity=".2"></circle><path d="M11.83 11.83 6.172 6.17M6.229 11.885l5.544-5.77" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-</span>
-</button>
-<button aria-label="Search for lipstick" class="search__button field__button">
-<span class="svg-wrapper"><svg class="icon icon-search" fill="none" height="20" viewbox="0 0 20 20" width="20" xmlns="http://www.w3.org/2000/svg">
-<path d="M9.0625 15.625C12.6868 15.625 15.625 12.6868 15.625 9.0625C15.625 5.43813 12.6868 2.5 9.0625 2.5C5.43813 2.5 2.5 5.43813 2.5 9.0625C2.5 12.6868 5.43813 15.625 9.0625 15.625Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"></path>
-<path d="M13.7031 13.7044L17.5 17.5013" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"></path>
-</svg></span>
-</button>
-</div>
-<span aria-hidden="true" class="predictive-search-status visually-hidden" role="status"></span></form></predictive-search></div>
-<div class="mobile-menu-box">
-<ul class="menu-list">
-<li><a href="/"><i class="menu-icon"><img src="//www.reneecosmetics.in/cdn/shop/files/home.svg?v=1752230815"/></i> Home</a></li>
-<li><a href="/collections/top-sellers"><i class="menu-icon"><img src="//www.reneecosmetics.in/cdn/shop/files/hot.svg?v=1752230868"/></i> Hotsellers</a></li>
-<li><a href="/collections/newly-launched"><i class="menu-icon"><img src="//www.reneecosmetics.in/cdn/shop/files/new.svg?v=1752230914"/></i> New Launches</a></li>
-</ul>
-</div>
-<div class="mobile-menu-categories">
-<h3 class="box-title">Shop by Category</h3>
-<div class="mobile-menu-categories-list">
-<a class="cate-item" href="/collections/lips">
-<span class="cate-media"><img src="//www.reneecosmetics.in/cdn/shop/files/lips_1dd204ec-8072-46da-855c-6a323c2fe9df.png?v=1752231068"/></span>
-<span class="cate-text">Lips</span>
-</a>
-<a class="cate-item" href="/collections/face">
-<span class="cate-media"><img src="//www.reneecosmetics.in/cdn/shop/files/face-1.png?v=1752231089"/></span>
-<span class="cate-text">Faces</span>
-</a>
-<a class="cate-item" href="/collections/hair">
-<span class="cate-media"><img src="//www.reneecosmetics.in/cdn/shop/files/hair-1.png?v=1752231195"/></span>
-<span class="cate-text">Hair</span>
-</a>
-<a class="cate-item" href="/collections/nails">
-<span class="cate-media"><img src="//www.reneecosmetics.in/cdn/shop/files/nails-1.png?v=1752231241"/></span>
-<span class="cate-text">Nails</span>
-</a>
-<a class="cate-item" href="/collections/fragrances">
-<span class="cate-media"><img src="//www.reneecosmetics.in/cdn/shop/files/fragrance-1.png?v=1752231274"/></span>
-<span class="cate-text">Fragrance</span>
-</a>
-<a class="cate-item" href="/collections/combos">
-<span class="cate-media"><img src="//www.reneecosmetics.in/cdn/shop/files/combos_bca5ab4a-85e3-4ea0-993c-b69461b08182.png?v=1752231302"/></span>
-<span class="cate-text">Combos</span>
-</a>
-<a class="cate-item" href="/collections/gifting">
-<span class="cate-media"><img src="//www.reneecosmetics.in/cdn/shop/files/gifts.png?v=1752231356"/></span>
-<span class="cate-text">Gifts</span>
-</a>
-<a class="cate-item" href="/collections/tools-accessories">
-<span class="cate-media"><img src="//www.reneecosmetics.in/cdn/shop/files/tools_icon_renee_website-min.jpg?v=1763537192"/></span>
-<span class="cate-text">Accessories</span>
-</a>
-</div>
-</div>
-<div class="menu-banner">
-<a href="https://www.reneecosmetics.in/pages/princess-by-renee"> <img src="//www.reneecosmetics.in/cdn/shop/files/Burgur_Menu_734X176_princess_banner_1.jpg?v=1754891371"/></a>
-</div>
-<div class="mobile-menu-box">
-<ul class="menu-list">
-<li><a href="https://www.reneecosmetics.in/account/addresses"><i class="menu-icon"><img src="//www.reneecosmetics.in/cdn/shop/files/new-user.svg?v=1752231531"/></i> My Profile</a></li>
-<li><a href="/pages/contact-us"><i class="menu-icon"><img src="//www.reneecosmetics.in/cdn/shop/files/conts.svg?v=1752231522"/></i> Contact Us</a></li>
-</ul>
-</div>
-<div class="menu-drawer__utility-links">
-<span class="links-wrapper">Follow Us:</span>
-<ul class="list list-social list-unstyled" role="list"><li class="list-social__item">
-<a class="list-social__link link" href="https://twitter.com/renee_cosmetics">
-<span class="svg-wrapper"><!-- inline_asset_content: Asset not found. --></span>
-<span class="visually-hidden">X (Twitter)</span>
-</a>
-</li><li class="list-social__item">
-<a class="list-social__link link" href="https://www.facebook.com/ReneeCosmetics">
-<span class="svg-wrapper"><svg class="icon icon-facebook" fill="none" height="21" viewbox="0 0 20 21" width="20" xmlns="http://www.w3.org/2000/svg">
-<path d="M19.7797 10.5911C19.7797 5.18684 15.4046 0.800781 10.0139 0.800781C4.62314 0.800781 0.248047 5.18684 0.248047 10.5911C0.248047 15.3296 3.6075 19.2751 8.06072 20.1856V13.5282H6.10755V10.5911H8.06072V8.14352C8.06072 6.25399 9.59396 4.71691 11.4788 4.71691H13.9202V7.654H11.9671C11.4299 7.654 10.9905 8.09457 10.9905 8.63303V10.5911H13.9202V13.5282H10.9905V20.3325C15.9222 19.8429 19.7797 15.6723 19.7797 10.5911Z" fill="url(#paint0_linear_5049_2434)"></path>
-<defs>
-<lineargradient gradientunits="userSpaceOnUse" id="paint0_linear_5049_2434" x1="-0.662328" x2="18.9856" y1="-2.79716" y2="0.49831">
-<stop stop-color="#E7447D"></stop>
-<stop offset="1" stop-color="#EA5EA9"></stop>
-</lineargradient>
-</defs>
-</svg></span>
-<span class="visually-hidden">Facebook</span>
-</a>
-</li><li class="list-social__item">
-<a class="list-social__link link" href="https://www.instagram.com/reneeofficial/">
-<span class="svg-wrapper"><svg class="icon icon-instagram" fill="none" height="19" viewbox="0 0 19 19" width="19" xmlns="http://www.w3.org/2000/svg">
-<path d="M10.6757 0.511719C11.6898 0.514423 12.2045 0.519832 12.6489 0.532452L12.8238 0.538762C13.0257 0.545973 13.2249 0.554988 13.4656 0.565805C14.4247 0.610877 15.0791 0.762319 15.6533 0.984975C16.2483 1.21394 16.7495 1.52404 17.2506 2.02434C17.709 2.47496 18.0637 3.02006 18.29 3.62169C18.5126 4.19591 18.6641 4.85035 18.7091 5.81039C18.7199 6.05017 18.729 6.24939 18.7362 6.45222L18.7416 6.6271C18.7551 7.0706 18.7605 7.58533 18.7623 8.59945L18.7632 9.27192V10.4528C18.7654 11.1103 18.7585 11.7678 18.7425 12.4252L18.7371 12.6C18.7299 12.8029 18.7208 13.0021 18.71 13.2419C18.665 14.2019 18.5117 14.8554 18.29 15.4306C18.0643 16.0325 17.7096 16.5778 17.2506 17.0279C16.7999 17.4861 16.2549 17.8408 15.6533 18.0673C15.0791 18.2899 14.4247 18.4414 13.4656 18.4865C13.2517 18.4965 13.0378 18.5055 12.8238 18.5135L12.6489 18.5189C12.2045 18.5315 11.6898 18.5378 10.6757 18.5396L10.0033 18.5405H8.8233C8.1655 18.5428 7.50771 18.5359 6.8501 18.5198L6.67523 18.5144C6.46124 18.5063 6.2473 18.497 6.03342 18.4865C5.07431 18.4414 4.41988 18.2899 3.84478 18.0673C3.24324 17.8414 2.69837 17.4866 2.24837 17.0279C1.78959 16.5775 1.4346 16.0323 1.20814 15.4306C0.985489 14.8563 0.834051 14.2019 0.78898 13.2419C0.778937 13.028 0.769923 12.814 0.761938 12.6L0.757431 12.4252C0.740819 11.7678 0.733307 11.1103 0.734895 10.4528V8.59945C0.732379 7.94194 0.73899 7.28442 0.754726 6.6271L0.761036 6.45222C0.768248 6.24939 0.777262 6.05017 0.788079 5.81039C0.833149 4.85035 0.984587 4.19681 1.20724 3.62169C1.4336 3.01944 1.7893 2.47418 2.24927 2.02434C2.69916 1.56593 3.24367 1.21123 3.84478 0.984975C4.41988 0.762319 5.07341 0.610877 6.03342 0.565805C6.27319 0.554988 6.47331 0.545973 6.67523 0.538762L6.8501 0.533353C7.50741 0.517337 8.1649 0.510425 8.8224 0.51262L10.6757 0.511719ZM9.74905 5.01892C8.5537 5.01892 7.40731 5.49379 6.56207 6.33905C5.71683 7.18432 5.24197 8.33074 5.24197 9.52613C5.24197 10.7215 5.71683 11.8679 6.56207 12.7132C7.40731 13.5585 8.5537 14.0333 9.74905 14.0333C10.9444 14.0333 12.0908 13.5585 12.936 12.7132C13.7813 11.8679 14.2561 10.7215 14.2561 9.52613C14.2561 8.33074 13.7813 7.18432 12.936 6.33905C12.0908 5.49379 10.9444 5.01892 9.74905 5.01892ZM9.74905 6.82181C10.1042 6.82175 10.4558 6.89164 10.784 7.02749C11.1121 7.16334 11.4102 7.36249 11.6614 7.61357C11.9125 7.86464 12.1118 8.16273 12.2477 8.49081C12.3837 8.81889 12.4537 9.17054 12.4538 9.52568C12.4538 9.88082 12.3839 10.2325 12.2481 10.5606C12.1122 10.8887 11.9131 11.1869 11.662 11.4381C11.4109 11.6892 11.1129 11.8885 10.7848 12.0244C10.4567 12.1604 10.1051 12.2304 9.74996 12.2305C9.03275 12.2305 8.34491 11.9455 7.83776 11.4384C7.33062 10.9312 7.04571 10.2434 7.04571 9.52613C7.04571 8.8089 7.33062 8.12104 7.83776 7.61388C8.34491 7.10672 9.03275 6.82181 9.74996 6.82181M14.4824 3.66676C14.1836 3.66676 13.897 3.78548 13.6856 3.99679C13.4743 4.20811 13.3556 4.49472 13.3556 4.79356C13.3556 5.09241 13.4743 5.37902 13.6856 5.59033C13.897 5.80165 14.1836 5.92036 14.4824 5.92036C14.7812 5.92036 15.0678 5.80165 15.2791 5.59033C15.4904 5.37902 15.6092 5.09241 15.6092 4.79356C15.6092 4.49472 15.4904 4.20811 15.2791 3.99679C15.0678 3.78548 14.7812 3.66676 14.4824 3.66676Z" fill="url(#paint0_linear_5049_2436)"></path>
-<defs>
-<lineargradient gradientunits="userSpaceOnUse" id="paint0_linear_5049_2436" x1="-0.105971" x2="18.0306" y1="-2.80946" y2="0.232514">
-<stop stop-color="#E7447D"></stop>
-<stop offset="1" stop-color="#EA5EA9"></stop>
-</lineargradient>
-</defs>
-</svg></span>
-<span class="visually-hidden">Instagram</span>
-</a>
-</li><li class="list-social__item">
-<a class="list-social__link link" href="https://www.youtube.com/@reneecosmeticsofficial">
-<span class="svg-wrapper"><svg class="icon icon-youtube" fill="none" height="13" viewbox="0 0 19 13" width="19" xmlns="http://www.w3.org/2000/svg">
-<path d="M18.3407 4.54307C18.3819 3.35028 18.121 2.16642 17.5823 1.1014C17.2169 0.664401 16.7096 0.369494 16.149 0.268069C13.8303 0.0576738 11.502 -0.0285605 9.17401 0.00973607C6.85455 -0.0302987 4.5346 0.0531529 2.22401 0.259736C1.7672 0.342833 1.34445 0.557104 1.00735 0.876403C0.257347 1.56807 0.174013 2.7514 0.0906799 3.7514C-0.0302266 5.54937 -0.0302266 7.35343 0.0906799 9.1514C0.114788 9.71424 0.198591 10.2729 0.34068 10.8181C0.441159 11.239 0.644449 11.6284 0.932346 11.9514C1.27174 12.2876 1.70433 12.5141 2.17401 12.6014C3.97061 12.8232 5.78086 12.9151 7.59068 12.8764C10.5073 12.9181 13.0657 12.8764 16.0907 12.6431C16.5719 12.5611 17.0167 12.3344 17.3657 11.9931C17.599 11.7597 17.7732 11.474 17.874 11.1597C18.172 10.2452 18.3184 9.28816 18.3073 8.3264C18.3407 7.85974 18.3407 5.04307 18.3407 4.54307ZM7.29068 8.8264V3.66807L12.224 6.25974C10.8407 7.0264 9.01568 7.89307 7.29068 8.8264Z" fill="url(#paint0_linear_5844_716)"></path>
-<defs>
-<lineargradient gradientunits="userSpaceOnUse" id="paint0_linear_5844_716" x1="-0.855059" x2="17.0955" y1="-2.37459" y2="1.91008">
-<stop stop-color="#E7447D"></stop>
-<stop offset="1" stop-color="#EA5EA9"></stop>
-</lineargradient>
-</defs>
-</svg>
-</span>
-<span class="visually-hidden">YouTube</span>
-</a>
-</li></ul>
-</div>
-</div>
-</div>
-</div>
-</div>
-</details>
-</header-drawer>
+
 <h1 class="header__heading"><a class="header__heading-link link link--text focus-inset" href="/"><div class="header__heading-logo-wrapper">
 <img alt="Renee Cosmetics" class="header__heading-logo motion-reduce" height="31.0" loading="eager" sizes="(max-width: 196px) 50vw, 98px" src="//www.reneecosmetics.in/cdn/shop/files/logo.svg?v=1751370718&amp;width=600" srcset="//www.reneecosmetics.in/cdn/shop/files/logo.svg?v=1751370718&amp;width=98 98w, //www.reneecosmetics.in/cdn/shop/files/logo.svg?v=1751370718&amp;width=147 147w, //www.reneecosmetics.in/cdn/shop/files/logo.svg?v=1751370718&amp;width=196 196w" width="98"/>
 </div></a></h1>
-<nav class="header__inline-menu">
-<ul class="list-menu list-menu--inline" role="list"><li><a class="header__menu-item list-menu__item link link--text focus-inset" href="/collections/all-products" id="HeaderMenu-all-products">
-<span>All Products</span>
-</a></li><li><header-menu class="menu-hover-wrapper">
-<details class="mega-menu" data-hover-details="" id="Details-HeaderMenu-2">
-<summary class="header__menu-item list-menu__item link focus-inset" id="HeaderMenu-categories">
-<span>Categories</span><svg class="icon icon-caret" viewbox="0 0 10 6"><path clip-rule="evenodd" d="M9.354.646a.5.5 0 0 0-.708 0L5 4.293 1.354.646a.5.5 0 0 0-.708.708l4 4a.5.5 0 0 0 .708 0l4-4a.5.5 0 0 0 0-.708" fill="currentColor" fill-rule="evenodd"></path></svg>
-</summary>
-<div class="mega-menu__content color-scheme-1 gradient motion-reduce global-settings-popup" data-mega-menu="" id="MegaMenu-Content-2" tabindex="-1">
-<div class="mega-menu__content-wrap page-width">
-<ul class="mega-menu__list" role="list"><li>
-<a class="mega-menu__link mega-menu__link--level-2 link" data-child-id="menu-1" href="/collections/eyes" id="HeaderMenu-categories-eyes">
-                          Eyes
-                        </a>
-</li><li>
-<a class="mega-menu__link mega-menu__link--level-2 link" data-child-id="menu-2" href="/collections/lips" id="HeaderMenu-categories-lips">
-                          Lips
-                        </a>
-</li><li>
-<a class="mega-menu__link mega-menu__link--level-2 link" data-child-id="menu-3" href="/collections/face" id="HeaderMenu-categories-face">
-                          Face
-                        </a>
-</li><li>
-<a class="mega-menu__link mega-menu__link--level-2 link" data-child-id="menu-4" href="/collections/hair" id="HeaderMenu-categories-hair">
-                          Hair
-                        </a>
-</li><li>
-<a class="mega-menu__link mega-menu__link--level-2 link" data-child-id="menu-5" href="/collections/fragrances" id="HeaderMenu-categories-fragrance">
-                          Fragrance
-                        </a>
-</li><li>
-<a class="mega-menu__link mega-menu__link--level-2 link" data-child-id="menu-6" href="/collections/skincare" id="HeaderMenu-categories-skincare">
-                          Skincare
-                        </a>
-</li><li>
-<a class="mega-menu__link mega-menu__link--level-2 link mega-menu__link-shop-all" data-child-id="menu-7" href="/collections/nails" id="HeaderMenu-categories-nails">
-                          Nails
-                        </a>
-</li></ul>
-<div class="mega-menu__list-content"><ul class="list-unstyled grandchild-group" data-child-id="menu-1" role="list" style="display: flex;"><li>
-<a class="mega-menu__link link" href="/collections/kajal" id="HeaderMenu-categories-eyes-kajal">
-<span class="mega-menu-image-wrap">
-<img alt="Kajal" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/kajal.jpg?v=1754908355
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Kajal</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-eyes-kajal.mega-menu__link:hover {
-                                    background-color:
 
 
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/eyeliner" id="HeaderMenu-categories-eyes-eyeliner">
-<span class="mega-menu-image-wrap">
-<img alt="Eyeliner" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/eyeliner.jpg?v=1754975278
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Eyeliner</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-eyes-eyeliner.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/mascara" id="HeaderMenu-categories-eyes-mascara">
-<span class="mega-menu-image-wrap">
-<img alt="Mascara" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/Mascara.jpg?v=1754975412
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Mascara</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-eyes-mascara.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/eyeshadow" id="HeaderMenu-categories-eyes-eyeshadow">
-<span class="mega-menu-image-wrap">
-<img alt="Eyeshadow" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/Eye_shadow.jpg?v=1754975630
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Eyeshadow</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-eyes-eyeshadow.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/eyelashes" id="HeaderMenu-categories-eyes-false-eyelashes">
-<span class="mega-menu-image-wrap">
-<img alt="Eyelashes" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/false_eye_lashes.jpg?v=1755004463
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">False Eyelashes</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-eyes-false-eyelashes.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li></ul><ul class="list-unstyled grandchild-group" data-child-id="menu-2" role="list" style="display: none;"><li>
-<a class="mega-menu__link link" href="/collections/matte-lipstick" id="HeaderMenu-categories-lips-matte-lipstick">
-<span class="mega-menu-image-wrap">
-<img alt="Matte Lipstick" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/matte_lipstick.jpg?v=1755004734
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Matte Lipstick</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-lips-matte-lipstick.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/liquid-lipstick-1" id="HeaderMenu-categories-lips-liquid-lipstick">
-<span class="mega-menu-image-wrap">
-<img alt="Liquid Lipstick" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/Liquid_Lipstick.jpg?v=1754976026
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Liquid Lipstick</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-lips-liquid-lipstick.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/lip-gloss-1" id="HeaderMenu-categories-lips-lip-gloss">
-<span class="mega-menu-image-wrap">
-<img alt="Lip Gloss" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/Lip_Gloss.jpg?v=1754976109
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Lip Gloss</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-lips-lip-gloss.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/creme-lipstick" id="HeaderMenu-categories-lips-creme-lipstick">
-<span class="mega-menu-image-wrap">
-<img alt="Creme  lipstick" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/creme_lipstick.jpg?v=1755004912
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Creme Lipstick</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-lips-creme-lipstick.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/lip-liner" id="HeaderMenu-categories-lips-lip-liner">
-<span class="mega-menu-image-wrap">
-<img alt="Lip Liner" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/Lip_Liner.jpg?v=1754976200
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Lip Liner</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-lips-lip-liner.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/lip-plumper" id="HeaderMenu-categories-lips-lip-balm">
-<span class="mega-menu-image-wrap">
-<img alt="Lip Balm" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/Lip_Balm.jpg?v=1754976308
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Lip Balm</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-lips-lip-balm.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li></ul><ul class="list-unstyled grandchild-group" data-child-id="menu-3" role="list" style="display: none;"><li>
-<a class="mega-menu__link link" href="/collections/face-primer" id="HeaderMenu-categories-face-face-primer">
-<span class="mega-menu-image-wrap">
-<img alt="Face Primer" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/primer.jpg?v=1754976998
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Face Primer </span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-face-face-primer.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/foundation" id="HeaderMenu-categories-face-foundation">
-<span class="mega-menu-image-wrap">
-<img alt="Foundation" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/foundation.jpg?v=1754976549
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Foundation</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-face-foundation.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/compact" id="HeaderMenu-categories-face-compact">
-<span class="mega-menu-image-wrap">
-<img alt="Compact" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/compact.jpg?v=1754976590
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Compact </span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-face-compact.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/blush-highlighters" id="HeaderMenu-categories-face-blush-highlighters">
-<span class="mega-menu-image-wrap">
-<img alt="Blush &amp; Highlighters" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/Blush_highlighter.jpg?v=1754976679
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Blush &amp; Highlighters</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-face-blush-highlighters.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/makeup-fixer" id="HeaderMenu-categories-face-makeup-fixer-remover">
-<span class="mega-menu-image-wrap">
-<img alt="Makeup Fixer &amp; Remover" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/makeup_fixer_aff7b22f-8c7e-4b1c-aa40-ab9c807d548e.jpg?v=1754976822
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Makeup Fixer &amp; Remover</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-face-makeup-fixer-remover.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/sindoor" id="HeaderMenu-categories-face-sindoor">
-<span class="mega-menu-image-wrap">
-<img alt="Sindoor" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/sindoor_9bd944cf-f5d3-4f30-9a2e-c921af74f108.jpg?v=1754977104
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Sindoor</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-face-sindoor.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li></ul><ul class="list-unstyled grandchild-group" data-child-id="menu-4" role="list" style="display: none;"><li>
-<a class="mega-menu__link link" href="/collections/hair" id="HeaderMenu-categories-hair-hair-powder">
-<span class="mega-menu-image-wrap">
-<img alt="Hair" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/Hair_powder_6986fce9-e835-44ae-a23b-17d5e8f34896.jpg?v=1756274825
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Hair Powder</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-hair-hair-powder.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/hair-gel" id="HeaderMenu-categories-hair-hair-gel">
-<span class="mega-menu-image-wrap">
-<img alt="Hair Gel" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/Hair_gel.jpg?v=1754975960
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Hair Gel</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-hair-hair-gel.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li></ul><ul class="list-unstyled grandchild-group" data-child-id="menu-5" role="list" style="display: none;"><li>
-<a class="mega-menu__link link" href="/collections/fragrances" id="HeaderMenu-categories-fragrance-eau-de-parfum">
-<span class="mega-menu-image-wrap">
-<img alt="Fragrances" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/perfume_4c7afcf6-eeef-4987-a552-7ed4cd0df017.jpg?v=1754977283
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Eau De Parfum</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-fragrance-eau-de-parfum.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/body-mist" id="HeaderMenu-categories-fragrance-body-mist">
-<span class="mega-menu-image-wrap">
-<img alt="Body Mist" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/body_mist.jpg?v=1754977233
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Body Mist </span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-fragrance-body-mist.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li></ul><ul class="list-unstyled grandchild-group" data-child-id="menu-6" role="list" style="display: none;"><li>
-<a class="mega-menu__link link" href="/collections/sunscreen" id="HeaderMenu-categories-skincare-sunscreen">
-<span class="mega-menu-image-wrap">
-<img alt="Sunscreen" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/sunscreen.jpg?v=1754977376
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Sunscreen</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-skincare-sunscreen.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/sheet-mask" id="HeaderMenu-categories-skincare-face-mask">
-<span class="mega-menu-image-wrap">
-<img alt="Face Mask" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/sheet.jpg?v=1755004579
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Face Mask </span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-skincare-face-mask.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/face-cream" id="HeaderMenu-categories-skincare-face-cream">
-<span class="mega-menu-image-wrap">
-<img alt="Face Cream" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/Face_Cream.jpg?v=1754977456
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Face Cream</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-skincare-face-cream.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/face-oil" id="HeaderMenu-categories-skincare-face-oil">
-<span class="mega-menu-image-wrap">
-<img alt="Face Oil" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/Face_Oil.jpg?v=1754977509
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Face Oil </span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-skincare-face-oil.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li></ul><ul class="list-unstyled grandchild-group" data-child-id="menu-7" role="list" style="display: none;"><li>
-<a class="mega-menu__link link" href="/collections/nail-paint" id="HeaderMenu-categories-nails-nail-paint">
-<span class="mega-menu-image-wrap">
-<img alt="Nail Paint" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/Nail_Paint.jpg?v=1754976482
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Nail Paint</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-nails-nail-paint.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/artificial-nails" id="HeaderMenu-categories-nails-stick-on-nails">
-<span class="mega-menu-image-wrap">
-<img alt="Artificial Nails" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/Artificial_Nails.jpg?v=1754976398
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Stick on nails</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-nails-stick-on-nails.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li><li>
-<a class="mega-menu__link link" href="/collections/nail-paint-remover" id="HeaderMenu-categories-nails-nail-paint-remover">
-<span class="mega-menu-image-wrap">
-<img alt="Nail Paint Remover" class="primary-image" height="" loading="lazy" src="
-                                                //www.reneecosmetics.in/cdn/shop/files/Nail_Paint_Remover.jpg?v=1754976438
-                                             " width=""/>
-</span>
-<span class="mega-menu-content-wrap">Nail Paint Remover</span>
-</a>
-<style>
-                                  .mega-menu__list-content #HeaderMenu-categories-nails-nail-paint-remover.mega-menu__link:hover {
-                                    background-color:
-
-
-                                      ;
-                                  }
-                                </style>
-</li></ul></div>
-</div>
-</div>
-</details>
-</header-menu></li><li><a class="header__menu-item list-menu__item link link--text focus-inset" href="/collections/gifting" id="HeaderMenu-gifting">
-<span>Gifting</span>
-</a></li><li><a class="header__menu-item list-menu__item link link--text focus-inset" href="/collections/top-sellers" id="HeaderMenu-hot-sellers">
-<span>Hot Sellers</span>
-</a></li><li><a class="header__menu-item list-menu__item link link--text focus-inset" href="/collections/everyday" id="HeaderMenu-renee-everyday">
-<span>RENÉE Everyday</span>
-</a></li><li><a class="header__menu-item list-menu__item link link--text focus-inset" href="/collections/renee-pro" id="HeaderMenu-renee-pro">
-<span>RENÉE Pro</span>
-</a></li><li><a class="header__menu-item list-menu__item link link--text focus-inset" href="https://www.reneecosmetics.in/pages/princess-by-renee" id="HeaderMenu-princess-by-renee">
-<span>Princess by RENÉE</span>
-</a></li></ul>
-</nav>
-<div class="header__icons header__icons--localization header-localization">
-<div class="desktop-localization-wrapper">
-</div>
-<details-modal class="header__search small-hide">
-<details>
-<summary aria-haspopup="dialog" aria-label="Search for lipstick" class="header__icon header__icon--search header__icon--summary link focus-inset modal__toggle">
-<span>
-<span class="svg-wrapper"><svg class="icon icon-search" fill="none" height="20" viewbox="0 0 20 20" width="20" xmlns="http://www.w3.org/2000/svg">
-<path d="M9.0625 15.625C12.6868 15.625 15.625 12.6868 15.625 9.0625C15.625 5.43813 12.6868 2.5 9.0625 2.5C5.43813 2.5 2.5 5.43813 2.5 9.0625C2.5 12.6868 5.43813 15.625 9.0625 15.625Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"></path>
-<path d="M13.7031 13.7044L17.5 17.5013" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"></path>
-</svg></span>
-<span class="svg-wrapper header__icon-close"><svg class="icon icon-close" fill="none" height="16" viewbox="0 0 16 16" width="16" xmlns="http://www.w3.org/2000/svg">
-<path d="M7.99935 8.70976L5.51519 11.1939C5.42225 11.2869 5.30395 11.3333 5.16031 11.3333C5.01667 11.3333 4.89838 11.2869 4.80543 11.1939C4.71249 11.101 4.66602 10.9827 4.66602 10.839C4.66602 10.6954 4.71249 10.5771 4.80543 10.4842L7.28959 8L4.80543 5.51584C4.71249 5.4229 4.66602 5.3046 4.66602 5.16096C4.66602 5.01732 4.71249 4.89903 4.80543 4.80608C4.89838 4.71314 5.01667 4.66667 5.16031 4.66667C5.30395 4.66667 5.42225 4.71314 5.51519 4.80608L7.99935 7.29024L10.4835 4.80608C10.5765 4.71314 10.6947 4.66667 10.8384 4.66667C10.982 4.66667 11.1003 4.71314 11.1933 4.80608C11.2862 4.89903 11.3327 5.01732 11.3327 5.16096C11.3327 5.3046 11.2862 5.4229 11.1933 5.51584L8.70911 8L11.1933 10.4842C11.2862 10.5771 11.3327 10.6954 11.3327 10.839C11.3327 10.9827 11.2862 11.101 11.1933 11.1939C11.1003 11.2869 10.982 11.3333 10.8384 11.3333C10.6947 11.3333 10.5765 11.2869 10.4835 11.1939L7.99935 8.70976Z" fill="currentColor"></path>
-</svg>
-</span>
-</span>
-</summary>
-<div aria-label="Search for lipstick" aria-modal="true" class="search-modal modal__content gradient" role="dialog">
-<div class="modal-overlay"></div>
-<div class="search-modal__content search-modal__content-bottom" tabindex="-1">
-<div class="searchbox-main-wrapper">
-<h2 class="search-box-title">What are you looking for?</h2>
-<predictive-search class="search-modal__form header-search" data-loading-text="Loading..."><form action="/search" class="search search-modal__form" method="get" role="search">
-<div class="field">
-<input aria-autocomplete="list" aria-controls="predictive-search-results" aria-expanded="false" aria-haspopup="listbox" aria-owns="predictive-search-results" autocapitalize="off" autocomplete="off" autocorrect="off" class="search__input field__input" id="Search-In-Modal" name="q" placeholder="Search for lipstick" role="combobox" spellcheck="false" type="search" value=""/>
-<label class="field__label" for="Search-In-Modal">Search for lipstick</label>
-<input name="options[prefix]" type="hidden" value="last"/>
-<button aria-label="Clear search term " class="reset__button field__button hidden" type="reset">
-<span class="svg-wrapper"><svg class="icon icon-close" fill="none" stroke="currentColor" viewbox="0 0 18 18"><circle cx="9" cy="9" r="8.5" stroke-opacity=".2"></circle><path d="M11.83 11.83 6.172 6.17M6.229 11.885l5.544-5.77" stroke-linecap="round" stroke-linejoin="round"></path></svg>
-</span>
-</button>
-<button aria-label="Search for lipstick" class="search__button field__button">
-<span class="svg-wrapper"><svg class="icon icon-search" fill="none" height="20" viewbox="0 0 20 20" width="20" xmlns="http://www.w3.org/2000/svg">
-<path d="M9.0625 15.625C12.6868 15.625 15.625 12.6868 15.625 9.0625C15.625 5.43813 12.6868 2.5 9.0625 2.5C5.43813 2.5 2.5 5.43813 2.5 9.0625C2.5 12.6868 5.43813 15.625 9.0625 15.625Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"></path>
-<path d="M13.7031 13.7044L17.5 17.5013" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"></path>
-</svg></span>
-</button>
-</div>
-<span aria-hidden="true" class="predictive-search-status visually-hidden" role="status"></span></form></predictive-search><button aria-label="Close" class="search-modal__close-button modal__close-button link link--text focus-inset" type="button">
-<span class="svg-wrapper"><svg class="icon icon-close" fill="none" height="16" viewbox="0 0 16 16" width="16" xmlns="http://www.w3.org/2000/svg">
-<path d="M7.99935 8.70976L5.51519 11.1939C5.42225 11.2869 5.30395 11.3333 5.16031 11.3333C5.01667 11.3333 4.89838 11.2869 4.80543 11.1939C4.71249 11.101 4.66602 10.9827 4.66602 10.839C4.66602 10.6954 4.71249 10.5771 4.80543 10.4842L7.28959 8L4.80543 5.51584C4.71249 5.4229 4.66602 5.3046 4.66602 5.16096C4.66602 5.01732 4.71249 4.89903 4.80543 4.80608C4.89838 4.71314 5.01667 4.66667 5.16031 4.66667C5.30395 4.66667 5.42225 4.71314 5.51519 4.80608L7.99935 7.29024L10.4835 4.80608C10.5765 4.71314 10.6947 4.66667 10.8384 4.66667C10.982 4.66667 11.1003 4.71314 11.1933 4.80608C11.2862 4.89903 11.3327 5.01732 11.3327 5.16096C11.3327 5.3046 11.2862 5.4229 11.1933 5.51584L8.70911 8L11.1933 10.4842C11.2862 10.5771 11.3327 10.6954 11.3327 10.839C11.3327 10.9827 11.2862 11.101 11.1933 11.1939C11.1003 11.2869 10.982 11.3333 10.8384 11.3333C10.6947 11.3333 10.5765 11.2869 10.4835 11.1939L7.99935 8.70976Z" fill="currentColor"></path>
-</svg>
-</span>
-</button>
-<div class="quick-search-box">
-<span>Quick Search:</span>
-<a href="/search?q=Lips&amp;options%5Bprefix%5D=last">Lips</a>
-<a href="/search?q=Face&amp;options%5Bprefix%5D=last">Face</a>
-<a href="/search?q=Nails&amp;options%5Bprefix%5D=last">Nails</a>
-</div>
-<div class="search-suggestion-list">
-<h3>Popular product</h3>
-<div class="suggestion-list-box">
-<div class="box-item">
-<a href="/products/renee-midnight-kohl-pencil-1-5-gm">
-<div class="media-box">
-<img alt="RENEE Midnight Kohl Kajal Pencil, 1.5g" class="media" height="" src="//www.reneecosmetics.in/cdn/shop/files/ReneeMidnightKohlPencilPI01.jpg?v=1767682170&amp;width=400" width=""/>
-</div>
-<h4 class="box-title">RENEE Midnight Kohl Kajal Pencil, 1.5g</h4>
-</a>
-</div>
-<div class="box-item">
-<a href="/products/renee-lumi-glow-cream">
-<div class="media-box">
-<img alt="RENEE Lumi Glow Highlighting Moisturizer Cream, 50g" class="media" height="" src="//www.reneecosmetics.in/cdn/shop/files/LumiGlow_moisturizer-min.jpg?v=1767174021&amp;width=400" width=""/>
-</div>
-<h4 class="box-title">RENEE Lumi Glow Highlighting Moisturizer Cream, 50g</h4>
-</a>
-</div>
-<div class="box-item">
-<a href="/products/princess-by-renee-snowball-lip-balm-3gm">
-<div class="media-box">
-<img alt="Snowball Lip Balm by Princess By RENEE, 3 g" class="media" height="" src="//www.reneecosmetics.in/cdn/shop/files/PrincessByReneeSnowballLipBalmPI_1.jpg?v=1768889211&amp;width=400" width=""/>
-</div>
-<h4 class="box-title">Snowball Lip Balm by Princess By RENEE, 3 g</h4>
-</a>
-</div>
-<div class="box-item">
-<a href="/products/renee-stay-forever-matte-liquid-lipsticks-combo-of-10">
-<div class="media-box">
-<img alt="RENEE Stay Forever Matte Liquid Lipsticks Combo of 10, 1ml each" class="media" height="" src="//www.reneecosmetics.in/cdn/shop/files/Stay-Forever-Matte-Liquid-Lipstick_001_2.jpg?v=1756149614&amp;width=400" width=""/>
-</div>
-<h4 class="box-title">RENEE Stay Forever Matte Liquid Lipsticks Combo of 10, 1ml each</h4>
-</a>
-</div>
-</div>
-</div>
-</div>
-</div>
-</div>
-</details>
-</details-modal>
-<a class="header__icon header__icon--account link focus-inset" href="/account/login" rel="nofollow"><account-icon><span class="svg-wrapper"><svg class="icon icon-account" fill="none" height="20" viewbox="0 0 20 20" width="20" xmlns="http://www.w3.org/2000/svg">
-<path d="M10 12.5C12.7614 12.5 15 10.2614 15 7.5C15 4.73857 12.7614 2.5 10 2.5C7.23857 2.5 5 4.73857 5 7.5C5 10.2614 7.23857 12.5 10 12.5Z" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"></path>
-<path d="M2.42188 16.8757C3.18979 15.5453 4.2944 14.4406 5.62465 13.6725C6.9549 12.9044 8.46392 12.5 10 12.5C11.5361 12.5 13.0451 12.9044 14.3753 13.6725C15.7056 14.4406 16.8102 15.5453 17.5782 16.8757" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"></path>
-</svg></span></account-icon><span class="visually-hidden">Log in</span>
-</a>
-</div>
 </header><main class="content-for-layout focus-none" id="MainContent">
 <div class="page-width page-width--narrow section-main-section-padding" style="margin-top: 50px; margin-bottom: 50px; text-align: center;">
       {% if not user.is_authenticated %}
-        <h1 class="main-page-title page-title h0">Login</h1>
-<div class="customer login">
+        <style>
+            .warehouse-login {
+                max-width: 400px;
+                margin: 0 auto;
+                padding: 40px;
+                border-radius: 8px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+                background: white;
+            }
+            .warehouse-login form p {
+                display: flex;
+                flex-direction: column;
+                text-align: left;
+                margin-bottom: 15px;
+            }
+            .warehouse-login form label {
+                margin-bottom: 5px;
+                font-weight: 600;
+                font-size: 14px;
+                color: #333;
+            }
+            .warehouse-login form input[type="text"],
+            .warehouse-login form input[type="password"] {
+                width: 100%;
+                padding: 10px 15px;
+                border: 1px solid #ccc;
+                border-radius: 4px;
+                font-size: 16px;
+                transition: border-color 0.3s;
+            }
+            .warehouse-login form input[type="text"]:focus,
+            .warehouse-login form input[type="password"]:focus {
+                border-color: #000;
+                outline: none;
+            }
+            .warehouse-login button[type="submit"] {
+                width: 100%;
+                padding: 12px;
+                margin-top: 10px;
+                background-color: #000;
+                color: #fff;
+                border: none;
+                border-radius: 4px;
+                font-size: 16px;
+                font-weight: bold;
+                cursor: pointer;
+            }
+            .warehouse-login button[type="submit"]:hover {
+                background-color: #333;
+            }
+        </style>
+        <h1 class="main-page-title page-title h0" style="margin-bottom: 30px;">Login</h1>
+<div class="customer warehouse-login">
 <form action="{% url 'login' %}" method="post">
                 {% csrf_token %}
                 {{ form.as_p }}
-                <button class="button" type="submit">Log In</button>
+                <button type="submit">Log In</button>
 </form>
 </div>
       {% else %}
         <h1 class="main-page-title page-title h0">Welcome, {{ user.username }}</h1>
-<p>You are successfully logged in to the RENEE Warehouse application.</p>
-<a class="button" href="{% url 'index' %}">Go to GT Mass Dump Generator</a>
-<br/><br/>
+<p style="margin: 20px 0;">You are successfully logged in to the RENEE Warehouse application.</p>
+<a class="button" href="{% url 'index' %}" style="margin-bottom: 20px; display: inline-block;">Go to GT Mass Dump Generator</a>
+<br/>
 <form action="{% url 'logout' %}" method="post">
             {% csrf_token %}
             <button class="button button--secondary" type="submit">Log Out</button>
@@ -2477,82 +1680,10 @@ span.spf-product-card__saleprice, span.gfqv-product-card__saleprice{
       "url": "https:\/\/www.reneecosmetics.in"
     }
   </script>
-</div>
+</link></link></div>
 <!-- END sections: header-group -->
-
 <!-- BEGIN sections: footer-group -->
-<section class="shopify-section shopify-section-group-footer-group section main-newsletter-wrapper" id="shopify-section-sections--19373324697750__newsletter_NDXEcn"><link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-newsletter.css?v=4727253280200485261770962584" media="all" rel="stylesheet" type="text/css"/>
-<link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/newsletter-section.css?v=104713433329861665381770962651" media="all" rel="stylesheet" type="text/css"/>
-<style data-shopify="">.section-sections--19373324697750__newsletter_NDXEcn-padding {
-    padding-top: 16px;
-    padding-bottom: 24px;
-  }
-
-  @media screen and (min-width: 750px) {
-    .section-sections--19373324697750__newsletter_NDXEcn-padding {
-      padding-top: 12px;
-      padding-bottom: 16px;
-    }
-  }</style><div class="newsletter center">
-<div class="newsletter__wrapper color-scheme-1 gradient content-container isolate content-container--full-width section-sections--19373324697750__newsletter_NDXEcn-padding"><h2 class="inline-richtext h2">
-            Subscribe to our newsletter
-          </h2><div class="newsletter__subheading rte">
-</div><div>
-<form accept-charset="UTF-8" action="/contact#newsletterForm" class="newsletter-form" id="newsletterForm" method="post"><input name="form_type" type="hidden" value="customer"/><input name="utf8" type="hidden" value="✓"/>
-<input name="contact[tags]" type="hidden" value="newsletter"/>
-<div class="newsletter-form__field-wrapper">
-<div class="field">
-<input aria-required="true" autocapitalize="off" autocomplete="email" autocorrect="off" class="field__input" id="NewsletterForm--sections--19373324697750__newsletter_NDXEcn" name="contact[email]" placeholder="Email" required="" type="email" value=""/>
-<label class="field__label" for="NewsletterForm--sections--19373324697750__newsletter_NDXEcn">
-                    Email
-                  </label>
-<button aria-label="Subscribe" class="newsletter-form__button field__button" id="Subscribe" name="commit" type="submit">
-<span class="svg-wrapper"><svg class="icon icon-arrow" fill="none" viewbox="0 0 14 10" xmlns="http://www.w3.org/2000/svg"><path clip-rule="evenodd" d="M8.537.808a.5.5 0 0 1 .817-.162l4 4a.5.5 0 0 1 0 .708l-4 4a.5.5 0 1 1-.708-.708L11.793 5.5H1a.5.5 0 0 1 0-1h10.793L8.646 1.354a.5.5 0 0 1-.109-.546" fill="currentColor" fill-rule="evenodd"></path></svg>
-</span>
-</button>
-</div>
-<div class="newsletter-suggested-text">
-<p>By subscribing you agree to the <a href="/policies/terms-of-service" target="_blank" title="Terms of Service">Terms of Use</a> &amp; <a href="/policies/privacy-policy" target="_blank" title="Privacy Policy">Privacy Policy.</a></p>
-</div>
-</div></form>
-</div><div class="newsletter__list-social-container">
-<div class="line-sec"></div>
-<ul class="list-unstyled list-social newsletter__list-social" role="list"><li class="list-social__item">
-<a class="link list-social__link" href="https://www.facebook.com/ReneeCosmetics" target="_blank">
-<span class="svg-wrapper"><svg class="icon icon-facebook" fill="none" height="39" viewbox="0 0 38 39" width="38" xmlns="http://www.w3.org/2000/svg">
-<ellipse cx="19" cy="19.2907" fill="#F9F7F4" rx="18.5" ry="18.7242"></ellipse>
-<path d="M20.4687 16.021V14.3269C20.4687 13.5928 20.6449 13.1975 21.8782 13.1975H23.4052V10.374H21.056C18.1195 10.374 16.9449 12.2375 16.9449 14.3269V16.021H14.5957V18.8445H16.9449V27.315H20.4687V18.8445H23.0528L23.4052 16.021H20.4687Z" fill="currentColor"></path>
-</svg></span>
-<span class="visually-hidden">Facebook</span>
-</a>
-</li><li class="list-social__item">
-<a class="link list-social__link" href="https://www.instagram.com/reneeofficial/" target="_blank">
-<span class="svg-wrapper"><svg class="icon icon-instagram" viewbox="0 0 20 20"><path clip-rule="evenodd" d="M13.23 3.492c-.84-.037-1.096-.046-3.23-.046-2.144 0-2.39.01-3.238.055-.776.027-1.195.164-1.487.273a2.4 2.4 0 0 0-.912.593 2.5 2.5 0 0 0-.602.922c-.11.282-.238.702-.274 1.486-.046.84-.046 1.095-.046 3.23s.01 2.39.046 3.229c.004.51.097 1.016.274 1.495.145.365.319.639.602.913.282.282.538.456.92.602.474.176.974.268 1.479.273.848.046 1.103.046 3.238.046s2.39-.01 3.23-.046c.784-.036 1.203-.164 1.486-.273.374-.146.648-.329.921-.602.283-.283.447-.548.602-.922.177-.476.27-.979.274-1.486.037-.84.046-1.095.046-3.23s-.01-2.39-.055-3.229c-.027-.784-.164-1.204-.274-1.495a2.4 2.4 0 0 0-.593-.913 2.6 2.6 0 0 0-.92-.602c-.284-.11-.703-.237-1.488-.273ZM6.697 2.05c.857-.036 1.131-.045 3.302-.045a63 63 0 0 1 3.302.045c.664.014 1.321.14 1.943.374a4 4 0 0 1 1.414.922c.41.397.728.88.93 1.414.23.622.354 1.279.365 1.942C18 7.56 18 7.824 18 10.005c0 2.17-.01 2.444-.046 3.292-.036.858-.173 1.442-.374 1.943-.2.53-.474.976-.92 1.423a3.9 3.9 0 0 1-1.415.922c-.51.191-1.095.337-1.943.374-.857.036-1.122.045-3.302.045-2.171 0-2.445-.009-3.302-.055-.849-.027-1.432-.164-1.943-.364a4.15 4.15 0 0 1-1.414-.922 4.1 4.1 0 0 1-.93-1.423c-.183-.51-.329-1.085-.365-1.943C2.009 12.45 2 12.167 2 10.004c0-2.161 0-2.435.055-3.302.027-.848.164-1.432.365-1.942a4.4 4.4 0 0 1 .92-1.414 4.2 4.2 0 0 1 1.415-.93c.51-.183 1.094-.33 1.943-.366Zm.427 4.806a4.105 4.105 0 1 1 5.805 5.805 4.105 4.105 0 0 1-5.805-5.805m1.882 5.371a2.668 2.668 0 1 0 2.042-4.93 2.668 2.668 0 0 0-2.042 4.93m5.922-5.942a.958.958 0 1 1-1.355-1.355.958.958 0 0 1 1.355 1.355" fill="currentColor" fill-rule="evenodd"></path></svg>
-</span>
-<span class="visually-hidden">Instagram</span>
-</a>
-</li><li class="list-social__item">
-<a class="link list-social__link" href="https://www.youtube.com/@reneecosmeticsofficial" target="_blank">
-<span class="svg-wrapper"><svg class="icon icon-youtube" fill="none" height="39" viewbox="0 0 38 39" width="38" xmlns="http://www.w3.org/2000/svg">
-<ellipse cx="19" cy="19.2907" fill="#F9F7F4" rx="18.5" ry="18.7242"></ellipse>
-<path d="M28.6669 17.0917C28.7081 15.8989 28.4472 14.715 27.9085 13.65C27.543 13.213 27.0358 12.9181 26.4752 12.8167C24.1565 12.6063 21.8281 12.52 19.5002 12.5583C17.1807 12.5183 14.8608 12.6017 12.5502 12.8083C12.0934 12.8914 11.6706 13.1057 11.3335 13.425C10.5835 14.1167 10.5002 15.3 10.4169 16.3C10.2959 18.098 10.2959 19.902 10.4169 21.7C10.441 22.2628 10.5248 22.8215 10.6669 23.3667C10.7673 23.7875 10.9706 24.1769 11.2585 24.5C11.5979 24.8362 12.0305 25.0627 12.5002 25.15C14.2968 25.3718 16.107 25.4637 17.9169 25.425C20.8335 25.4667 23.3919 25.425 26.4169 25.1917C26.8981 25.1097 27.3428 24.8829 27.6919 24.5417C27.9252 24.3082 28.0994 24.0226 28.2002 23.7083C28.4982 22.7938 28.6446 21.8367 28.6335 20.875C28.6669 20.4083 28.6669 17.5917 28.6669 17.0917ZM17.6169 21.375V16.2167L22.5502 18.8083C21.1669 19.575 19.3419 20.4417 17.6169 21.375Z" fill="currentColor"></path>
-</svg>
-</span>
-<span class="visually-hidden">YouTube</span>
-</a>
-</li><li class="list-social__item">
-<a class="link list-social__link" href="https://twitter.com/renee_cosmetics" target="_blank">
-<span class="svg-wrapper"><svg class="icon icon-twitter" fill="none" height="39" viewbox="0 0 38 39" width="38" xmlns="http://www.w3.org/2000/svg">
-<ellipse cx="19" cy="19.2907" fill="#F9F7F4" rx="18.5" ry="18.7242"></ellipse>
-<path d="M25.3897 16.1598C25.3996 16.2966 25.3996 16.4327 25.3996 16.5688C25.3996 20.7331 22.311 25.5317 16.6663 25.5317C14.9273 25.5317 13.3117 25.0147 11.9521 24.117C12.1991 24.1459 12.4368 24.1561 12.6936 24.1561C14.0753 24.1595 15.4178 23.6854 16.5048 22.8102C15.8642 22.7983 15.2432 22.5814 14.7285 22.1898C14.2139 21.7982 13.8312 21.2515 13.634 20.626C13.8238 20.6549 14.0143 20.6744 14.214 20.6744C14.4891 20.6744 14.7657 20.6353 15.0225 20.5673C14.3273 20.4233 13.7022 20.0366 13.2535 19.473C12.8047 18.9094 12.56 18.2037 12.561 17.4759V17.4368C12.9703 17.6707 13.445 17.8169 13.948 17.8364C13.5267 17.5491 13.1812 17.1592 12.9423 16.7015C12.7035 16.2439 12.5788 15.7327 12.5793 15.2135C12.5793 14.6285 12.731 14.0921 12.9969 13.6244C13.7683 14.5981 14.7303 15.3946 15.8207 15.9624C16.9111 16.5303 18.1055 16.8567 19.3267 16.9207C19.2794 16.6861 19.2505 16.4429 19.2505 16.1989C19.2503 15.7851 19.3295 15.3754 19.4837 14.9932C19.6379 14.6109 19.864 14.2635 20.1491 13.971C20.4342 13.6784 20.7727 13.4464 21.1452 13.2882C21.5177 13.13 21.9169 13.0486 22.3201 13.0488C23.2041 13.0488 24.002 13.4289 24.5629 14.0436C25.2501 13.9072 25.9091 13.6498 26.5107 13.2827C26.2817 14.0106 25.8018 14.6278 25.1611 15.0188C25.7706 14.9474 26.3663 14.783 26.9283 14.5308C26.5085 15.1588 25.9883 15.7096 25.3897 16.1598Z" fill="currentColor"></path>
-</svg></span>
-<span class="visually-hidden">X (Twitter)</span>
-</a>
-</li></ul>
-<div class="line-sec"></div>
-</div></div>
-</div>
-</section><div class="shopify-section shopify-section-group-footer-group" id="shopify-section-sections--19373324697750__footer">
+<div class="shopify-section shopify-section-group-footer-group" id="shopify-section-sections--19373324697750__footer">
 <link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/section-footer.css?v=55494262149246658861770962666" media="all" rel="stylesheet" type="text/css"/>
 <link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-newsletter.css?v=4727253280200485261770962584" media="all" rel="stylesheet" type="text/css"/>
 <link href="//www.reneecosmetics.in/cdn/shop/t/169/assets/component-list-menu.css?v=151968516119678728991770962580" media="all" rel="stylesheet" type="text/css"/>
@@ -2588,86 +1719,7 @@ span.spf-product-card__saleprice, span.gfqv-product-card__saleprice{
 <img src="//www.reneecosmetics.in/cdn/shop/files/google-play-badge-logo-svgrepo-com_1.svg?v=1703049493"/>
 </a>
 </div>
-</div></div><div class="footer-block grid__item block-link_list footer-block--menu"><h2 class="footer-block__heading inline-richtext">Categories</h2><ul class="footer-block__details-content list-unstyled grid-menu-item"><li>
-<a class="link link--text list-menu__item list-menu__item--link" href="/collections/pirncess-lipstick">
-                              Lips
-                            </a>
-</li><li>
-<a class="link link--text list-menu__item list-menu__item--link" href="/collections/face">
-                              Face
-                            </a>
-</li><li>
-<a class="link link--text list-menu__item list-menu__item--link" href="/collections/eyes">
-                              Eyes
-                            </a>
-</li><li>
-<a class="link link--text list-menu__item list-menu__item--link" href="/collections/nails">
-                              Nails
-                            </a>
-</li><li>
-<a class="link link--text list-menu__item list-menu__item--link" href="/collections/combos">
-                              Combos
-                            </a>
-</li><li>
-<a class="link link--text list-menu__item list-menu__item--link" href="/collections/gifting">
-                              Gifting
-                            </a>
-</li><li>
-<a class="link link--text list-menu__item list-menu__item--link" href="https://www.reneecosmetics.in/collections/tools-accessories">
-                              Tools &amp; Accessories
-                            </a>
-</li><li>
-<a class="link link--text list-menu__item list-menu__item--link" href="https://www.reneecosmetics.in/pages/princess-by-renee">
-                              Princess By RENEE
-                            </a>
-</li><li>
-<a class="link link--text list-menu__item list-menu__item--link" href="https://www.reneecosmetics.in/collections/everyday">
-                              RENÉE Everyday
-                            </a>
-</li><li>
-<a class="link link--text list-menu__item list-menu__item--link" href="https://www.reneecosmetics.in/collections/renee-pro">
-                              RENÉE Pro
-                            </a>
-</li><li>
-<a class="link link--text list-menu__item list-menu__item--link" href="https://www.reneecosmetics.in/pages/offers">
-                              Offers
-                            </a>
-</li></ul></div><div class="footer-block grid__item block-link_list footer-block--menu"><h2 class="footer-block__heading inline-richtext">Useful Links</h2><ul class="footer-block__details-content list-unstyled"><li>
-<a class="link link--text list-menu__item list-menu__item--link" href="https://reneeofficial.myshopify.com/account">
-                              My Account
-                            </a>
-</li><li>
-<a class="link link--text list-menu__item list-menu__item--link" href="https://www.reneecosmetics.in/account#/orders">
-                              Track Order
-                            </a>
-</li><li>
-<a class="link link--text list-menu__item list-menu__item--link" href="/pages/contact-us">
-                              Contact Us
-                            </a>
-</li><li>
-<a class="link link--text list-menu__item list-menu__item--link" href="/pages/about-us">
-                              Who We Are
-                            </a>
-</li><li>
-<a class="link link--text list-menu__item list-menu__item--link" href="/pages/shipping-policy">
-                              Shipping Policy
-                            </a>
-</li><li>
-<a class="link link--text list-menu__item list-menu__item--link" href="https://reneecosmetics.keka.com/careers/">
-                              Careers
-                            </a>
-</li></ul></div><div class="footer-block grid__item block-contact"><h2 class="footer-block__heading inline-richtext">Contact Us</h2><div class="footer-block__details-contact">
-<div class="list-sec"><div class="info-item">
-<div class="media-item"><img alt="" class="media" height="18" loading="lazy" src="//www.reneecosmetics.in/cdn/shop/files/call-icon.svg?v=1751453707&amp;width=18" srcset="//www.reneecosmetics.in/cdn/shop/files/call-icon.svg?v=1751453707&amp;width=18 18w" width="18"/></div>
-<div class="info-text"><p>1800 103 8909</p></div>
-</div>
-<div class="info-item">
-<div class="media-item"><img alt="" class="media" height="18" loading="lazy" src="//www.reneecosmetics.in/cdn/shop/files/email-icon.svg?v=1751453716&amp;width=18" srcset="//www.reneecosmetics.in/cdn/shop/files/email-icon.svg?v=1751453716&amp;width=18 18w" width="18"/></div>
-<div class="info-text"><p><a href="mailto:hi@reneecosmetics.in" target="_blank" title="mailto:hi@reneecosmetics.in">hi@reneecosmetics.in</a></p></div>
-</div>
-</div>
-<div class="block-text"><p>Mon-Sat from 11 am to 7 pm</p></div>
-</div></div></div><div class="footer-block--newsletter"></div>
+</div></div></div>
 </div><div class="footer__content-bottom page-width">
 <div class="footer__content-bottom-wrapper">
 <div class="footer__copyright caption">
@@ -3070,8 +2122,8 @@ span.spf-product-card__saleprice, span.gfqv-product-card__saleprice{
 <div class="sr-smart-cart-total" onclick="toggleSmartCartOrderSummary()">
 <div class="order-summary-total">
 <span>Estimated Total</span>
-<img id="order-total-arrow" src="https://cdn.shopify.com/extensions/019cdd43-0496-79e7-a898-a690a7a442af/shiprocket-smart-cart-196/assets/arrow.svg">
-</img></div>
+<img id="order-total-arrow" src="https://cdn.shopify.com/extensions/019cdd43-0496-79e7-a898-a690a7a442af/shiprocket-smart-cart-196/assets/arrow.svg"/>
+</div>
 <div class="sr-cart-total-price-amount">
 <span class="summary-original-price"></span>
 <span class="total-price">₹0.00</span>
@@ -3140,7 +2192,5 @@ span.spf-product-card__saleprice, span.gfqv-product-card__saleprice{
     }
   };
 </script>
-
-
-</div></link></link></body>
+</div></body>
 </html>
