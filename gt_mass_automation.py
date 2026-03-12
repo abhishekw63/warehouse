@@ -7,8 +7,10 @@ from tkinter import filedialog, messagebox
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
+from datetime import datetime
 import logging
 import re
+import sys
 
 
 # ---------------------------
@@ -19,6 +21,40 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s"
 )
+
+
+# ---------------------------
+# Expiry Check
+# ---------------------------
+
+EXPIRY_DATE = "31-03-2026"
+
+def check_expiry():
+    expiry = datetime.strptime(EXPIRY_DATE, "%d-%m-%Y").date()
+    today = datetime.now().date()
+
+    if today > expiry:
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror(
+            "Application Expired",
+            f"This application expired on {EXPIRY_DATE}.\n\n"
+            f"Please contact the administrator for an updated version."
+        )
+        root.destroy()
+        sys.exit(0)
+
+    days_remaining = (expiry - today).days
+    if days_remaining <= 7:
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showwarning(
+            "Expiration Warning",
+            f"⚠️ This application will expire in {days_remaining} day(s).\n\n"
+            f"Expiry Date: {EXPIRY_DATE}\n\n"
+            f"Please contact the administrator for renewal."
+        )
+        root.destroy()
 
 
 # ---------------------------
@@ -161,10 +197,6 @@ class ExcelParser:
 # Dump Exporter
 # ---------------------------
 
-from datetime import datetime
-from pathlib import Path
-
-
 class DumpExporter:
 
     def export(self, rows: List[OrderRow]):
@@ -306,6 +338,9 @@ class AutomationUI:
 # ---------------------------
 
 def main():
+
+    # Run expiry check before launching UI
+    check_expiry()
 
     automation = GTMassAutomation()
 
