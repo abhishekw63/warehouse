@@ -1,6 +1,6 @@
-# GT Mass Dump Automation
+# RENEE Cosmetics - GT Mass Dump Automation
 
-A Python-based desktop utility that automates the extraction of **BC Code** and **Order Quantity** from multiple Sales Order Excel files and generates a consolidated dump file.
+A Django-based web utility that automates the extraction of **BC Code** and **Order Quantity** from multiple Sales Order Excel files and generates a consolidated dump file.
 
 This tool removes the need for repetitive manual copying from Excel sheets and significantly speeds up operational workflows.
 
@@ -25,27 +25,26 @@ This process is repetitive, time-consuming, and prone to human error.
 
 **GT Mass Dump Automation** processes multiple Sales Order files automatically and produces a consolidated dump within seconds.
 
-The tool:
+The web application:
 
-* Reads multiple Excel files
+* Reads multiple Excel files simultaneously via drag-and-drop or file selector
 * Extracts **BC Code** and **Order Qty**
 * Cleans and validates data
 * Reconstructs **SO number format**
-* Generates a ready-to-use dump file
+* Generates a ready-to-use dump file and immediately downloads it to your browser
 
 ---
 
 # Features
 
-* Simple **desktop UI**
+* Clean, responsive **Web UI** built with HTML, CSS, and JS (AJAX)
 * Select multiple Excel files at once
 * Automatic header detection
 * Ignores summary rows
 * Cleans numeric formats (`1,000 → 1000`)
 * Converts filenames to original SO format
-* Automatic output folder creation
+* Immediate in-browser file download via blob responses
 * Date-based dump file naming
-* Logging for processing transparency
 
 ---
 
@@ -59,44 +58,7 @@ The tool:
 
 ---
 
-# Output File
-
-Generated files are stored in the **output** folder.
-
-Example:
-
-```
-output/
-    gt_mass_dump_12032026.xlsx
-```
-
-File naming pattern:
-
-```
-gt_mass_dump_DDMMYYYY.xlsx
-```
-
----
-
-# Folder Structure
-
-```
-project/
-│
-├── gt_mass_automation.py
-├── requirements.txt
-├── README.md
-├── DOCUMENTATION.md
-│
-├── output/
-│   └── gt_mass_dump_12032026.xlsx
-│
-└── .venv/
-```
-
----
-
-# Installation
+# Installation & Setup
 
 ## 1. Clone Repository
 
@@ -115,10 +77,14 @@ python -m venv .venv
 
 Activate environment:
 
-Windows
-
+Windows:
 ```
 .venv\Scripts\activate
+```
+
+Mac/Linux:
+```
+source .venv/bin/activate
 ```
 
 ---
@@ -131,31 +97,41 @@ pip install -r requirements.txt
 
 Required libraries:
 
+* Django
+* pandas
+* openpyxl
+
+---
+
+## 4. Run Migrations
+
+Before running the server, make sure to apply the initial Django migrations:
+
 ```
-pandas
-openpyxl
+python manage.py migrate
 ```
 
 ---
 
-# Running the Application
+## 5. Start Server
 
-Execute the script:
+Start the local Django web server:
 
 ```
-python gt_mass_automation.py
+python manage.py runserver
 ```
 
-A desktop window will appear.
+Open your browser and navigate to `http://127.0.0.1:8000/`.
 
 ---
 
 # Application Workflow
 
-1. Click **Select Excel Files**
-2. Choose multiple Sales Order files
-3. Click **Generate Dump**
-4. Output file is created inside the **output** folder
+1. Navigate to the web application URL.
+2. Click **Select Excel Files**
+3. Choose multiple Sales Order files
+4. Click **Generate Dump**
+5. The processed dump file will be automatically downloaded to your machine.
 
 ---
 
@@ -178,17 +154,7 @@ The automation performs the following cleaning steps:
 
 ### BC Code Handling
 
-Excel values such as
-
-```
-200453.0
-```
-
-are converted to
-
-```
-200453
-```
+Excel values such as `200453.0` are converted to `200453`.
 
 ---
 
@@ -207,17 +173,9 @@ Rows with **quantity ≤ 0** are ignored.
 
 # Sales Order Format
 
-Excel filenames typically appear as:
+Excel filenames typically appear as: `SOGTM5985.xlsx`
 
-```
-SOGTM5985.xlsx
-```
-
-The script converts them back to the original format:
-
-```
-SO/GTM/5985
-```
+The script converts them back to the original format: `SO/GTM/5985`
 
 ---
 
@@ -226,34 +184,9 @@ SO/GTM/5985
 | Technology | Purpose                   |
 | ---------- | ------------------------- |
 | Python     | Core language             |
+| Django     | Web framework             |
 | pandas     | Excel data processing     |
-| openpyxl   | Excel reading and writing |
-| tkinter    | Desktop UI                |
-
----
-
-# Logging Example
-
-During execution, logs display processing status:
-
-```
-Reading SOGTM5985.xlsx
-Reading SOGTM5986.xlsx
-17 rows extracted
-```
-
----
-
-# Future Enhancements
-
-Planned improvements include:
-
-* Progress bar during processing
-* Drag-and-drop file upload
-* Parallel file processing
-* Automatic ERP upload
-* Integration with **Dynamics 365**
-* Packaging as a standalone executable
+| HTML/JS    | Web Interface & AJAX      |
 
 ---
 
@@ -265,4 +198,4 @@ Internal automation tool for operational efficiency.
 
 # Author
 
-Developed to automate repetitive Excel workflows and improve operational productivity.
+Developed to automate repetitive Excel workflows and improve operational productivity for RENEE Cosmetics.
