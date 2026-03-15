@@ -34,6 +34,13 @@ The application follows a clean, black-and-white minimalist design language insp
 ## Flow & Navigation
 
 1.  **Authentication:** Users land on the `HomeView` (root `/`) to log in. Upon a successful login, a green success toast is displayed, and the user is redirected to the Departments Dashboard.
+    *   **Account Creation:** Users can click "Create one here" to navigate to the `SignUpView` (`/signup/`). This form uses the standard Django `UserCreationForm`. Upon success, users are automatically logged in and redirected.
+    *   **Logout:** Users can click "Log Out" in the header. The `CustomLogoutView` processes this and triggers a "Logout successful" toast message.
 2.  **Departments Dashboard:** Displays a grid of available applications (`DepartmentsView`). Active departments (e.g., `Offline`) are clickable, while inactive ones display a "Coming Soon" label.
 3.  **Department Applications:** Clicking a department routes the user to that department's specific dashboard (e.g., `offline/dashboard.html`), from which individual tools can be accessed.
-4.  **My Account:** Users can click their username in the header to access the `ProfileView`. This page allows users to update their First Name, Last Name, and Email Address. It also provides a link to the `PasswordChangeView` for secure password modifications.
+4.  **My Account:** Users can click their username in the header to access the `ProfileView`. This page allows users to update their First Name, Last Name, and Email Address. It also provides a link to the `CustomPasswordChangeView` for secure password modifications.
+
+## Frontend Standardization
+
+*   **CSS Architecture:** All styles are centralized in `core/static/core/css/style.css`. Inline styles (`style="..."`) and inline scripts (`<script>`) are strictly avoided in templates to ensure a clean Content Security Policy (CSP) and maintainable codebase.
+*   **Forms:** Forms utilize semantic HTML (e.g., `<label>`, `<input>`) and are wrapped in the `.warehouse-form-container` class. Help text and error lists (`.help-text`, `.errorlist`) are styled natively to fit the RENEE branding without relying on default browser lists or bullet points.

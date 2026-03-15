@@ -21,7 +21,7 @@
                         </ul>
                     {% endif %}
                     {% if field.help_text %}
-                        <span class="help-text">{{ field.help_text|safe }}</span>
+                        <div class="help-text">{{ field.help_text|safe }}</div>
                     {% endif %}
                 </p>
                 {% endfor %}
@@ -29,8 +29,8 @@
                 <button type="submit" style="margin-top: 10px;">Sign Up</button>
             </form>
 
-            <div style="margin-top: 20px; text-align: center; font-size: 14px;">
-                Already have an account? <a href="{% url 'login' %}" style="color: #000; font-weight: 500;">Log in here</a>
+            <div class="form-footer-link">
+                Already have an account? <a href="{% url 'login' %}">Log in here</a>
             </div>
         {% else %}
             <h1>Welcome, {{ user.username }}</h1>

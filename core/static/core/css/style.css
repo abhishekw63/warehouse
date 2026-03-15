@@ -184,6 +184,17 @@ html, body {
     background-color: #333;
 }
 
+.form-footer-link {
+    margin-top: 20px;
+    text-align: center;
+    font-size: 14px;
+}
+
+.form-footer-link a {
+    color: #000;
+    font-weight: 500;
+}
+
 .profile-layout {
     display: flex;
     gap: 40px;
@@ -230,8 +241,23 @@ html, body {
 }
 
 .help-text ul {
-    padding-left: 20px;
+    padding-left: 0;
     margin: 5px 0;
+    list-style: none;
+    text-align: left;
+}
+
+.help-text ul li {
+    margin-bottom: 4px;
+    position: relative;
+    padding-left: 12px;
+}
+
+.help-text ul li::before {
+    content: "•";
+    position: absolute;
+    left: 0;
+    color: #ccc;
 }
 
 .button {

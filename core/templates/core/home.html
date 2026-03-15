@@ -32,28 +32,20 @@
                 <button type="submit">Log In</button>
             </form>
 
-            <div style="margin-top: 20px; text-align: center; font-size: 14px;">
-                Don't have an account? <a href="{% url 'signup' %}" style="color: #000; font-weight: 500;">Create one here</a>
+            {% if form.username.errors or form.password.errors %}
+                <div class="errorlist" style="margin-top: 10px; text-align: left;">
+                    {% for error in form.username.errors %}
+                        <li>{{ error }}</li>
+                    {% endfor %}
+                    {% for error in form.password.errors %}
+                        <li>{{ error }}</li>
+                    {% endfor %}
+                </div>
+            {% endif %}
+
+            <div class="form-footer-link">
+                Don't have an account? <a href="{% url 'signup' %}">Create one here</a>
             </div>
-
-            <script>
-                document.addEventListener('DOMContentLoaded', function() {
-                    const toastContainer = document.getElementById('toast-container');
-                    if (toastContainer) {
-                        {% if form.username.errors %}
-                            {% for error in form.username.errors %}
-                                createToast("{{ error|escapejs }}", "error");
-                            {% endfor %}
-                        {% endif %}
-
-                        {% if form.password.errors %}
-                            {% for error in form.password.errors %}
-                                createToast("{{ error|escapejs }}", "error");
-                            {% endfor %}
-                        {% endif %}
-                    }
-                });
-            </script>
         {% else %}
             <h1>Welcome, {{ user.username }}</h1>
             <p>You are successfully logged in to the RENEE Warehouse application.</p>
