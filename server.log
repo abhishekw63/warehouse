@@ -1,0 +1,12 @@
+Watching for file changes with StatReloader
+[15/Mar/2026 13:46:48] "GET / HTTP/1.1" 200 2942
+[15/Mar/2026 13:46:48] "GET /static/core/css/style.css HTTP/1.1" 200 6429
+[15/Mar/2026 13:46:48] "GET /static/core/js/script.js HTTP/1.1" 200 1452
+[15/Mar/2026 13:46:50] "POST /login/ HTTP/1.1" 200 3265
+[15/Mar/2026 13:49:15] "GET / HTTP/1.1" 200 2942
+[15/Mar/2026 13:49:15] "GET /static/core/js/script.js HTTP/1.1" 200 1452
+[15/Mar/2026 13:49:15] "GET /static/core/css/style.css HTTP/1.1" 200 6429
+[15/Mar/2026 13:49:17] "POST /login/ HTTP/1.1" 302 0
+[15/Mar/2026 13:49:17] "GET /departments/ HTTP/1.1" 200 3703
+[15/Mar/2026 13:49:17] "GET /offline/ HTTP/1.1" 200 2958
+[15/Mar/2026 13:49:17] "GET /offline/gt-mass-dump/ HTTP/1.1" 200 9487

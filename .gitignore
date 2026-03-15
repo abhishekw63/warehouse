@@ -1,7 +1,7 @@
 .venv
 output
 __pycache__
-*.pycstaticfiles/
-GT_Mass_Dump_Generator.spec
-build
-dist
+*.pyc
+staticfiles/
+db.sqlite3
+server.log

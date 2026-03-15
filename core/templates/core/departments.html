@@ -2,6 +2,10 @@
 
 {% block title %}Departments - RENEE Warehouse{% endblock %}
 
+{% block breadcrumb %}
+    <span>Departments</span>
+{% endblock %}
+
 {% block content %}
     <div class="departments-container">
         <h1>Select Department</h1>
@@ -36,11 +40,5 @@
                 <span>Coming Soon</span>
             </a>
         </div>
-
-        <br><br>
-        <form action="{% url 'logout' %}" method="post" style="display:inline-block; margin-top: 40px;">
-            {% csrf_token %}
-            <button class="button button--secondary" type="submit">Log Out</button>
-        </form>
     </div>
 {% endblock %}

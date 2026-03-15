@@ -1,30 +1,38 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RENEE Cosmetics - GT Mass Dump</title>
+{% extends 'core/base.html' %}
+
+{% block title %}GT Mass Dump - Offline - RENEE Warehouse{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <span class="separator">/</span>
+    <a href="{% url 'offline_dashboard' %}">Offline</a>
+    <span class="separator">/</span>
+    <span>GT Mass Dump</span>
+{% endblock %}
+
+{% block content %}
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f4;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-        }
-        .container {
+        .tool-container {
             background: white;
-            padding: 20px 40px;
+            padding: 40px;
             border-radius: 8px;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border: 1px solid #eaeaea;
             text-align: center;
-            max-width: 400px;
+            max-width: 500px;
             width: 100%;
+            margin: 0 auto;
         }
-        h2 {
-            color: #333;
+        .tool-container h2 {
+            color: #000;
+            margin-top: 0;
+            margin-bottom: 5px;
+        }
+        .tool-container h4 {
+            color: #666;
+            margin-top: 0;
+            margin-bottom: 30px;
+            font-weight: 400;
         }
         .file-upload-wrapper {
             margin: 20px 0;
@@ -33,75 +41,71 @@
             display: none;
         }
         .custom-file-upload {
-            border: 1px solid #ccc;
-            display: inline-block;
-            padding: 10px 20px;
+            border: 1px dashed #ccc;
+            display: block;
+            padding: 30px 20px;
             cursor: pointer;
-            border-radius: 4px;
-            background-color: #f9f9f9;
+            border-radius: 6px;
+            background-color: #fafafa;
+            color: #555;
+            transition: all 0.2s;
         }
         .custom-file-upload:hover {
-            background-color: #e9e9e9;
+            background-color: #f0f0f0;
+            border-color: #999;
         }
-        .btn {
-            background-color: #d81b60;
+        .btn-generate {
+            background-color: #000;
             color: white;
-            padding: 10px 20px;
+            padding: 14px 20px;
             border: none;
-            border-radius: 4px;
+            border-radius: 6px;
             cursor: pointer;
             font-size: 16px;
+            font-weight: 600;
             width: 100%;
-            margin-top: 10px;
+            margin-top: 20px;
+            transition: background-color 0.2s;
         }
-        .btn:hover {
-            background-color: #ad1457;
+        .btn-generate:hover {
+            background-color: #333;
+        }
+        .btn-generate:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
         }
         .status {
-            margin-top: 15px;
+            margin-top: 20px;
             font-size: 14px;
-            color: #555;
-        }
-        .header {
-             margin-bottom: 20px;
-        }
-        .back-link {
-            display: inline-block;
-            margin-bottom: 15px;
-            color: #d81b60;
-            text-decoration: none;
-            font-size: 14px;
-        }
-        .back-link:hover {
-            text-decoration: underline;
+            color: #666;
+            padding: 10px;
+            border-radius: 4px;
+            background: #f9f9f9;
         }
     </style>
-</head>
-<body>
-    <div class="container">
-        <div style="text-align: left;">
-            <a href="{% url 'offline_dashboard' %}" class="back-link">&larr; Back to Offline Dashboard</a>
-        </div>
+
+    <div class="tool-container">
         <div class="header">
-            <h2>RENEE Cosmetics</h2>
-            <h4>Offline - GT Mass Dump Generator</h4>
+            <h2>GT Mass Dump Generator</h2>
+            <h4>Select offline excel files to merge and format</h4>
         </div>
 
         <form id="uploadForm">
             {% csrf_token %}
             <div class="file-upload-wrapper">
                 <label for="fileInput" class="custom-file-upload">
-                    Select Excel Files
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:block; margin: 0 auto 10px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                    Click to Select Excel Files
                 </label>
                 <input type="file" id="fileInput" name="files" accept=".xlsx, .xls" multiple required>
             </div>
 
-            <div id="fileCount">Selected Files: 0</div>
+            <div id="fileCount" style="font-size: 14px; font-weight: 500;">Selected Files: 0</div>
 
-            <button type="submit" class="btn" id="generateBtn">Generate Dump</button>
+            <button type="submit" class="btn-generate" id="generateBtn">Generate Dump</button>
         </form>
 
-        <div class="status" id="statusMessage">Status: Waiting</div>
+        <div class="status" id="statusMessage" style="display: none;"></div>
     </div>
 
     <script>
@@ -124,7 +128,8 @@
                     return;
                 }
 
-                statusMessage.textContent = "Status: Processing files...";
+                statusMessage.style.display = 'block';
+                statusMessage.textContent = "Processing files...";
                 generateBtn.disabled = true;
 
                 const formData = new FormData(uploadForm);
@@ -161,21 +166,29 @@
                         a.remove();
                         window.URL.revokeObjectURL(downloadUrl);
 
-                        statusMessage.textContent = "Status: Dump generated";
+                        statusMessage.textContent = "Success! Dump generated.";
+                        statusMessage.style.color = "#28a745";
+                        statusMessage.style.background = "#d4edda";
+                        statusMessage.style.border = "1px solid #c3e6cb";
                     } else {
                         const errorData = await response.json();
                         alert(errorData.error || "An error occurred");
-                        statusMessage.textContent = "Status: Error";
+                        statusMessage.textContent = "Error occurred.";
+                        statusMessage.style.color = "#dc3545";
+                        statusMessage.style.background = "#f8d7da";
+                        statusMessage.style.border = "1px solid #f5c6cb";
                     }
                 } catch (error) {
                     console.error('Error:', error);
                     alert("Failed to process files");
-                    statusMessage.textContent = "Status: Error";
+                    statusMessage.textContent = "Error processing files.";
+                    statusMessage.style.color = "#dc3545";
+                    statusMessage.style.background = "#f8d7da";
+                    statusMessage.style.border = "1px solid #f5c6cb";
                 } finally {
                     generateBtn.disabled = false;
                 }
             });
         });
     </script>
-</body>
-</html>
+{% endblock %}

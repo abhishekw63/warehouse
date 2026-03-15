@@ -2,12 +2,14 @@
 
 {% block title %}Offline Dashboard - RENEE Warehouse{% endblock %}
 
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <span class="separator">/</span>
+    <span>Offline</span>
+{% endblock %}
+
 {% block content %}
     <div class="departments-container">
-        <div style="text-align: left; margin-bottom: 20px;">
-            <a href="{% url 'departments' %}" style="color: #d81b60; text-decoration: none; font-size: 14px;">&larr; Back to Departments</a>
-        </div>
-
         <h1>Offline Department</h1>
         <p style="margin-bottom: 30px;">Select an application feature.</p>
 

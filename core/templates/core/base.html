@@ -10,10 +10,27 @@
 <body>
 
 <header class="header">
-    <a href="{% url 'home' %}" class="header__heading-link">
-        <img alt="Renee Cosmetics" class="header__heading-logo"
-             src="//www.reneecosmetics.in/cdn/shop/files/logo.svg?v=1751370718&amp;width=600" />
-    </a>
+    <div class="header__left">
+        <a href="{% url 'home' %}" class="header__heading-link">
+            <img alt="Renee Cosmetics" class="header__heading-logo"
+                 src="//www.reneecosmetics.in/cdn/shop/files/logo.svg?v=1751370718&amp;width=600" />
+        </a>
+        {% if user.is_authenticated %}
+        <nav class="header__breadcrumb">
+            {% block breadcrumb %}
+            <!-- Default empty breadcrumb -->
+            {% endblock %}
+        </nav>
+        {% endif %}
+    </div>
+    <div class="header__right">
+        {% if user.is_authenticated %}
+        <form action="{% url 'logout' %}" method="post" class="header__logout-form">
+            {% csrf_token %}
+            <button class="button button--logout" type="submit">Log Out</button>
+        </form>
+        {% endif %}
+    </div>
 </header>
 
 <!-- Toast Notifications Container -->

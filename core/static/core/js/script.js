@@ -23,23 +23,21 @@ window.createToast = function(message, type) {
 
     setTimeout(() => {
         if(toast && toast.parentElement) {
-            toast.style.transition = "opacity 0.3s ease-out";
-            toast.style.opacity = "0";
-            setTimeout(() => toast.remove(), 300);
+            toast.classList.add('toast-fade-out');
+            setTimeout(() => toast.remove(), 1000); // Wait for the transition to finish
         }
-    }, 5000);
+    }, 3000);
 };
 
-// Auto-dismiss server-rendered toasts after 5 seconds
+// Auto-dismiss server-rendered toasts after 3 seconds
 document.addEventListener("DOMContentLoaded", () => {
     const toasts = document.querySelectorAll(".toast");
     toasts.forEach((toast) => {
         setTimeout(() => {
             if(toast && toast.parentElement) {
-                toast.style.transition = "opacity 0.3s ease-out";
-                toast.style.opacity = "0";
-                setTimeout(() => toast.remove(), 300);
+                toast.classList.add('toast-fade-out');
+                setTimeout(() => toast.remove(), 1000); // Wait for the transition to finish
             }
-        }, 5000);
+        }, 3000);
     });
 });
