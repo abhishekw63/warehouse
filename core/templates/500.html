@@ -1,0 +1,12 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Server Error | RENEE Cosmetics{% endblock %}
+
+{% block content %}
+<div style="text-align: center; margin-top: 50px;">
+    <h1>500</h1>
+    <h2>Oops! Something went wrong.</h2>
+    <p>We are experiencing some technical difficulties. Our team has been notified and is working to fix the issue.</p>
+    <a href="{% url 'home' %}" class="btn" style="margin-top: 20px; display: inline-block;">Return to Home</a>
+</div>
+{% endblock %}

@@ -23,9 +23,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = "django-insecure-p&*^wtu2w@s_w_a)ei_#h5-f4#qknjc1hqb&t7-=(4!zs3m4$("
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -58,10 +58,12 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "renee_cosmetics.urls"
 
+import os
+
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [os.path.join(BASE_DIR, 'core', 'templates')],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [

@@ -1,0 +1,12 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Bad Request | RENEE Cosmetics{% endblock %}
+
+{% block content %}
+<div style="text-align: center; margin-top: 50px;">
+    <h1>400</h1>
+    <h2>Oops! Bad Request.</h2>
+    <p>There was a problem with your request.</p>
+    <a href="{% url 'home' %}" class="btn" style="margin-top: 20px; display: inline-block;">Return to Home</a>
+</div>
+{% endblock %}
