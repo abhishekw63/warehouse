@@ -220,8 +220,8 @@ class DumpExporter:
         output_folder = Path("output")
         output_folder.mkdir(exist_ok=True)
 
-        # generate date based filename
-        today = datetime.now().strftime("%d%m%Y")
+        # generate date and time based filename
+        today = datetime.now().strftime("%d-%m-%Y_%H%M%S") # i want this in ddmmyyy_hhmmss format 17-09-2024_153045
 
         file_path = output_folder / f"gt_mass_dump_{today}.xlsx"
 
