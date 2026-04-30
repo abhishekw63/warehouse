@@ -296,8 +296,9 @@ EMAIL_CONFIG = {
         'kirpalsinh.bihola@reneecosmetics.in',
         'gtmassaccounts@reneecosmetics.in',
         'aritra.barmanray@reneecosmetics.in',
-        'milan.nayak@reneecosmetics.in',
+        # 'milan.nayak@reneecosmetics.in',
         'aashutosh.joshi@reneecosmetics.in',
+        'anupam.sharma@reneecosmetics.in',
         'ketan.jain@reneecosmetics.in'
     ],
 }

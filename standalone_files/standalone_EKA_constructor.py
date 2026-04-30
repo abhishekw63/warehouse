@@ -1,11 +1,10 @@
 """
 ╔═══════════════════════════════════════════════════════════════════════════════╗
-║                     RENEE PO PROCESSOR — EKA Script                         ║
-║                     Tkinter GUI Desktop Application                          ║
+║                  RENEE PO PROCESSOR — EKA Script (v1.3)                      ║
+║                  Simple Tkinter GUI Desktop Application                       ║
 ╠═══════════════════════════════════════════════════════════════════════════════╣
-║  Author  : Agami AI / Vishal                                                ║
-║  Version : 1.2                                                               ║
-║  Tested  : 23 PO files (9 Airport + 10 Kiosk + 4 EBO), 4660 master items   ║
+║  Author  : Agami AI / Vishal                                                 ║
+║  Version : 1.3 (simplified GUI)                                              ║
 ║  Stack   : Python 3.13, Tkinter, pandas, openpyxl                           ║
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 
@@ -13,329 +12,55 @@
   CHANGELOG
 ═══════════════════════════════════════════════════════════════════════════════
 
-  v1.2 — Auto-fill + D365 TO Export + Tester TO Uniqueness
-  ─────────────────────────────────────────────────────────
-    ┌─────────────────────────────────────────────────────────────────────┐
-    │  CHANGE                     │  IMPACT                               │
-    ├─────────────────────────────┼───────────────────────────────────────┤
-    │  1. Tester TO date_code +1  │  TO/AHDEB/TT/18427 instead of 18426  │
-    │     (both segments)         │  → unique last digits for Excel find  │
-    ├─────────────────────────────┼───────────────────────────────────────┤
-    │  2. Standalone auto-fill    │  Rename file to Location code         │
-    │     from EKA_DATA           │  (e.g., EBO_AMD01.xlsx) → auto-fills  │
-    │                             │  TO, Transfer-to, Posting Group       │
-    ├─────────────────────────────┼───────────────────────────────────────┤
-    │  3. D365 TO Package Export  │  New D365TOExporter class. Fills      │
-    │     (NEW class)             │  Transfer Header + Transfer Line      │
-    │                             │  template via ZIP/XML regex.          │
-    ├─────────────────────────────┼───────────────────────────────────────┤
-    │  4. EKA_DATA shared across  │  Moved to shared section. Available   │
-    │     both modes              │  in standalone (filename lookup) and  │
-    │                             │  special order (broadcast).           │
-    └─────────────────────────────┴───────────────────────────────────────┘
+  v1.3 — Simplified GUI (this version)
+  ────────────────────────────────────
+    ┌───────────────────────────┬───────────────────────────────────────┐
+    │  CHANGE                   │  IMPACT                                │
+    ├───────────────────────────┼───────────────────────────────────────┤
+    │  Auto-load Items_March +  │  No manual selection needed on every  │
+    │  EKA_DATA from            │  run — just like online_po_management  │
+    │  ``Calculation Data/``    │                                        │
+    ├───────────────────────────┼───────────────────────────────────────┤
+    │  Stripped dark/light      │  Removed Theme class, ToggleSwitch     │
+    │  themes + custom widgets  │  custom widget registry. Plain Tk now. │
+    ├───────────────────────────┼───────────────────────────────────────┤
+    │  Mode toggle simplified   │  Plain radiobuttons instead of styled  │
+    │                           │  banner labels                          │
+    ├───────────────────────────┼───────────────────────────────────────┤
+    │  Stats moved to log       │  9 numbers printed as a single line    │
+    │                           │  in the log; no colored panel          │
+    ├───────────────────────────┼───────────────────────────────────────┤
+    │  All engine logic intact  │  POEngine, SpecialOrderEngine,         │
+    │                           │  ExcelWriter, D365TOExporter unchanged │
+    └───────────────────────────┴───────────────────────────────────────┘
 
+  v1.2 — Auto-fill + D365 TO Export + Tester TO Uniqueness (previous)
   v1.1 — Special Order Engine + Full Documentation
   v1.0 — Initial release (23 PO files tested)
 
 ═══════════════════════════════════════════════════════════════════════════════
-  ARCHITECTURE OVERVIEW
+  AUTO-LOAD CONVENTION
 ═══════════════════════════════════════════════════════════════════════════════
 
-  ┌──────────────────────────────────────────────────────────────────────┐
-  │                        ReneePOApp (GUI)                             │
-  │                                                                      │
-  │  SHARED (v1.2):                                                      │
-  │    ┌────────────┐  ┌───────────────┐                                │
-  │    │ Master File │  │ EKA_DATA      │  ← shared across both modes   │
-  │    │ Selector    │  │ (Location DB) │                                │
-  │    └──────┬─────┘  └──────┬────────┘                                │
-  │           │               │                                          │
-  │  ┌────────┴───────────────┴──────────────────────────────┐          │
-  │  │                    MODE SELECTOR                       │          │
-  │  │         [STANDALONE]          [SPECIAL ORDER]          │          │
-  │  └──────────┬────────────────────────┬───────────────────┘          │
-  │             │                        │                               │
-  │  ┌──────────┴──────────┐  ┌──────────┴──────────┐                  │
-  │  │  Segment 1:          │  │  Segment 2:          │                  │
-  │  │  Per-location PO     │  │  Product broadcast   │                  │
-  │  │  files renamed to    │  │  across all EKA       │                  │
-  │  │  Location code       │  │  locations             │                  │
-  │  │  (EBO_AMD01.xlsx)    │  │  (Special_Order.xlsx) │                  │
-  │  │                      │  │                        │                  │
-  │  │  v1.2: auto-fill     │  │  Same as v1.1 but     │                  │
-  │  │  TO/Transfer/Posting │  │  tester date_code+1   │                  │
-  │  │  from EKA_DATA       │  │                        │                  │
-  │  └──────────┬──────────┘  └──────────┬──────────┘                  │
-  │             │                        │                               │
-  │             ▼                        ▼                               │
-  │  ┌─────────────────────────────────────────────────┐                │
-  │  │           ExcelWriter.write()                    │                │
-  │  │  Headers/Lines (TO/SO) | Final Data | Summary   │                │
-  │  │  | Unmatched | Tester Master | SO Reference     │                │
-  │  └─────────────────────────────────────────────────┘                │
-  │             │                                                        │
-  │             ▼                                                        │
-  │  ┌─────────────────────────────────────────────────┐                │
-  │  │     D365TOExporter (NEW v1.2)                    │                │
-  │  │  Fills D365 Transfer Order template              │                │
-  │  │  (Transfer Header + Transfer Line sheets)        │                │
-  │  └─────────────────────────────────────────────────┘                │
-  └──────────────────────────────────────────────────────────────────────┘
+  At startup the GUI looks for two files in a folder named
+  ``Calculation Data/`` next to this script:
 
-═══════════════════════════════════════════════════════════════════════════════
-  TO NUMBER FORMAT (v1.2 — both segments)
-═══════════════════════════════════════════════════════════════════════════════
+      Calculation Data/
+          Items_March.xlsx   ← product master (auto-loaded)
+          EKA_DATA.xlsx      ← location registry (auto-loaded)
 
-  Pattern:
-      Regular: {Prefix}/{ShortCode}/{MM}/{DDMYY}
-      Tester:  {Prefix}/{ShortCode}/TT/{DDMYY + 1}
+  When found, the relevant picker shows ``✓ <name> (auto-loaded)``
+  and the user just adds PO files (Standalone) or selects the
+  Special Order file (Special Order) and clicks Generate.
 
-  Where:
-      Prefix    = 'TO' or 'SO' (from EKA_DATA)
-      ShortCode = e.g., 'AHDEB', 'CHNAP' (from EKA_DATA)
-      MM        = month number, zero-padded ('01'-'12')
-      TT        = literal 'TT' for tester orders
-      DDMYY     = DD (day) + M (month, not zero-padded) + YY (year)
+  When missing, the picker shows ``Not selected`` and the user must
+  Browse manually. Either bundled file can be replaced via the
+  "Update Bundled Files" workflow (overwrites the file in
+  ``Calculation Data/``).
 
-  Example for April 18, 2026:
-      Regular: TO/AHDEB/04/18426    ← date_code = 18426
-      Tester:  TO/AHDEB/TT/18427   ← date_code = 18426 + 1 = 18427
-
-  ⚠ The +1 on tester ensures UNIQUE last digits for Excel search.
-    Before v1.2, both had the same date_code → searching by last 4 digits
-    returned both regular and tester rows. Now they're always different.
-
-═══════════════════════════════════════════════════════════════════════════════
-  FILENAME CONVENTION (v1.2 — for standalone auto-fill)
-═══════════════════════════════════════════════════════════════════════════════
-
-  For standalone mode to auto-fill TO/Transfer/Posting, rename PO files
-  to the ERP Location code from EKA_DATA's 'Location' column:
-
-      EBO_AMD01.xlsx       → matches Location 'EBO_AMD01' → Ahmedabad EBO
-      AP_PUNE01.xlsx       → matches Location 'AP_PUNE01' → Pune Airport
-      FK_AMD_01.xlsx       → matches Location 'FK_AMD_01' → FK Ahmedabad
-
-  The script:
-      1. Strips .xlsx from filename
-      2. Matches against 'Location' column in loaded EKA_DATA
-      3. If matched → auto-fills TO number, Transfer-to Code, Posting Group
-      4. If not matched → WARNING, fields left empty (manual fill needed)
-
-  ⚠ EKA_DATA must be loaded BEFORE processing for auto-fill to work.
-    If EKA_DATA not loaded, standalone works as before (fields empty).
-
-═══════════════════════════════════════════════════════════════════════════════
-  INPUT FILES — WHAT MUST BE STANDARDIZED
-═══════════════════════════════════════════════════════════════════════════════
-
-1. MASTER FILE (Items_March.xlsx)
-   ─────────────────────────────
-   - This is the product catalog / item master from the ERP system.
-   - Must have these columns (exact names):
-       No.              → Item number (used in output)
-       GTIN             → EAN / barcode (used as lookup key)
-       Description      → Product name (for reference)
-       GST Group Code   → Tax slab: 'G-18-S', 'G-5-S', 'G-0' etc.
-       HSN/SAC Code     → HSN code (not used by script, but in master)
-       Mrp              → Maximum Retail Price (used for cost calculation)
-   - The script indexes by GTIN and also by No. (item code) for non-stock items.
-
-2. PO FILES (per airport/location)
-   ────────────────────────────────
-   Each PO file MUST have exactly 5 sheets with these EXACT names:
-       'PO'         → Main product order sheet
-       'PWP'        → Purchase With Purchase (promotional items)
-       'GWP'        → Gift With Purchase (gifting items)
-       'Non Stock'  → Non-stock operational items
-       'Summary'    → Order summary (not read by script, for reference)
-
-   PO SHEET — Required columns (EXACT names, case-sensitive):
-   ┌─────────────┬──────────────────────────────────────────────────────────┐
-   │ Column Name │ Description                                            │
-   ├─────────────┼──────────────────────────────────────────────────────────┤
-   │ EAN         │ Product barcode. MUST match GTIN in Items_March.       │
-   │ Order Qty   │ Regular order quantity. Blank/0 = no order.            │
-   │ Tester Qty  │ Tester quantity. Blank/0 = no tester.                  │
-   └─────────────┴──────────────────────────────────────────────────────────┘
-   ⚠ These 3 column names are FIXED. The script will ERROR if not found.
-   ⚠ Other columns (Rank, Category, SKU Code, Product Name, Brand, MRP,
-     Available, etc.) can be in any order — they are NOT read by the script.
-     All product info is looked up from Items_March via EAN.
-
-   PWP SHEET — Fixed structure (DO NOT change):
-       Col A: Sr. No.
-       Col B: Product Name    → Must be one of: 'Stay With Me - Mini',
-                                'Perfume', 'Crème Mini'
-       Col C: Avail.Qty
-       Col D: Req.Qty         → Demand quantity
-
-   GWP SHEET — Fixed structure (DO NOT change):
-       Col A: Sr. No.
-       Col B: EAN             → Must match GTIN in Items_March
-       Col C: Product Name
-       Col D: Avail.Qty
-       Col E: Req.Qty         → Demand quantity
-
-   NON STOCK SHEET — Fixed structure (DO NOT change):
-       Col A: Sr. No.
-       Col B: Product Name    → Must match hard-coded names (see NON_STOCK_EAN_MAP)
-       Col C: QTY             → Demand quantity
-
-3. EKA_DATA.xlsx (v1.2: shared across both modes)
-   ────────────────────────────────────────────────
-   Required columns:
-       Short Name              → Display name (e.g., 'Ahmedabad EBO')
-       Prefix                  → 'TO' or 'SO' (Transfer Order vs Sales Order)
-       Short Code              → Code for TO number (e.g., 'AHDEB', 'CHNAP')
-       Transfer Code           → Transfer-to Code for TO, or Ship-to for SO
-       Type                    → 'EBO', 'Airport', or 'Kiosk'
-       Gen. Biz. Posting Group → e.g., 'OFF-EBO', 'OFF-AIRPORT'
-   Optional columns:
-       Location                → ERP Location Code (e.g., 'EBO_AMD01')
-                                  v1.2: used for standalone filename matching
-       Bill to                 → Sell-to Customer No. (for SO locations)
-       Ship to                 → Ship-to Code (e.g., '20329_1')
-       Status                  → 'Active' or 'Inactive'
-
-═══════════════════════════════════════════════════════════════════════════════
-  CALCULATION LOGIC
-═══════════════════════════════════════════════════════════════════════════════
-
-  For regular PO orders:
-      1. EAN → lookup Items_March → get Item No, MRP, GST Code
-      2. Landing Cost = MRP × 0.60  (60% of MRP)
-      3. Cost Price (Unit Price):
-          - If GST Code contains 'G-18' → Landing Cost / 1.18
-          - If GST Code contains 'G-12' → Landing Cost / 1.12
-          - If GST Code contains 'G-5'  → Landing Cost / 1.05
-          - If GST Code contains 'G-3'  → Landing Cost / 1.03
-          - If GST Code is 'G-0' or ''  → Landing Cost as-is
-          - Default (unknown GST)       → Landing Cost / 1.18
-
-  For testers (product testers, PWP, GWP, Non-Stock):
-      - Unit Price = ₹0.54 (flat rate for all tester/promotional items)
-
-═══════════════════════════════════════════════════════════════════════════════
-  SPECIAL RULES — PWP / GWP / NON-STOCK
-═══════════════════════════════════════════════════════════════════════════════
-
-  PWP (Purchase With Purchase):
-      - 'Stay With Me - Mini' → IGNORED (not shipped)
-      - 'Crème Mini'          → IGNORED (not shipped)
-      - 'Perfume'             → SPLIT equally across 4 perfume EANs:
-            8906121642674 (RENEE BLOOM 8ML NFS)
-            8906121647495 (RENEE FLIRT 8ML NFS)
-            8906121647501 (RENEE MADAME 8ML NFS)
-            8906121645743 (RENEE RED NOIR 8ML NFS)
-          Example: demand=10 → 3+3+2+2 (remainder goes to first EANs)
-
-  GWP (Gift With Purchase):
-      - All items have EANs → looked up from Items_March directly.
-      - Goes into tester TO at ₹0.54.
-
-  Non-Stock:
-      - Each item name is mapped to a hard-coded EAN/code (see NON_STOCK_EAN_MAP).
-      - That code is then looked up in Items_March to get Item No.
-      - If name not in map → output name directly (manual fix needed).
-      - Goes into tester TO at ₹0.54.
-
-═══════════════════════════════════════════════════════════════════════════════
-  OUTPUT — FINAL DATA SHEET
-═══════════════════════════════════════════════════════════════════════════════
-
-  Columns:
-      TO                      → Transfer Order number
-                                 v1.2: auto-filled from EKA_DATA
-      Item                    → Item No from Items_March
-      Qty                     → Order/Tester quantity
-      Unit Price              → Calculated cost price (PO) or ₹0.54 (testers)
-      Transfer-to Code        → Location code
-                                 v1.2: auto-filled from EKA_DATA
-      Gen. Bus. Posting Group → Posting group
-                                 v1.2: auto-filled from EKA_DATA
-      Source                  → PO / TESTER / PWP / GWP / NON_STOCK
-      Location                → Source filename
-      EAN                     → Original EAN
-      Product Name            → Product description
-      Lookup Status           → OK / NOT_FOUND / UNKNOWN / NO_MAP
-
-  Row ordering per location:
-      1. Regular PO orders  (Source = PO)
-      2. PWP orders         (Source = PWP)
-      3. Product testers    (Source = TESTER)
-      4. GWP items          (Source = GWP)
-      5. Non-Stock items    (Source = NON_STOCK)
-
-═══════════════════════════════════════════════════════════════════════════════
-  WHAT TO DO WHEN THINGS GO WRONG
-═══════════════════════════════════════════════════════════════════════════════
-
-  Check the LOG panel in the GUI. Every issue is logged:
-      🔴 ERROR  → Missing sheet or column. File cannot be processed.
-      🟡 WARN   → EAN not found, unknown item, missing mapping. Row output
-                   with name/EAN for manual fix.
-      🔵 INFO   → Normal operation details (counts, PWP splits, skips).
-
-  Common issues:
-      - "PO sheet: 'Order Qty' column not found"
-          → Column header in Excel is not exactly 'Order Qty'. Fix the header.
-      - "PO row 45: EAN 890612164XXXX not found in master"
-          → New product not yet in Items_March. Add it to master file.
-      - "Non-Stock: 'NewItem' not in hard-coded map"
-          → New non-stock item. Add to NON_STOCK_EAN_MAP in this script.
-      - "PWP: Unknown item 'SomeName'"
-          → New PWP item. Add handling in process_pwp() in this script.
-      - "EKA: 'filename' not found in Location column"
-          → v1.2: File not renamed to Location code. Rename to match EKA_DATA.
-
-═══════════════════════════════════════════════════════════════════════════════
-  HOW TO ADD NEW ITEMS
-═══════════════════════════════════════════════════════════════════════════════
-
-  New Non-Stock item:
-      1. Find its EAN or internal code from Items_March
-      2. Add to NON_STOCK_EAN_MAP: 'Exact Name': 'EAN_OR_CODE',
-      3. Add same name to blank template Non Stock sheet
-
-  New PWP item:
-      1. If should be ignored: add name to PWP_IGNORE
-      2. If should be processed: add elif branch in process_pwp()
-
-  New GWP item:
-      1. Ensure EAN exists in Items_March (auto-resolved)
-
-  New Perfume variant:
-      1. Add EAN to PERFUME_EANS list
-
-  New EKA Location:
-      1. Add row to EKA_DATA.xlsx with all required columns
-      2. Set Status = 'Active'
-
-═══════════════════════════════════════════════════════════════════════════════
-  D365 TO EXPORT (NEW in v1.2)
-═══════════════════════════════════════════════════════════════════════════════
-
-  Template format (from EKA_Sample_Package.xlsx):
-      Sheet 1 'Transfer Header':
-          Row 1: metadata (ignored by script)
-          Row 3: column headers
-          Row 4+: data rows
-          Columns: No. | Transfer-from Code | Transfer-to Code |
-                   Posting Date | In-Transit Code | Direct Transfer |
-                   Gen. Bus. Posting Group | ...dimensions...
-
-      Sheet 2 'Transfer Line':
-          Row 1: metadata (ignored)
-          Row 3: column headers
-          Row 4+: data rows
-          Columns: Document No. | Line No. | Item No. | Quantity |
-                   Unit of Measure | Qty. to Ship | Qty. to Receive |
-                   Dimension Set ID | Transfer Price
-
-  The D365TOExporter fills this template using the same ZIP/XML regex
-  approach as the GT Mass D365 SO exporter. If data exceeds template
-  row capacity, new <row> elements are injected before filling.
+  For full reference on column requirements, calculation logic, PWP
+  / GWP / Non-Stock rules, TO number format, and how to add new
+  items — see the comments above each engine class below.
 
 Requirements:
     pip install pandas openpyxl
@@ -348,229 +73,82 @@ Run:
 #  IMPORTS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-import tkinter as tk                    # GUI framework (standard library)
-from tkinter import ttk, filedialog, messagebox  # Themed widgets, dialogs, popups
-import threading                        # Background thread (keeps UI responsive)
-import os                               # File/path operations
-import time                             # Timestamps for logs and output filenames
-import re                               # Regex (reserved for future use)
-import math                             # Math functions (sin/cos for toggle switch rays)
-import shutil                           # File copy for D365 template
-import zipfile                          # ZIP manipulation for D365 XML editing
-from dataclasses import dataclass, field  # Structured data containers
-from typing import List, Dict, Optional, Any, Tuple  # Type hints
-from pathlib import Path                # Cross-platform path handling
+import os
+import re
+import shutil
+import sys
+import threading
+import time
+import warnings
+import zipfile
+from dataclasses import dataclass, field
+from datetime import date
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
-import pandas as pd                     # Excel reading for master file
-from openpyxl import load_workbook, Workbook  # Excel R/W for PO files
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+# v1.5.2: openpyxl emits a UserWarning when reading XLSX files that
+# contain Conditional Formatting extensions (color rules, data bars,
+# etc.). The data still loads fine — only the conditional-formatting
+# metadata is dropped. The warning otherwise looks alarming on the
+# terminal and made one user think the app had crashed. Suppress it.
+warnings.filterwarnings(
+    'ignore', category=UserWarning, module='openpyxl',
+)
+
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+
+import pandas as pd
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  THEME SYSTEM (Dark / Light)
+#  CONSTANTS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-class Theme:
+APP_VERSION = "1.5.6"
+APP_TITLE = f"RENEE PO Processor v{APP_VERSION}"
+
+# Bundled-file location convention. Looked up RELATIVE to the script
+# directory so the .exe / .py both resolve correctly.
+BUNDLED_DATA_FOLDER = "Calculation_Data_EKA"
+BUNDLED_MASTER_NAME = "Items_March.xlsx"
+BUNDLED_EKA_NAME = "EKA_DATA.xlsx"
+
+
+def get_script_dir() -> Path:
     """
-    Switchable dark/light theme palette.
+    Return the directory containing this script.
 
-    All GUI colors are read from Theme.palette so that toggling the theme
-    updates every widget. Each color is accessed via a class method shortcut:
-        Theme.bg()       → background
-        Theme.surface()  → card/panel background
-        Theme.accent()   → primary accent (cyan in dark, blue in light)
+    Resolves correctly for both Python source runs and PyInstaller-frozen
+    executables (where ``__file__`` may not exist).
     """
-
-    DARK = {
-        'BG':       "#0F1117",    # Main background
-        'SURFACE':  "#1A1D27",    # Card/panel background
-        'SURFACE2': "#22263A",    # Secondary surface (drop zones, alt rows)
-        'ACCENT':   "#00D4FF",    # Primary accent (cyan)
-        'ACCENT2':  "#7B61FF",    # Secondary accent (purple)
-        'GREEN':    "#00E676",    # Success / OK status
-        'RED':      "#FF5252",    # Error / NOT_FOUND
-        'AMBER':    "#FFB300",    # Warning / in-progress
-        'PINK':     "#FF4081",    # Branding accent
-        'TEXT':     "#E8EAF6",    # Primary text
-        'TEXT_DIM': "#6B7280",    # Secondary/muted text
-        'BORDER_C': "#2D3250",    # Border color
-        'LIST_SEL': "#22263A",    # Listbox selection background
-    }
-
-    LIGHT = {
-        'BG':       "#F0F2F5",
-        'SURFACE':  "#FFFFFF",
-        'SURFACE2': "#E8EAF0",
-        'ACCENT':   "#0077B6",
-        'ACCENT2':  "#5C3D99",
-        'GREEN':    "#00A651",
-        'RED':      "#D32F2F",
-        'AMBER':    "#E65100",
-        'PINK':     "#C2185B",
-        'TEXT':     "#1A1A2E",
-        'TEXT_DIM': "#5F6368",
-        'BORDER_C': "#C4C7D0",
-        'LIST_SEL': "#D6E4FF",
-    }
-
-    _current = 'dark'
-    _palette = DARK.copy()
-
-    @classmethod
-    def is_dark(cls) -> bool:
-        return cls._current == 'dark'
-
-    @classmethod
-    def toggle(cls):
-        cls._current = 'light' if cls._current == 'dark' else 'dark'
-        cls._palette = cls.DARK.copy() if cls._current == 'dark' else cls.LIGHT.copy()
-
-    @classmethod
-    def get(cls, key: str) -> str:
-        return cls._palette[key]
-
-    # ── Shortcut accessors ──
-    @classmethod
-    def bg(cls): return cls._palette['BG']
-    @classmethod
-    def surface(cls): return cls._palette['SURFACE']
-    @classmethod
-    def surface2(cls): return cls._palette['SURFACE2']
-    @classmethod
-    def accent(cls): return cls._palette['ACCENT']
-    @classmethod
-    def accent2(cls): return cls._palette['ACCENT2']
-    @classmethod
-    def green(cls): return cls._palette['GREEN']
-    @classmethod
-    def red(cls): return cls._palette['RED']
-    @classmethod
-    def amber(cls): return cls._palette['AMBER']
-    @classmethod
-    def pink(cls): return cls._palette['PINK']
-    @classmethod
-    def text(cls): return cls._palette['TEXT']
-    @classmethod
-    def text_dim(cls): return cls._palette['TEXT_DIM']
-    @classmethod
-    def border(cls): return cls._palette['BORDER_C']
-    @classmethod
-    def list_sel(cls): return cls._palette['LIST_SEL']
+    if getattr(sys, 'frozen', False):
+        return Path(sys.executable).parent
+    return Path(__file__).parent
 
 
-# ── Static accent colors (don't change with theme toggle) ──
-GREEN    = "#00E676"
-RED      = "#FF5252"
-AMBER    = "#FFB300"
-PINK     = "#FF4081"
-ACCENT   = "#00D4FF"
-ACCENT2  = "#7B61FF"
-
-# ── Font constants ──
-FONT_TITLE = ("Aptos Display", 18, "bold")
-FONT_SUB   = ("Aptos Display", 11)
-FONT_LABEL = ("Aptos Display", 11, "bold")
-FONT_MONO  = ("Aptos Display", 11)
-FONT_BTN   = ("Aptos Display", 11, "bold")
+def get_bundled_master_path() -> Optional[Path]:
+    """Return the path to the bundled Items Master, or None if absent."""
+    p = get_script_dir() / BUNDLED_DATA_FOLDER / BUNDLED_MASTER_NAME
+    return p if p.exists() else None
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-#  TOGGLE SWITCH WIDGET
-# ═══════════════════════════════════════════════════════════════════════════════
+def get_bundled_eka_path() -> Optional[Path]:
+    """Return the path to the bundled EKA_DATA, or None if absent."""
+    p = get_script_dir() / BUNDLED_DATA_FOLDER / BUNDLED_EKA_NAME
+    return p if p.exists() else None
 
-class ToggleSwitch(tk.Canvas):
-    """
-    Animated toggle switch with sun/moon icons for light/dark mode.
 
-    Visual:
-        Dark mode  (is_on=False): dark track, grey knob with crescent moon
-        Light mode (is_on=True):  yellow track, white knob with sun + rays
+def get_bundled_folder(create: bool = False) -> Path:
+    """Return the bundled-data folder path; create on demand."""
+    p = get_script_dir() / BUNDLED_DATA_FOLDER
+    if create:
+        p.mkdir(parents=True, exist_ok=True)
+    return p
 
-    Animation: knob slides from left→right or right→left in 12ms steps.
-    """
-
-    def __init__(self, parent, command=None, width=56, height=28, **kw):
-        super().__init__(
-            parent, width=width, height=height,
-            highlightthickness=0, bd=0, cursor='hand2', **kw
-        )
-        self.w = width
-        self.h = height
-        self.pad = 3
-        self.knob_r = (height - 2 * self.pad) // 2
-        self.is_on = False    # False = dark (moon), True = light (sun)
-        self.anim_pos = self.pad + self.knob_r  # current knob X position
-        self.command = command
-        self._draw()
-        self.bind('<Button-1>', self._on_click)
-
-    def _draw(self):
-        """Redraw the entire toggle switch (track + knob + icon)."""
-        self.delete('all')
-        r = self.h // 2
-
-        # Track colors
-        if self.is_on:
-            track_bg = '#FFD54F'    # warm yellow track (light mode)
-            knob_fill = '#FFFFFF'
-        else:
-            track_bg = '#37474F'    # dark track (dark mode)
-            knob_fill = '#B0BEC5'
-
-        # ── Rounded track (pill shape) ──
-        self.create_oval(0, 0, self.h, self.h, fill=track_bg, outline='')
-        self.create_oval(self.w - self.h, 0, self.w, self.h, fill=track_bg, outline='')
-        self.create_rectangle(r, 0, self.w - r, self.h, fill=track_bg, outline='')
-
-        # ── Knob (circle) ──
-        kx = self.anim_pos
-        ky = self.h // 2
-        kr = self.knob_r
-        self.create_oval(kx - kr, ky - kr, kx + kr, ky + kr,
-                         fill=knob_fill, outline='#CCCCCC')
-
-        # ── Icon on knob ──
-        if self.is_on:
-            # Sun: small circle + 8 rays
-            self.create_oval(kx - 4, ky - 4, kx + 4, ky + 4,
-                             fill='#FF8F00', outline='')
-            for angle in range(0, 360, 45):
-                rad = math.radians(angle)
-                x1 = kx + 6 * math.cos(rad)
-                y1 = ky + 6 * math.sin(rad)
-                x2 = kx + 8 * math.cos(rad)
-                y2 = ky + 8 * math.sin(rad)
-                self.create_line(x1, y1, x2, y2, fill='#FF8F00', width=1.5)
-        else:
-            # Moon: crescent via overlapping circles
-            self.create_oval(kx - 5, ky - 5, kx + 5, ky + 5,
-                             fill='#78909C', outline='')
-            self.create_oval(kx - 2, ky - 6, kx + 6, ky + 4,
-                             fill=knob_fill, outline='')
-
-    def _on_click(self, event=None):
-        """Handle click: toggle state, animate, call callback."""
-        self.is_on = not self.is_on
-        self._animate()
-        if self.command:
-            self.command()
-
-    def _animate(self):
-        """Animate knob sliding to new position in 12ms steps."""
-        target = (self.w - self.pad - self.knob_r) if self.is_on else (self.pad + self.knob_r)
-        step = 3 if self.is_on else -3
-
-        def _step():
-            if (step > 0 and self.anim_pos < target) or (step < 0 and self.anim_pos > target):
-                self.anim_pos += step
-                self._draw()
-                self.after(12, _step)
-            else:
-                self.anim_pos = target
-                self._draw()
-
-        _step()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -584,15 +162,15 @@ class OutputRow:
 
     Fields:
         to             : Transfer Order / Sales Order number
-                          v1.2: auto-filled from EKA_DATA in standalone mode
+                          (auto-filled from EKA_DATA in standalone mode)
         item_no        : Item No from Items_March, or product name if unresolved
         qty            : Quantity (order or tester)
         unit_price     : Calculated cost price (PO) or ₹0.54 (testers)
         transfer_to    : Transfer-to Code / Location Code
-                          v1.2: auto-filled from EKA_DATA
+                          (auto-filled from EKA_DATA)
         posting_group  : Gen. Bus. Posting Group
-                          v1.2: auto-filled from EKA_DATA
-        source         : Origin type: 'PO', 'TESTER', 'PWP', 'GWP', 'NON_STOCK'
+                          (auto-filled from EKA_DATA)
+        source         : 'PO', 'TESTER', 'PWP', 'GWP', 'NON_STOCK'
         ean            : Original EAN/barcode
         product_name   : Product description (for reference)
         lookup_status  : 'OK', 'NOT_FOUND', 'UNKNOWN', 'NO_MAP'
@@ -618,42 +196,54 @@ class LocationResult:
     and processing logs for the GUI log panel.
     """
     filename: str
-    regular_orders: List[OutputRow] = field(default_factory=list)   # PO orders (calculated price)
-    tester_orders: List[OutputRow] = field(default_factory=list)    # Product testers (₹0.54)
-    pwp_orders: List[OutputRow] = field(default_factory=list)       # PWP items (₹0.54)
-    gwp_orders: List[OutputRow] = field(default_factory=list)       # GWP items (₹0.54)
-    nonstock_orders: List[OutputRow] = field(default_factory=list)  # Non-stock items (₹0.54)
-    unmatched: List[Dict] = field(default_factory=list)             # EANs not found in master
-    logs: List[tuple] = field(default_factory=list)                 # (level, message) for GUI log
+    regular_orders: List[OutputRow] = field(default_factory=list)   # PO orders
+    tester_orders: List[OutputRow] = field(default_factory=list)    # Testers (₹0.54)
+    pwp_orders: List[OutputRow] = field(default_factory=list)       # PWP (₹0.54)
+    gwp_orders: List[OutputRow] = field(default_factory=list)       # GWP (₹0.54)
+    nonstock_orders: List[OutputRow] = field(default_factory=list)  # Non-stock (₹0.54)
+    unmatched: List[Dict] = field(default_factory=list)             # EANs not in master
+    logs: List[tuple] = field(default_factory=list)                 # (level, message)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  PROCESSING ENGINE
+#  PO ENGINE — Standalone PO processing (logic unchanged from v1.2)
 # ═══════════════════════════════════════════════════════════════════════════════
+#
+# Loads Items_March master, validates PO file structure, processes
+# PO/PWP/GWP/Non-Stock sheets, and applies GST-aware cost calculations.
+#
+# Cost formula:
+#     Landing Cost = MRP × 60%
+#     Cost Price   = Landing Cost ÷ (1 + GST rate)
+#
+# GST codes recognized:
+#     0-G / G-0 / G-0-S / ''   →  0%   (no divisor)
+#     G-3 / G-3-S              →  3%   (÷ 1.03)
+#     G-5 / G-5-S              →  5%   (÷ 1.05)
+#     G-12 / G-12-S            → 12%   (÷ 1.12)
+#     G-18 / G-18-S            → 18%   (÷ 1.18)
+#     other                    → fallback to 18%
+#
+# Testers / PWP / GWP / Non-Stock items: flat ₹0.54.
+#
+# PWP rules:
+#     'Stay With Me - Mini' → IGNORED
+#     'Crème Mini'          → IGNORED
+#     'Perfume'             → SPLIT equally across 4 perfume EANs
+#                              (remainder goes to first EANs)
+#
+# Non-Stock: hard-coded name → EAN/code lookup map. Names not in map
+# are output verbatim with status NO_MAP for manual fix.
 
 class POEngine:
-    """
-    Core processing logic — no GUI dependency.
+    """Core PO processing logic — no GUI dependency."""
 
-    Can be used standalone:
-        engine = POEngine()
-        engine.load_master('Items_March.xlsx')
-        result = engine.process_file('EBO_AMD01.xlsx')
-
-    Responsibilities:
-        - Load and index Items_March master file
-        - Validate PO file structure (sheets, columns)
-        - Process PO/PWP/GWP/Non-Stock sheets
-        - Calculate cost prices with GST adjustment
-    """
-
-    # ┌─────────────────────────────────────────────────────────────────────────┐
-    # │ HARD-CODED MAPPINGS — UPDATE HERE WHEN NEW ITEMS ARE ADDED             │
-    # │                                                                         │
-    # │ Non-Stock product names → EAN/GTIN or internal item code               │
-    # │ ⚠ Names MUST match EXACTLY what's in the Excel Non Stock sheet         │
-    # │ ⚠ EAN/codes MUST exist in Items_March (GTIN or No. column)            │
-    # └─────────────────────────────────────────────────────────────────────────┘
+    # ┌────────────────────────────────────────────────────────────────────┐
+    # │ NON-STOCK NAME → EAN/CODE                                          │
+    # │ ⚠ Names MUST match EXACTLY what's in the Excel Non Stock sheet.    │
+    # │ ⚠ EAN/codes MUST exist in Items_March (GTIN or No. column).        │
+    # │   Add new non-stock items HERE.                                    │
+    # └────────────────────────────────────────────────────────────────────┘
     NON_STOCK_EAN_MAP = {
         'Cotton Rolls':      'OPM-RSK-CR500-RE',        # → Item 400039
         'Mirrors':           'OPM-RSK-PU-LMS-RE',       # → Item 400037
@@ -668,11 +258,10 @@ class POEngine:
         'Pen':               'RCPL_PEN',                 # → Item 400061
     }
 
-    # ┌─────────────────────────────────────────────────────────────────────────┐
-    # │ PERFUME PWP — 4 EANs to split demand equally                           │
-    # │ When PWP has 'Perfume' qty N: N÷4 per EAN, remainder to first EANs    │
-    # │ Example: N=10 → 3, 3, 2, 2                                            │
-    # └─────────────────────────────────────────────────────────────────────────┘
+    # ┌────────────────────────────────────────────────────────────────────┐
+    # │ PERFUME PWP — 4 EANs to split demand equally                       │
+    # │ Example: qty=10 → 3+3+2+2 (first EANs absorb the remainder)        │
+    # └────────────────────────────────────────────────────────────────────┘
     PERFUME_EANS = [
         '8906121642674',  # RENEE BLOOM 8ML NFS
         '8906121647495',  # RENEE FLIRT 8ML NFS
@@ -680,33 +269,24 @@ class POEngine:
         '8906121645743',  # RENEE RED NOIR 8ML NFS
     ]
 
-    # ┌─────────────────────────────────────────────────────────────────────────┐
-    # │ PWP ITEMS TO IGNORE — not shipped                                      │
-    # └─────────────────────────────────────────────────────────────────────────┘
     PWP_IGNORE = {'Stay With Me - Mini', 'Crème Mini'}
 
     def __init__(self):
-        self.master: Dict[str, Dict] = {}  # Indexed by GTIN and item code
+        self.master: Dict[str, Dict] = {}
 
     def load_master(self, path: str) -> int:
         """
         Load Items_March.xlsx and build lookup dictionary.
 
-        Indexed by BOTH GTIN (EAN) and No. (item code) so that:
-            - PO items can be looked up by EAN
-            - Non-stock items can be looked up by internal codes
+        Indexed by BOTH GTIN (EAN) and No. (item code) so PO items
+        can be looked up by EAN, and non-stock items by internal code.
 
-        Args:
-            path: Path to Items_March.xlsx
-
-        Returns:
-            Number of rows loaded from master file.
+        Returns: number of rows loaded.
         """
         df = pd.read_excel(path, header=0)
         df['GTIN_str'] = df['GTIN'].astype(str).str.strip()
         self.master = {}
 
-        # Get column indices for fast array access
         gtin_idx = df.columns.get_loc('GTIN_str')
         desc_idx = df.columns.get_loc('Description') if 'Description' in df.columns else None
         no_idx = df.columns.get_loc('No.')
@@ -743,26 +323,8 @@ class POEngine:
         Calculate unit price for regular PO orders.
 
         Formula:
-            Landing Cost = MRP × 60%
-            Cost Price   = Landing Cost ÷ (1 + GST rate)
-
-        GST codes in Items_March and their divisors:
-            0-G      (9 items)    → 0% GST  → ÷ 1.00
-            G-3      (1 item)     → 3% GST  → ÷ 1.03
-            G-5      (1084 items) → 5% GST  → ÷ 1.05
-            G-5-S    (108 items)  → 5% GST  → ÷ 1.05
-            G-12     (67 items)   → 12% GST → ÷ 1.12
-            G-18     (2022 items) → 18% GST → ÷ 1.18
-            G-18-S   (1364 items) → 18% GST → ÷ 1.18
-
-        ⚠ This is ONLY for regular PO orders. Testers use flat ₹0.54.
-
-        Args:
-            mrp      : Maximum Retail Price from Items_March
-            gst_code : GST Group Code string
-
-        Returns:
-            Calculated cost price, or None if MRP is invalid.
+            Landing = MRP × 0.60
+            Cost    = Landing ÷ (1 + GST)
         """
         if mrp is None or pd.isna(mrp):
             return None
@@ -770,89 +332,82 @@ class POEngine:
         landing = float(mrp) * 0.60
         gst = str(gst_code).strip().upper()
 
-        # 0% GST
         if gst in ('0-G', 'G-0', 'G-0-S', '0', '') or gst == 'NAN':
             return landing
-        # 3% GST
         if gst in ('G-3', 'G-3-S'):
             return landing / 1.03
-        # 5% GST
         if '5' in gst and '18' not in gst and '12' not in gst:
             return landing / 1.05
-        # 12% GST
         if '12' in gst:
             return landing / 1.12
-        # 18% GST
         if '18' in gst:
             return landing / 1.18
-        # Unknown — default to 18%
-        return landing / 1.18
+        return landing / 1.18  # unknown → fallback to 18%
 
     def _detect_po_columns(self, ws, logs: Optional[List] = None) -> Dict[str, int]:
         """
-        Scan header row of PO sheet for 3 required columns.
+        Scan PO sheet's header row for the 3 required columns.
 
-        Standard names (exact match):
-            'EAN'        → ean
-            'Order Qty'  → order_qty
-            'Tester Qty' → tester_qty
+        v1.5.5: matches column names case-insensitively. Real-world
+        files have ``Order Qty``, ``order Qty``, ``Order qty``,
+        ``order qty``, ``ORDER QTY`` — they all mean the same thing.
+        Same for ``EAN`` and the tester column (``Tester Qty``,
+        ``Tester``, ``tester``, etc.).
 
-        Fallbacks with alert:
-            'Tester'    → tester_qty (alert: rename to 'Tester Qty')
-            'order Qty' → order_qty  (alert: rename to 'Order Qty')
-
-        Args:
-            ws   : openpyxl worksheet
-            logs : optional list to append alerts to
-
-        Returns:
-            Dict mapping internal key → column index (0-based).
+        Standard names: 'EAN', 'Order Qty', 'Tester Qty'.
+        Each fallback emits an 'alert' so the user can fix the source.
         """
-        hmap = {}
-        all_headers = {}
+        hmap: Dict[str, int] = {}
+        # Build a normalized header map: lowercased + whitespace-stripped
+        # name → original index. This lets us match 'Order Qty',
+        # 'order Qty', 'ORDER QTY', 'order qty' all to the same key.
+        normalized: Dict[str, Tuple[str, int]] = {}
 
         for cell in list(ws.iter_rows(min_row=1, max_row=1))[0]:
             val = str(cell.value or '').strip()
             idx = cell.column - 1
             if val:
-                all_headers[val] = idx
+                key = val.lower()
+                normalized[key] = (val, idx)
 
-            if val == 'EAN':
-                hmap['ean'] = idx
-            elif val == 'Order Qty':
-                hmap['order_qty'] = idx
-            elif val == 'Tester Qty':
-                hmap['tester_qty'] = idx
-            elif val == 'Tester' and 'tester_qty' not in hmap:
-                all_headers['__tester_fallback'] = idx
+        # ── EAN ──
+        if 'ean' in normalized:
+            original, idx = normalized['ean']
+            hmap['ean'] = idx
+            if original != 'EAN' and logs is not None:
+                logs.append(('alert',
+                    f"Auto-fixed: '{original}' → 'EAN'. "
+                    f"Please rename column to 'EAN'."))
 
-        # Fallback: accept 'Tester' if 'Tester Qty' not found
-        if 'tester_qty' not in hmap:
-            if '__tester_fallback' in all_headers:
-                hmap['tester_qty'] = all_headers['__tester_fallback']
-                if logs is not None:
-                    logs.append(('alert',
-                        "Auto-fixed: 'Tester' → 'Tester Qty'. "
-                        "Please rename column to 'Tester Qty' in this file."))
-            elif 'Tester' in all_headers:
-                hmap['tester_qty'] = all_headers['Tester']
-                if logs is not None:
-                    logs.append(('alert',
-                        "Auto-fixed: 'Tester' → 'Tester Qty'. "
-                        "Please rename column."))
+        # ── Order Qty ──
+        if 'order qty' in normalized:
+            original, idx = normalized['order qty']
+            hmap['order_qty'] = idx
+            if original != 'Order Qty' and logs is not None:
+                logs.append(('alert',
+                    f"Auto-fixed: '{original}' → 'Order Qty'. "
+                    f"Please rename column to 'Order Qty'."))
 
-        # Fallback: accept 'order Qty' (lowercase o)
-        if 'order_qty' not in hmap and 'order Qty' in all_headers:
-            hmap['order_qty'] = all_headers['order Qty']
+        # ── Tester Qty ── (with 'Tester' fallback)
+        if 'tester qty' in normalized:
+            original, idx = normalized['tester qty']
+            hmap['tester_qty'] = idx
+            if original != 'Tester Qty' and logs is not None:
+                logs.append(('alert',
+                    f"Auto-fixed: '{original}' → 'Tester Qty'. "
+                    f"Please rename column to 'Tester Qty'."))
+        elif 'tester' in normalized:
+            original, idx = normalized['tester']
+            hmap['tester_qty'] = idx
             if logs is not None:
                 logs.append(('alert',
-                    "Auto-fixed: 'order Qty' → 'Order Qty'. "
-                    "Please rename column."))
+                    f"Auto-fixed: '{original}' → 'Tester Qty'. "
+                    f"Please rename column to 'Tester Qty'."))
 
         return hmap
 
     def _safe_int(self, val) -> int:
-        """Safely convert cell value to int. Returns 0 for None/empty/errors."""
+        """Convert cell value to int. Returns 0 for None/empty/errors."""
         try:
             if val is None or str(val).strip() in ('', '#N/A', 'None'):
                 return 0
@@ -861,30 +416,78 @@ class POEngine:
             return 0
 
     def _ean_str(self, raw) -> str:
-        """Convert raw EAN cell value to clean string. Handles float→int conversion."""
+        """Convert raw EAN value to clean string. Handles float→int."""
         if raw is None:
             return ''
         return str(int(raw)) if isinstance(raw, (int, float)) else str(raw).strip()
 
-    def process_po_sheet(self, ws, col_map: Dict, logs: List) -> Tuple[List[OutputRow], List[OutputRow], List[Dict]]:
+    @staticmethod
+    def _row_get(row, idx: int):
         """
-        Process PO sheet → separate into regular orders and tester orders.
+        Defensive row-cell read.
 
-        For each row with EAN:
-            - If Order Qty > 0 → regular order at calculated cost price
-            - If Tester Qty > 0 → tester at ₹0.54
-            - If EAN not in master → warning, output with '?EAN:...'
-
-        Skips rows where EAN is empty or row contains 'TOTAL'.
-
-        Args:
-            ws      : openpyxl worksheet for PO sheet
-            col_map : column index mapping from _detect_po_columns
-            logs    : list to append processing messages
-
-        Returns:
-            Tuple of (regular_orders, tester_orders, unmatched_list)
+        v1.5.5: rows in PWP/GWP/Non-Stock sheets vary in width across
+        different PO file templates. Some files have the standard
+        4-column PWP (Sr.No, Name, Avail.Qty, Req.Qty) but others
+        (Pune EBO) ship with only 3 columns (Sr.No, Name, Store Name).
+        Returns None when the requested index is out of range so the
+        caller can skip that row gracefully instead of crashing on
+        ``IndexError: tuple index out of range``.
         """
+        if idx < len(row):
+            return row[idx].value
+        return None
+
+    @staticmethod
+    def _find_qty_col(ws, qty_keywords: List[str], default: int) -> int:
+        """
+        Locate the REQUIRED quantity column in a PWP/GWP/Non-Stock
+        sheet by scanning the header row.
+
+        v1.5.5 (revised): two-pass priority match. The first pass
+        looks for an exact ``req.qty``/``req qty``/``required qty``
+        header — the only column whose value we should ever read.
+        Only if that fails does the second pass fall back to a plain
+        ``qty`` header, AFTER explicitly excluding any column whose
+        name contains ``avail`` or ``available``. This is the bug-
+        fix: a substring match on ``qty`` alone would also hit
+        ``Avail.Qty`` (the previous-period stock column) and silently
+        return the wrong number, ordering the warehouse to ship the
+        wrong qty.
+
+        ``qty_keywords`` is kept in the signature for backward
+        compat but is now ignored — the priority list is hard-coded
+        because PWP/GWP/Non-Stock all use the same header naming
+        convention.
+
+        Returns ``default`` (the legacy index) only if no header
+        matches at all.
+        """
+        headers = []
+        for cell in list(ws.iter_rows(min_row=1, max_row=1))[0]:
+            val = str(cell.value or '').strip()
+            headers.append((val.lower(), cell.column - 1))
+
+        # Pass 1: required-qty headers (the column we WANT)
+        REQUIRED_NAMES = {'req.qty', 'req qty', 'required qty', 'required.qty'}
+        for val, idx in headers:
+            if val in REQUIRED_NAMES:
+                return idx
+
+        # Pass 2: lone 'qty' header — accepted only when no available-
+        # qty column shadows it. Exclude anything containing 'avail',
+        # which is the column we MUST NOT pick.
+        for val, idx in headers:
+            if val and 'avail' not in val and (
+                val == 'qty' or val == 'quantity'
+            ):
+                return idx
+
+        return default
+
+    def process_po_sheet(self, ws, col_map: Dict, logs: List
+                          ) -> Tuple[List[OutputRow], List[OutputRow], List[Dict]]:
+        """Process the PO sheet → (regular_orders, tester_orders, unmatched)."""
         regular, testers, unmatched = [], [], []
 
         for row in ws.iter_rows(min_row=2, max_row=ws.max_row, values_only=False):
@@ -899,16 +502,14 @@ class POEngine:
             order_qty = self._safe_int(row[col_map['order_qty']].value) if 'order_qty' in col_map else 0
             tester_qty = self._safe_int(row[col_map['tester_qty']].value) if 'tester_qty' in col_map else 0
 
-            # Master lookup
             info = self.master.get(ean) or self.master.get(ean.lstrip('0'))
 
             if info:
                 item_no = info['item_no']
                 gst_code = info['gst_code']
-
-                # Warn on unknown GST codes
-                known_gst = {'0-G', 'G-3', 'G-3-S', 'G-5', 'G-5-S',
-                             'G-12', 'G-12-S', 'G-18', 'G-18-S', ''}
+                known_gst = {'0-G', 'G-0', 'G-0-S', 'G-3', 'G-3-S',
+                             'G-5', 'G-5-S', 'G-12', 'G-12-S',
+                             'G-18', 'G-18-S', ''}
                 gst_upper = str(gst_code).strip().upper()
                 if gst_upper not in known_gst and gst_upper != 'NAN':
                     logs.append(('warn',
@@ -945,36 +546,37 @@ class POEngine:
 
     def process_pwp(self, ws, logs: List) -> List[OutputRow]:
         """
-        Process PWP (Purchase With Purchase) sheet.
+        Process PWP sheet (Stay With Me/Crème Mini ignored, Perfume split).
 
-        Rules:
-            'Stay With Me - Mini' → SKIP (in PWP_IGNORE)
-            'Crème Mini'          → SKIP (in PWP_IGNORE)
-            'Perfume'             → SPLIT into 4 EANs equally
-
-        All at ₹0.54. Sheet: Col A=Sr.No, B=Name, C=Avail, D=Req.Qty
+        v1.5.5: detects the qty column by header name. The standard
+        template has 'Req.Qty' at index 3, but some files use 'Qty'
+        or 'Required Qty'; some omit the column entirely (Pune EBO
+        ships with just Sr.No / Name / Store Name — no qty column at
+        all, in which case there's nothing to process).
         """
         rows = []
 
+        # v1.5.5: find qty column by header name. Default to legacy
+        # index 3 if no header matched.
+        qty_idx = self._find_qty_col(ws, ['req.qty', 'req qty', 'required qty', 'qty'], 3)
+
         for row in ws.iter_rows(min_row=2, max_row=20, values_only=False):
-            a, b = row[0].value, row[1].value
-            d = row[3].value
+            a = self._row_get(row, 0)
+            b = self._row_get(row, 1)
+            d = self._row_get(row, qty_idx)
             if a is None or str(a).strip().upper() == 'TOTAL':
                 continue
 
             qty = self._safe_int(d)
             name = str(b or '').strip()
 
-            # Ignore list
             if name in self.PWP_IGNORE:
                 if qty > 0:
                     logs.append(('info', f"PWP: '{name}' qty={qty} → skipped (ignore list)"))
                 continue
-
             if qty <= 0:
                 continue
 
-            # Perfume → split across 4 EANs
             if 'perfume' in name.lower():
                 base_qty = qty // 4
                 remainder = qty % 4
@@ -1003,7 +605,6 @@ class POEngine:
                     ))
                 continue
 
-            # Unknown PWP item
             logs.append(('warn', f"PWP: Unknown '{name}' qty={qty} → outputting name"))
             rows.append(OutputRow(
                 item_no=name, qty=qty, unit_price=0.54,
@@ -1014,17 +615,25 @@ class POEngine:
 
     def process_gwp(self, ws, logs: List) -> List[OutputRow]:
         """
-        Process GWP (Gift With Purchase) sheet.
+        Process GWP sheet (every item has an EAN).
 
-        Each GWP item has an EAN → looked up from Items_March.
-        All priced at ₹0.54.
-
-        Sheet: Col A=Sr.No, B=EAN, C=Name, D=Avail, E=Req.Qty
+        v1.5.5: detects qty column by header name. Standard layout
+        is 5 cols (Sr.No, EAN, Name, Avail.Qty, Req.Qty) with qty
+        at index 4, but Pune EBO format uses 4 cols (Sr.No, EAN,
+        Name, Qty) with qty at index 3. Header-name detection
+        handles both.
         """
         rows = []
 
+        # v1.5.5: find qty column by name. Default to index 4 (legacy
+        # standard 5-col layout).
+        qty_idx = self._find_qty_col(ws, ['req.qty', 'req qty', 'required qty', 'qty'], 4)
+
         for row in ws.iter_rows(min_row=2, max_row=20, values_only=False):
-            a, ean_raw, name, _, req_raw = [row[i].value for i in range(5)]
+            a = self._row_get(row, 0)
+            ean_raw = self._row_get(row, 1)
+            name = self._row_get(row, 2)
+            req_raw = self._row_get(row, qty_idx)
             if a is None or str(a).strip().upper() == 'TOTAL':
                 continue
 
@@ -1051,19 +660,16 @@ class POEngine:
 
     def process_non_stock(self, ws, logs: List) -> List[OutputRow]:
         """
-        Process Non Stock sheet.
+        Process Non Stock sheet (name → EAN/code lookup).
 
-        Lookup chain:
-            1. Product name → NON_STOCK_EAN_MAP → EAN/code
-            2. EAN/code → Items_March → Item No
-            3. Not in map → WARNING, output name for manual fix
-
-        All at ₹0.54. Sheet: Col A=Sr.No, B=Name, C=QTY
+        v1.5.5: defensive row reads to handle short rows.
         """
         rows = []
 
         for row in ws.iter_rows(min_row=2, max_row=20, values_only=False):
-            a, b, c = row[0].value, row[1].value, row[2].value
+            a = self._row_get(row, 0)
+            b = self._row_get(row, 1)
+            c = self._row_get(row, 2)
             if a is None or str(a).strip().upper() == 'TOTAL':
                 continue
 
@@ -1072,9 +678,8 @@ class POEngine:
                 continue
 
             name = str(b or '').strip()
-
-            # Look up EAN from hard-coded map
             ean = self.NON_STOCK_EAN_MAP.get(name, '')
+
             if not ean:
                 logs.append(('warn',
                     f"Non-Stock: '{name}' qty={qty} → not in map, "
@@ -1106,18 +711,12 @@ class POEngine:
 
     def validate_file(self, filepath: str) -> List[tuple]:
         """
-        Pre-processing validation pass — checks structure without extracting.
+        Pre-processing validation pass.
 
-        Validates:
-            1. Required sheets: PO, PWP, GWP, Non Stock
-            2. PO columns: EAN, Order Qty, Tester Qty
-            3. PWP item names
-            4. Non-Stock item names
-            5. GWP EANs against master
+        Checks: required sheets, PO columns, PWP names, Non-Stock names,
+        and GWP EANs against master.
 
-        Returns:
-            List of (level, message) tuples:
-                'error' → blocking, 'warn' → non-blocking, 'info' → normal
+        Returns list of (level, message) tuples.
         """
         logs = []
         has_blocking = False
@@ -1125,9 +724,23 @@ class POEngine:
         try:
             wb = load_workbook(filepath, data_only=True)
         except Exception as e:
+            err_str = str(e)
+            # v1.5.5: friendlier message for the common 'Value must be
+            # a sequence' crash, which openpyxl emits when the file
+            # references external links to other Excel files that
+            # aren't reachable. The data inside the file is fine —
+            # we just can't read it via openpyxl. User needs to either
+            # break the external links in Excel (Data → Edit Links →
+            # Break Link) or save the file as a fresh copy.
+            if 'must be a sequence' in err_str:
+                return [('error',
+                    "File has broken external links. "
+                    "Open in Excel → Data → Edit Links → Break Link, "
+                    "then save and retry."),
+                    ('info', f"(Underlying error: {err_str})")]
             return [('error', f"Cannot open: {e}")]
 
-        # ── 1. Sheet validation ──
+        # 1. Sheet validation
         required = ['PO', 'PWP', 'GWP', 'Non Stock']
         for sheet in required:
             if sheet not in wb.sheetnames:
@@ -1137,7 +750,7 @@ class POEngine:
         found = [s for s in required if s in wb.sheetnames]
         logs.append(('info', f"Sheets: {', '.join(found)} of {len(required)}"))
 
-        # ── 2. PO column validation ──
+        # 2. PO columns
         if 'PO' in wb.sheetnames:
             ws_po = wb['PO']
             col_map = self._detect_po_columns(ws_po, logs)
@@ -1162,12 +775,16 @@ class POEngine:
                         data_rows += 1
                 logs.append(('info', f"PO: {data_rows} data rows"))
 
-        # ── 3. PWP item names ──
+        # 3. PWP names
         if 'PWP' in wb.sheetnames:
             known_pwp = self.PWP_IGNORE | {'Perfume', 'perfume'}
-            for row in wb['PWP'].iter_rows(min_row=2, max_row=20, values_only=False):
-                a, b = row[0].value, row[1].value
-                d = row[3].value
+            ws_pwp = wb['PWP']
+            qty_idx = self._find_qty_col(
+                ws_pwp, ['req.qty', 'req qty', 'required qty', 'qty'], 3)
+            for row in ws_pwp.iter_rows(min_row=2, max_row=20, values_only=False):
+                a = self._row_get(row, 0)
+                b = self._row_get(row, 1)
+                d = self._row_get(row, qty_idx)
                 if a is None or str(a).strip().upper() == 'TOTAL':
                     continue
                 name = str(b or '').strip()
@@ -1175,10 +792,12 @@ class POEngine:
                 if qty > 0 and name.lower() not in {n.lower() for n in known_pwp}:
                     logs.append(('warn', f"PWP: Unknown '{name}' qty={qty}"))
 
-        # ── 4. Non-Stock names ──
+        # 4. Non-Stock names
         if 'Non Stock' in wb.sheetnames:
             for row in wb['Non Stock'].iter_rows(min_row=2, max_row=20, values_only=False):
-                a, b, c = row[0].value, row[1].value, row[2].value
+                a = self._row_get(row, 0)
+                b = self._row_get(row, 1)
+                c = self._row_get(row, 2)
                 if a is None or str(a).strip().upper() == 'TOTAL':
                     continue
                 name = str(b or '').strip()
@@ -1186,10 +805,16 @@ class POEngine:
                 if qty > 0 and name not in self.NON_STOCK_EAN_MAP:
                     logs.append(('warn', f"Non-Stock: '{name}' qty={qty} — not in map"))
 
-        # ── 5. GWP EANs ──
+        # 5. GWP EANs
         if 'GWP' in wb.sheetnames and self.master:
-            for row in wb['GWP'].iter_rows(min_row=2, max_row=20, values_only=False):
-                a, ean_raw, name, _, req_raw = [row[i].value for i in range(5)]
+            ws_gwp = wb['GWP']
+            qty_idx = self._find_qty_col(
+                ws_gwp, ['req.qty', 'req qty', 'required qty', 'qty'], 4)
+            for row in ws_gwp.iter_rows(min_row=2, max_row=20, values_only=False):
+                a = self._row_get(row, 0)
+                ean_raw = self._row_get(row, 1)
+                name = self._row_get(row, 2)
+                req_raw = self._row_get(row, qty_idx)
                 if a is None or str(a).strip().upper() == 'TOTAL':
                     continue
                 qty = self._safe_int(req_raw)
@@ -1202,27 +827,14 @@ class POEngine:
         return logs
 
     def process_file(self, filepath: str) -> LocationResult:
-        """
-        Process a single PO file → LocationResult with all order types.
-
-        Opens the workbook, validates sheets exist, then processes each
-        sheet (PO, PWP, GWP, Non Stock) independently.
-
-        Args:
-            filepath: Path to the PO Excel file
-
-        Returns:
-            LocationResult with all orders, unmatched EANs, and logs.
-        """
+        """Process one PO file → LocationResult with all order types."""
         wb = load_workbook(filepath, data_only=True)
         res = LocationResult(filename=Path(filepath).name)
 
-        # Check required sheets
         for sheet in ['PO', 'PWP', 'GWP', 'Non Stock']:
             if sheet not in wb.sheetnames:
                 res.logs.append(('error', f"Sheet '{sheet}' not found"))
 
-        # ── PO Sheet ──
         if 'PO' in wb.sheetnames:
             ws_po = wb['PO']
             col_map = self._detect_po_columns(ws_po, res.logs)
@@ -1243,15 +855,12 @@ class POEngine:
             else:
                 res.logs.append(('error', "PO: Skipping — no EAN column"))
 
-        # ── PWP ──
         if 'PWP' in wb.sheetnames:
             res.pwp_orders = self.process_pwp(wb['PWP'], res.logs)
 
-        # ── GWP ──
         if 'GWP' in wb.sheetnames:
             res.gwp_orders = self.process_gwp(wb['GWP'], res.logs)
 
-        # ── Non Stock ──
         if 'Non Stock' in wb.sheetnames:
             res.nonstock_orders = self.process_non_stock(wb['Non Stock'], res.logs)
 
@@ -1259,40 +868,22 @@ class POEngine:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  EXCEL WRITER
+#  EXCEL WRITER — produces 8+ sheet output workbook (logic unchanged from v1.2)
 # ═══════════════════════════════════════════════════════════════════════════════
-# Takes a list of LocationResult objects and writes a formatted Excel workbook
-# with 8+ sheets: Headers/Lines (TO/SO), Final Data, Summary, Unmatched EANs,
-# Tester Items Master, and optionally SO Reference.
 #
-# All formatting uses 'Aptos Display' size 11, with color-coded Source and
-# Status columns for quick visual scanning.
-#
-# Sheet 1 'Lines (TO)':       Transfer Order line items (Item, Qty, Price)
-# Sheet 2 'Lines (SO)':       Sales Order line items
-# Sheet 3 'Headers (SO)':     SO headers (one row per SO number)
-# Sheet 4 'Headers (TO)':     TO headers (one row per TO number)
-# Sheet 5 'Final Data':       All rows (PO + PWP + TESTER + GWP + NON_STOCK)
-# Sheet 6 'Summary':          Per-location qty breakdown with totals
-# Sheet 7 'Unmatched EANs':   Failed EAN lookups for manual fix
-# Sheet 8 'Tester Items Master': PWP/GWP/Non-Stock resolution audit
-# Sheet 9 'SO Reference':     Special Order source data (optional)
+# Sheets produced:
+#   1. Lines (TO)          — Transfer Order line items
+#   2. Lines (SO)          — Sales Order line items
+#   3. Headers (SO)        — SO headers (one per SO number)
+#   4. Headers (TO)        — TO headers (one per TO number)
+#   5. Final Data          — All rows with metadata + colors
+#   6. Summary             — Per-location qty breakdown
+#   7. Unmatched EANs      — Failed lookups
+#   8. Tester Items Master — PWP/GWP/Non-Stock audit
+#   9. SO Reference        — (Special Order mode only)
 
 class ExcelWriter:
-    """
-    Writes formatted Excel output with color-coded Source and Status.
-
-    Sheets produced:
-        1. Lines (TO)          — Transfer Order line items
-        2. Lines (SO)          — Sales Order line items
-        3. Headers (SO)        — SO headers (one per SO number)
-        4. Headers (TO)        — TO headers (one per TO number)
-        5. Final Data          — All rows with metadata
-        6. Summary             — Per-location qty breakdown
-        7. Unmatched EANs      — Failed lookups
-        8. Tester Items Master — PWP/GWP/Non-Stock audit
-        9. SO Reference        — (Special Order mode only)
-    """
+    """Writes formatted Excel output with color-coded Source and Status."""
 
     HEADER_FILL = PatternFill('solid', fgColor='1A237E')
     HEADER_FONT = Font(bold=True, color='FFFFFF', name='Aptos Display', size=11)
@@ -1310,8 +901,26 @@ class ExcelWriter:
     }
 
     @classmethod
-    def write(cls, results, output_path, eka_locations=None, master=None, so_products=None):
-        """Write output Excel with all sheets."""
+    def write(cls, results, output_path, eka_locations=None,
+              master=None, so_products=None, processing_log=None):
+        """
+        Write output Excel with all sheets.
+
+        Args:
+            results:        List[LocationResult] from the engine.
+            output_path:    Where to save the .xlsx.
+            eka_locations:  EKA_DATA rows for SO Reference lookup.
+            master:         Items master dict for SO Reference.
+            so_products:    Special Order products list.
+            processing_log: v1.5.4 — list of dicts describing per-file
+                             status. Each dict has keys:
+                                 ``filename``, ``location``, ``status``,
+                                 ``issues``, ``actions``, ``to_number``.
+                             When provided, written as a 'Processing
+                             Log' sheet so the user can see at a glance
+                             which files succeeded, which were auto-
+                             fixed, and which failed (with reasons).
+        """
         wb = Workbook()
         wb.remove(wb.active)
 
@@ -1319,6 +928,11 @@ class ExcelWriter:
         if eka_locations:
             for loc in eka_locations:
                 loc_lookup[loc['short_name']] = loc
+
+        # v1.5.4: Processing Log goes FIRST so the user opening the
+        # workbook sees the audit summary before drilling into details.
+        if processing_log:
+            cls._write_processing_log(wb, processing_log)
 
         cls._write_lines_to(wb, results, loc_lookup)
         cls._write_lines_so(wb, results, loc_lookup)
@@ -1336,7 +950,6 @@ class ExcelWriter:
 
     @classmethod
     def _hdr_cell(cls, ws, row, col, value):
-        """Create a formatted header cell (navy bg, white bold text)."""
         cell = ws.cell(row=row, column=col, value=value)
         cell.font = cls.HEADER_FONT
         cell.fill = cls.HEADER_FILL
@@ -1346,7 +959,6 @@ class ExcelWriter:
 
     @classmethod
     def _data_cell(cls, ws, row, col, value, fmt=None):
-        """Create a formatted data cell."""
         cell = ws.cell(row=row, column=col, value=value)
         cell.font = Font(name='Aptos Display', size=11)
         cell.border = cls.BORDER
@@ -1356,17 +968,13 @@ class ExcelWriter:
 
     @classmethod
     def _auto_width(cls, ws, max_w=50):
-        """Auto-fit column widths based on content."""
         for col in ws.columns:
             letter = col[0].column_letter
             w = max((len(str(c.value or '')) for c in col), default=8)
             ws.column_dimensions[letter].width = min(w + 3, max_w)
 
-    # ── Headers (TO) ──────────────────────────────────────────────────────────
-
     @classmethod
     def _write_headers_to(cls, wb, results, loc_lookup):
-        """Sheet: Headers (TO) — one row per unique TO number."""
         ws = wb.create_sheet('Headers (TO)')
         headers = [
             'No.', 'Transfer-from Code', 'Transfer-to Code', 'Posting Date',
@@ -1385,13 +993,11 @@ class ExcelWriter:
         for res in results:
             all_rows = (res.regular_orders + res.tester_orders +
                        res.pwp_orders + res.gwp_orders + res.nonstock_orders)
-
             for item in all_rows:
                 to_num = item.to
                 if to_num and to_num.startswith('TO/') and to_num not in seen_to:
                     seen_to.add(to_num)
                     loc = loc_lookup.get(res.filename, {})
-
                     cls._data_cell(ws, r, 1, to_num)
                     cls._data_cell(ws, r, 2, 'PICK')
                     cls._data_cell(ws, r, 3, loc.get('transfer_code', item.transfer_to))
@@ -1403,11 +1009,8 @@ class ExcelWriter:
 
         cls._auto_width(ws)
 
-    # ── Headers (SO) ──────────────────────────────────────────────────────────
-
     @classmethod
     def _write_headers_so(cls, wb, results, loc_lookup):
-        """Sheet: Headers (SO) — one row per unique SO number."""
         ws = wb.create_sheet('Headers (SO)')
         headers = [
             'Document Type', 'No.', 'Sell-to Customer No.', 'Ship-to Code',
@@ -1428,7 +1031,6 @@ class ExcelWriter:
         for res in results:
             all_rows = (res.regular_orders + res.tester_orders +
                        res.pwp_orders + res.gwp_orders + res.nonstock_orders)
-
             for item in all_rows:
                 so_num = item.to
                 if so_num and so_num.startswith('SO/') and so_num not in seen_so:
@@ -1451,11 +1053,8 @@ class ExcelWriter:
 
         cls._auto_width(ws)
 
-    # ── Lines (TO) ────────────────────────────────────────────────────────────
-
     @classmethod
     def _write_lines_to(cls, wb, results, loc_lookup):
-        """Sheet: Lines (TO) — one row per item, line no increments by 10000."""
         ws = wb.create_sheet('Lines (TO)')
         headers = [
             'Document No.', 'Line No.', 'Item No.', 'Quantity',
@@ -1472,11 +1071,9 @@ class ExcelWriter:
         for res in results:
             all_rows = (res.regular_orders + res.pwp_orders +
                        res.tester_orders + res.gwp_orders + res.nonstock_orders)
-
             for item in all_rows:
                 if not item.to or not item.to.startswith('TO/'):
                     continue
-
                 if item.to != current_to:
                     current_to = item.to
                     line_no = 0
@@ -1497,11 +1094,8 @@ class ExcelWriter:
 
         cls._auto_width(ws)
 
-    # ── Lines (SO) ────────────────────────────────────────────────────────────
-
     @classmethod
     def _write_lines_so(cls, wb, results, loc_lookup):
-        """Sheet: Lines (SO) — one row per item within each SO number."""
         ws = wb.create_sheet('Lines (SO)')
         headers = [
             'Document Type', 'Document No.', 'Line No.', 'Type',
@@ -1517,11 +1111,9 @@ class ExcelWriter:
         for res in results:
             all_rows = (res.regular_orders + res.pwp_orders +
                        res.tester_orders + res.gwp_orders + res.nonstock_orders)
-
             for item in all_rows:
                 if not item.to or not item.to.startswith('SO/'):
                     continue
-
                 if item.to != current_so:
                     current_so = item.to
                     line_no = 0
@@ -1541,11 +1133,8 @@ class ExcelWriter:
 
         cls._auto_width(ws)
 
-    # ── Final Data ────────────────────────────────────────────────────────────
-
     @classmethod
     def _write_final_data(cls, wb, results):
-        """Sheet: Final Data — all order rows with color-coded Source/Status."""
         ws = wb.create_sheet('Final Data')
         headers = [
             'TO', 'Item', 'Qty', 'Unit Price', 'Transfer-to Code',
@@ -1569,7 +1158,6 @@ class ExcelWriter:
                 cls._data_cell(ws, row_num, 5, item.transfer_to)
                 cls._data_cell(ws, row_num, 6, item.posting_group)
 
-                # Source with color
                 src_cell = cls._data_cell(ws, row_num, 7, item.source)
                 sc = cls.SOURCE_COLORS.get(item.source, ('333333', 'FFFFFF'))
                 src_cell.fill = PatternFill('solid', fgColor=sc[0])
@@ -1580,7 +1168,6 @@ class ExcelWriter:
                 cls._data_cell(ws, row_num, 9, item.ean)
                 cls._data_cell(ws, row_num, 10, item.product_name)
 
-                # Status with color
                 st_cell = cls._data_cell(ws, row_num, 11, item.lookup_status)
                 stc = cls.STATUS_COLORS.get(item.lookup_status, ('666666', 'FFFFFF'))
                 st_cell.fill = PatternFill('solid', fgColor=stc[0])
@@ -1594,27 +1181,102 @@ class ExcelWriter:
             for item in res.tester_orders: r = write_row(item, r)
             for item in res.gwp_orders: r = write_row(item, r)
             for item in res.nonstock_orders: r = write_row(item, r)
-            r += 1  # Separator between locations
+            r += 1
 
         cls._auto_width(ws)
         ws.freeze_panes = 'A2'
         ws.auto_filter.ref = ws.dimensions
 
-    # ── Summary ───────────────────────────────────────────────────────────────
-
     @classmethod
     def _write_summary(cls, wb, results):
-        """Sheet: Summary — per-location qty breakdown with totals row."""
+        """
+        Per-location qty breakdown with TOTALS row.
+
+        v1.4: adds two columns immediately after Location:
+            'TO/SO Number' — the regular-order doc number for this location
+            'Tester TO/SO' — the tester doc number (date_code +1)
+        Both are derived from the first matching row in the result so
+        they're available for both Standalone (filename auto-fill) and
+        Special Order (always populated) modes.
+
+        v1.4.2: replaces v1.4.1's single 'Ship-To' column with two
+        ERP-verification columns:
+            'Transfer-to Code'        — for TO rows: the EKA Transfer
+                                          Code (e.g. EBO_AMD01); for
+                                          SO rows: the EKA ship_to
+                                          (e.g. 20395_1). What the
+                                          ERP record's destination
+                                          field will hold.
+            'Gen. Bus. Posting Group' — the EKA posting group, e.g.
+                                          'OFF-EBO', 'OFF-AIRPORT'.
+                                          Same field on both order
+                                          types.
+        Both empty when no EKA match (legacy/zero-friction runs).
+        """
         ws = wb.create_sheet('Summary')
         headers = [
-            'Location', 'PO Qty', 'PO Items', 'Tester Qty', 'Tester Items',
-            'PWP Qty', 'GWP Qty', 'Non-Stock Qty', 'Total Qty', 'Unmatched EANs',
+            'Location', 'TO/SO Number', 'Tester TO/SO',
+            'Transfer-to Code', 'Gen. Bus. Posting Group',
+            'PO Qty', 'PO Items', 'Tester Qty', 'Tester Items',
+            'PWP Qty', 'GWP Qty', 'Non-Stock Qty', 'Total Qty',
+            'Unmatched EANs',
         ]
         for c, h in enumerate(headers, 1):
             cls._hdr_cell(ws, 1, c, h)
 
         for i, res in enumerate(results, 2):
             loc = res.filename.replace('.xlsx', '').replace('_NEW_PO', '').replace('_New_PO', '')
+
+            # TO/SO numbers — pulled from first matching row.
+            to_regular = ''
+            to_tester = ''
+            if res.regular_orders and res.regular_orders[0].to:
+                to_regular = res.regular_orders[0].to
+            elif res.pwp_orders and res.pwp_orders[0].to:
+                to_regular = res.pwp_orders[0].to
+            if res.tester_orders and res.tester_orders[0].to:
+                to_tester = res.tester_orders[0].to
+            elif res.gwp_orders and res.gwp_orders[0].to:
+                to_tester = res.gwp_orders[0].to
+            elif res.nonstock_orders and res.nonstock_orders[0].to:
+                to_tester = res.nonstock_orders[0].to
+
+            # v1.4.2: type-aware destination resolution.
+            #
+            # TO orders go to a RENEE warehouse (Transfer Code, e.g.
+            # 'EBO_AMD01') — that's the right destination identifier
+            # because Transfer Orders move stock between internal
+            # warehouses, not to customers.
+            #
+            # SO orders go to an external Sell-to Customer at a
+            # specific Ship-to (e.g. '20395_1') — that's the right
+            # destination because Sales Orders ship to customers,
+            # and the bill_to/ship_to pair is what D365 needs.
+            #
+            # Determined by the TO/SO prefix on the first row's doc
+            # number — same source-of-truth as everything else.
+            transfer_dest = ''
+            posting_group = ''
+            for bucket in (res.regular_orders, res.tester_orders,
+                            res.pwp_orders, res.gwp_orders,
+                            res.nonstock_orders):
+                if bucket:
+                    posting_group = bucket[0].posting_group or ''
+                    break
+
+            if to_regular.startswith('SO/') or to_tester.startswith('SO/'):
+                # SO: prefer the EKA ship_to stashed on the result.
+                transfer_dest = getattr(res, '_so_ship_to', '') or ''
+            else:
+                # TO (or no doc prefix yet): use Transfer Code, which
+                # is stored on every row's transfer_to attribute.
+                for bucket in (res.regular_orders, res.tester_orders,
+                                res.pwp_orders, res.gwp_orders,
+                                res.nonstock_orders):
+                    if bucket and bucket[0].transfer_to:
+                        transfer_dest = bucket[0].transfer_to
+                        break
+
             po_q = sum(r.qty for r in res.regular_orders)
             tt_q = sum(r.qty for r in res.tester_orders)
             pw_q = sum(r.qty for r in res.pwp_orders)
@@ -1623,38 +1285,149 @@ class ExcelWriter:
             total = po_q + tt_q + pw_q + gw_q + ns_q
 
             cls._data_cell(ws, i, 1, loc)
-            cls._data_cell(ws, i, 2, po_q)
-            cls._data_cell(ws, i, 3, len(res.regular_orders))
-            cls._data_cell(ws, i, 4, tt_q)
-            cls._data_cell(ws, i, 5, len(res.tester_orders))
-            cls._data_cell(ws, i, 6, pw_q)
-            cls._data_cell(ws, i, 7, gw_q)
-            cls._data_cell(ws, i, 8, ns_q)
-            cls._data_cell(ws, i, 9, total)
-            cls._data_cell(ws, i, 10, len(res.unmatched))
+            cls._data_cell(ws, i, 2, to_regular)
+            cls._data_cell(ws, i, 3, to_tester)
+            cls._data_cell(ws, i, 4, transfer_dest)
+            cls._data_cell(ws, i, 5, posting_group)
+            cls._data_cell(ws, i, 6, po_q)
+            cls._data_cell(ws, i, 7, len(res.regular_orders))
+            cls._data_cell(ws, i, 8, tt_q)
+            cls._data_cell(ws, i, 9, len(res.tester_orders))
+            cls._data_cell(ws, i, 10, pw_q)
+            cls._data_cell(ws, i, 11, gw_q)
+            cls._data_cell(ws, i, 12, ns_q)
+            cls._data_cell(ws, i, 13, total)
+            cls._data_cell(ws, i, 14, len(res.unmatched))
 
             if res.unmatched:
-                ws.cell(row=i, column=10).fill = PatternFill('solid', fgColor='FF5252')
-                ws.cell(row=i, column=10).font = Font(
-                    name='Aptos Display', size=11, bold=True, color='FFFFFF')
+                ws.cell(row=i, column=14).fill = PatternFill(
+                    'solid', fgColor='FF5252')
+                ws.cell(row=i, column=14).font = Font(
+                    name='Aptos Display', size=11,
+                    bold=True, color='FFFFFF')
 
-        # Totals row
+        # TOTAL row — only sum numeric columns (skip the 4 text
+        # columns at indices 2, 3, 4, 5).
         tr = len(results) + 2
         cls._data_cell(ws, tr, 1, 'TOTAL')
-        ws.cell(row=tr, column=1).font = Font(name='Aptos Display', size=11, bold=True)
-        for c in range(2, 11):
-            total = sum(ws.cell(row=r, column=c).value or 0 for r in range(2, tr))
+        ws.cell(row=tr, column=1).font = Font(
+            name='Aptos Display', size=11, bold=True)
+        for c in range(6, 15):  # PO Qty (6) through Unmatched (14)
+            total = sum(ws.cell(row=r, column=c).value or 0
+                        for r in range(2, tr))
             cls._data_cell(ws, tr, c, total)
-            ws.cell(row=tr, column=c).font = Font(name='Aptos Display', size=11, bold=True)
+            ws.cell(row=tr, column=c).font = Font(
+                name='Aptos Display', size=11, bold=True)
 
         cls._auto_width(ws)
         ws.freeze_panes = 'A2'
 
-    # ── Unmatched EANs ────────────────────────────────────────────────────────
+    @classmethod
+    def _write_processing_log(cls, wb, processing_log):
+        """
+        Per-file status sheet — what happened to every file the user
+        added, in the order they were added.
+
+        v1.5.4: addresses the user's request for a 'file → mapping'
+        sheet similar to GT Mass output. Lets you scan a long batch
+        and immediately see which files got TOs, which got auto-fixed
+        column names, and which failed (with reasons).
+
+        Color coding:
+            ✓ OK         — green
+            ⚠ Auto-Fixed — yellow (succeeded with column rename etc.)
+            ⚠ Warning    — yellow (succeeded but had unmatched EANs etc.)
+            ✗ FAILED     — red (skipped, no output for this location)
+
+        Each entry in ``processing_log`` is a dict with keys:
+            filename     — basename of the source file
+            location     — extracted location code (filename without .xlsx)
+            status       — 'OK' | 'AUTO_FIXED' | 'WARNING' | 'FAILED'
+            issues       — list of strings describing what went wrong
+            actions      — list of strings describing fixes applied
+            to_number    — TO/SO number assigned (empty for failed)
+            tt_number    — Tester TO/SO number (empty if no testers)
+        """
+        ws = wb.create_sheet('Processing Log', 0)  # insert as first sheet
+        headers = [
+            'File', 'Location', 'Status',
+            'TO/SO Number', 'Tester TO/SO',
+            'Issues', 'Actions Taken',
+        ]
+        for c, h in enumerate(headers, 1):
+            cls._hdr_cell(ws, 1, c, h)
+
+        STATUS_FILLS = {
+            'OK':         ('00C853', '000000'),  # green
+            'AUTO_FIXED': ('FFB300', '000000'),  # amber
+            'WARNING':    ('FFB300', '000000'),  # amber
+            'FAILED':     ('FF5252', 'FFFFFF'),  # red
+        }
+        STATUS_LABELS = {
+            'OK':         '✓ OK',
+            'AUTO_FIXED': '⚠ Auto-Fixed',
+            'WARNING':    '⚠ Warning',
+            'FAILED':     '✗ FAILED',
+        }
+
+        for r, entry in enumerate(processing_log, 2):
+            cls._data_cell(ws, r, 1, entry.get('filename', ''))
+            cls._data_cell(ws, r, 2, entry.get('location', ''))
+
+            status = entry.get('status', 'OK')
+            status_cell = cls._data_cell(ws, r, 3, STATUS_LABELS.get(status, status))
+            fill_color, font_color = STATUS_FILLS.get(status, ('666666', 'FFFFFF'))
+            status_cell.fill = PatternFill('solid', fgColor=fill_color)
+            status_cell.font = Font(name='Aptos Display', size=11,
+                                      bold=True, color=font_color)
+            status_cell.alignment = Alignment(horizontal='center')
+
+            cls._data_cell(ws, r, 4, entry.get('to_number', ''))
+            cls._data_cell(ws, r, 5, entry.get('tt_number', ''))
+
+            issues = entry.get('issues', [])
+            actions = entry.get('actions', [])
+            cls._data_cell(ws, r, 6, '\n'.join(issues) if issues else '')
+            cls._data_cell(ws, r, 7, '\n'.join(actions) if actions else '')
+
+            # Wrap text in long cells so the issues/actions columns
+            # stay readable without horizontal scrolling.
+            ws.cell(row=r, column=6).alignment = Alignment(
+                wrap_text=True, vertical='top')
+            ws.cell(row=r, column=7).alignment = Alignment(
+                wrap_text=True, vertical='top')
+
+        # Summary row at bottom: total count by status
+        if processing_log:
+            counts = {'OK': 0, 'AUTO_FIXED': 0, 'WARNING': 0, 'FAILED': 0}
+            for e in processing_log:
+                s = e.get('status', 'OK')
+                counts[s] = counts.get(s, 0) + 1
+
+            tr = len(processing_log) + 2
+            cls._data_cell(ws, tr, 1, 'TOTAL')
+            ws.cell(row=tr, column=1).font = Font(
+                name='Aptos Display', size=11, bold=True)
+
+            summary_parts = []
+            if counts['OK']: summary_parts.append(f"{counts['OK']} OK")
+            if counts['AUTO_FIXED']: summary_parts.append(f"{counts['AUTO_FIXED']} auto-fixed")
+            if counts['WARNING']: summary_parts.append(f"{counts['WARNING']} warning")
+            if counts['FAILED']: summary_parts.append(f"{counts['FAILED']} failed")
+
+            cls._data_cell(ws, tr, 3, ' | '.join(summary_parts))
+            ws.cell(row=tr, column=3).font = Font(
+                name='Aptos Display', size=11, bold=True)
+
+        cls._auto_width(ws, max_w=60)
+        # Cap Issues/Actions columns at a reasonable width — they can
+        # contain multi-line text; let wrap_text handle the rest.
+        ws.column_dimensions['F'].width = 50
+        ws.column_dimensions['G'].width = 50
+        ws.freeze_panes = 'A2'
 
     @classmethod
     def _write_unmatched(cls, wb, results):
-        """Sheet: Unmatched EANs — failed EAN lookups for manual fix."""
         ws = wb.create_sheet('Unmatched EANs')
         for c, h in enumerate(['Location', 'EAN', 'Product Name', 'Order Qty', 'Tester Qty'], 1):
             cls._hdr_cell(ws, 1, c, h)
@@ -1677,16 +1450,12 @@ class ExcelWriter:
 
         cls._auto_width(ws)
 
-    # ── Tester Items Master ───────────────────────────────────────────────────
-
     @classmethod
     def _write_tester_master(cls, wb, results):
-        """Sheet: Tester Items Master — PWP/GWP/Non-Stock resolution audit."""
         ws = wb.create_sheet('Tester Items Master')
         for c, h in enumerate(['Type', 'Product Name', 'EAN', 'Item No', 'Status', 'Used In Locations'], 1):
             cls._hdr_cell(ws, 1, c, h)
 
-        # Collect unique items across all locations
         items_map = {}
         for res in results:
             loc = res.filename.replace('.xlsx', '').replace('_NEW_PO', '').replace('_New_PO', '')
@@ -1741,11 +1510,8 @@ class ExcelWriter:
 
         cls._auto_width(ws)
 
-    # ── SO Reference ──────────────────────────────────────────────────────────
-
     @classmethod
     def _write_so_reference(cls, wb, so_products, master):
-        """Sheet: SO Reference — Special Order source data with calculated prices."""
         ws = wb.create_sheet('SO Reference')
         headers = [
             'Description', 'EAN', 'EBO Qty', 'Airport Qty', 'Kiosk Qty',
@@ -1801,105 +1567,46 @@ class ExcelWriter:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  SPECIAL ORDER ENGINE
+#  SPECIAL ORDER ENGINE — broadcast products to all locations (logic unchanged)
 # ═══════════════════════════════════════════════════════════════════════════════
 #
-# Unlike the standalone PO engine which reads individual files per location,
-# the Special Order engine reads:
-#   1. EKA_DATA.xlsx — locations with Prefix, Short Code, Transfer Code, Type
-#   2. Special_Order.xlsx — products with per-type quantities
-#   3. Items_March.xlsx — shared master (loaded by POEngine)
+# Pattern: same product list × every active EKA location, with quantity
+# chosen by location Type (EBO/Airport/Kiosk).
 #
-# Output: Same Final Data format as standalone, but with TO number,
-# Transfer-to Code, and Gen. Biz. Posting Group PRE-FILLED from EKA_DATA.
-#
-# TO Number Pattern (v1.2 — same for both segments):
+# TO Number Pattern:
 #     Regular: {Prefix}/{ShortCode}/{MM}/{DDMYY}
 #     Tester:  {Prefix}/{ShortCode}/TT/{DDMYY + 1}
-#
-#   Example (April 18, 2026):
-#     Regular: TO/CHNAP/04/18426
-#     Tester:  TO/CHNAP/TT/18427   ← date_code + 1 for unique Excel search
-#
-# v1.2 changes:
-#   - generate_to_number: uses MM (month) for regular, TT for tester
-#   - tester date_code = regular date_code + 1
-#   - load_eka_data: stores 'location' field for standalone filename matching
+#       ↑ Tester date_code +1 ensures unique last 4 digits in Excel search.
 
 class SpecialOrderEngine:
-    """
-    Processes Special Order broadcasts across all EKA locations.
+    """Processes Special Order broadcasts across all EKA locations."""
 
-    Flow:
-        1. load_eka_data()      → parse locations with metadata
-        2. load_special_order() → parse products with per-type quantities
-        3. validate()           → check structure, columns, EANs
-        4. process()            → generate LocationResult per location
-    """
-
-    # ┌─────────────────────────────────────────────────────────────────────────┐
-    # │ REQUIRED COLUMNS in EKA_DATA                                            │
-    # │ These column names must exist (exact match) in the EKA_DATA file.       │
-    # │                                                                         │
-    # │ 'Gen. Biz. Posting Group' may have extra spaces in source file —       │
-    # │ the loader uses fuzzy matching for this column.                          │
-    # └─────────────────────────────────────────────────────────────────────────┘
     EKA_REQUIRED_COLS = [
-        'Short Name',
-        'Prefix',
-        'Short Code',
-        'Transfer Code',
-        'Type',
-        'Gen. Biz. Posting Group',
+        'Short Name', 'Prefix', 'Short Code', 'Transfer Code',
+        'Type', 'Gen. Biz. Posting Group',
     ]
 
-    # ┌─────────────────────────────────────────────────────────────────────────┐
-    # │ REQUIRED COLUMNS in Special Order                                       │
-    # │ Standard names with fallbacks (same alert pattern as standalone PO).    │
-    # │                                                                         │
-    # │ Standard          Fallback       Alert if fallback used                 │
-    # │ ─────────────     ──────────     ──────────────────────                 │
-    # │ EAN               (none)         ERROR if missing                       │
-    # │ EBO Qty           EBO            Alert: rename to 'EBO Qty'            │
-    # │ Airport Qty       Airport        Alert: rename to 'Airport Qty'        │
-    # │ Kiosk Qty         Kiosk          Alert: rename to 'Kiosk Qty'          │
-    # │ Tester Qty        Tester         Alert: rename to 'Tester Qty'         │
-    # └─────────────────────────────────────────────────────────────────────────┘
     SO_STANDARD_COLS = {
         'ean':         ('EAN', []),
         'ebo_qty':     ('EBO Qty', ['EBO']),
         'airport_qty': ('Airport Qty', ['Airport']),
         'kiosk_qty':   ('Kiosk Qty', ['Kiosk']),
-        'tester_qty':  ('Tester Qty', ['Tester', 'Tester']),
+        'tester_qty':  ('Tester Qty', ['Tester']),
     }
 
-    # ┌─────────────────────────────────────────────────────────────────────────┐
-    # │ Type → qty column mapping                                               │
-    # │ Determines which quantity column to use for each location type.         │
-    # │                                                                         │
-    # │ EBO     locations → ebo_qty column                                      │
-    # │ Airport locations → airport_qty column                                  │
-    # │ Kiosk   locations → kiosk_qty column                                    │
-    # └─────────────────────────────────────────────────────────────────────────┘
     TYPE_QTY_MAP = {
-        'EBO':     'ebo_qty',
+        'EBO': 'ebo_qty',
         'Airport': 'airport_qty',
-        'Kiosk':   'kiosk_qty',
+        'Kiosk': 'kiosk_qty',
     }
 
     def __init__(self, master: Dict[str, Dict]):
-        """
-        Args:
-            master: The Items_March lookup dict (shared with POEngine).
-                    Indexed by GTIN and by No.
-        """
         self.master = master
-        self.locations: List[Dict] = []       # Parsed from EKA_DATA
-        self.products: List[Dict] = []        # Parsed from Special Order
-        self.so_col_map: Dict[str, int] = {}  # Column name → index
+        self.locations: List[Dict] = []
+        self.products: List[Dict] = []
+        self.so_col_map: Dict[str, int] = {}
 
     def _safe_int(self, val) -> int:
-        """Safely convert cell value to int. Returns 0 for None/empty/errors."""
         try:
             if val is None or str(val).strip() in ('', '#N/A', 'None'):
                 return 0
@@ -1908,104 +1615,76 @@ class SpecialOrderEngine:
             return 0
 
     def _ean_str(self, raw) -> str:
-        """Convert raw EAN cell value to clean string."""
         if raw is None:
             return ''
         return str(int(raw)) if isinstance(raw, (int, float)) else str(raw).strip()
 
-    # ┌─────────────────────────────────────────────────────────────────────────┐
-    # │ TO NUMBER GENERATION (v1.2)                                             │
-    # │                                                                         │
-    # │ Pattern: {Prefix}/{ShortCode}/{Segment}/{DateCode}                      │
-    # │                                                                         │
-    # │ Segment:                                                                │
-    # │   Regular → month number, zero-padded: '01', '02', ..., '12'           │
-    # │   Tester  → literal 'TT'                                               │
-    # │                                                                         │
-    # │ DateCode: DD + M + YY                                                   │
-    # │   DD = day (zero-padded)                                                │
-    # │   M  = month (NOT zero-padded: 1-9 for Jan-Sep, 10-12 for Oct-Dec)     │
-    # │   YY = last 2 digits of year                                            │
-    # │                                                                         │
-    # │ v1.2 CHANGE: Tester date_code = regular date_code + 1                  │
-    # │   This ensures the last digits are unique when searching in Excel.      │
-    # │                                                                         │
-    # │ Examples (April 18, 2026):                                              │
-    # │   Regular: TO/AHDEB/04/18426    ← date_code = 18426                    │
-    # │   Tester:  TO/AHDEB/TT/18427   ← date_code = 18426 + 1 = 18427       │
-    # │                                                                         │
-    # │ This method is used by BOTH segments:                                   │
-    # │   - Standalone: called when EKA_DATA filename match is found            │
-    # │   - Special Order: called for every location during process()           │
-    # └─────────────────────────────────────────────────────────────────────────┘
+    @staticmethod
+    def get_today_date_code() -> int:
+        """
+        Return the date code for today: DD + M + YY.
+
+        Used as the starting value for the per-run TO/SO counter.
+        DD is zero-padded; M is NOT zero-padded (e.g. April = 4);
+        YY is the last 2 digits of the year. Example for April 25,
+        2026: ``25`` + ``4`` + ``26`` = 25426.
+        """
+        today = date.today()
+        dd = today.strftime('%d')
+        m = str(today.month)
+        yy = today.strftime('%y')
+        return int(f"{dd}{m}{yy}")
 
     @staticmethod
-    def generate_to_number(prefix: str, short_code: str, is_tester: bool) -> str:
+    def get_today_month_str() -> str:
+        """Return current month as a 2-digit string ('04' for April)."""
+        return f"{date.today().month:02d}"
+
+    @staticmethod
+    def generate_to_number(prefix: str, short_code: str,
+                            is_tester: bool,
+                            date_code: Optional[int] = None) -> str:
         """
-        Generate TO/SO number for any mode.
+        Build a TO/SO doc number string.
+
+        v1.5 changes the contract: ``date_code`` is now an explicit
+        argument so the caller can drive the per-run counter (each
+        emitted doc gets the next number in the sequence). When
+        ``date_code`` is None we fall back to today's code — the
+        legacy behavior, retained for any callers that don't yet
+        thread a counter through.
+
+        Format::
+
+            Regular:  {prefix}/{short_code}/{MM}/{date_code}
+            Tester:   {prefix}/{short_code}/TT/{date_code}
 
         Args:
-            prefix     : 'TO' or 'SO' (from EKA_DATA Prefix column)
-            short_code : Location short code (e.g., 'AHDEB', 'CHNAP')
-            is_tester  : True for tester, False for regular
+            prefix     : 'TO' or 'SO' (from EKA_DATA Prefix column).
+            short_code : Location code, e.g. 'AHDEB'.
+            is_tester  : True for tester orders (uses 'TT' segment).
+            date_code  : Explicit numeric suffix. None → today's.
 
         Returns:
-            Full TO/SO number string.
-
-        Examples:
-            generate_to_number('TO', 'AHDEB', False)  → 'TO/AHDEB/04/18426'
-            generate_to_number('TO', 'AHDEB', True)   → 'TO/AHDEB/TT/18427'
-            generate_to_number('SO', 'PUNEB', False)  → 'SO/PUNEB/04/18426'
-            generate_to_number('SO', 'PUNEB', True)   → 'SO/PUNEB/TT/18427'
+            The full doc number, e.g. ``TO/AHDEB/04/25426``.
         """
-        from datetime import date
-        today = date.today()
+        if date_code is None:
+            date_code = SpecialOrderEngine.get_today_date_code()
 
-        dd = today.strftime('%d')           # '18' (zero-padded day)
-        m = str(today.month)                 # '4'  (NOT zero-padded month)
-        yy = today.strftime('%y')            # '26' (2-digit year)
-        date_code = int(f"{dd}{m}{yy}")      # 18426
-
-        if is_tester:
-            # v1.2: increment by 1 for unique Excel search
-            date_code += 1                   # 18426 → 18427
-            segment = 'TT'
-        else:
-            segment = f"{today.month:02d}"   # '04' (zero-padded for TO number)
-
+        segment = 'TT' if is_tester else SpecialOrderEngine.get_today_month_str()
         return f"{prefix}/{short_code}/{segment}/{date_code}"
 
     def load_eka_data(self, filepath: str, logs: List[tuple]) -> int:
-        """
-        Load EKA_DATA.xlsx → parse locations with metadata.
-
-        Required columns:
-            Short Name, Prefix, Short Code, Transfer Code,
-            Type, Gen. Biz. Posting Group
-
-        Optional columns:
-            Location (v1.2: for standalone filename matching)
-            Bill to, Ship to (for SO headers)
-            Status ('Active' or 'Inactive')
-
-        Args:
-            filepath: Path to EKA_DATA.xlsx
-            logs:     List to append messages to
-
-        Returns:
-            Number of active locations loaded.
-        """
+        """Parse EKA_DATA.xlsx → self.locations. Returns active count."""
         wb = load_workbook(filepath, data_only=True)
         ws = wb[wb.sheetnames[0]]
 
-        # ── Build header map ──
         header_map = {}
         for cell in list(ws.iter_rows(min_row=1, max_row=1))[0]:
             val = str(cell.value or '').strip()
             if val:
                 header_map[val] = cell.column - 1
 
-        # ── Find required columns (with fuzzy match for Gen. Biz.) ──
         col_idx = {}
         for req in self.EKA_REQUIRED_COLS:
             if req in header_map:
@@ -2025,14 +1704,12 @@ class SpecialOrderEngine:
         if len(col_idx) < len(self.EKA_REQUIRED_COLS):
             return 0
 
-        # ── v1.2: Find optional 'Location' column for filename matching ──
         location_col_idx = None
         for h, idx in header_map.items():
             if h.strip().lower() == 'location':
                 location_col_idx = idx
                 break
 
-        # ── Parse rows ──
         self.locations = []
         skipped_inactive = 0
 
@@ -2047,12 +1724,10 @@ class SpecialOrderEngine:
             loc_type = str(row[col_idx['Type']].value or '').strip()
             posting = str(row[col_idx['Gen. Biz. Posting Group']].value or '').strip()
 
-            # v1.2: Read Location column
             location_code = ''
             if location_col_idx is not None:
                 location_code = str(row[location_col_idx].value or '').strip()
 
-            # Read optional columns (Bill to, Ship to, Status)
             bill_to = ''
             ship_to = ''
             status = 'Active'
@@ -2065,7 +1740,6 @@ class SpecialOrderEngine:
                 elif h_lower == 'status':
                     status = str(row[idx].value or 'Active').strip()
 
-            # Skip Inactive locations
             if status.lower() == 'inactive':
                 skipped_inactive += 1
                 logs.append(('info',
@@ -2082,7 +1756,7 @@ class SpecialOrderEngine:
                 'prefix': prefix,
                 'short_code': short_code,
                 'transfer_code': transfer_code,
-                'location': location_code,      # v1.2: for filename matching
+                'location': location_code,
                 'type': loc_type,
                 'posting_group': posting,
                 'bill_to': bill_to,
@@ -2098,16 +1772,7 @@ class SpecialOrderEngine:
         return len(self.locations)
 
     def _detect_so_columns(self, ws, logs: List[tuple]) -> Dict[str, int]:
-        """
-        Detect Special Order columns with fallback + alert.
-
-        Same pattern as PO sheet column detection:
-            'EAN'         → (no fallback, error if missing)
-            'EBO Qty'     → fallback: 'EBO'
-            'Airport Qty' → fallback: 'Airport'
-            'Kiosk Qty'   → fallback: 'Kiosk'
-            'Tester Qty'  → fallback: 'Tester'
-        """
+        """Detect Special Order columns with fallbacks + alerts."""
         hmap = {}
         all_headers = {}
 
@@ -2132,22 +1797,12 @@ class SpecialOrderEngine:
         return hmap
 
     def load_special_order(self, filepath: str, logs: List[tuple]) -> int:
-        """
-        Load Special_Order.xlsx → parse products with per-type quantities.
-
-        Args:
-            filepath: Path to Special Order Excel file
-            logs:     List to append messages to
-
-        Returns:
-            Number of products loaded.
-        """
+        """Parse Special_Order.xlsx → self.products. Returns count."""
         wb = load_workbook(filepath, data_only=True)
         ws = wb[wb.sheetnames[0]]
 
         self.so_col_map = self._detect_so_columns(ws, logs)
 
-        # Validate required columns
         if 'ean' not in self.so_col_map:
             logs.append(('error', "Special Order: 'EAN' not found — cannot process"))
             return 0
@@ -2163,7 +1818,6 @@ class SpecialOrderEngine:
                 f"Special Order: Missing columns: {', '.join(missing_qty)}"))
             return 0
 
-        # Parse products
         self.products = []
         for row in ws.iter_rows(min_row=2, max_row=ws.max_row, values_only=False):
             ean_raw = row[self.so_col_map['ean']].value
@@ -2188,11 +1842,7 @@ class SpecialOrderEngine:
         return len(self.products)
 
     def validate(self, logs: List[tuple]) -> bool:
-        """
-        Validate EANs against master and location types.
-
-        Returns True if no blocking errors.
-        """
+        """Validate EANs against master and location types. Returns OK."""
         if not self.locations:
             logs.append(('error', "No locations loaded from EKA_DATA"))
             return False
@@ -2200,7 +1850,6 @@ class SpecialOrderEngine:
             logs.append(('error', "No products loaded from Special Order"))
             return False
 
-        # Check EANs against master
         missing = 0
         for prod in self.products:
             ean = prod['ean']
@@ -2216,7 +1865,6 @@ class SpecialOrderEngine:
             logs.append(('info',
                 f"Special Order: All {len(self.products)} EANs found in master ✓"))
 
-        # Validate location types
         valid_types = set(self.TYPE_QTY_MAP.keys())
         for loc in self.locations:
             if loc['type'] not in valid_types:
@@ -2228,19 +1876,28 @@ class SpecialOrderEngine:
 
     def process(self, logs: List[tuple]) -> List[LocationResult]:
         """
-        Process Special Order → generate LocationResult per location.
+        Generate LocationResult per location.
 
-        For each location × each product:
-            - Regular row: qty from EBO/Airport/Kiosk column based on Type
-            - Tester row: qty from Tester column at ₹0.54
-            - TO number auto-generated (v1.2: tester date_code + 1)
-            - Transfer-to Code and Gen. Biz. Posting Group pre-filled
+        v1.5: TO/SO numbers now use a per-run incrementing counter
+        seeded with today's date_code (e.g. 25426). Each doc emitted —
+        whether regular or tester, TO or SO — consumes the next number
+        in the sequence. This makes every TO/SO globally unique
+        within a run, so searching for the last digits in Excel
+        always identifies exactly one row. Order of assignment
+        follows EKA_DATA row order.
 
-        Returns:
-            List of LocationResult, one per location.
+        Tester numbers are only assigned when the location actually
+        has a tester row (any product with ``tester_qty > 0``).
+        Locations with no tester data don't reserve a number — the
+        next location takes the very next slot.
         """
         results = []
+        counter = self.get_today_date_code()
 
+        # Pre-compute "does this location have any regular / tester
+        # rows?" so we can decide upfront whether to assign and burn
+        # a counter slot. This is a single pass over products per
+        # location — cheap.
         for loc in self.locations:
             loc_type = loc['type']
             qty_key = self.TYPE_QTY_MAP.get(loc_type)
@@ -2249,13 +1906,36 @@ class SpecialOrderEngine:
                     f"Skipping '{loc['short_name']}' — unknown Type '{loc_type}'"))
                 continue
 
-            # Generate TO numbers (v1.2: tester gets date_code + 1)
-            to_regular = self.generate_to_number(
-                loc['prefix'], loc['short_code'], is_tester=False)
-            to_tester = self.generate_to_number(
-                loc['prefix'], loc['short_code'], is_tester=True)
+            # First pass: scan the product list to find out which
+            # buckets (regular, tester) this location actually emits.
+            # Lets us decide whether to allocate counter numbers.
+            has_regular = any(p[qty_key] > 0 for p in self.products)
+            has_tester = any(p['tester_qty'] > 0 for p in self.products)
+
+            # Allocate counters in sequence (regular, then tester
+            # for the SAME location). Skip the slot if that bucket
+            # has no rows so we don't burn numbers on empty docs.
+            to_regular = ''
+            to_tester = ''
+            if has_regular:
+                to_regular = self.generate_to_number(
+                    loc['prefix'], loc['short_code'],
+                    is_tester=False, date_code=counter)
+                counter += 1
+            if has_tester:
+                to_tester = self.generate_to_number(
+                    loc['prefix'], loc['short_code'],
+                    is_tester=True, date_code=counter)
+                counter += 1
 
             res = LocationResult(filename=loc['short_name'])
+            # v1.4: stash sell_to/ship_to from EKA_DATA so D365SOExporter
+            # can populate the Sales Header columns C+D. These are
+            # carried as private attributes on the LocationResult
+            # because the dataclass schema is shared with the standalone
+            # mode where these fields aren't populated.
+            res._so_bill_to = loc.get('bill_to', '')
+            res._so_ship_to = loc.get('ship_to', '')
             unmatched = []
 
             for prod in self.products:
@@ -2263,7 +1943,6 @@ class SpecialOrderEngine:
                 regular_qty = prod[qty_key]
                 tester_qty = prod['tester_qty']
 
-                # Master lookup
                 info = self.master.get(ean) or self.master.get(ean.lstrip('0'))
 
                 if info:
@@ -2281,34 +1960,25 @@ class SpecialOrderEngine:
                         'order_qty': regular_qty, 'tester_qty': tester_qty,
                     })
 
-                # Regular order row
                 if regular_qty > 0:
                     res.regular_orders.append(OutputRow(
                         to=to_regular,
-                        item_no=item_no,
-                        qty=regular_qty,
+                        item_no=item_no, qty=regular_qty,
                         unit_price=cost or 0,
                         transfer_to=loc['transfer_code'],
                         posting_group=loc['posting_group'],
-                        source='PO',
-                        ean=ean,
-                        product_name=product_name,
-                        lookup_status=status,
+                        source='PO', ean=ean,
+                        product_name=product_name, lookup_status=status,
                     ))
 
-                # Tester row
                 if tester_qty > 0:
                     res.tester_orders.append(OutputRow(
                         to=to_tester,
-                        item_no=item_no,
-                        qty=tester_qty,
-                        unit_price=0.54,
+                        item_no=item_no, qty=tester_qty, unit_price=0.54,
                         transfer_to=loc['transfer_code'],
                         posting_group=loc['posting_group'],
-                        source='TESTER',
-                        ean=ean,
-                        product_name=product_name,
-                        lookup_status=status,
+                        source='TESTER', ean=ean,
+                        product_name=product_name, lookup_status=status,
                     ))
 
             res.unmatched = unmatched
@@ -2326,104 +1996,325 @@ class SpecialOrderEngine:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  D365 TRANSFER ORDER EXPORTER — NEW in v1.2
+#  D365 XML HELPERS (v1.5.1 — ported from online_po_processor)
 # ═══════════════════════════════════════════════════════════════════════════════
 #
-# Fills a D365 Transfer Order template with processed data.
-# Uses the same ZIP/XML regex approach as the GT Mass D365 SO exporter.
+# These module-level helpers are the proven D365 ZIP/XML manipulation
+# logic from ``online_po_processor.exporter.d365_exporter``. The original
+# EKA D365 exporters had three latent bugs that surfaced when Microsoft
+# refreshed the EKA_Sample_Package_SO.xlsx template format:
 #
-# Template format (from EKA_Sample_Package.xlsx):
-#     Sheet 1 'Transfer Header':
-#         Row 1: metadata (e.g., 'TO - MILAN', 'Transfer Header', '5740')
-#         Row 2: (empty)
-#         Row 3: column headers
-#         Row 4+: pre-formatted empty data rows
+#   1. ``_fill_cell`` only matched empty self-closing cells like
+#      ``<c r="A4" s="11"/>``. It silently no-op'd when the template
+#      ships with pre-populated sample data like
+#      ``<c r="A4" s="5" t="s"><v>28</v></c>`` — leaving the template's
+#      stale shared-string indices in our output. After we rebuilt
+#      the sharedStrings table, those stale indices pointed at the
+#      wrong slots and Excel flagged "Workbook Repaired".
 #
-#     Sheet 2 'Transfer Line':
-#         Row 1: metadata
-#         Row 2: (empty)
-#         Row 3: column headers
-#         Row 4+: pre-formatted empty data rows
+#   2. The "phantom row strip" (delete every row > max_row before
+#      injecting) was destroying valid pre-styled rows the template
+#      needed. Replaced by trim-on-finalize only.
 #
-# If data exceeds template row capacity, new <row> elements are injected
-# into the XML before filling (same inject_row technique as GT Mass).
+#   3. ``_ensure_enough_rows`` originally used row count instead of
+#      max-row-number, mis-counting capacity when the template had
+#      gaps in its row numbering.
+#
+# Fixes ported here apply equally to D365TOExporter and D365SOExporter
+# below; both now use these shared helpers.
+
+
+def _d365_detect_data_style(xml: str, data_start_row: int = 4,
+                              fallback: str = '11') -> str:
+    """
+    Find the style id used by data cells in a template sheet.
+
+    Reads the first ``<c>`` cell on ``data_start_row`` and returns its
+    ``s`` attribute. Falls back to ``fallback`` when row 4 is missing
+    entirely (rare). Why dynamic detection: D365 sample templates from
+    different sources use different style ids; hardcoding leaks output
+    files Excel will repair-prompt on.
+    """
+    match = re.search(
+        rf'<c r="[A-Z]+{data_start_row}"[^>]*s="(\d+)"', xml,
+    )
+    return match.group(1) if match else fallback
+
+
+def _d365_ensure_enough_rows(xml: str, needed: int,
+                               data_start_row: int,
+                               columns: List[str],
+                               style_id: str) -> str:
+    """
+    Append empty pre-styled ``<row>`` elements when the template's
+    pre-existing row capacity is less than ``needed``.
+
+    Uses the **maximum row number** found in the template — not the
+    row count — to compute capacity, so templates with gaps in their
+    row numbering (e.g. row 2 missing because it's visually blank)
+    don't get mis-counted.
+
+    v1.5.1: also strips sparse phantom rows (rows that don't have a
+    cell in column A) before computing capacity. Some D365 templates
+    have stray cells in trailing rows like ``<row r="5"><c r="L5"/></row>``
+    that aren't real data rows but inflate ``max_existing_row``. We
+    can't fill those rows because our column-A-onwards fills find
+    nothing to replace. Stripping them up-front lets the inject path
+    create proper full-width rows.
+
+    Args:
+        xml:            Sheet XML string.
+        needed:         Number of data rows we want to write.
+        data_start_row: 1-based row number where data begins (4).
+        columns:        Column letters that need a pre-styled cell
+                        per injected row.
+        style_id:       Style id matching the template's existing
+                        styled cells.
+
+    Returns:
+        Updated XML with phantom rows stripped and extra rows
+        appended (or unchanged if the template already had enough
+        full-width capacity).
+    """
+    # Strip sparse phantom rows: rows without a column-A cell can't
+    # be filled by column-prefixed regex, so they're effectively dead
+    # weight. Only strip rows STRICTLY beyond data_start_row so we
+    # don't accidentally remove the template's first real data row.
+    def _phantom_replacer(m: 're.Match[str]') -> str:
+        row_num = int(m.group(1))
+        body = m.group(0)
+        if row_num <= data_start_row:
+            return body  # never strip header/first-data row
+        if f'<c r="A{row_num}"' in body:
+            return body  # has column A → real data row
+        return ''  # phantom
+
+    xml = re.sub(
+        r'<row r="(\d+)"[^>]*>.*?</row>',
+        _phantom_replacer, xml, flags=re.DOTALL,
+    )
+
+    row_nums = [int(x) for x in re.findall(r'<row r="(\d+)"', xml)]
+    max_existing_row = max(row_nums) if row_nums else 0
+    existing_capacity = max(0, max_existing_row - data_start_row + 1)
+
+    if needed <= existing_capacity:
+        return xml
+
+    new_row_count = needed - existing_capacity
+    first_new_row = max_existing_row + 1
+
+    new_rows: List[str] = []
+    for offset in range(new_row_count):
+        row_num = first_new_row + offset
+        cells = ''.join(
+            f'<c r="{col}{row_num}" s="{style_id}"/>' for col in columns
+        )
+        new_rows.append(
+            f'<row r="{row_num}" spans="1:{len(columns)}" '
+            f'x14ac:dyDescent="0.3">{cells}</row>'
+        )
+
+    return xml.replace('</sheetData>', ''.join(new_rows) + '</sheetData>')
+
+
+def _d365_fill_cell(xml: str, col: str, row_num: int, value,
+                     is_string: bool, string_map: Dict[str, int]) -> str:
+    """
+    Replace a single cell's content in a sheet XML string.
+
+    Two-stage regex match:
+
+    1. **Fast path** — empty self-closing cell like
+       ``<c r="A4" s="11"/>``. This is what
+       :func:`_d365_ensure_enough_rows` produces for newly-injected
+       rows. Most replacements hit this path.
+
+    2. **Slow path** — pre-filled cell like
+       ``<c r="A4" s="5" t="s"><v>28</v></c>``. Required because some
+       D365 templates ship with sample data already in the data rows.
+       Without this, our fills silently no-op and the sample data
+       leaks into the output. We replace the whole element while
+       preserving the style id.
+
+    Args:
+        xml:        Sheet XML.
+        col:        Column letter ('A'..'Z').
+        row_num:    1-based row number.
+        value:      Cell value (string or number).
+        is_string:  When True, ``value`` is shared-string-indexed via
+                    ``string_map``; when False, written as a numeric
+                    literal.
+        string_map: Required when ``is_string=True``.
+
+    Returns:
+        Updated XML. Unchanged if neither pattern matched (which
+        shouldn't happen because ``_d365_ensure_enough_rows`` runs
+        first).
+    """
+    ref = f"{col}{row_num}"
+
+    if is_string:
+        idx = string_map.get(str(value), 0)
+        empty_replacement = f'<c r="{ref}" s="\\1" t="s"><v>{idx}</v></c>'
+    else:
+        empty_replacement = f'<c r="{ref}" s="\\1"><v>{value}</v></c>'
+
+    # Fast path: empty self-closing cell
+    empty_pat = f'<c r="{ref}" s="(\\d+)"\\s*/>'
+    new_xml, n = re.subn(empty_pat, empty_replacement, xml, count=1)
+    if n > 0:
+        return new_xml
+
+    # Slow path: pre-filled cell — match the entire element and
+    # rebuild it with the correct style/value. Captures the style
+    # id explicitly so we can re-emit it in the replacement.
+    prefilled_pat = (
+        rf'<c r="{ref}"[^>]*s="(\d+)"[^>]*'
+        r'(?:/>|>.*?</c>)'
+    )
+
+    def _replace(match: 're.Match[str]') -> str:
+        style = match.group(1)
+        if is_string:
+            idx = string_map.get(str(value), 0)
+            return f'<c r="{ref}" s="{style}" t="s"><v>{idx}</v></c>'
+        return f'<c r="{ref}" s="{style}"><v>{value}</v></c>'
+
+    return re.sub(prefilled_pat, _replace, xml, count=1, flags=re.DOTALL)
+
+
+def _d365_fill_inline_string(xml: str, col: str, row_num: int,
+                               value: str) -> str:
+    """
+    Replace a cell with a literal inline-string value.
+
+    Used as a degraded fallback when a non-numeric value (e.g. an
+    item_no like ``?EAN:1234567``) wasn't pre-registered in the
+    sharedStrings rebuild. D365 still reads inline strings fine; we
+    just lose the dedupe benefit, which is harmless for a handful
+    of leftover values.
+    """
+    ref = f"{col}{row_num}"
+    esc = (str(value).replace('&', '&amp;')
+                       .replace('<', '&lt;')
+                       .replace('>', '&gt;'))
+
+    empty_pat = f'<c r="{ref}" s="(\\d+)"\\s*/>'
+    replacement = f'<c r="{ref}" s="\\1" t="inlineStr"><is><t>{esc}</t></is></c>'
+    new_xml, n = re.subn(empty_pat, replacement, xml, count=1)
+    if n > 0:
+        return new_xml
+
+    prefilled_pat = (
+        rf'<c r="{ref}"[^>]*s="(\d+)"[^>]*(?:/>|>.*?</c>)'
+    )
+
+    def _rep(match: 're.Match[str]') -> str:
+        style = match.group(1)
+        return (f'<c r="{ref}" s="{style}" t="inlineStr">'
+                f'<is><t>{esc}</t></is></c>')
+
+    return re.sub(prefilled_pat, _rep, xml, count=1, flags=re.DOTALL)
+
+
+def _d365_remove_rows_beyond(xml: str, max_row: int) -> str:
+    """
+    Drop every ``<row r="N">…</row>`` element where ``N > max_row``.
+
+    Final-trim pass run after all fills are done — keeps the output
+    tight so D365 doesn't see "extra blank rows" at import time.
+    Operates on serialized XML so we don't need a DOM library.
+    """
+    def _replacer(match: 're.Match[str]') -> str:
+        row_num = int(match.group(1))
+        return '' if row_num > max_row else match.group(0)
+
+    return re.sub(
+        r'<row r="(\d+)"[^>]*>.*?</row>',
+        _replacer, xml, flags=re.DOTALL,
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  D365 TRANSFER ORDER EXPORTER (v1.5.1 — uses shared _d365_* helpers)
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Fills D365 TO template via ZIP/XML manipulation. Template must have:
+#     Sheet 1 'Transfer Header' — data starts row 4
+#     Sheet 2 'Transfer Line'   — data starts row 4
+#
+# v1.5.1 fixes the corruption that occurred with templates that ship
+# with pre-populated sample data — see _d365_fill_cell docstring.
 
 class D365TOExporter:
     """
     Fills a D365 Transfer Order template via ZIP/XML manipulation.
 
-    Template must have:
-        - Sheet 1 named 'Transfer Header' with data starting at row 4
-        - Sheet 2 named 'Transfer Line' with data starting at row 4
+    v1.5.1: rewritten to use the shared ``_d365_*`` helpers ported
+    from online_po_processor. Fixes the "Excel found a problem"
+    corruption that hit when templates ship with pre-populated
+    sample data in the data rows.
+
+    Output sheets:
+        Sheet 1 'Transfer Header' — 12 cols A-L, data starts row 4
+        Sheet 2 'Transfer Line'   — 9 cols A-I, data starts row 4
+
+    Only emits rows whose ``item.to`` starts with 'TO/'. SO-prefixed
+    rows are skipped — D365SOExporter handles those.
     """
 
+    # Column letters per sheet — used to inject pre-styled cells when
+    # the template's row capacity falls short.
+    HDR_COLS = list('ABCDEFGHIJKL')   # Transfer Header (12 cols)
+    LINE_COLS = list('ABCDEFGHI')      # Transfer Line (9 cols)
+
     @staticmethod
-    def export(results: List[LocationResult],
-               template_path: str,
+    def export(results: List[LocationResult], template_path: str,
                output_path: str) -> str:
-        """
-        Fill the D365 TO template with processed data.
-
-        Args:
-            results       : List[LocationResult] with processed data
-            template_path : Path to the D365 TO template .xlsx
-            output_path   : Where to save the filled file
-
-        Returns:
-            output_path on success.
-        """
-        import re as re_mod
-
+        """Fill the D365 TO template with processed data."""
         shutil.copy2(template_path, output_path)
         today_str = time.strftime("%d-%m-%Y")
 
-        # ── Collect unique TO/SO numbers with metadata ──
-        unique_tos = []     # (to_number, transfer_to_code, posting_group)
+        # ── Collect TO/ rows only (skip SO/ in mixed batches) ──
+        unique_tos = []
         seen = set()
-
         for res in results:
-            all_rows = (
-                res.regular_orders + res.pwp_orders +
-                res.tester_orders + res.gwp_orders + res.nonstock_orders
-            )
+            all_rows = (res.regular_orders + res.pwp_orders +
+                        res.tester_orders + res.gwp_orders +
+                        res.nonstock_orders)
             for item in all_rows:
-                if item.to and item.to not in seen:
+                if (item.to and item.to.startswith('TO/')
+                        and item.to not in seen):
                     seen.add(item.to)
-                    unique_tos.append((
-                        item.to,
-                        item.transfer_to,
-                        item.posting_group,
-                    ))
+                    unique_tos.append(
+                        (item.to, item.transfer_to, item.posting_group))
 
-        # ── Collect all line items in order ──
-        all_lines = []      # (doc_no, item_no, qty, unit_price)
-
+        all_lines = []
         for res in results:
-            all_rows = (
-                res.regular_orders + res.pwp_orders +
-                res.tester_orders + res.gwp_orders + res.nonstock_orders
-            )
+            all_rows = (res.regular_orders + res.pwp_orders +
+                        res.tester_orders + res.gwp_orders +
+                        res.nonstock_orders)
             for item in all_rows:
-                if item.to:
-                    all_lines.append((
-                        item.to,
-                        item.item_no,
-                        item.qty,
-                        item.unit_price,
-                    ))
+                if item.to and item.to.startswith('TO/'):
+                    all_lines.append(
+                        (item.to, item.item_no, item.qty, item.unit_price))
 
-        # ── Read ZIP contents ──
+        if not unique_tos:
+            # Pure-SO batch — return cleanly without modifying.
+            return output_path
+
+        # ── Read all ZIP parts into memory ──
         zip_contents = {}
         with zipfile.ZipFile(output_path, 'r') as z:
             for zi in z.namelist():
                 zip_contents[zi] = z.read(zi)
 
-        # ── Extend sharedStrings.xml ──
+        # ── Rebuild sharedStrings.xml with our values appended ──
         ss_xml = zip_contents['xl/sharedStrings.xml'].decode('utf-8')
-        existing = re_mod.findall(r'<t[^>]*>([^<]*)</t>', ss_xml)
+        existing = re.findall(r'<t[^>]*>([^<]*)</t>', ss_xml)
         string_map = {s: i for i, s in enumerate(existing)}
 
-        # Collect all new strings we'll need
         new_strings = {'PICK', 'IN TRANSIT', 'false', today_str, 'Piece-1'}
         for to_num, tc, pg in unique_tos:
             new_strings.add(to_num)
@@ -2431,15 +2322,21 @@ class D365TOExporter:
                 new_strings.add(tc)
             if pg:
                 new_strings.add(pg)
+        # Pre-register any non-numeric item_no values so we can write
+        # them as shared strings (avoids the inline-string fallback in
+        # most cases).
+        for _, item_no, _, _ in all_lines:
+            try:
+                int(str(item_no))
+            except (ValueError, TypeError):
+                new_strings.add(str(item_no))
 
-        # Assign indices to new strings
         next_idx = len(existing)
         for s in sorted(new_strings):
             if s not in string_map:
                 string_map[s] = next_idx
                 next_idx += 1
 
-        # Rebuild sharedStrings XML
         total_count = next_idx
         si_items = [''] * total_count
         for s, idx in string_map.items():
@@ -2455,151 +2352,99 @@ class D365TOExporter:
             + ''.join(si_items) + '</sst>'
         ).encode('utf-8')
 
-        # ── Helper: fill a cell in XML ──
-        def fill_cell(xml, col, row_num, value, is_string=True):
-            """
-            Replace a cell (empty or pre-filled) with new data.
-
-            Handles two XML patterns:
-                Empty cell:    <c r="A4" s="5"/>
-                Pre-filled:   <c r="A4" s="5" t="s"><v>31</v></c>
-                               <c r="A4" s="5"><v>123</v></c>
-            """
-            ref = f"{col}{row_num}"
-
-            if is_string:
-                idx = string_map.get(str(value), 0)
-                new_cell = f'<c r="{ref}" s="\\1" t="s"><v>{idx}</v></c>'
-            else:
-                new_cell = f'<c r="{ref}" s="\\1"><v>{value}</v></c>'
-
-            # Try 1: match pre-filled cell with value (t="s" or plain)
-            pat_filled = f'<c r="{ref}" s="(\\d+)"[^/]*>.*?</c>'
-            result = re_mod.sub(pat_filled, new_cell, xml, count=1, flags=re_mod.DOTALL)
-            if result != xml:
-                return result
-
-            # Try 2: match empty self-closing cell
-            pat_empty = f'<c r="{ref}" s="(\\d+)"\\s*/>'
-            return re_mod.sub(pat_empty, new_cell, xml, count=1)
-
-        # ── Helper: inject a new row when template has fewer rows than data ──
-        def inject_row(xml, row_num, columns, style_id):
-            """Add an empty row element before </sheetData>."""
-            cells = ''.join(
-                f'<c r="{c}{row_num}" s="{style_id}"/>' for c in columns
-            )
-            new_row = (
-                f'<row r="{row_num}" spans="1:{len(columns)}" '
-                f'x14ac:dyDescent="0.3">{cells}</row>'
-            )
-            return xml.replace('</sheetData>', new_row + '</sheetData>')
-
         # ── Sheet 1: Transfer Header ──
         s1 = zip_contents['xl/worksheets/sheet1.xml'].decode('utf-8')
-        s1_existing = re_mod.findall(r'<row r="(\d+)"', s1)
-        s1_max_row = max(int(r) for r in s1_existing) if s1_existing else 3
-        hdr_cols = list('ABCDEFGHIJKL')  # 12 columns
+        s1_style = _d365_detect_data_style(s1, data_start_row=4, fallback='11')
+        s1 = _d365_ensure_enough_rows(
+            s1, needed=len(unique_tos), data_start_row=4,
+            columns=D365TOExporter.HDR_COLS, style_id=s1_style,
+        )
 
-        # Inject rows ONLY beyond the last existing template row
-        last_needed_row = 3 + len(unique_tos)  # data starts at row 4
-        if last_needed_row > s1_max_row:
-            for extra in range(s1_max_row + 1, last_needed_row + 1):
-                s1 = inject_row(s1, extra, hdr_cols, '11')
-
-        # Fill header rows (data starts at row 4)
         for i, (to_num, tc, pg) in enumerate(unique_tos):
             r = i + 4
-            s1 = fill_cell(s1, 'A', r, to_num)           # No.
-            s1 = fill_cell(s1, 'B', r, 'PICK')            # Transfer-from Code
-            s1 = fill_cell(s1, 'C', r, tc or '')           # Transfer-to Code
-            s1 = fill_cell(s1, 'D', r, today_str)          # Posting Date
-            s1 = fill_cell(s1, 'E', r, 'IN TRANSIT')       # In-Transit Code
-            s1 = fill_cell(s1, 'F', r, 'false')            # Direct Transfer
+            s1 = _d365_fill_cell(s1, 'A', r, to_num, True, string_map)
+            s1 = _d365_fill_cell(s1, 'B', r, 'PICK', True, string_map)
+            s1 = _d365_fill_cell(s1, 'C', r, tc or '', True, string_map)
+            s1 = _d365_fill_cell(s1, 'D', r, today_str, True, string_map)
+            s1 = _d365_fill_cell(s1, 'E', r, 'IN TRANSIT', True, string_map)
+            s1 = _d365_fill_cell(s1, 'F', r, 'false', True, string_map)
             if pg:
-                s1 = fill_cell(s1, 'G', r, pg)             # Gen. Bus. Posting Group
+                s1 = _d365_fill_cell(s1, 'G', r, pg, True, string_map)
 
         zip_contents['xl/worksheets/sheet1.xml'] = s1.encode('utf-8')
 
         # ── Sheet 2: Transfer Line ──
         s2 = zip_contents['xl/worksheets/sheet2.xml'].decode('utf-8')
-        s2_existing = re_mod.findall(r'<row r="(\d+)"', s2)
-        s2_max_row = max(int(r) for r in s2_existing) if s2_existing else 3
-        line_cols = list('ABCDEFGHI')  # 9 columns
+        s2_style = _d365_detect_data_style(s2, data_start_row=4, fallback='8')
+        s2 = _d365_ensure_enough_rows(
+            s2, needed=len(all_lines), data_start_row=4,
+            columns=D365TOExporter.LINE_COLS, style_id=s2_style,
+        )
 
-        # Inject rows ONLY beyond the last existing template row
-        last_needed_line = 3 + len(all_lines)
-        if last_needed_line > s2_max_row:
-            for extra in range(s2_max_row + 1, last_needed_line + 1):
-                s2 = inject_row(s2, extra, line_cols, '8')
-
-        # Fill line rows
         current_doc = None
         line_no = 0
         for i, (doc_no, item_no, qty, price) in enumerate(all_lines):
-            # Reset line counter per document
             if doc_no != current_doc:
                 current_doc = doc_no
                 line_no = 0
             line_no += 10000
-
             r = i + 4
-            s2 = fill_cell(s2, 'A', r, doc_no)                          # Document No.
-            s2 = fill_cell(s2, 'B', r, line_no, is_string=False)        # Line No.
 
-            # Item No. — try numeric first, fallback to string
+            s2 = _d365_fill_cell(s2, 'A', r, doc_no, True, string_map)
+            s2 = _d365_fill_cell(s2, 'B', r, line_no, False, string_map)
+
+            # Item No. — try numeric, fall back to shared string.
             try:
-                s2 = fill_cell(s2, 'C', r, int(str(item_no)), is_string=False)
+                item_int = int(str(item_no))
+                s2 = _d365_fill_cell(s2, 'C', r, item_int, False, string_map)
             except (ValueError, TypeError):
-                s2 = fill_cell(s2, 'C', r, str(item_no))
+                val = str(item_no)
+                if val in string_map:
+                    s2 = _d365_fill_cell(s2, 'C', r, val, True, string_map)
+                else:
+                    # Last-ditch: inline string. Should be rare since
+                    # we pre-registered non-numeric item_nos above.
+                    s2 = _d365_fill_inline_string(s2, 'C', r, val)
 
-            s2 = fill_cell(s2, 'D', r, qty, is_string=False)            # Quantity
-            s2 = fill_cell(s2, 'E', r, 'Piece-1')                        # Unit of Measure
+            s2 = _d365_fill_cell(s2, 'D', r, qty, False, string_map)
+            s2 = _d365_fill_cell(s2, 'E', r, 'Piece-1', True, string_map)
             # F: Qty. to Ship (empty)
             # G: Qty. to Receive (empty)
             # H: Dimension Set ID (empty)
-            s2 = fill_cell(s2, 'I', r,                                  # Transfer Price
-                price if price else 0, is_string=False)
+            s2 = _d365_fill_cell(
+                s2, 'I', r, price if price else 0, False, string_map)
 
         zip_contents['xl/worksheets/sheet2.xml'] = s2.encode('utf-8')
 
-        # ── Cleanup: remove unused rows, update dimensions ──
+        # ── Final trim: drop excess rows + fix dimension/table refs ──
         last_hdr = 3 + len(unique_tos)
         last_line = 3 + len(all_lines)
 
-        # Clean Transfer Header
         s1c = zip_contents['xl/worksheets/sheet1.xml'].decode('utf-8')
-        for r in range(last_hdr + 1, 200):
-            s1c = re_mod.sub(
-                rf'<row r="{r}"[^>]*>.*?</row>', '', s1c, flags=re_mod.DOTALL)
-        s1c = re_mod.sub(
-            r'<dimension ref="[^"]*"/>',
-            f'<dimension ref="A1:L{last_hdr}"/>', s1c)
+        s1c = _d365_remove_rows_beyond(s1c, last_hdr)
+        s1c = re.sub(r'<dimension ref="[^"]*"/>',
+                      f'<dimension ref="A1:L{last_hdr}"/>', s1c)
         zip_contents['xl/worksheets/sheet1.xml'] = s1c.encode('utf-8')
 
-        # Clean Transfer Line
         s2c = zip_contents['xl/worksheets/sheet2.xml'].decode('utf-8')
-        for r in range(last_line + 1, 1000):
-            s2c = re_mod.sub(
-                rf'<row r="{r}"[^>]*>.*?</row>', '', s2c, flags=re_mod.DOTALL)
-        s2c = re_mod.sub(
-            r'<dimension ref="[^"]*"/>',
-            f'<dimension ref="A1:I{last_line}"/>', s2c)
+        s2c = _d365_remove_rows_beyond(s2c, last_line)
+        s2c = re.sub(r'<dimension ref="[^"]*"/>',
+                      f'<dimension ref="A1:I{last_line}"/>', s2c)
         zip_contents['xl/worksheets/sheet2.xml'] = s2c.encode('utf-8')
 
-        # Update table refs if they exist
+        # Update table refs (D365 templates use ListObject tables)
         for tbl in ['xl/tables/table1.xml', 'xl/tables/table2.xml']:
             if tbl in zip_contents:
                 t = zip_contents[tbl].decode('utf-8')
                 if 'table1' in tbl:
-                    t = re_mod.sub(
-                        r'ref="A3:[A-Z]+\d+"', f'ref="A3:L{last_hdr}"', t)
+                    t = re.sub(r'ref="A3:[A-Z]+\d+"',
+                               f'ref="A3:L{last_hdr}"', t)
                 else:
-                    t = re_mod.sub(
-                        r'ref="A3:[A-Z]+\d+"', f'ref="A3:I{last_line}"', t)
+                    t = re.sub(r'ref="A3:[A-Z]+\d+"',
+                               f'ref="A3:I{last_line}"', t)
                 zip_contents[tbl] = t.encode('utf-8')
 
-        # ── Write final ZIP ──
+        # ── Write the ZIP back ──
         with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zo:
             for name, data in zip_contents.items():
                 zo.writestr(name, data)
@@ -2608,577 +2453,699 @@ class D365TOExporter:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-#  GUI APPLICATION — v1.2
+#  D365 SALES ORDER EXPORTER (v1.5.1 — same pattern as TO exporter)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class D365SOExporter:
+    """
+    Fills a D365 Sales Order template via ZIP/XML manipulation.
+
+    v1.5.1: rewritten to use shared ``_d365_*`` helpers. Fixes the
+    Excel "We found a problem" corruption that occurred when the SO
+    template shipped with pre-populated sample data — our regex was
+    only matching empty cells, leaving the template's stale shared-
+    string indices in our output.
+
+    Output sheets:
+        Sheet 1 'Sales Header' — 14 cols A-N, data starts row 4
+        Sheet 2 'Sales Line'   — 8 cols A-H, data starts row 4
+
+    Only emits rows whose ``item.to`` starts with 'SO/'. TO-prefixed
+    rows are skipped — D365TOExporter handles those.
+    """
+
+    HDR_COLS = list('ABCDEFGHIJKLMN')  # Sales Header (14 cols)
+    LINE_COLS = list('ABCDEFGH')        # Sales Line (8 cols)
+
+    @staticmethod
+    def export(results: List[LocationResult], template_path: str,
+               output_path: str) -> str:
+        """Fill the D365 SO template with processed data."""
+        shutil.copy2(template_path, output_path)
+        today_str = time.strftime("%d-%m-%Y")
+
+        # ── Collect SO/ rows only ──
+        unique_sos = []  # (so_number, bill_to, ship_to)
+        seen = set()
+        for res in results:
+            all_rows = (res.regular_orders + res.tester_orders +
+                        res.pwp_orders + res.gwp_orders +
+                        res.nonstock_orders)
+            for item in all_rows:
+                if (item.to and item.to.startswith('SO/')
+                        and item.to not in seen):
+                    seen.add(item.to)
+                    bill = getattr(res, '_so_bill_to', '')
+                    ship = getattr(res, '_so_ship_to', '')
+                    unique_sos.append((item.to, bill, ship))
+
+        all_lines = []
+        for res in results:
+            all_rows = (res.regular_orders + res.pwp_orders +
+                        res.tester_orders + res.gwp_orders +
+                        res.nonstock_orders)
+            for item in all_rows:
+                if item.to and item.to.startswith('SO/'):
+                    all_lines.append(
+                        (item.to, item.item_no, item.qty, item.unit_price))
+
+        if not unique_sos:
+            return output_path
+
+        zip_contents = {}
+        with zipfile.ZipFile(output_path, 'r') as z:
+            for zi in z.namelist():
+                zip_contents[zi] = z.read(zi)
+
+        # ── Rebuild sharedStrings ──
+        ss_xml = zip_contents['xl/sharedStrings.xml'].decode('utf-8')
+        existing = re.findall(r'<t[^>]*>([^<]*)</t>', ss_xml)
+        string_map = {s: i for i, s in enumerate(existing)}
+
+        new_strings = {'Order', 'PICK', 'B2B', today_str, 'Item'}
+        for so_num, bill, ship in unique_sos:
+            new_strings.add(so_num)
+            if bill:
+                new_strings.add(bill)
+            if ship:
+                new_strings.add(ship)
+        for _, item_no, _, _ in all_lines:
+            try:
+                int(str(item_no))
+            except (ValueError, TypeError):
+                new_strings.add(str(item_no))
+
+        next_idx = len(existing)
+        for s in sorted(new_strings):
+            if s not in string_map:
+                string_map[s] = next_idx
+                next_idx += 1
+
+        total_count = next_idx
+        si_items = [''] * total_count
+        for s, idx in string_map.items():
+            esc = (s.replace('&', '&amp;')
+                    .replace('<', '&lt;')
+                    .replace('>', '&gt;'))
+            si_items[idx] = f'<si><t>{esc}</t></si>'
+
+        zip_contents['xl/sharedStrings.xml'] = (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\r\n'
+            f'<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            f'count="{total_count}" uniqueCount="{total_count}">'
+            + ''.join(si_items) + '</sst>'
+        ).encode('utf-8')
+
+        # ── Sheet 1: Sales Header ──
+        s1 = zip_contents['xl/worksheets/sheet1.xml'].decode('utf-8')
+        s1_style = _d365_detect_data_style(s1, data_start_row=4, fallback='5')
+        s1 = _d365_ensure_enough_rows(
+            s1, needed=len(unique_sos), data_start_row=4,
+            columns=D365SOExporter.HDR_COLS, style_id=s1_style,
+        )
+
+        # Sales Header columns:
+        # A=Document Type, B=No., C=Sell-to Cust, D=Ship-to,
+        # E..I=Dates (today), J=External Doc, K=Location Code (PICK),
+        # L=Dimension Set ID (empty), M=Supply Type (B2B),
+        # N=Voucher Narration (empty)
+        for i, (so_num, bill, ship) in enumerate(unique_sos):
+            r = i + 4
+            s1 = _d365_fill_cell(s1, 'A', r, 'Order', True, string_map)
+            s1 = _d365_fill_cell(s1, 'B', r, so_num, True, string_map)
+            if bill:
+                s1 = _d365_fill_cell(s1, 'C', r, bill, True, string_map)
+            if ship:
+                s1 = _d365_fill_cell(s1, 'D', r, ship, True, string_map)
+            for col in 'EFGHI':
+                s1 = _d365_fill_cell(s1, col, r, today_str, True, string_map)
+            s1 = _d365_fill_cell(s1, 'J', r, so_num, True, string_map)
+            s1 = _d365_fill_cell(s1, 'K', r, 'PICK', True, string_map)
+            s1 = _d365_fill_cell(s1, 'M', r, 'B2B', True, string_map)
+
+        zip_contents['xl/worksheets/sheet1.xml'] = s1.encode('utf-8')
+
+        # ── Sheet 2: Sales Line ──
+        s2 = zip_contents['xl/worksheets/sheet2.xml'].decode('utf-8')
+        s2_style = _d365_detect_data_style(s2, data_start_row=4, fallback='4')
+        s2 = _d365_ensure_enough_rows(
+            s2, needed=len(all_lines), data_start_row=4,
+            columns=D365SOExporter.LINE_COLS, style_id=s2_style,
+        )
+
+        # Sales Line columns:
+        # A=Document Type ('Order'), B=Document No., C=Line No.,
+        # D=Type ('Item'), E=Item No., F=Location Code ('PICK'),
+        # G=Quantity, H=Unit Price
+        current_doc = None
+        line_no = 0
+        for i, (doc_no, item_no, qty, price) in enumerate(all_lines):
+            if doc_no != current_doc:
+                current_doc = doc_no
+                line_no = 0
+            line_no += 10000
+            r = i + 4
+
+            s2 = _d365_fill_cell(s2, 'A', r, 'Order', True, string_map)
+            s2 = _d365_fill_cell(s2, 'B', r, doc_no, True, string_map)
+            s2 = _d365_fill_cell(s2, 'C', r, line_no, False, string_map)
+            s2 = _d365_fill_cell(s2, 'D', r, 'Item', True, string_map)
+
+            # Item No. — numeric or shared-string fallback
+            try:
+                item_int = int(str(item_no))
+                s2 = _d365_fill_cell(s2, 'E', r, item_int, False, string_map)
+            except (ValueError, TypeError):
+                val = str(item_no)
+                if val in string_map:
+                    s2 = _d365_fill_cell(s2, 'E', r, val, True, string_map)
+                else:
+                    s2 = _d365_fill_inline_string(s2, 'E', r, val)
+
+            s2 = _d365_fill_cell(s2, 'F', r, 'PICK', True, string_map)
+            s2 = _d365_fill_cell(s2, 'G', r, qty, False, string_map)
+            s2 = _d365_fill_cell(
+                s2, 'H', r, price if price else 0, False, string_map)
+
+        zip_contents['xl/worksheets/sheet2.xml'] = s2.encode('utf-8')
+
+        # ── Final trim ──
+        last_hdr = 3 + len(unique_sos)
+        last_line = 3 + len(all_lines)
+
+        s1c = zip_contents['xl/worksheets/sheet1.xml'].decode('utf-8')
+        s1c = _d365_remove_rows_beyond(s1c, last_hdr)
+        s1c = re.sub(r'<dimension ref="[^"]*"/>',
+                      f'<dimension ref="A1:N{last_hdr}"/>', s1c)
+        zip_contents['xl/worksheets/sheet1.xml'] = s1c.encode('utf-8')
+
+        s2c = zip_contents['xl/worksheets/sheet2.xml'].decode('utf-8')
+        s2c = _d365_remove_rows_beyond(s2c, last_line)
+        s2c = re.sub(r'<dimension ref="[^"]*"/>',
+                      f'<dimension ref="A1:H{last_line}"/>', s2c)
+        zip_contents['xl/worksheets/sheet2.xml'] = s2c.encode('utf-8')
+
+        for tbl in ['xl/tables/table1.xml', 'xl/tables/table2.xml']:
+            if tbl in zip_contents:
+                t = zip_contents[tbl].decode('utf-8')
+                if 'table1' in tbl:
+                    t = re.sub(r'ref="A3:[A-Z]+\d+"',
+                               f'ref="A3:N{last_hdr}"', t)
+                else:
+                    t = re.sub(r'ref="A3:[A-Z]+\d+"',
+                               f'ref="A3:H{last_line}"', t)
+                zip_contents[tbl] = t.encode('utf-8')
+
+        with zipfile.ZipFile(output_path, 'w', zipfile.ZIP_DEFLATED) as zo:
+            for name, data in zip_contents.items():
+                zo.writestr(name, data)
+
+        return output_path
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  UPDATE DIALOG (v1.4) — modal for "Update Bundled Files" picker
 # ═══════════════════════════════════════════════════════════════════════════════
 #
-# ReneePOApp is the Tkinter main window. It handles:
-#   - Master file loading (Items_March.xlsx)
-#   - EKA_DATA loading (v1.2: shared across both modes)
-#   - PO file selection (individual files or entire folder)
-#   - Blank template download for store teams
-#   - Two-phase processing: VALIDATE → EXTRACT (in background thread)
-#   - v1.2: Standalone auto-fill from EKA_DATA via filename
-#   - v1.2: D365 TO package export button
-#   - Dark/Light theme toggling with live widget updates
-#   - Log panel showing all validation + extraction messages
-#   - Stats panel showing last run quantity totals
+# Replaces the v1.3.1 messagebox.askquestion dialog (Yes/No/Cancel was
+# confusing because Yes meant "Master" and No meant "EKA_DATA" — not
+# obvious without reading the body text).
 #
-# Thread safety: Processing runs in _process_worker() on a daemon thread.
-# All GUI updates from the worker are dispatched via self.after(0, ...).
-#
-# Theme system: Every widget is registered via _reg_theme(widget, role).
-# On toggle, _toggle_theme() iterates all registered widgets and applies
-# new colors based on their role string.
+# This shows a proper modal Toplevel with three radio choices:
+#     ◉ Items Master
+#     ○ EKA_DATA
+#     ○ Both
+# plus Cancel/Update buttons. ``show()`` blocks until the user clicks
+# one of those, then returns: 'master' | 'eka' | 'both' | None.
 
-class ReneePOApp(tk.Tk):
-    """
-    Main application window.
+class UpdateDialog:
+    """Modal dialog asking which bundled file(s) to update."""
 
-    v1.2 additions:
-        - EKA_DATA in shared section (above mode toggle)
-        - eka_locations stored for both modes
-        - Standalone auto-fill: filename → EKA Location → TO/Transfer/Posting
-        - D365 TO export button in bottom bar
-        - last_results stored for D365 export
-    """
+    def __init__(self, parent, folder: Path):
+        """
+        Args:
+            parent: parent Tk window (main app).
+            folder: the bundled folder path — shown in the dialog so the
+                    user knows where the file will land.
+        """
+        self.parent = parent
+        self.folder = folder
+        self.result: Optional[str] = None  # 'master' | 'eka' | 'both' | None
 
-    def __init__(self):
-        super().__init__()
-        self.title("RENEE PO Processor v1.2")
-        self.geometry("1020x760")
-        self.resizable(True, True)
-        self.configure(bg=Theme.bg())
-        self.minsize(860, 620)
-
-        # ── Segment 1: Standalone PO state ──
-        self.master_path: Optional[str] = None
-        self.po_files: List[str] = []
-        self.last_output: Optional[str] = None
-        self.is_running = False
-        self.engine = POEngine()
-
-        # ── v1.2: Shared EKA state (used by both modes) ──
-        self.eka_path: Optional[str] = None
-        self.eka_locations: List[Dict] = []
-
-        # ── Segment 2: Special Order state ──
-        self.so_path: Optional[str] = None
-        self.active_mode = 'standalone'
-
-        # ── v1.2: Store last results for D365 export ──
-        self.last_results: List[LocationResult] = []
-
-        # Track themed widgets for live re-theming
-        self._themed_widgets: List[tuple] = []
+        self.top = tk.Toplevel(parent)
+        self.top.title("Update Bundled Files")
+        self.top.resizable(False, False)
+        self.top.transient(parent)
+        self.top.grab_set()
 
         self._build_ui()
 
-    # ── THEME MANAGEMENT ───────────────────────────────────────────────────────
-
-    def _reg_theme(self, widget, role: str):
-        """Register widget for theme updates."""
-        self._themed_widgets.append((widget, role))
-        return widget
-
-    def _toggle_theme(self):
-        """Switch dark↔light and re-theme entire UI."""
-        Theme.toggle()
-        self.configure(bg=Theme.bg())
-
-        role_map = {
-            'bg':       lambda: {'bg': Theme.bg()},
-            'surface':  lambda: {'bg': Theme.surface()},
-            'surface2': lambda: {'bg': Theme.surface2()},
-            'border':   lambda: {'highlightbackground': Theme.border()},
-            'bg+text':       lambda: {'bg': Theme.bg(), 'fg': Theme.text()},
-            'bg+text_dim':   lambda: {'bg': Theme.bg(), 'fg': Theme.text_dim()},
-            'bg+accent':     lambda: {'bg': Theme.bg(), 'fg': Theme.accent()},
-            'surface+text':  lambda: {'bg': Theme.surface(), 'fg': Theme.text()},
-            'surface+text_dim': lambda: {'bg': Theme.surface(), 'fg': Theme.text_dim()},
-            'surface+green': lambda: {'bg': Theme.surface(), 'fg': Theme.green()},
-            'surface+accent2': lambda: {'bg': Theme.surface(), 'fg': Theme.accent2()},
-            'surface+pink':  lambda: {'bg': Theme.surface(), 'fg': Theme.pink()},
-            'surface2+text_dim': lambda: {'bg': Theme.surface2(), 'fg': Theme.text_dim()},
-            'surface2+accent2': lambda: {'bg': Theme.surface2(), 'fg': Theme.accent2()},
-            'listbox':  lambda: {'bg': Theme.surface(), 'fg': Theme.text(),
-                                 'selectbackground': Theme.list_sel(),
-                                 'selectforeground': Theme.accent()},
-            'log':      lambda: {'bg': Theme.surface(), 'fg': Theme.text_dim()},
-            'progress': lambda: {'bg': Theme.surface2()},
-        }
-
-        for widget, role in self._themed_widgets:
-            try:
-                fn = role_map.get(role)
-                if fn:
-                    widget.config(**fn())
-            except tk.TclError:
-                pass
-
-        if hasattr(self, 'theme_toggle'):
-            self.theme_toggle.config(bg=Theme.surface())
-            self.theme_toggle._draw()
-        apply_style()
-
-    # ── UI CONSTRUCTION ────────────────────────────────────────────────────────
-
-    def _build_ui(self):
-        """Build the complete UI: header, left panel, right panel, bottom bar."""
-
-        # ── Header bar ──
-        hdr = tk.Frame(self, bg=Theme.surface(), height=60)
-        hdr.pack(fill='x')
-        hdr.pack_propagate(False)
-        self._reg_theme(hdr, 'surface')
-
-        title_lbl = tk.Label(hdr, text="▶ RENEE PO PROCESSOR v1.2",
-                             font=FONT_TITLE, bg=Theme.surface(), fg=Theme.pink())
-        title_lbl.pack(side='left', padx=20, pady=12)
-        self._reg_theme(title_lbl, 'surface+pink')
-
-        sub_lbl = tk.Label(hdr,
-            text="EBO / Kiosk / Airport PO → Final Data  //  EKA Script",
-            font=FONT_SUB, bg=Theme.surface(), fg=Theme.text_dim())
-        sub_lbl.pack(side='left', padx=4)
-        self._reg_theme(sub_lbl, 'surface+text_dim')
-
-        # Theme toggle
-        toggle_frame = tk.Frame(hdr, bg=Theme.surface())
-        toggle_frame.pack(side='right', padx=16)
-        self._reg_theme(toggle_frame, 'surface')
-        tk.Label(toggle_frame, text="🌙", font=("Segoe UI Emoji", 11),
-                 bg=Theme.surface()).pack(side='left', padx=(0, 4))
-        self.theme_toggle = ToggleSwitch(toggle_frame, command=self._toggle_theme,
-                                          width=52, height=26, bg=Theme.surface())
-        self.theme_toggle.pack(side='left')
-        tk.Label(toggle_frame, text="☀️", font=("Segoe UI Emoji", 11),
-                 bg=Theme.surface()).pack(side='left', padx=(4, 0))
-
-        # ── Body (left + right panels) ──
-        body = tk.Frame(self, bg=Theme.bg())
-        body.pack(fill='both', expand=True, padx=16, pady=12)
-        body.columnconfigure(0, weight=3)
-        body.columnconfigure(1, weight=2)
-        body.rowconfigure(0, weight=1)
-        self._reg_theme(body, 'bg')
-
-        left = tk.Frame(body, bg=Theme.bg())
-        right = tk.Frame(body, bg=Theme.bg())
-        left.grid(row=0, column=0, sticky='nsew', padx=(0, 8))
-        right.grid(row=0, column=1, sticky='nsew')
-        self._reg_theme(left, 'bg')
-        self._reg_theme(right, 'bg')
-
-        self._build_left(left)
-        self._build_right(right)
-        self._build_bottom()
-
-    def _build_left(self, parent):
-        """Build left panel: Master, EKA_DATA, mode selector, standalone/special panels."""
-
-        # ── SHARED: Master File ──
-        self._section(parent, "00  //  MASTER FILE (Items_March)")
-
-        master_frame = tk.Frame(parent, bg=Theme.surface(),
-                                highlightthickness=1, highlightbackground=Theme.border())
-        master_frame.pack(fill='x', pady=(0, 10))
-        self._reg_theme(master_frame, 'surface')
-        self._reg_theme(master_frame, 'border')
-
-        master_inner = tk.Frame(master_frame, bg=Theme.surface())
-        master_inner.pack(fill='x', padx=12, pady=10)
-        self._reg_theme(master_inner, 'surface')
-
-        self.master_var = tk.StringVar(value="No master file loaded")
-        self.master_count_var = tk.StringVar(value="")
-
-        top_row = tk.Frame(master_inner, bg=Theme.surface())
-        top_row.pack(fill='x')
-        self._reg_theme(top_row, 'surface')
-        self._btn(top_row, "📂 SELECT MASTER XLSX", self._select_master, ACCENT).pack(side='left')
-
-        mc_lbl = tk.Label(top_row, textvariable=self.master_count_var,
-                          font=FONT_MONO, bg=Theme.surface(), fg=GREEN)
-        mc_lbl.pack(side='right')
-        self._reg_theme(mc_lbl, 'surface+green')
-
-        mv_lbl = tk.Label(master_inner, textvariable=self.master_var,
-                          font=FONT_MONO, bg=Theme.surface(), fg=Theme.text_dim(),
-                          wraplength=400, anchor='w', justify='left')
-        mv_lbl.pack(anchor='w', pady=(6, 0))
-        self._reg_theme(mv_lbl, 'surface+text_dim')
-
-        # ── SHARED: EKA_DATA (v1.2: moved here from Special Order panel) ──
-        self._section(parent, "00b  //  EKA DATA (Location Registry — shared)")
-
-        eka_frame = tk.Frame(parent, bg=Theme.surface(),
-                             highlightthickness=1, highlightbackground=Theme.border())
-        eka_frame.pack(fill='x', pady=(0, 10))
-        self._reg_theme(eka_frame, 'surface')
-        self._reg_theme(eka_frame, 'border')
-
-        eka_inner = tk.Frame(eka_frame, bg=Theme.surface())
-        eka_inner.pack(fill='x', padx=12, pady=10)
-        self._reg_theme(eka_inner, 'surface')
-
-        self.eka_var = tk.StringVar(
-            value="No EKA_DATA loaded (optional for standalone, required for special)")
-        self.eka_count_var = tk.StringVar(value="")
-
-        eka_top = tk.Frame(eka_inner, bg=Theme.surface())
-        eka_top.pack(fill='x')
-        self._reg_theme(eka_top, 'surface')
-        self._btn(eka_top, "📂 SELECT EKA_DATA", self._select_eka, ACCENT2).pack(side='left')
-
-        eka_c = tk.Label(eka_top, textvariable=self.eka_count_var,
-                         font=FONT_MONO, bg=Theme.surface(), fg=GREEN)
-        eka_c.pack(side='right')
-        self._reg_theme(eka_c, 'surface+green')
-
-        eka_l = tk.Label(eka_inner, textvariable=self.eka_var,
-                         font=FONT_MONO, bg=Theme.surface(), fg=Theme.text_dim(),
-                         wraplength=400, anchor='w')
-        eka_l.pack(anchor='w', pady=(6, 0))
-        self._reg_theme(eka_l, 'surface+text_dim')
-
-        # ── MODE SELECTOR ──
-        mode_frame = tk.Frame(parent, bg=Theme.bg())
-        mode_frame.pack(fill='x', pady=(6, 4))
-        self._reg_theme(mode_frame, 'bg')
-
-        self.btn_standalone = tk.Label(mode_frame, text="▸ STANDALONE PO FILES",
-            font=FONT_LABEL, bg=Theme.accent(), fg=Theme.bg(),
-            cursor='hand2', padx=12, pady=5,
-            highlightthickness=1, highlightbackground=Theme.accent())
-        self.btn_standalone.pack(side='left', padx=(0, 4))
-        self.btn_standalone.bind('<Button-1>', lambda e: self._switch_mode('standalone'))
-
-        self.btn_special = tk.Label(mode_frame, text="▸ SPECIAL ORDER",
-            font=FONT_LABEL, bg=Theme.surface2(), fg=Theme.text_dim(),
-            cursor='hand2', padx=12, pady=5,
-            highlightthickness=1, highlightbackground=Theme.border())
-        self.btn_special.pack(side='left', padx=(0, 4))
-        self.btn_special.bind('<Button-1>', lambda e: self._switch_mode('special'))
-
-        # ══════════════════════════════════════════════════════════════════════
-        #  SEGMENT 1: STANDALONE PO FILES
-        # ══════════════════════════════════════════════════════════════════════
-
-        self.frame_standalone = tk.Frame(parent, bg=Theme.bg())
-        self.frame_standalone.pack(fill='both', expand=True)
-        self._reg_theme(self.frame_standalone, 'bg')
-
-        # ── Drop Zone ──
-        dz = tk.Frame(self.frame_standalone, bg=Theme.surface2(),
-                      highlightthickness=1, highlightbackground=Theme.border())
-        dz.pack(fill='x', pady=(0, 8))
-        self._reg_theme(dz, 'surface2')
-        self._reg_theme(dz, 'border')
-
-        dz_inner = tk.Frame(dz, bg=Theme.surface2())
-        dz_inner.pack(fill='x', padx=1, pady=1)
-        self._reg_theme(dz_inner, 'surface2')
-
-        dz_lbl1 = tk.Label(dz_inner, text="DROP ZONE",
-            font=("Aptos Display", 11, "bold"), bg=Theme.surface2(), fg=ACCENT2)
-        dz_lbl1.pack(pady=(10, 2))
-        self._reg_theme(dz_lbl1, 'surface2+accent2')
-
-        dz_lbl2 = tk.Label(dz_inner,
-            text="Add PO files (rename to Location code, e.g. EBO_AMD01.xlsx)",
-            font=FONT_MONO, bg=Theme.surface2(), fg=Theme.text_dim())
-        dz_lbl2.pack(pady=(0, 10))
-        self._reg_theme(dz_lbl2, 'surface2+text_dim')
-
-        btn_row = tk.Frame(dz_inner, bg=Theme.surface2())
-        btn_row.pack(pady=(0, 4))
-        self._reg_theme(btn_row, 'surface2')
-        self._btn(btn_row, "+ ADD FILES", self._add_files, ACCENT).pack(side='left', padx=4)
-        self._btn(btn_row, "+ ADD FOLDER", self._add_folder, ACCENT2).pack(side='left', padx=4)
-        self._btn(btn_row, "✕ CLEAR ALL", self._clear_files, RED).pack(side='left', padx=4)
-
-        btn_row2 = tk.Frame(dz_inner, bg=Theme.surface2())
-        btn_row2.pack(pady=(0, 10))
-        self._reg_theme(btn_row2, 'surface2')
-        self._btn(btn_row2, "📋 DOWNLOAD BLANK TEMPLATE",
-                  self._download_template, GREEN).pack(side='left', padx=4)
-
-        # ── File list ──
-        list_frame = tk.Frame(self.frame_standalone, bg=Theme.surface(),
-                              highlightthickness=1, highlightbackground=Theme.border())
-        list_frame.pack(fill='both', expand=True, pady=(0, 8))
-        self._reg_theme(list_frame, 'surface')
-        self._reg_theme(list_frame, 'border')
-
-        list_hdr = tk.Frame(list_frame, bg=Theme.surface2())
-        list_hdr.pack(fill='x')
-        self._reg_theme(list_hdr, 'surface2')
-
-        lh1 = tk.Label(list_hdr, text="  FILE", font=FONT_LABEL,
-                        bg=Theme.surface2(), fg=Theme.text_dim(), width=42, anchor='w')
-        lh1.pack(side='left', padx=4, pady=4)
-        self._reg_theme(lh1, 'surface2+text_dim')
-
-        lh2 = tk.Label(list_hdr, text="STATUS", font=FONT_LABEL,
-                        bg=Theme.surface2(), fg=Theme.text_dim())
-        lh2.pack(side='right', padx=12, pady=4)
-        self._reg_theme(lh2, 'surface2+text_dim')
-
-        scroll_y = ttk.Scrollbar(list_frame, orient='vertical')
-        scroll_y.pack(side='right', fill='y')
-
-        self.file_list = tk.Listbox(
-            list_frame, bg=Theme.surface(), fg=Theme.text(), font=FONT_MONO,
-            selectbackground=Theme.list_sel(), selectforeground=Theme.accent(),
-            borderwidth=0, highlightthickness=0,
-            yscrollcommand=scroll_y.set, activestyle='none')
-        self.file_list.pack(fill='both', expand=True, padx=4, pady=4)
-        scroll_y.config(command=self.file_list.yview)
-        self._reg_theme(self.file_list, 'listbox')
-
-        self.file_count_var = tk.StringVar(value="0 files loaded")
-        fc_lbl = tk.Label(self.frame_standalone, textvariable=self.file_count_var,
-                          font=FONT_MONO, bg=Theme.bg(), fg=Theme.text_dim())
-        fc_lbl.pack(anchor='w')
-        self._reg_theme(fc_lbl, 'bg+text_dim')
-
-        # ══════════════════════════════════════════════════════════════════════
-        #  SEGMENT 2: SPECIAL ORDER
-        # ══════════════════════════════════════════════════════════════════════
-
-        self.frame_special = tk.Frame(parent, bg=Theme.bg())
-        self._reg_theme(self.frame_special, 'bg')
-
-        # ── Special Order file selector ──
-        self._section(self.frame_special, "S2  //  SPECIAL ORDER (Product Broadcast)")
-
-        so_frame = tk.Frame(self.frame_special, bg=Theme.surface(),
-                            highlightthickness=1, highlightbackground=Theme.border())
-        so_frame.pack(fill='x', pady=(0, 10))
-        self._reg_theme(so_frame, 'surface')
-        self._reg_theme(so_frame, 'border')
-
-        so_inner = tk.Frame(so_frame, bg=Theme.surface())
-        so_inner.pack(fill='x', padx=12, pady=10)
-        self._reg_theme(so_inner, 'surface')
-
-        self.so_var = tk.StringVar(value="No Special Order file loaded")
-        self.so_count_var = tk.StringVar(value="")
-
-        so_top = tk.Frame(so_inner, bg=Theme.surface())
-        so_top.pack(fill='x')
-        self._reg_theme(so_top, 'surface')
-        self._btn(so_top, "📂 SELECT SPECIAL ORDER",
-                  self._select_special_order, PINK).pack(side='left')
-
-        so_c = tk.Label(so_top, textvariable=self.so_count_var,
-                        font=FONT_MONO, bg=Theme.surface(), fg=GREEN)
-        so_c.pack(side='right')
-        self._reg_theme(so_c, 'surface+green')
-
-        so_l = tk.Label(so_inner, textvariable=self.so_var,
-                        font=FONT_MONO, bg=Theme.surface(), fg=Theme.text_dim(),
-                        wraplength=400, anchor='w')
-        so_l.pack(anchor='w', pady=(6, 0))
-        self._reg_theme(so_l, 'surface+text_dim')
-
-        # Template buttons
-        so_tmpl_row = tk.Frame(self.frame_special, bg=Theme.bg())
-        so_tmpl_row.pack(fill='x', pady=(0, 6))
-        self._reg_theme(so_tmpl_row, 'bg')
-        self._btn(so_tmpl_row, "📋 EKA_DATA TEMPLATE",
-                  self._download_eka_template, GREEN).pack(side='left', padx=4)
-        self._btn(so_tmpl_row, "📋 SPECIAL ORDER TEMPLATE",
-                  self._download_so_template, GREEN).pack(side='left', padx=4)
-
-        # Info panel
-        info_frame = tk.Frame(self.frame_special, bg=Theme.surface2(),
-                              highlightthickness=1, highlightbackground=Theme.border())
-        info_frame.pack(fill='both', expand=True, pady=(0, 8))
-        self._reg_theme(info_frame, 'surface2')
-
-        info_txt = tk.Label(info_frame, text=(
-            "Special Order broadcasts the SAME products to ALL locations.\n\n"
-            "• EKA_DATA provides: locations with TO pattern, Transfer Code, Posting Group\n"
-            "• Special Order provides: Products with per-type qty (EBO / Airport / Kiosk / Tester)\n"
-            "• Items_March provides: Item No, MRP, GST Code (shared master)\n\n"
-            "Output: Final Data with TO, Transfer-to, Posting Group PRE-FILLED"
-        ), font=FONT_MONO, bg=Theme.surface2(), fg=Theme.text_dim(),
-           justify='left', anchor='nw', wraplength=450, padx=12, pady=10)
-        info_txt.pack(fill='both', expand=True)
-        self._reg_theme(info_txt, 'surface2+text_dim')
-
-    def _build_right(self, parent):
-        """Build right panel: output config, stats, log."""
-
-        # ── Output ──
-        self._section(parent, "02  //  OUTPUT")
-
-        out_frame = tk.Frame(parent, bg=Theme.surface(),
-                             highlightthickness=1, highlightbackground=Theme.border())
-        out_frame.pack(fill='x', pady=(0, 12))
-        self._reg_theme(out_frame, 'surface')
-        self._reg_theme(out_frame, 'border')
-
-        ol1 = tk.Label(out_frame, text="Output folder:", font=FONT_LABEL,
-                        bg=Theme.surface(), fg=Theme.text_dim())
-        ol1.pack(anchor='w', padx=10, pady=(8, 2))
-        self._reg_theme(ol1, 'surface+text_dim')
-
-        ol2 = tk.Label(out_frame, text="  eka_output/  (auto-created next to uploaded files)",
-                        font=FONT_MONO, bg=Theme.surface(), fg=Theme.accent2())
-        ol2.pack(anchor='w', padx=10)
-        self._reg_theme(ol2, 'surface+accent2')
-
-        self.last_path_var = tk.StringVar(value="No run yet")
-        ol3 = tk.Label(out_frame, text="Last saved:", font=FONT_LABEL,
-                        bg=Theme.surface(), fg=Theme.text_dim())
-        ol3.pack(anchor='w', padx=10, pady=(6, 2))
-        self._reg_theme(ol3, 'surface+text_dim')
-
-        ol4 = tk.Label(out_frame, textvariable=self.last_path_var,
-                        font=FONT_MONO, bg=Theme.surface(), fg=GREEN,
-                        wraplength=280, justify='left')
-        ol4.pack(anchor='w', padx=10, pady=(0, 10))
-        self._reg_theme(ol4, 'surface+green')
-
-        # ── Stats ──
-        self._section(parent, "03  //  LAST RUN STATS")
-
-        stats_frame = tk.Frame(parent, bg=Theme.surface(),
-                               highlightthickness=1, highlightbackground=Theme.border())
-        stats_frame.pack(fill='x', pady=(0, 12))
-        self._reg_theme(stats_frame, 'surface')
-        self._reg_theme(stats_frame, 'border')
-
-        stat_defs = [
-            ("Locations",     "locations",  ACCENT),
-            ("Total PO Qty",  "po_qty",     GREEN),
-            ("PO Line Items", "po_items",   ACCENT2),
-            ("Tester Qty",    "tester_qty", PINK),
-            ("PWP Qty",       "pwp_qty",    AMBER),
-            ("GWP Qty",       "gwp_qty",    '#00BCD4'),
-            ("Non-Stock Qty", "ns_qty",     '#795548'),
-            ("Grand Total",   "grand",      Theme.text()),
-            ("Unmatched",     "unmatched",  RED),
-        ]
-
-        self.stat_vars = {}
-        for i, (label, key, color) in enumerate(stat_defs):
-            row_bg = Theme.surface2() if i % 2 == 0 else Theme.surface()
-            row = tk.Frame(stats_frame, bg=row_bg)
-            row.pack(fill='x')
-            self._reg_theme(row, 'surface2' if i % 2 == 0 else 'surface')
-
-            sl = tk.Label(row, text=f"  {label}", font=FONT_MONO,
-                          bg=row_bg, fg=Theme.text_dim(), width=20, anchor='w')
-            sl.pack(side='left', pady=3, padx=4)
-            self._reg_theme(sl, 'surface2+text_dim' if i % 2 == 0 else 'surface+text_dim')
-
-            var = tk.StringVar(value="—")
-            self.stat_vars[key] = var
-            sv = tk.Label(row, textvariable=var,
-                          font=("Aptos Display", 11, "bold"), bg=row_bg, fg=color)
-            sv.pack(side='right', padx=12, pady=3)
-            self._reg_theme(sv, 'surface2' if i % 2 == 0 else 'surface')
-
-        # ── Log ──
-        self._section(parent, "04  //  LOG")
-
-        log_frame = tk.Frame(parent, bg=Theme.surface(),
-                             highlightthickness=1, highlightbackground=Theme.border())
-        log_frame.pack(fill='both', expand=True)
-        self._reg_theme(log_frame, 'surface')
-        self._reg_theme(log_frame, 'border')
-
-        scroll_log = ttk.Scrollbar(log_frame, orient='vertical')
-        scroll_log.pack(side='right', fill='y')
-
+        # Center over parent.
+        self.top.update_idletasks()
+        px = parent.winfo_rootx()
+        py = parent.winfo_rooty()
+        pw = parent.winfo_width()
+        ph = parent.winfo_height()
+        w = self.top.winfo_width()
+        h = self.top.winfo_height()
+        x = px + (pw - w) // 2
+        y = py + (ph - h) // 2
+        self.top.geometry(f"+{max(0, x)}+{max(0, y)}")
+
+    def _build_ui(self) -> None:
+        """Build the dialog widgets."""
+        tk.Label(
+            self.top, text="Which file would you like to update?",
+            font=("Arial", 11, "bold"),
+        ).pack(padx=20, pady=(16, 6))
+
+        tk.Label(
+            self.top,
+            text=f"Files will be saved to:\n{self.folder}",
+            font=("Arial", 9), fg='gray', justify='center',
+        ).pack(padx=20, pady=(0, 12))
+
+        self.choice_var = tk.StringVar(value='master')
+
+        radio_frame = tk.Frame(self.top)
+        radio_frame.pack(padx=30, pady=(0, 12), anchor='w')
+
+        tk.Radiobutton(
+            radio_frame, text="Items Master  (Items_March.xlsx)",
+            variable=self.choice_var, value='master',
+            font=("Arial", 10),
+        ).pack(anchor='w', pady=2)
+        tk.Radiobutton(
+            radio_frame, text="EKA_DATA  (EKA_DATA.xlsx)",
+            variable=self.choice_var, value='eka',
+            font=("Arial", 10),
+        ).pack(anchor='w', pady=2)
+        tk.Radiobutton(
+            radio_frame, text="Both  (pick Master first, then EKA_DATA)",
+            variable=self.choice_var, value='both',
+            font=("Arial", 10),
+        ).pack(anchor='w', pady=2)
+
+        btn_frame = tk.Frame(self.top)
+        btn_frame.pack(pady=(0, 16))
+
+        tk.Button(
+            btn_frame, text="Cancel", width=10,
+            command=self._on_cancel,
+        ).pack(side='left', padx=6)
+        tk.Button(
+            btn_frame, text="Update", width=10,
+            font=("Arial", 10, "bold"),
+            bg="#00C853", fg='white',
+            command=self._on_update,
+        ).pack(side='left', padx=6)
+
+        # ESC closes the dialog (treated as Cancel).
+        self.top.bind('<Escape>', lambda _e: self._on_cancel())
+        # Window-close button = cancel.
+        self.top.protocol('WM_DELETE_WINDOW', self._on_cancel)
+
+    def _on_update(self) -> None:
+        self.result = self.choice_var.get()
+        self.top.destroy()
+
+    def _on_cancel(self) -> None:
+        self.result = None
+        self.top.destroy()
+
+    def show(self) -> Optional[str]:
+        """Block until the dialog is dismissed, then return the choice."""
+        self.parent.wait_window(self.top)
+        return self.result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  GUI APPLICATION (v1.3 — simplified, no themes)
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# Simple Tkinter window matching the style of online_po_management:
+#     ┌─────────────────────────────────────────────┐
+#     │  RENEE PO Processor v1.3                    │
+#     │                                              │
+#     │  Mode: ◉ Standalone  ○ Special Order        │
+#     │                                              │
+#     │  ┌─ Input Files ────────────────────────┐  │
+#     │  │ Items Master:  ✓ Items_March (auto)  │  │
+#     │  │ EKA Data:      ✓ EKA_DATA (auto)     │  │
+#     │  │ PO Files (mode-dependent):            │  │
+#     │  │   [ + Add Files ]  [ ✕ Clear ]        │  │
+#     │  │   1. EBO_AMD01.xlsx                   │  │
+#     │  │   2. AP_CHEN01.xlsx                   │  │
+#     │  └───────────────────────────────────────┘  │
+#     │                                              │
+#     │  [▶ Generate Output]                         │
+#     │  [📂 Open Last Output]                      │
+#     │  [📤 Export D365 TO Package]                │
+#     │  [📋 Download Templates ▾]                  │
+#     │  [📁 Update Bundled Files]                  │
+#     │                                              │
+#     │  Status: Ready                               │
+#     │  ┌─ Log ──────────────────────────────┐   │
+#     │  │ [HH:MM:SS] message                  │   │
+#     │  └────────────────────────────────────┘   │
+#     └─────────────────────────────────────────────┘
+
+class ReneePOApp:
+    """Simple Tkinter app for RENEE PO Processor."""
+
+    def __init__(self) -> None:
+        self.root = tk.Tk()
+        self.root.title(APP_TITLE)
+        self.root.geometry("560x780")
+        self.root.resizable(False, False)
+
+        # ── Engine state ──
+        self.engine = POEngine()
+        self.eka_locations: List[Dict] = []
+
+        # ── File paths ──
+        self.master_path: Optional[str] = None
+        self.eka_path: Optional[str] = None
+        self.po_files: List[str] = []                  # standalone mode
+        self.so_path: Optional[str] = None             # special order mode
+
+        # ── Output tracking ──
+        self.last_output: Optional[Path] = None
+        self.last_results: List[LocationResult] = []
+        self.is_running = False
+
+        # ── Auto-load tracking (for sub-line text) ──
+        self.master_is_bundled = False
+        self.eka_is_bundled = False
+
+        # ── Widget refs ──
+        self.mode_var: tk.StringVar
+        self.master_var: tk.StringVar
+        self.eka_var: tk.StringVar
+        self.po_files_var: tk.StringVar
+        self.so_var: tk.StringVar
+        self.status_var: tk.StringVar
+        self.po_listbox: tk.Listbox
+        self.log_text: tk.Text
+        self.gen_btn: tk.Button
+        self.open_btn: tk.Button
+        self.d365_btn: tk.Button
+        self.po_frame: tk.LabelFrame
+        self.so_frame: tk.LabelFrame
+
+        self._build_ui()
+
+        # v1.5.2: ensure Calculation_Data_EKA/ exists so the bundled-
+        # files workflow has a place to write to even on first run.
+        get_bundled_folder(create=True)
+
+        self._auto_load_bundled()
+
+        # v1.5.2: force the window to come to front on launch. One
+        # user reported the app "not opening" but it was actually
+        # running with the window hidden behind other windows. Lift
+        # + topmost gets focus; topmost off afterwards so it doesn't
+        # stay always-on-top.
+        self.root.update()
+        self.root.lift()
+        self.root.attributes('-topmost', True)
+        self.root.after(500, lambda: self.root.attributes('-topmost', False))
+
+    # ── UI CONSTRUCTION ────────────────────────────────────────────────────
+
+    def _build_ui(self) -> None:
+        """Build the Tk widget tree."""
+
+        # Title
+        tk.Label(self.root, text="RENEE PO Processor",
+                  font=("Arial", 14, "bold")).pack(pady=(12, 2))
+        tk.Label(self.root, text=f"v{APP_VERSION}  •  EBO / Kiosk / Airport PO → SO/TO",
+                  font=("Arial", 9), fg='gray').pack(pady=(0, 10))
+
+        # ── Mode selector ──
+        mode_frame = tk.Frame(self.root)
+        mode_frame.pack(fill='x', padx=20, pady=(0, 8))
+        tk.Label(mode_frame, text="Mode:", font=("Arial", 10, "bold")).pack(side='left')
+
+        self.mode_var = tk.StringVar(value='standalone')
+        tk.Radiobutton(
+            mode_frame, text="Standalone PO files",
+            variable=self.mode_var, value='standalone',
+            command=self._on_mode_change,
+            font=("Arial", 10),
+        ).pack(side='left', padx=(8, 4))
+        tk.Radiobutton(
+            mode_frame, text="Special Order broadcast",
+            variable=self.mode_var, value='special',
+            command=self._on_mode_change,
+            font=("Arial", 10),
+        ).pack(side='left')
+
+        # ── Input Files section ──
+        files_frame = tk.LabelFrame(
+            self.root, text="Input Files",
+            font=("Arial", 10, "bold"), padx=10, pady=8,
+        )
+        files_frame.pack(fill='x', padx=20, pady=(0, 8))
+
+        # Items Master
+        self.master_var = tk.StringVar(value="Not selected")
+        self._build_file_row(
+            files_frame, "Items Master:",
+            self.master_var, self._select_master,
+        )
+
+        # EKA Data
+        self.eka_var = tk.StringVar(value="Not selected")
+        self._build_file_row(
+            files_frame, "EKA Data:",
+            self.eka_var, self._select_eka,
+        )
+
+        # ── Standalone-only: PO files panel ──
+        # Wrapped in its own frame so we can hide/show it on mode change.
+        self.po_frame = tk.LabelFrame(
+            self.root, text="PO Files (Standalone)",
+            font=("Arial", 10, "bold"), padx=10, pady=8,
+        )
+        self.po_frame.pack(fill='both', expand=False, padx=20, pady=(0, 8))
+
+        po_btn_row = tk.Frame(self.po_frame)
+        po_btn_row.pack(fill='x', pady=(0, 4))
+        tk.Button(po_btn_row, text="+ Add Files",
+                   command=self._add_files, width=12).pack(side='left', padx=(0, 4))
+        tk.Button(po_btn_row, text="✕ Clear All",
+                   command=self._clear_files, width=10).pack(side='left')
+
+        self.po_files_var = tk.StringVar(value="0 files added")
+        tk.Label(po_btn_row, textvariable=self.po_files_var,
+                  font=("Arial", 9), fg='gray').pack(side='right')
+
+        list_frame = tk.Frame(self.po_frame)
+        list_frame.pack(fill='both', expand=True)
+        list_scroll = ttk.Scrollbar(list_frame, orient='vertical')
+        list_scroll.pack(side='right', fill='y')
+        self.po_listbox = tk.Listbox(
+            list_frame, height=5, font=("Consolas", 9),
+            yscrollcommand=list_scroll.set,
+        )
+        self.po_listbox.pack(fill='both', expand=True)
+        list_scroll.config(command=self.po_listbox.yview)
+
+        # ── Special Order-only panel ──
+        self.so_frame = tk.LabelFrame(
+            self.root, text="Special Order File",
+            font=("Arial", 10, "bold"), padx=10, pady=8,
+        )
+        # Don't pack now — will pack on mode change.
+
+        self.so_var = tk.StringVar(value="Not selected")
+        self._build_file_row(
+            self.so_frame, "Special Order:",
+            self.so_var, self._select_so,
+        )
+
+        # ── Action buttons ──
+        btn_frame = tk.Frame(self.root)
+        btn_frame.pack(pady=(4, 4))
+
+        self.gen_btn = tk.Button(
+            btn_frame, text="▶  Generate Output", width=24,
+            font=("Arial", 10, "bold"),
+            bg="#00C853", fg='white', command=self._run,
+        )
+        self.gen_btn.pack(pady=3)
+
+        self.open_btn = tk.Button(
+            btn_frame, text="📂  Open Last Output", width=24,
+            state=tk.DISABLED, command=self._open_last,
+        )
+        self.open_btn.pack(pady=3)
+
+        self.d365_btn = tk.Button(
+            btn_frame, text="📤  Export D365 TO Package", width=24,
+            state=tk.DISABLED, command=self._export_d365,
+        )
+        self.d365_btn.pack(pady=3)
+
+        # Templates dropdown — using a Menubutton for compactness
+        tmpl_btn = tk.Menubutton(
+            btn_frame, text="📋  Download Templates ▾",
+            width=22, relief='raised',
+        )
+        tmpl_menu = tk.Menu(tmpl_btn, tearoff=0)
+        tmpl_btn['menu'] = tmpl_menu
+        tmpl_menu.add_command(label="Blank PO Template",
+                                command=self._download_po_template)
+        tmpl_menu.add_command(label="EKA_DATA Template",
+                                command=self._download_eka_template)
+        tmpl_menu.add_command(label="Special Order Template",
+                                command=self._download_so_template)
+        tmpl_btn.pack(pady=3)
+
+        tk.Button(btn_frame, text="📁  Update Bundled Files", width=24,
+                   command=self._update_bundled).pack(pady=3)
+
+        # ── Status line ──
+        self.status_var = tk.StringVar(value="Ready")
+        tk.Label(self.root, textvariable=self.status_var,
+                  font=("Arial", 10), fg='gray',
+                  wraplength=520).pack(pady=4)
+
+        # ── Log panel ──
+        log_frame = tk.LabelFrame(self.root, text="Log", font=("Arial", 9))
+        log_frame.pack(fill='both', expand=True, padx=20, pady=(0, 12))
+
+        log_scroll = ttk.Scrollbar(log_frame, orient='vertical')
+        log_scroll.pack(side='right', fill='y')
         self.log_text = tk.Text(
-            log_frame, bg=Theme.surface(), fg=Theme.text_dim(), font=FONT_MONO,
-            height=6, wrap='word', state='disabled',
-            borderwidth=0, highlightthickness=0,
-            yscrollcommand=scroll_log.set)
-        self.log_text.pack(fill='both', expand=True, padx=6, pady=6)
-        scroll_log.config(command=self.log_text.yview)
-        self._reg_theme(self.log_text, 'log')
+            log_frame, height=8, font=("Consolas", 9),
+            state='disabled', wrap='word',
+            yscrollcommand=log_scroll.set,
+        )
+        self.log_text.pack(fill='both', expand=True)
+        log_scroll.config(command=self.log_text.yview)
 
-        self.log_text.tag_config('ok',   foreground=GREEN)
-        self.log_text.tag_config('err',  foreground=RED)
-        self.log_text.tag_config('inf',  foreground=ACCENT)
-        self.log_text.tag_config('dim',  foreground=Theme.text_dim())
-        self.log_text.tag_config('warn', foreground=AMBER)
+        # Tag colors for log levels
+        self.log_text.tag_config('ok', foreground='#00A651')
+        self.log_text.tag_config('err', foreground='#D32F2F')
+        self.log_text.tag_config('warn', foreground='#E65100')
+        self.log_text.tag_config('inf', foreground='#0077B6')
+        self.log_text.tag_config('dim', foreground='#5F6368')
 
-    def _build_bottom(self):
-        """Build bottom bar: progress, status, action buttons."""
-        bottom = tk.Frame(self, bg=Theme.surface(), height=64)
-        bottom.pack(fill='x', side='bottom')
-        bottom.pack_propagate(False)
-        self._reg_theme(bottom, 'surface')
+    def _build_file_row(self, parent, label_text: str,
+                          var: tk.StringVar, browse_cmd) -> None:
+        """
+        Build one row: ``[ label ][ path text ][ Browse ]``.
 
-        pb_frame = tk.Frame(bottom, bg=Theme.surface())
-        pb_frame.pack(fill='x', padx=16, pady=(8, 0))
-        self._reg_theme(pb_frame, 'surface')
+        v1.3.1: pack order matters. Browse goes first (right side) so it
+        is anchored to the right edge regardless of how long the path
+        text is. Then the path label fills whatever space remains. If
+        the path is genuinely too long it wraps inside the available
+        width but cannot push Browse off the visible window.
+        """
+        row = tk.Frame(parent)
+        row.pack(fill='x', pady=2)
 
-        self.progress_canvas = tk.Canvas(pb_frame, height=4, bg=Theme.surface2(),
-                                         highlightthickness=0)
-        self.progress_canvas.pack(fill='x')
-        self._reg_theme(self.progress_canvas, 'progress')
+        # 1) Fixed-width label on the left (always visible).
+        tk.Label(
+            row, text=label_text,
+            font=("Arial", 10), width=15, anchor='w',
+        ).pack(side='left')
 
-        ctrl = tk.Frame(bottom, bg=Theme.surface())
-        ctrl.pack(fill='x', padx=16, pady=(4, 8))
-        self._reg_theme(ctrl, 'surface')
+        # 2) Browse button on the FAR right (anchored — can't get pushed).
+        tk.Button(
+            row, text="Browse", width=8, command=browse_cmd,
+        ).pack(side='right', padx=(4, 0))
 
-        self.status_label = tk.Label(ctrl,
-            text="READY  //  Load master + EKA_DATA + add PO files",
-            font=FONT_MONO, bg=Theme.surface(), fg=Theme.text_dim())
-        self.status_label.pack(side='left')
-        self._reg_theme(self.status_label, 'surface+text_dim')
+        # 3) Path text fills whatever space is left between (1) and (2).
+        #    wraplength is conservative so even worst-case error strings
+        #    wrap to ~2 lines max instead of stretching the row vertically
+        #    and pushing other widgets out of place.
+        tk.Label(
+            row, textvariable=var,
+            font=("Arial", 10), fg='#1A237E', anchor='w',
+            wraplength=300, justify='left',
+        ).pack(side='left', fill='x', expand=True)
 
-        # Action buttons (right side)
-        self.run_btn = self._btn(ctrl, "▶  PROCESS ALL", self._run, GREEN, large=True)
-        self.run_btn.pack(side='right')
+    # ── AUTO-LOAD ──────────────────────────────────────────────────────────
 
-        # v1.2: D365 TO export button
-        self._btn(ctrl, "📤 D365 TO PACKAGE",
-                  self._export_d365_to, ACCENT2).pack(side='right', padx=8)
+    def _auto_load_bundled(self) -> None:
+        """
+        Look for Items_March.xlsx + EKA_DATA.xlsx in Calculation Data/
+        and pre-populate state if found.
+        """
+        # Master
+        m_path = get_bundled_master_path()
+        if m_path:
+            try:
+                count = self.engine.load_master(str(m_path))
+                self.master_path = str(m_path)
+                self.master_is_bundled = True
+                self.master_var.set(f"✓ {m_path.name} (auto-loaded)")
+                self._log(f"Auto-loaded master from "
+                          f"{BUNDLED_DATA_FOLDER}/{m_path.name} → {count:,} items", 'ok')
+            except Exception as e:
+                self._log(f"Master auto-load failed: {e}", 'err')
+        else:
+            self._log(f"No bundled master at "
+                      f"{BUNDLED_DATA_FOLDER}/{BUNDLED_MASTER_NAME} "
+                      f"— Browse to pick one or use 'Update Bundled Files'", 'dim')
 
-        self._btn(ctrl, "📂 OPEN OUTPUT",
-                  self._open_output, Theme.text_dim()).pack(side='right', padx=8)
+        # EKA_DATA
+        e_path = get_bundled_eka_path()
+        if e_path:
+            self._load_eka_file(str(e_path), is_bundled=True)
+        else:
+            self._log(f"No bundled EKA_DATA at "
+                      f"{BUNDLED_DATA_FOLDER}/{BUNDLED_EKA_NAME} "
+                      f"— Browse to pick one or use 'Update Bundled Files'", 'dim')
 
-    # ── HELPERS ────────────────────────────────────────────────────────────────
+    def _load_eka_file(self, path: str, is_bundled: bool) -> None:
+        """Common path for loading an EKA file (auto-load OR manual pick)."""
+        try:
+            so_engine = SpecialOrderEngine(self.engine.master or {})
+            logs = []
+            count = so_engine.load_eka_data(path, logs)
+            self.eka_locations = so_engine.locations
+            self.eka_path = path
+            self.eka_is_bundled = is_bundled
 
-    def _section(self, parent, title):
-        """Create a section header with label + separator line."""
-        f = tk.Frame(parent, bg=Theme.bg())
-        f.pack(fill='x', pady=(6, 4))
-        self._reg_theme(f, 'bg')
+            label = (f"✓ {os.path.basename(path)} (auto-loaded)"
+                     if is_bundled
+                     else os.path.basename(path))
+            self.eka_var.set(label)
 
-        sl = tk.Label(f, text=title, font=FONT_LABEL,
-                      bg=Theme.bg(), fg=Theme.accent())
-        sl.pack(side='left')
-        self._reg_theme(sl, 'bg+accent')
+            tag = 'ok' if is_bundled else 'inf'
+            self._log(f"EKA_DATA loaded: {os.path.basename(path)} "
+                      f"→ {count} active locations", tag)
 
-        sep = tk.Frame(f, bg=Theme.border(), height=1)
-        sep.pack(side='left', fill='x', expand=True, padx=8)
-        self._reg_theme(sep, 'border')
+            # Surface non-info messages for visibility
+            for level, msg in logs:
+                if level != 'info':
+                    log_tag = {'warn': 'warn', 'error': 'err',
+                               'alert': 'warn'}.get(level, 'dim')
+                    self._log(f"  {msg}", log_tag)
+        except Exception as e:
+            # v1.3.1: same short-label pattern as the master loader. Long
+            # filesystem paths in the label break layout; dump details to
+            # the log instead.
+            self.eka_var.set("ERROR — see log")
+            self._log(f"EKA load failed: {e}", 'err')
+            self._log(f"  Path attempted: {path}", 'dim')
+            if not is_bundled:
+                # Only show the popup for manual picks. Auto-load failures
+                # at startup shouldn't interrupt with a dialog — the log
+                # message is enough.
+                messagebox.showerror(
+                    "EKA Load Failed",
+                    f"Could not load EKA_DATA:\n\n{e}\n\n"
+                    f"File: {os.path.basename(path)}",
+                )
 
-    def _btn(self, parent, text, cmd, color, large=False):
-        """Create a themed button (Label with click/hover bindings)."""
-        padx = 16 if large else 10
-        pady = 6 if large else 4
-        btn = tk.Label(parent, text=text, font=FONT_BTN,
-                       bg=Theme.surface2(), fg=color,
-                       cursor='hand2', padx=padx, pady=pady,
-                       relief='flat', bd=0,
-                       highlightthickness=1, highlightbackground=color)
-        btn.bind('<Button-1>', lambda e: cmd())
-        btn.bind('<Enter>', lambda e: btn.config(bg=color, fg=Theme.bg()))
-        btn.bind('<Leave>', lambda e: btn.config(bg=Theme.surface2(), fg=color))
-        self._reg_theme(btn, 'surface2')
-        return btn
+    # ── LOGGING + STATUS ───────────────────────────────────────────────────
 
-    def _log(self, msg, tag='dim'):
+    def _log(self, msg: str, tag: str = 'dim') -> None:
         """Append a timestamped message to the log panel."""
         self.log_text.config(state='normal')
         ts = time.strftime("%H:%M:%S")
@@ -3186,720 +3153,605 @@ class ReneePOApp(tk.Tk):
         self.log_text.see('end')
         self.log_text.config(state='disabled')
 
-    def _set_status(self, msg, color=None):
-        """Update the bottom status label."""
-        self.status_label.config(text=msg, fg=color or Theme.text_dim())
+    def _set_status(self, msg: str, color: str = 'gray') -> None:
+        """Update the status label."""
+        self.status_var.set(msg)
 
-    def _set_progress(self, pct):
-        """Update the progress bar (0-100)."""
-        self.progress_canvas.update_idletasks()
-        w = self.progress_canvas.winfo_width()
-        self.progress_canvas.delete('all')
-        self.progress_canvas.create_rectangle(0, 0, w, 4, fill=Theme.surface2(), outline='')
-        if pct > 0:
-            bar_w = int(w * pct / 100)
-            self.progress_canvas.create_rectangle(0, 0, bar_w, 4, fill=PINK, outline='')
+    # ── MODE SWITCHING ─────────────────────────────────────────────────────
 
-    def _refresh_file_list(self):
-        """Refresh the file listbox from self.po_files."""
-        self.file_list.delete(0, 'end')
-        for p in self.po_files:
-            name = os.path.basename(p)
-            display = name if len(name) <= 50 else name[:47] + '...'
-            self.file_list.insert('end', f"  {display}")
-        self.file_count_var.set(f"{len(self.po_files)} file(s) loaded")
+    def _on_mode_change(self) -> None:
+        """Show the right input panel based on selected mode."""
+        mode = self.mode_var.get()
+        if mode == 'standalone':
+            self.so_frame.pack_forget()
+            self.po_frame.pack(
+                fill='both', expand=False, padx=20, pady=(0, 8),
+                before=self.gen_btn.master,
+            )
+            self._log("Mode: Standalone (per-location PO files)", 'inf')
+        else:
+            self.po_frame.pack_forget()
+            self.so_frame.pack(
+                fill='both', expand=False, padx=20, pady=(0, 8),
+                before=self.gen_btn.master,
+            )
+            self._log("Mode: Special Order (broadcast across all locations)", 'inf')
 
-    # ── v1.2: FILENAME → EKA LOCATION LOOKUP ──────────────────────────────────
+    # ── FILE PICKERS ───────────────────────────────────────────────────────
 
-    def _lookup_location_from_filename(self, filepath: str) -> Optional[Dict]:
+    def _select_master(self) -> None:
         """
-        Match PO filename against EKA_DATA 'location' field.
+        Manual override for Items Master.
 
-        Filename convention: rename PO file to the ERP Location code.
-        Example: EBO_AMD01.xlsx → extract 'EBO_AMD01' → match against
-        EKA_DATA 'Location' column.
-
-        Args:
-            filepath: Full path to the PO file
-
-        Returns:
-            EKA location dict if matched, None if no match.
+        v1.5.2: when the user picks a file via Browse we now also
+        copy it into ``Calculation Data/Items_March.xlsx`` so future
+        launches auto-load it. This is the same pattern as
+        online_po_management — Browse-once, never-pick-again. The
+        copy happens AFTER the load succeeds so a broken/wrong file
+        doesn't pollute the bundled location.
         """
-        if not self.eka_locations:
-            return None
-
-        # Extract Location code from filename
-        fname = os.path.basename(filepath)
-        loc_code = fname.replace('.xlsx', '').replace('.xlsm', '').replace('.xls', '')
-
-        # Exact match on 'location' field
-        for loc in self.eka_locations:
-            if loc.get('location', '') == loc_code:
-                return loc
-
-        # Partial match: filename starts with location code
-        for loc in self.eka_locations:
-            loc_val = loc.get('location', '')
-            if loc_val and loc_code.startswith(loc_val):
-                return loc
-
-        return None
-
-    # ── ACTIONS ────────────────────────────────────────────────────────────────
-
-    def _select_master(self):
-        """Open file dialog and load Items_March master file."""
         path = filedialog.askopenfilename(
-            title="Select Items_March.xlsx (Master File)",
-            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")])
+            title="Select Items Master file",
+            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
+        )
         if not path:
             return
         try:
             count = self.engine.load_master(path)
             self.master_path = path
             self.master_var.set(os.path.basename(path))
-            self.master_count_var.set(f"✓ {count:,} items loaded")
-            self._log(f"Master loaded: {os.path.basename(path)} → {count:,} items", 'ok')
-        except Exception as e:
-            self.master_var.set(f"ERROR: {e}")
-            self.master_count_var.set("")
-            self._log(f"Master load failed: {e}", 'err')
+            self._log(f"Master loaded: {os.path.basename(path)} → "
+                      f"{count:,} items", 'ok')
 
-    def _select_eka(self):
+            # v1.5.2: auto-save to bundled folder for future runs.
+            try:
+                target = get_bundled_folder(create=True) / BUNDLED_MASTER_NAME
+                # Skip the copy if the picked file IS the bundled file
+                # already (avoids "same file" SameFileError).
+                if Path(path).resolve() != target.resolve():
+                    shutil.copy2(path, str(target))
+                    self.master_path = str(target)
+                    self.master_is_bundled = True
+                    self.master_var.set(f"✓ {target.name} (auto-loaded)")
+                    self._log(f"Saved to bundled folder → "
+                              f"{BUNDLED_DATA_FOLDER}/{target.name} "
+                              f"(will auto-load next time)", 'ok')
+                else:
+                    self.master_is_bundled = True
+            except Exception as copy_err:
+                # Copy failure is non-fatal — Master is still loaded
+                # in memory for this session. User can retry next run.
+                self.master_is_bundled = False
+                self._log(f"Could not save to bundled folder: {copy_err}",
+                          'warn')
+                self._log("  (Master is loaded for this session only — "
+                          "use 'Update Bundled Files' to retry)", 'dim')
+
+        except Exception as e:
+            # v1.3.1: don't pollute the GUI label with the long error string
+            # (could be a 200-char filesystem path that wraps into 4 lines and
+            # pushes the Browse button off the right edge). Show a short
+            # marker in the label, dump the real error to the log.
+            self.master_var.set("ERROR — see log")
+            self._log(f"Master load failed: {e}", 'err')
+            self._log(f"  Path attempted: {path}", 'dim')
+            messagebox.showerror(
+                "Master Load Failed",
+                f"Could not load Items Master:\n\n{e}\n\n"
+                f"File: {os.path.basename(path)}",
+            )
+
+    def _select_eka(self) -> None:
         """
-        v1.2: Load EKA_DATA (shared across both modes).
-        Parses locations immediately and stores in self.eka_locations.
+        Manual override for EKA_DATA.
+
+        v1.5.2: also auto-saves to bundled folder for future auto-load.
+        See ``_select_master`` for rationale.
         """
         path = filedialog.askopenfilename(
-            title="Select EKA_DATA.xlsx (Location Registry)",
-            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")])
+            title="Select EKA_DATA file",
+            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
+        )
         if not path:
             return
-        self.eka_path = path
 
-        # Parse immediately to populate eka_locations
-        try:
-            so_engine = SpecialOrderEngine(
-                self.engine.master if self.engine.master else {})
-            logs = []
-            count = so_engine.load_eka_data(path, logs)
-            self.eka_locations = so_engine.locations
+        # Load first; if successful, auto-save to bundled folder.
+        self._load_eka_file(path, is_bundled=False)
 
-            self.eka_var.set(os.path.basename(path))
-            self.eka_count_var.set(f"✓ {count} locations loaded")
-            self._log(f"EKA_DATA: {os.path.basename(path)} → {count} locations", 'ok')
+        # Only save if the load actually populated locations.
+        if self.eka_locations:
+            try:
+                target = get_bundled_folder(create=True) / BUNDLED_EKA_NAME
+                if Path(path).resolve() != target.resolve():
+                    shutil.copy2(path, str(target))
+                    self.eka_path = str(target)
+                    self.eka_is_bundled = True
+                    self.eka_var.set(f"✓ {target.name} (auto-loaded)")
+                    self._log(f"Saved to bundled folder → "
+                              f"{BUNDLED_DATA_FOLDER}/{target.name} "
+                              f"(will auto-load next time)", 'ok')
+            except Exception as copy_err:
+                self._log(f"Could not save to bundled folder: {copy_err}",
+                          'warn')
 
-            for level, msg in logs:
-                if level != 'info':
-                    tag = {'warn': 'warn', 'error': 'err', 'alert': 'warn'}.get(level, 'dim')
-                    self._log(f"  {msg}", tag)
-        except Exception as e:
-            self.eka_var.set(f"ERROR: {e}")
-            self._log(f"EKA_DATA load failed: {e}", 'err')
-
-    def _select_special_order(self):
-        """Open file dialog to select Special_Order.xlsx."""
+    def _select_so(self) -> None:
+        """Pick the Special Order file."""
         path = filedialog.askopenfilename(
-            title="Select Special Order File",
-            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")])
+            title="Select Special Order file",
+            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
+        )
         if not path:
             return
         self.so_path = path
         self.so_var.set(os.path.basename(path))
-        self.so_count_var.set("✓ Selected")
-        self._log(f"Special Order selected: {os.path.basename(path)}", 'ok')
+        self._log(f"Special Order: {os.path.basename(path)}", 'inf')
 
-    def _add_files(self):
-        """Open file dialog to add PO files."""
+    def _add_files(self) -> None:
+        """Add multiple PO files (standalone mode)."""
         files = filedialog.askopenfilenames(
             title="Select PO Excel Files",
-            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")])
+            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
+        )
         added = 0
         for f in files:
-            if f not in self.po_files and 'Items_March' not in f and 'PO_Output' not in f:
+            if (f not in self.po_files
+                    and 'Items_March' not in f
+                    and 'EKA_DATA' not in f
+                    and 'PO_Output' not in f):
                 self.po_files.append(f)
                 added += 1
+        self._refresh_po_list()
         if added:
-            self._refresh_file_list()
             self._log(f"Added {added} PO file(s)", 'inf')
 
-    def _add_folder(self):
-        """Scan folder for .xlsx files and add them."""
-        folder = filedialog.askdirectory(title="Select folder containing PO files")
-        if not folder:
-            return
-        import glob
-        files = sorted(glob.glob(os.path.join(folder, "*.xlsx")))
-        added = 0
-        for f in files:
-            bname = os.path.basename(f)
-            if (f not in self.po_files
-                    and 'Items_March' not in bname
-                    and 'PO_Output' not in bname
-                    and not bname.startswith('~')):
-                self.po_files.append(f)
-                added += 1
-        self._refresh_file_list()
-        self._log(f"Scanned folder → added {added} PO file(s)", 'inf')
-
-    def _clear_files(self):
-        """Clear all PO files from the list."""
+    def _clear_files(self) -> None:
+        """Clear the PO file list."""
         self.po_files.clear()
-        self._refresh_file_list()
-        self._log("File list cleared", 'dim')
+        self._refresh_po_list()
+        self._log("PO file list cleared", 'dim')
 
-    # ── MODE SWITCHING ─────────────────────────────────────────────────────────
+    def _refresh_po_list(self) -> None:
+        """Refresh the PO listbox display."""
+        self.po_listbox.delete(0, 'end')
+        for i, p in enumerate(self.po_files, 1):
+            name = os.path.basename(p)
+            display = name if len(name) <= 60 else name[:57] + '...'
+            self.po_listbox.insert('end', f"  {i}. {display}")
+        n = len(self.po_files)
+        self.po_files_var.set(f"{n} file{'s' if n != 1 else ''} added")
 
-    def _switch_mode(self, mode: str):
-        """Switch between 'standalone' and 'special' mode."""
-        self.active_mode = mode
-        if mode == 'standalone':
-            self.frame_special.pack_forget()
-            self.frame_standalone.pack(fill='both', expand=True)
-            self.btn_standalone.config(
-                bg=Theme.accent(), fg=Theme.bg(),
-                highlightbackground=Theme.accent())
-            self.btn_special.config(
-                bg=Theme.surface2(), fg=Theme.text_dim(),
-                highlightbackground=Theme.border())
-        else:
-            self.frame_standalone.pack_forget()
-            self.frame_special.pack(fill='both', expand=True)
-            self.btn_special.config(
-                bg=PINK, fg=Theme.bg(), highlightbackground=PINK)
-            self.btn_standalone.config(
-                bg=Theme.surface2(), fg=Theme.text_dim(),
-                highlightbackground=Theme.border())
+    # ── BUNDLED-FILE UPDATE ────────────────────────────────────────────────
 
-    # ── v1.2: D365 TO EXPORT ──────────────────────────────────────────────────
-
-    def _export_d365_to(self):
-        """Export D365 Transfer Order package using last processing results."""
-        if not self.last_results:
-            messagebox.showwarning("No Data",
-                "Run processing first to generate data for D365 export.")
-            return
-
-        template = filedialog.askopenfilename(
-            title="Select D365 TO Template (EKA Sample Package)",
-            filetypes=[("Excel files", "*.xlsx")])
-        if not template:
-            return
-
-        # v1.2: Output goes in eka_output/ subfolder next to source files
-        if self.po_files:
-            output_dir = os.path.join(
-                os.path.dirname(os.path.abspath(self.po_files[0])), "eka_output")
-        elif self.so_path:
-            output_dir = os.path.join(
-                os.path.dirname(os.path.abspath(self.so_path)), "eka_output")
-        else:
-            output_dir = os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), "eka_output")
-        os.makedirs(output_dir, exist_ok=True)
-        output = os.path.join(output_dir,
-            f"D365_TO_Package_{time.strftime('%d%m%Y_%H%M%S')}.xlsx")
-
-        try:
-            D365TOExporter.export(self.last_results, template, output)
-            self._log(f"D365 TO package saved → {output}", 'ok')
-
-            if messagebox.askyesno("D365 Exported",
-                    f"D365 TO package saved!\n\n"
-                    f"File: {os.path.basename(output)}\n\n"
-                    f"Open file?"):
-                if os.name == 'nt':
-                    os.startfile(output)
-                elif os.name == 'posix':
-                    import subprocess
-                    opener = 'xdg-open' if not os.uname().sysname == 'Darwin' else 'open'
-                    subprocess.Popen([opener, output])
-        except Exception as e:
-            self._log(f"D365 TO export failed: {e}", 'err')
-            messagebox.showerror("Error", f"D365 export failed:\n{e}")
-
-    # ── TEMPLATE DOWNLOADS ─────────────────────────────────────────────────────
-
-    def _download_template(self):
-        """Generate and save a blank PO template with all 5 sheets and correct headers."""
-        save_path = filedialog.asksaveasfilename(
-            title="Save Blank PO Template", defaultextension=".xlsx",
-            initialfile="PO_Template_Blank.xlsx",
-            filetypes=[("Excel files", "*.xlsx")])
-        if not save_path:
-            return
-        try:
-            wb = Workbook()
-            wb.remove(wb.active)
-            hdr_fill = PatternFill('solid', fgColor='1A237E')
-            hdr_font = Font(bold=True, color='FFFFFF', name='Aptos Display', size=11)
-
-            def make_header(ws, headers, widths=None):
-                for c, h in enumerate(headers, 1):
-                    cell = ws.cell(row=1, column=c, value=h)
-                    cell.font = hdr_font
-                    cell.fill = hdr_fill
-                    cell.alignment = Alignment(horizontal='center')
-                if widths:
-                    for c, w in enumerate(widths, 1):
-                        ws.column_dimensions[get_column_letter(c)].width = w
-                ws.freeze_panes = 'A2'
-
-            # ── PO Sheet ──
-            ws = wb.create_sheet('PO')
-            make_header(ws,
-                ['Rank', 'Category', 'EAN', 'SKU Code', 'Product Name',
-                 'Brand', 'MRP', 'Available', 'Order Qty', 'Tester Qty'],
-                [8, 20, 18, 14, 50, 14, 10, 12, 12, 12])
-            # Sample row as guide
-            sample = [1, 'Eyes', '8906121646979', '06D19087', 'SAMPLE PRODUCT NAME',
-                      'RENEE', 450, 0, '', '']
-            for c, v in enumerate(sample, 1):
-                cell = ws.cell(row=2, column=c, value=v)
-                cell.font = Font(name='Aptos Display', size=11, color='999999', italic=True)
-            # Note row
-            ws.cell(row=3, column=1,
-                value='← Delete this sample row. Fill EAN, Order Qty, Tester Qty columns.').font = \
-                Font(name='Aptos Display', size=11, color='FF6600', italic=True)
-
-            # ── PWP Sheet ──
-            ws = wb.create_sheet('PWP')
-            make_header(ws, ['Sr. No.', 'Product Name', 'Avail.Qty', 'Req.Qty'], [10, 30, 12, 12])
-            pwp_items = [
-                (1, 'Stay With Me - Mini', '', ''),
-                (2, 'Perfume', '', ''),
-                (3, 'Crème Mini', '', ''),
-            ]
-            for row_data in pwp_items:
-                ws.append(row_data)
-            ws.append(('Total', None, 0, 0))
-
-            # ── GWP Sheet ──
-            ws = wb.create_sheet('GWP')
-            make_header(ws, ['Sr. No.', 'EAN', 'Product Name', 'Avail.Qty', 'Req.Qty'],
-                        [10, 18, 45, 12, 12])
-            gwp_items = [
-                (1, 8904473101658, 'RENEE Lunar Luxe Trousseau box – Silver', '', ''),
-                (2, 8904473101672, 'RENEE Red Velvet Trousseau Box - Red', '', ''),
-                (3, 8904473101665, 'RENEE Rose Glow Trousseau Box - Pink_', '', ''),
-                (4, 8904473101009, 'RENEE Pink Puffer Pouch', '', ''),
-                (5, 8904473101023, 'RENEE Red Puffer Pouch', '', ''),
-                (6, 8904473101016, 'RENEE Silver Puffer Pouch', '', ''),
-                (7, 8904473101733, 'RENEE LUNAR LUXE TROUSSEAU BOX SMALL Pink', '', ''),
-                (8, 8904473101740, 'RENEE LUNAR LUXE TROUSSEAU BOX SMALL Red', '', ''),
-                (9, 8904473101726, 'RENEE LUNAR LUXE TROUSSEAU BOX SMALL Silver', '', ''),
-            ]
-            for row_data in gwp_items:
-                ws.append(row_data)
-            ws.append(('Total', None, None, None, 0))
-
-            # ── Non Stock Sheet ──
-            ws = wb.create_sheet('Non Stock')
-            make_header(ws, ['Sr. No.', 'Product Name', 'QTY'], [10, 30, 10])
-            ns_items = [
-                (1, 'Cotton Rolls'), (2, 'Mirrors'), (3, 'Carry Bag (Small)'),
-                (4, 'Carry Bag (Big)'), (5, 'Cleansers'), (6, 'Calculator'),
-                (7, 'Blotters'), (8, 'Swabs'), (9, 'Bill Roll'),
-                (10, 'Renee Notebook'), (11, 'Pen'),
-            ]
-            for sr, name in ns_items:
-                ws.append((sr, name, ''))
-            ws.append(('Total', None, 0))
-
-            # ── Summary Sheet ──
-            ws = wb.create_sheet('Summary')
-            ws.cell(row=3, column=2, value='[Location Name]')
-            for c, h in enumerate(['PO', 'Tester', 'PWP', 'GWP', 'Non-Stock Requirement', 'Total'], 6):
-                ws.cell(row=3, column=c, value=h)
-            for c, h in enumerate(['Sr No', 'Order No', 'Order date', 'Order Email Date'], 2):
-                ws.cell(row=4, column=c, value=h)
-            for c in range(6, 12):
-                ws.cell(row=4, column=c, value='Qty')
-
-            wb.save(save_path)
-            self._log(f"Template saved → {save_path}", 'ok')
-            messagebox.showinfo("Template Saved",
-                f"Blank PO template saved to:\n{save_path}\n\n"
-                "Sheets: PO, PWP, GWP, Non Stock, Summary\n"
-                "Fill in EAN, Order Qty, Tester Qty in PO sheet.\n"
-                "Fill Req.Qty in PWP/GWP, QTY in Non Stock.")
-        except Exception as e:
-            self._log(f"Template save failed: {e}", 'err')
-            messagebox.showerror("Error", f"Failed:\n{e}")
-
-    def _download_eka_template(self):
+    def _update_bundled(self) -> None:
         """
-        Generate and save a blank EKA_DATA template with correct column headers.
+        Replace bundled Items_March or EKA_DATA in Calculation Data/.
 
-        EKA_DATA is the Location Registry used by both modes (v1.2).
-        Contains one row per store/outlet with routing metadata.
+        v1.4: uses the proper UpdateDialog modal (3 radio choices +
+        Cancel/Update buttons) instead of the v1.3.1 Yes/No popup
+        which was confusing — Yes meant "Items Master" and No meant
+        "EKA_DATA" but that wasn't visible to the user without reading
+        the body text.
+
+        Choice flow:
+            'master' → pick a new Items Master, copy to Calculation Data/
+            'eka'    → pick a new EKA_DATA, copy to Calculation Data/
+            'both'   → master picker first, then EKA picker (back-to-back)
+            None     → user cancelled, no-op
         """
-        save_path = filedialog.asksaveasfilename(
-            title="Save EKA_DATA Template", defaultextension=".xlsx",
-            initialfile="EKA_DATA_Template.xlsx",
-            filetypes=[("Excel files", "*.xlsx")])
-        if not save_path:
+        target = get_bundled_folder(create=True)
+        dialog = UpdateDialog(self.root, folder=target)
+        choice = dialog.show()
+        if choice is None:
             return
-        try:
-            wb = Workbook()
-            ws = wb.active
-            ws.title = 'EKA_DATA'
 
-            headers = ['Desc', 'Bill to', 'Ship to', 'Location',
-                       'Gen. Biz.  Posting Group', 'Short Name',
-                       'Prefix', 'Short Code', 'Transfer Code', 'Type',
-                       'Example Regular', 'Example Tester', 'Status']
-            widths = [40, 10, 12, 15, 22, 22, 8, 12, 15, 10, 25, 25, 10]
+        updated_any = False
 
-            hdr_fill = PatternFill('solid', fgColor='E65100')
-            hdr_font = Font(bold=True, color='FFFFFF', name='Aptos Display', size=11)
+        if choice in ('master', 'both'):
+            updated_any |= self._do_update_one(
+                kind='Items Master',
+                title='Select new Items Master file',
+                target_path=target / BUNDLED_MASTER_NAME,
+            )
 
-            for c, h in enumerate(headers, 1):
-                cell = ws.cell(row=1, column=c, value=h)
-                cell.font = hdr_font
-                cell.fill = hdr_fill
-                cell.alignment = Alignment(horizontal='center')
+        if choice in ('eka', 'both'):
+            updated_any |= self._do_update_one(
+                kind='EKA_DATA',
+                title='Select new EKA_DATA file',
+                target_path=target / BUNDLED_EKA_NAME,
+            )
 
-            for c, w in enumerate(widths, 1):
-                ws.column_dimensions[get_column_letter(c)].width = w
+        if updated_any:
+            # Re-run auto-load so the GUI labels and engine state pick
+            # up the new files immediately. Doing this AFTER both
+            # updates avoids re-loading twice when 'both' was chosen.
+            self._auto_load_bundled()
+            messagebox.showinfo(
+                "Bundled Files Updated",
+                f"Bundled files updated in:\n{target}\n\n"
+                f"Future runs will auto-load the new version.",
+            )
 
-            # Sample rows (2 TO + 1 SO example)
-            samples = [
-                ('RENEE COSMETICS-ISCON ARCADE', '20329', '20329_1', 'EBO_AMD01',
-                 'OFF-EBO', 'Ahmedabad EBO', 'TO', 'AHDEB', 'EBO_AMD01', 'EBO',
-                 'TO/AHDEB/04/18426', 'TO/AHDEB/TT/18427', 'Active'),
-                ('RENEE COSMETICS-CHENNAI AIRPORT', '20342', '20342_1', 'AP_CHEN01',
-                 'OFF-AIRPORT', 'Chennai Airport', 'TO', 'CHNAP', 'AP_CHEN01', 'Airport',
-                 'TO/CHNAP/04/18426', 'TO/CHNAP/TT/18427', 'Active'),
-                ('OG BEAUTY PRIVATE LIMITED', '20395', '20395_1', 'EBO_PUNE02',
-                 'OFF-EBO', 'Pune EBO', 'SO', 'PUNEB', '20395_1', 'EBO',
-                 'SO/PUNEB/04/18426', 'SO/PUNEB/TT/18427', 'Active'),
-            ]
-
-            sample_font = Font(name='Aptos Display', size=11, color='666666', italic=True)
-            for r, row_data in enumerate(samples, 2):
-                for c, v in enumerate(row_data, 1):
-                    cell = ws.cell(row=r, column=c, value=v)
-                    cell.font = sample_font
-
-            # Note row
-            note_row = len(samples) + 2
-            ws.cell(row=note_row, column=1,
-                    value='← Delete sample rows. Add one row per location. '
-                          'Prefix: TO for Transfer Order, SO for Sales Order. '
-                          'Status: Active or Inactive.').font = \
-                Font(name='Aptos Display', size=11, color='FF6600', italic=True)
-
-            ws.freeze_panes = 'A2'
-            wb.save(save_path)
-            self._log(f"EKA_DATA template → {save_path}", 'ok')
-            messagebox.showinfo("Template Saved",
-                f"EKA_DATA template saved to:\n{save_path}\n\n"
-                "Columns: Desc, Bill to, Ship to, Location, Posting Group,\n"
-                "Short Name, Prefix (TO/SO), Short Code, Transfer Code,\n"
-                "Type (EBO/Airport/Kiosk), Status (Active/Inactive)\n\n"
-                "Delete sample rows and add your locations.")
-        except Exception as e:
-            self._log(f"EKA template failed: {e}", 'err')
-            messagebox.showerror("Error", f"Failed:\n{e}")
-
-    def _download_so_template(self):
+    def _do_update_one(self, kind: str, title: str,
+                        target_path: Path) -> bool:
         """
-        Generate and save a blank Special Order template with correct column headers.
+        Copy a user-picked file to the bundled location.
 
-        Special Order is the product broadcast file — same products shipped to
-        ALL locations with type-based quantities (EBO / Airport / Kiosk / Tester).
+        Returns True if a copy was performed, False on cancel/error.
         """
-        save_path = filedialog.asksaveasfilename(
-            title="Save Special Order Template", defaultextension=".xlsx",
-            initialfile="Special_Order_Template.xlsx",
-            filetypes=[("Excel files", "*.xlsx")])
-        if not save_path:
-            return
+        src = filedialog.askopenfilename(
+            title=title,
+            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
+        )
+        if not src:
+            self._log(f"Update cancelled for {kind}", 'dim')
+            return False
         try:
-            wb = Workbook()
-            ws = wb.active
-            ws.title = 'Special Order'
-
-            headers = ['Description', 'EAN', 'Item Category Code', 'MRP',
-                       'EBO Qty', 'Airport Qty', 'Kiosk Qty', 'Tester Qty']
-            widths = [45, 18, 18, 10, 12, 12, 12, 12]
-
-            hdr_fill = PatternFill('solid', fgColor='1A237E')
-            hdr_font = Font(bold=True, color='FFFFFF', name='Aptos Display', size=11)
-
-            for c, h in enumerate(headers, 1):
-                cell = ws.cell(row=1, column=c, value=h)
-                cell.font = hdr_font
-                cell.fill = hdr_fill
-                cell.alignment = Alignment(horizontal='center')
-
-            for c, w in enumerate(widths, 1):
-                ws.column_dimensions[get_column_letter(c)].width = w
-
-            # Sample rows
-            samples = [
-                ('RENEE PRO HD 3-IN-1 - AMANDE_9 GM', '8906121648515', 'POWDER', 650, 18, 18, 10, 1),
-                ('RENEE PRO HD CONCEALER - BUFF_8 ML', '8906121648317', 'CONCEALER', 750, 18, 18, 10, 1),
-                ('RENEE PAPER BAG BIG MULTICOLOR', '8904473105984', 'PAPER BAG', 750, '', '', '', 50),
-            ]
-
-            sample_font = Font(name='Aptos Display', size=11, color='666666', italic=True)
-            for r, row_data in enumerate(samples, 2):
-                for c, v in enumerate(row_data, 1):
-                    cell = ws.cell(row=r, column=c, value=v)
-                    cell.font = sample_font
-
-            # Note row
-            note_row = len(samples) + 2
-            ws.cell(row=note_row, column=1,
-                    value='← Delete sample rows. Add one row per product. '
-                          'EAN must match GTIN in Items_March. '
-                          'Leave qty blank or 0 if not applicable for that type. '
-                          'Tester Qty goes to ALL locations at ₹0.54.').font = \
-                Font(name='Aptos Display', size=11, color='FF6600', italic=True)
-
-            ws.freeze_panes = 'A2'
-            wb.save(save_path)
-            self._log(f"SO template → {save_path}", 'ok')
-            messagebox.showinfo("Template Saved",
-                f"Special Order template saved to:\n{save_path}\n\n"
-                "Columns: Description, EAN, Item Category Code, MRP,\n"
-                "EBO Qty, Airport Qty, Kiosk Qty, Tester Qty\n\n"
-                "• EAN must match GTIN in Items_March\n"
-                "• Leave qty blank or 0 if not applicable\n"
-                "• Tester Qty goes to ALL locations at ₹0.54\n"
-                "• Paper bags / operational items: put qty in Tester only")
+            shutil.copy2(src, str(target_path))
+            self._log(f"Bundled {kind} updated → {target_path}", 'ok')
+            return True
         except Exception as e:
-            self._log(f"SO template failed: {e}", 'err')
-            messagebox.showerror("Error", f"Failed:\n{e}")
+            self._log(f"Update failed for {kind}: {e}", 'err')
+            messagebox.showerror(
+                "Update Failed",
+                f"Could not copy {kind}:\n{e}",
+            )
+            return False
 
-    def _open_output(self):
-        """Open the last output file or the source folder."""
-        if self.last_output and os.path.exists(self.last_output):
-            if os.name == 'nt':
-                os.startfile(self.last_output)
-            elif os.name == 'posix':
-                import subprocess
-                opener = 'xdg-open' if not os.uname().sysname == 'Darwin' else 'open'
-                subprocess.Popen([opener, self.last_output])
-        else:
-            # v1.2: Open the eka_output folder next to source files
-            if self.po_files:
-                folder = os.path.join(
-                    os.path.dirname(os.path.abspath(self.po_files[0])), "eka_output")
-            elif self.so_path:
-                folder = os.path.join(
-                    os.path.dirname(os.path.abspath(self.so_path)), "eka_output")
-            else:
-                folder = os.path.join(
-                    os.path.dirname(os.path.abspath(__file__)), "eka_output")
+    # ── FILENAME → EKA LOCATION LOOKUP ─────────────────────────────────────
 
-            if os.path.exists(folder):
-                if os.name == 'nt':
-                    os.startfile(folder)
-            else:
-                messagebox.showwarning("Not Found", "No output file yet. Run processing first.")
+    def _lookup_location_from_filename(
+        self, filepath: str,
+    ) -> Tuple[Optional[Dict], int]:
+        """
+        Match PO filename against EKA_DATA 'location' field.
 
-    # ── PROCESSING ─────────────────────────────────────────────────────────────
+        v1.5.2: also handles ``_<N>`` suffix on the filename. Some
+        locations have multiple PO files in one batch (e.g. user
+        couldn't reuse the original filename so they appended ``_1``,
+        ``_2``, etc. to make Windows accept the additional file).
+        Both files should match the SAME EKA row but each one needs
+        to produce a unique TO number — so we return the suffix
+        index alongside the EKA row, and the caller uses that to
+        adorn the short_code (``DDKS`` → ``DDKS_2`` for file #2).
 
-    def _run(self):
-        """Entry point for processing. Routes to standalone or special order."""
+        Returns:
+            (eka_loc_dict, suffix_index)
+            * suffix_index is 0 when filename has no ``_<N>`` suffix
+              (the "original" file for that location).
+            * suffix_index is N (≥1) when filename ends with ``_N``
+              and the bare-name (without suffix) matches an EKA row.
+
+        Examples:
+            ``KS_DD01.xlsx``       → (eka_DD01, 0)
+            ``KS_DD01_1.xlsx``     → (eka_DD01, 1)
+            ``KS_DD01_2.xlsx``     → (eka_DD01, 2)
+            ``UNKNOWN_LOC.xlsx``   → (None, 0)
+        """
+        if not self.eka_locations:
+            return (None, 0)
+
+        fname = os.path.basename(filepath)
+        loc_code = (fname.replace('.xlsx', '')
+                          .replace('.xlsm', '')
+                          .replace('.xls', ''))
+
+        # Exact match — most common case
+        for loc in self.eka_locations:
+            if loc.get('location', '') == loc_code:
+                return (loc, 0)
+
+        # v1.5.2: try stripping trailing ``_<N>`` suffix. Both
+        # ``KS_DD01_1`` and ``KS_DD01_12`` should strip to ``KS_DD01``.
+        # The regex captures the digits so we can return them as the
+        # suffix index for short_code adornment.
+        suffix_match = re.match(r'^(.+)_(\d+)$', loc_code)
+        if suffix_match:
+            base_code = suffix_match.group(1)
+            suffix_idx = int(suffix_match.group(2))
+            for loc in self.eka_locations:
+                if loc.get('location', '') == base_code:
+                    return (loc, suffix_idx)
+
+        # Partial match (filename starts with a known location code).
+        # This is a legacy fallback for filenames like
+        # ``EBO_AMD01_old.xlsx`` that don't fit the ``_<N>`` pattern.
+        for loc in self.eka_locations:
+            loc_val = loc.get('location', '')
+            if loc_val and loc_code.startswith(loc_val):
+                return (loc, 0)
+
+        return (None, 0)
+
+    # ── PROCESSING ─────────────────────────────────────────────────────────
+
+    def _run(self) -> None:
+        """Entry point — routes to standalone or special order."""
         if self.is_running:
             return
-        if not self.master_path:
-            messagebox.showwarning("No Master", "Please load Items_March first.")
+        if not self.master_path or not self.engine.master:
+            messagebox.showwarning(
+                "No Master",
+                "Items Master is not loaded. Pick one via Browse or use "
+                "'Update Bundled Files'.",
+            )
             return
-        if self.active_mode == 'special':
+
+        mode = self.mode_var.get()
+        if mode == 'special':
             self._run_special()
         else:
             self._run_standalone()
 
-    def _run_standalone(self):
-        """Launch standalone PO processing in background thread."""
+    def _run_standalone(self) -> None:
+        """Launch standalone PO processing on a background thread."""
         if not self.po_files:
             messagebox.showwarning("No Files", "Please add at least one PO file.")
             return
 
-        # v1.2: Warn if EKA_DATA not loaded (auto-fill won't work)
         if not self.eka_locations:
-            proceed = messagebox.askyesno("EKA_DATA Not Loaded",
+            proceed = messagebox.askyesno(
+                "EKA_DATA Not Loaded",
                 "EKA_DATA is not loaded.\n\n"
-                "Without EKA_DATA, the following fields will be EMPTY:\n"
+                "Without EKA_DATA, these fields will be EMPTY in output:\n"
                 "  • TO number\n"
                 "  • Transfer-to Code\n"
                 "  • Gen. Bus. Posting Group\n"
                 "  • Headers (TO) sheet\n\n"
-                "Load EKA_DATA first for auto-fill from filename.\n\n"
-                "Continue anyway?")
+                "Continue anyway?",
+            )
             if not proceed:
                 return
 
-        # v1.2: Output goes in eka_output/ subfolder next to the PO files
-        output_dir = os.path.join(
-            os.path.dirname(os.path.abspath(self.po_files[0])), "eka_output")
-        os.makedirs(output_dir, exist_ok=True)
+        # Output goes in eka_output/ subfolder next to the FIRST PO file.
+        output_dir = (Path(self.po_files[0]).parent / 'eka_output')
+        output_dir.mkdir(parents=True, exist_ok=True)
         timestamp = time.strftime("%d%m%Y_%H%M%S")
-        output = os.path.join(output_dir, f"PO_Output_{timestamp}.xlsx")
+        output_path = output_dir / f"PO_Output_{timestamp}.xlsx"
 
         self.is_running = True
-        self.run_btn.config(fg=Theme.text_dim())
-        self._set_status("PROCESSING...", AMBER)
+        self.gen_btn.config(state=tk.DISABLED)
+        self._set_status("Processing...")
+        self.root.update()
 
         threading.Thread(
-            target=self._process_worker, args=(output,), daemon=True).start()
+            target=self._standalone_worker,
+            args=(str(output_path),),
+            daemon=True,
+        ).start()
 
-    def _run_special(self):
-        """Launch Special Order processing in background thread."""
-        if not self.eka_path:
-            messagebox.showwarning("No EKA_DATA", "Please select EKA_DATA.xlsx.")
+    def _run_special(self) -> None:
+        """Launch Special Order processing on a background thread."""
+        if not self.eka_path or not self.eka_locations:
+            messagebox.showwarning(
+                "No EKA_DATA",
+                "EKA_DATA is required for Special Order mode.",
+            )
             return
         if not self.so_path:
-            messagebox.showwarning("No Special Order", "Please select the Special Order file.")
+            messagebox.showwarning(
+                "No Special Order File",
+                "Please select the Special Order file.",
+            )
             return
 
-        # v1.2: Output goes in eka_output/ subfolder next to the SO file
-        output_dir = os.path.join(
-            os.path.dirname(os.path.abspath(self.so_path)), "eka_output")
-        os.makedirs(output_dir, exist_ok=True)
+        output_dir = Path(self.so_path).parent / 'eka_output'
+        output_dir.mkdir(parents=True, exist_ok=True)
         timestamp = time.strftime("%d%m%Y_%H%M%S")
-        output = os.path.join(output_dir, f"SO_Output_{timestamp}.xlsx")
+        output_path = output_dir / f"SO_Output_{timestamp}.xlsx"
 
         self.is_running = True
-        self.run_btn.config(fg=Theme.text_dim())
-        self._set_status("PROCESSING SPECIAL ORDER...", AMBER)
+        self.gen_btn.config(state=tk.DISABLED)
+        self._set_status("Processing Special Order...")
+        self.root.update()
 
         threading.Thread(
-            target=self._process_special_worker, args=(output,), daemon=True).start()
+            target=self._special_worker,
+            args=(str(output_path),),
+            daemon=True,
+        ).start()
 
-    # ── STANDALONE WORKER ──────────────────────────────────────────────────────
+    # ── STANDALONE WORKER ──────────────────────────────────────────────────
 
-    def _process_worker(self, output: str):
-        """
-        Background worker for standalone PO processing.
-
-        v1.2: After extraction, auto-fills TO/Transfer/Posting from EKA_DATA
-        if filename matches a Location code.
-        """
+    def _standalone_worker(self, output_path: str) -> None:
+        """Background worker for standalone PO processing."""
         total = len(self.po_files)
 
-        # ── PHASE 1: VALIDATION ──
-        self.after(0, self._log, "─── PHASE 1: VALIDATING FILES ───", 'inf')
-        self.after(0, self._set_status, "VALIDATING...", AMBER)
+        self.root.after(0, self._log, "─── PHASE 1: VALIDATING ───", 'inf')
+        self.root.after(0, self._set_status, "Validating files...")
 
-        # v1.2: Warn if EKA_DATA not loaded
         if not self.eka_locations:
-            self.after(0, self._log,
-                "⚠ EKA_DATA not loaded — TO number, Transfer-to Code, "
-                "and Gen. Bus. Posting Group will be EMPTY. "
-                "Load EKA_DATA first for auto-fill.", 'warn')
+            self.root.after(
+                0, self._log,
+                "⚠ EKA_DATA not loaded — TO/Transfer/Posting will be empty.",
+                'warn',
+            )
 
         validation_results = {}
         files_with_errors = []
         alert_messages = []
 
+        # v1.5.4: per-file processing log entries. One dict per uploaded
+        # file, populated through validation + extraction. Written as
+        # a 'Processing Log' sheet at the end so the user can audit
+        # what happened to every file at a glance.
+        processing_log: List[Dict] = []
+
         for i, po_path in enumerate(self.po_files):
             fname = os.path.basename(po_path)
             loc = fname.replace('.xlsx', '')
-            self.after(0, self._set_status,
-                f"Validating {i+1}/{total}: {fname[:45]}", AMBER)
-            self.after(0, self._set_progress, int((i / total) * 30))
+            self.root.after(0, self._set_status,
+                             f"Validating {i+1}/{total}: {fname[:45]}")
+
+            # Initialize the log entry for this file. Status starts
+            # OK; we promote to AUTO_FIXED, WARNING, or FAILED as
+            # issues are detected.
+            log_entry = {
+                'filename': fname,
+                'location': loc,
+                'status': 'OK',
+                'issues': [],
+                'actions': [],
+                'to_number': '',
+                'tt_number': '',
+            }
+            processing_log.append(log_entry)
 
             try:
                 vlogs = self.engine.validate_file(po_path)
-                has_err = any(l[0] == 'error' for l in vlogs)
+                has_err = any(level == 'error' for level, _ in vlogs)
                 validation_results[po_path] = (vlogs, has_err)
 
                 for level, msg in vlogs:
-                    tag = {'info': 'inf', 'warn': 'warn', 'error': 'err',
-                           'alert': 'warn'}.get(level, 'dim')
-                    self.after(0, self._log, f"  [{loc}] {msg}", tag)
+                    tag = {'info': 'inf', 'warn': 'warn',
+                           'error': 'err', 'alert': 'warn'}.get(level, 'dim')
+                    self.root.after(0, self._log, f"  [{loc}] {msg}", tag)
                     if level == 'alert':
                         alert_messages.append(f"• {loc}: {msg}")
+                        # Auto-fix events go in actions; promote status
+                        # if not already failed.
+                        log_entry['actions'].append(msg)
+                        if log_entry['status'] == 'OK':
+                            log_entry['status'] = 'AUTO_FIXED'
+                    elif level == 'warn':
+                        log_entry['issues'].append(msg)
+                        if log_entry['status'] == 'OK':
+                            log_entry['status'] = 'WARNING'
+                    elif level == 'error':
+                        log_entry['issues'].append(msg)
+                        log_entry['status'] = 'FAILED'
 
                 if has_err:
                     files_with_errors.append(fname)
-                    self.after(0, self._log, f"✗ {loc}  →  VALIDATION FAILED", 'err')
+                    self.root.after(0, self._log,
+                                    f"✗ {loc} → VALIDATION FAILED", 'err')
                 else:
-                    self.after(0, self._log, f"✓ {loc}  →  OK", 'ok')
-
+                    self.root.after(0, self._log, f"✓ {loc} → OK", 'ok')
             except Exception as e:
                 validation_results[po_path] = ([('error', str(e))], True)
                 files_with_errors.append(fname)
-                self.after(0, self._log, f"✗ {loc}  →  {e}", 'err')
+                self.root.after(0, self._log, f"✗ {loc} → {e}", 'err')
+                log_entry['status'] = 'FAILED'
+                log_entry['issues'].append(f"Validation crashed: {e}")
 
-        # Show auto-fix popup
         if alert_messages:
-            alert_text = ("Column names were auto-fixed:\n\n"
-                         + "\n".join(alert_messages[:20]))
-            self.after(0, lambda: messagebox.showinfo("Auto-Fix Applied", alert_text))
+            preview = "\n".join(alert_messages[:10])
+            self.root.after(0, lambda p=preview: messagebox.showinfo(
+                "Auto-Fix Applied",
+                f"Column names were auto-fixed:\n\n{p}",
+            ))
 
-        # Filter processable files
         processable = [f for f in self.po_files
-                       if not validation_results.get(f, ([], True))[1]]
+                        if not validation_results.get(f, ([], True))[1]]
         if not processable:
-            self.after(0, self._done, None,
-                f"ABORTED — all {total} files failed validation", RED)
+            self.root.after(0, self._done, None,
+                             f"ABORTED — all {total} files failed validation")
             return
 
         skipped = total - len(processable)
         if skipped > 0:
-            self.after(0, self._log,
-                f"⚠ Skipping {skipped} file(s) with errors", 'warn')
+            self.root.after(0, self._log,
+                             f"⚠ Skipping {skipped} file(s) with errors", 'warn')
 
-        # ── PHASE 2: EXTRACTION ──
-        self.after(0, self._log,
-            f"─── PHASE 2: EXTRACTING ({len(processable)} files) ───", 'inf')
+        # ── Phase 2: extraction ──
+        self.root.after(0, self._log,
+                         f"─── PHASE 2: EXTRACTING ({len(processable)} files) ───",
+                         'inf')
 
         results: List[LocationResult] = []
-        total_po = total_tester = total_pwp = total_gwp = total_ns = total_unmatched = 0
+        total_po = total_tester = total_pwp = total_gwp = total_ns = 0
+        total_unmatched = 0
+
+        # v1.5: per-run counter for TO/SO numbers — seeded with
+        # today's date_code, increments on every emitted doc number.
+        # Same model as SpecialOrderEngine.process. Each PO file's
+        # regular and tester docs each get the next number, so
+        # searching the trailing digits in Excel finds exactly one
+        # row across all PO files in this batch.
+        counter = SpecialOrderEngine.get_today_date_code()
 
         for i, po_path in enumerate(processable):
             fname = os.path.basename(po_path)
             loc = fname.replace('.xlsx', '')
-            self.after(0, self._set_status,
-                f"Extracting {i+1}/{len(processable)}: {fname[:45]}", AMBER)
-            self.after(0, self._set_progress,
-                30 + int((i / len(processable)) * 55))
+            self.root.after(0, self._set_status,
+                             f"Extracting {i+1}/{len(processable)}: {fname[:45]}")
 
             try:
                 res = self.engine.process_file(po_path)
 
-                # ── v1.2: AUTO-FILL from EKA_DATA ──
-                eka_loc = self._lookup_location_from_filename(po_path)
+                # v1.5.4: find this file's processing_log entry so we
+                # can stamp the TO/SO numbers on it and bump status if
+                # extraction surfaces additional warnings (unmatched
+                # EANs etc.).
+                log_entry = next(
+                    (e for e in processing_log if e['filename'] == fname),
+                    None,
+                )
 
+                # Auto-fill from EKA_DATA via filename match.
+                # v1.5.2: lookup now returns (eka_row, suffix_idx).
+                # suffix_idx > 0 means this file has a ``_<N>`` suffix
+                # — same location, different ERP transaction. We
+                # adorn the short_code with ``_<N>`` so the TO number
+                # is unique while the Transfer Code stays as-is (both
+                # files still ship to the same warehouse).
+                eka_loc, suffix_idx = self._lookup_location_from_filename(po_path)
                 if eka_loc:
-                    to_regular = SpecialOrderEngine.generate_to_number(
-                        eka_loc['prefix'], eka_loc['short_code'],
-                        is_tester=False)
-                    to_tester = SpecialOrderEngine.generate_to_number(
-                        eka_loc['prefix'], eka_loc['short_code'],
-                        is_tester=True)
+                    # v1.5: only allocate a counter slot for the
+                    # buckets that have actual rows. Regular docs
+                    # cover regular_orders + pwp_orders; tester docs
+                    # cover tester_orders + gwp_orders + nonstock_orders.
+                    has_regular = bool(res.regular_orders or res.pwp_orders)
+                    has_tester = bool(res.tester_orders or res.gwp_orders
+                                       or res.nonstock_orders)
+
+                    # v1.5.2: short_code adornment for ``_<N>``
+                    # filenames. ``DDKS`` stays ``DDKS`` for the
+                    # original; becomes ``DDKS_2`` for ``_1`` suffix
+                    # (file #2 chronologically), ``DDKS_3`` for ``_2``,
+                    # etc. The user's spec was "file 1 → TO/DDKS/...,
+                    # file 2 → TO/DDKS_2/...", so we use suffix_idx+1.
+                    short_code = eka_loc['short_code']
+                    if suffix_idx > 0:
+                        short_code = f"{short_code}_{suffix_idx + 1}"
+
+                    to_regular = ''
+                    to_tester = ''
+                    if has_regular:
+                        to_regular = SpecialOrderEngine.generate_to_number(
+                            eka_loc['prefix'], short_code,
+                            is_tester=False, date_code=counter)
+                        counter += 1
+                    if has_tester:
+                        to_tester = SpecialOrderEngine.generate_to_number(
+                            eka_loc['prefix'], short_code,
+                            is_tester=True, date_code=counter)
+                        counter += 1
+
                     tc = eka_loc['transfer_code']
                     pg = eka_loc['posting_group']
 
-                    # Regular + PWP → regular TO
+                    # v1.4.1: stash bill_to/ship_to so the Summary
+                    # sheet's Ship-To column populates for standalone
+                    # runs the same way Special Order ones do.
+                    res._so_bill_to = eka_loc.get('bill_to', '')
+                    res._so_ship_to = eka_loc.get('ship_to', '')
+
                     for item in res.regular_orders:
                         item.to = to_regular
                         item.transfer_to = tc
                         item.posting_group = pg
-
                     for item in res.pwp_orders:
                         item.to = to_regular
                         item.transfer_to = tc
                         item.posting_group = pg
-
-                    # Tester + GWP + Non-Stock → tester TO
                     for item in res.tester_orders:
                         item.to = to_tester
                         item.transfer_to = tc
                         item.posting_group = pg
-
                     for item in res.gwp_orders:
                         item.to = to_tester
                         item.transfer_to = tc
                         item.posting_group = pg
-
                     for item in res.nonstock_orders:
                         item.to = to_tester
                         item.transfer_to = tc
@@ -3907,18 +3759,43 @@ class ReneePOApp(tk.Tk):
 
                     res.logs.append(('info',
                         f"EKA auto-fill: {eka_loc['location']} → "
-                        f"TO:{to_regular} / TT:{to_tester} / "
+                        f"TO:{to_regular or '(none)'} / "
+                        f"TT:{to_tester or '(none)'} / "
                         f"Transfer:{tc} / Posting:{pg}"))
+
+                    # v1.5.4: stamp TO/SO numbers on the log_entry.
+                    if log_entry is not None:
+                        log_entry['to_number'] = to_regular
+                        log_entry['tt_number'] = to_tester
+                        if suffix_idx > 0:
+                            log_entry['actions'].append(
+                                f"Same location as another file — "
+                                f"indexed as #{suffix_idx + 1} "
+                                f"(short_code: {short_code})")
+                            if log_entry['status'] == 'OK':
+                                log_entry['status'] = 'AUTO_FIXED'
                 else:
                     if self.eka_locations:
                         res.logs.append(('warn',
                             f"EKA: '{loc}' not found in Location column — "
                             f"TO/Transfer/Posting left empty"))
-                # ── END v1.2 auto-fill ──
+                        if log_entry is not None:
+                            log_entry['issues'].append(
+                                f"Location '{loc}' not in EKA_DATA — "
+                                f"TO/Transfer/Posting left empty")
+                            if log_entry['status'] == 'OK':
+                                log_entry['status'] = 'WARNING'
 
                 results.append(res)
 
-                # Accumulate totals
+                # v1.5.4: unmatched EANs surface as warnings too.
+                if log_entry is not None and res.unmatched:
+                    log_entry['issues'].append(
+                        f"{len(res.unmatched)} EAN(s) not found in master "
+                        f"— see Unmatched EANs sheet")
+                    if log_entry['status'] == 'OK':
+                        log_entry['status'] = 'WARNING'
+
                 po_q = sum(r.qty for r in res.regular_orders)
                 tt_q = sum(r.qty for r in res.tester_orders)
                 pw_q = sum(r.qty for r in res.pwp_orders)
@@ -3932,250 +3809,668 @@ class ReneePOApp(tk.Tk):
                 total_ns += ns_q
                 total_unmatched += len(res.unmatched)
 
-                # Flush extraction logs
                 for level, msg in res.logs:
-                    tag = {'info': 'inf', 'warn': 'warn', 'error': 'err'}.get(level, 'dim')
-                    self.after(0, self._log, f"  [{loc}] {msg}", tag)
+                    tag = {'info': 'inf', 'warn': 'warn',
+                           'error': 'err'}.get(level, 'dim')
+                    self.root.after(0, self._log, f"  [{loc}] {msg}", tag)
 
                 parts = [f"PO:{po_q}"]
                 if tt_q: parts.append(f"T:{tt_q}")
                 if pw_q: parts.append(f"PWP:{pw_q}")
                 if gw_q: parts.append(f"GWP:{gw_q}")
                 if ns_q: parts.append(f"NS:{ns_q}")
-                self.after(0, self._log,
-                    f"✓ {loc}  →  {' | '.join(parts)}", 'ok')
-
+                self.root.after(0, self._log,
+                                 f"✓ {loc} → {' | '.join(parts)}", 'ok')
             except Exception as e:
-                self.after(0, self._log, f"✗ {fname}  →  {e}", 'err')
+                self.root.after(0, self._log, f"✗ {fname} → {e}", 'err')
+                # v1.5.4: extraction crashes go on the log_entry so
+                # the user can see why a file that passed validation
+                # then failed during processing.
+                log_entry = next(
+                    (e2 for e2 in processing_log if e2['filename'] == fname),
+                    None,
+                )
+                if log_entry is not None:
+                    log_entry['status'] = 'FAILED'
+                    log_entry['issues'].append(f"Extraction crashed: {e}")
 
         if not results:
-            self.after(0, self._done, None, "ERROR: No data processed", RED)
+            self.root.after(0, self._done, None, "ERROR: No data processed")
             return
 
         # ── Write output ──
         try:
-            self.after(0, self._set_progress, 90)
-            self.after(0, self._set_status, "Writing Excel...", AMBER)
-
-            # v1.2: store results for D365 export
+            self.root.after(0, self._set_status, "Writing Excel...")
             self.last_results = results
-
-            ExcelWriter.write(results, output)
-            self.after(0, self._set_progress, 100)
+            ExcelWriter.write(results, output_path,
+                               processing_log=processing_log)
 
             grand = total_po + total_tester + total_pwp + total_gwp + total_ns
-            stats = {
-                'locations':  str(len(results)),
-                'po_qty':     f"{total_po:,}",
-                'po_items':   str(sum(len(r.regular_orders) for r in results)),
-                'tester_qty': f"{total_tester:,}",
-                'pwp_qty':    f"{total_pwp:,}",
-                'gwp_qty':    f"{total_gwp:,}",
-                'ns_qty':     f"{total_ns:,}",
-                'grand':      f"{grand:,}",
-                'unmatched':  str(total_unmatched),
-            }
-            self.after(0, self._update_stats, stats)
-            self.after(0, self._done, output,
-                f"DONE  //  {len(results)} locations  |  {grand:,} total qty", GREEN)
 
+            # 9 stats — single line, plain log
+            stats_line = (
+                f"Locations:{len(results)} | PO Qty:{total_po:,} | "
+                f"PO Items:{sum(len(r.regular_orders) for r in results)} | "
+                f"Tester:{total_tester:,} | PWP:{total_pwp:,} | "
+                f"GWP:{total_gwp:,} | NS:{total_ns:,} | "
+                f"GRAND TOTAL:{grand:,} | Unmatched:{total_unmatched}"
+            )
+            self.root.after(0, self._log, stats_line, 'ok')
+
+            self.root.after(0, self._done, output_path,
+                             f"Done — {len(results)} locations, {grand:,} total qty")
         except Exception as e:
-            self.after(0, self._done, None, f"ERROR: {e}", RED)
+            self.root.after(0, self._done, None, f"ERROR: {e}")
 
-    # ── SPECIAL ORDER WORKER ──────────────────────────────────────────────────
+    # ── SPECIAL ORDER WORKER ───────────────────────────────────────────────
 
-    def _process_special_worker(self, output: str):
-        """
-        Background worker for Special Order processing.
-        Loads EKA_DATA + Special Order, validates, generates output.
-        """
-        self.after(0, self._log, "═══ SPECIAL ORDER PROCESSING ═══", 'inf')
+    def _special_worker(self, output_path: str) -> None:
+        """Background worker for Special Order processing."""
+        self.root.after(0, self._log, "═══ SPECIAL ORDER ═══", 'inf')
 
-        # ── Load EKA_DATA ──
-        self.after(0, self._set_status, "Loading EKA_DATA...", AMBER)
-        self.after(0, self._set_progress, 5)
-
+        # Re-read EKA_DATA in case it changed since the auto-load
+        # (also rebuilds the loader against the current master).
         so_engine = SpecialOrderEngine(self.engine.master)
-        logs = []
 
+        logs = []
         loc_count = so_engine.load_eka_data(self.eka_path, logs)
         for level, msg in logs:
-            tag = {'info': 'inf', 'warn': 'warn', 'error': 'err',
-                   'alert': 'warn'}.get(level, 'dim')
-            self.after(0, self._log, f"  {msg}", tag)
+            tag = {'info': 'inf', 'warn': 'warn',
+                   'error': 'err', 'alert': 'warn'}.get(level, 'dim')
+            self.root.after(0, self._log, f"  {msg}", tag)
 
         if loc_count == 0:
-            self.after(0, self._done, None, "ABORTED — EKA_DATA loading failed", RED)
+            self.root.after(0, self._done, None, "ABORTED — EKA_DATA load failed")
             return
 
-        self.after(0, lambda: self.eka_count_var.set(f"✓ {loc_count} locations"))
-
-        # ── Load Special Order ──
-        self.after(0, self._set_status, "Loading Special Order...", AMBER)
-        self.after(0, self._set_progress, 15)
-
+        # Load Special Order file
+        self.root.after(0, self._set_status, "Loading Special Order...")
         logs2 = []
         alert_messages = []
         prod_count = so_engine.load_special_order(self.so_path, logs2)
         for level, msg in logs2:
-            tag = {'info': 'inf', 'warn': 'warn', 'error': 'err',
-                   'alert': 'warn'}.get(level, 'dim')
-            self.after(0, self._log, f"  {msg}", tag)
+            tag = {'info': 'inf', 'warn': 'warn',
+                   'error': 'err', 'alert': 'warn'}.get(level, 'dim')
+            self.root.after(0, self._log, f"  {msg}", tag)
             if level == 'alert':
-                alert_messages.append(f"• {msg}")
+                alert_messages.append(msg)
 
         if prod_count == 0:
-            self.after(0, self._done, None, "ABORTED — Special Order loading failed", RED)
+            self.root.after(0, self._done, None,
+                             "ABORTED — Special Order load failed")
             return
 
-        self.after(0, lambda: self.so_count_var.set(f"✓ {prod_count} products"))
-
         if alert_messages:
-            alert_text = ("Column names auto-fixed in Special Order:\n\n"
-                         + "\n".join(alert_messages))
-            self.after(0, lambda: messagebox.showinfo("Auto-Fix Applied", alert_text))
+            preview = "\n".join(f"• {m}" for m in alert_messages)
+            self.root.after(0, lambda p=preview: messagebox.showinfo(
+                "Auto-Fix Applied",
+                f"Column names auto-fixed:\n\n{p}",
+            ))
 
-        # ── Validate ──
-        self.after(0, self._set_status, "Validating...", AMBER)
-        self.after(0, self._set_progress, 25)
-
+        # Validate
+        self.root.after(0, self._set_status, "Validating...")
         logs3 = []
         if not so_engine.validate(logs3):
             for level, msg in logs3:
-                tag = {'info': 'inf', 'warn': 'warn', 'error': 'err'}.get(level, 'dim')
-                self.after(0, self._log, f"  {msg}", tag)
-            self.after(0, self._done, None, "ABORTED — Validation failed", RED)
+                tag = {'info': 'inf', 'warn': 'warn',
+                       'error': 'err'}.get(level, 'dim')
+                self.root.after(0, self._log, f"  {msg}", tag)
+            self.root.after(0, self._done, None, "ABORTED — Validation failed")
             return
 
         for level, msg in logs3:
-            tag = {'info': 'inf', 'warn': 'warn', 'error': 'err'}.get(level, 'dim')
-            self.after(0, self._log, f"  {msg}", tag)
+            tag = {'info': 'inf', 'warn': 'warn',
+                   'error': 'err'}.get(level, 'dim')
+            self.root.after(0, self._log, f"  {msg}", tag)
 
-        # ── Process ──
-        self.after(0, self._log, "─── GENERATING OUTPUT ───", 'inf')
-        self.after(0, self._set_status, "Generating output...", AMBER)
-        self.after(0, self._set_progress, 40)
+        # Process
+        self.root.after(0, self._log, "─── GENERATING OUTPUT ───", 'inf')
+        self.root.after(0, self._set_status, "Generating output...")
 
         logs4 = []
         results = so_engine.process(logs4)
         for level, msg in logs4:
-            tag = {'info': 'inf', 'warn': 'warn', 'error': 'err'}.get(level, 'dim')
-            self.after(0, self._log, f"  {msg}", tag)
+            tag = {'info': 'inf', 'warn': 'warn',
+                   'error': 'err'}.get(level, 'dim')
+            self.root.after(0, self._log, f"  {msg}", tag)
 
         if not results:
-            self.after(0, self._done, None, "ERROR — No results generated", RED)
+            self.root.after(0, self._done, None, "ERROR — No results generated")
             return
 
-        # Log per-location summary
         total_po = total_tester = total_unmatched = 0
-        for i, res in enumerate(results):
+
+        # v1.5.4: build per-location processing log for the SO mode
+        # too. Each LocationResult becomes one entry. Special Order
+        # mode has no separate validation pass, so all entries that
+        # made it into ``results`` are by definition OK (or WARNING
+        # if they have unmatched EANs).
+        processing_log: List[Dict] = []
+
+        for res in results:
             po_q = sum(r.qty for r in res.regular_orders)
             tt_q = sum(r.qty for r in res.tester_orders)
             total_po += po_q
             total_tester += tt_q
             total_unmatched += len(res.unmatched)
 
-            to_reg = res.regular_orders[0].to if res.regular_orders else '?'
-            self.after(0, self._log,
-                f"  ✓ {res.filename:<22} PO:{po_q} T:{tt_q}  [{to_reg}]", 'ok')
-            self.after(0, self._set_progress,
-                40 + int((i / len(results)) * 40))
+            to_reg = res.regular_orders[0].to if res.regular_orders else ''
+            to_tt = res.tester_orders[0].to if res.tester_orders else ''
+            self.root.after(0, self._log,
+                             f"  ✓ {res.filename:<22} PO:{po_q} T:{tt_q}  [{to_reg}]",
+                             'ok')
 
-        # ── Write output ──
+            entry = {
+                'filename': res.filename,
+                'location': res.filename,  # SO mode uses Short Name as 'filename'
+                'status': 'OK',
+                'issues': [],
+                'actions': [],
+                'to_number': to_reg,
+                'tt_number': to_tt,
+            }
+            if res.unmatched:
+                entry['issues'].append(
+                    f"{len(res.unmatched)} EAN(s) not found in master "
+                    f"— see Unmatched EANs sheet")
+                entry['status'] = 'WARNING'
+            processing_log.append(entry)
+
+        # Write output
         try:
-            self.after(0, self._set_progress, 85)
-            self.after(0, self._set_status, "Writing Excel...", AMBER)
-
-            # v1.2: store results for D365 export
+            self.root.after(0, self._set_status, "Writing Excel...")
             self.last_results = results
-
             ExcelWriter.write(
-                results, output,
+                results, output_path,
                 eka_locations=so_engine.locations,
                 master=self.engine.master,
-                so_products=so_engine.products)
-            self.after(0, self._set_progress, 100)
+                so_products=so_engine.products,
+                processing_log=processing_log,
+            )
 
             grand = total_po + total_tester
-            stats = {
-                'locations':  str(len(results)),
-                'po_qty':     f"{total_po:,}",
-                'po_items':   str(sum(len(r.regular_orders) for r in results)),
-                'tester_qty': f"{total_tester:,}",
-                'pwp_qty':    '0',
-                'gwp_qty':    '0',
-                'ns_qty':     '0',
-                'grand':      f"{grand:,}",
-                'unmatched':  str(total_unmatched),
-            }
-            self.after(0, self._update_stats, stats)
-            self.after(0, self._done, output,
-                f"DONE  //  {len(results)} locations × {prod_count} products  "
-                f"|  {grand:,} total qty", GREEN)
+            stats_line = (
+                f"Locations:{len(results)} | PO Qty:{total_po:,} | "
+                f"PO Items:{sum(len(r.regular_orders) for r in results)} | "
+                f"Tester:{total_tester:,} | PWP:0 | GWP:0 | NS:0 | "
+                f"GRAND TOTAL:{grand:,} | Unmatched:{total_unmatched}"
+            )
+            self.root.after(0, self._log, stats_line, 'ok')
 
+            self.root.after(
+                0, self._done, output_path,
+                f"Done — {len(results)} locations × {prod_count} products, "
+                f"{grand:,} total qty",
+            )
         except Exception as e:
-            self.after(0, self._done, None, f"ERROR: {e}", RED)
+            self.root.after(0, self._done, None, f"ERROR: {e}")
 
-    # ── SHARED COMPLETION ──────────────────────────────────────────────────────
+    # ── COMPLETION ─────────────────────────────────────────────────────────
 
-    def _update_stats(self, stats: Dict[str, str]):
-        """Update the stats panel from a dict."""
-        for key, val in stats.items():
-            if key in self.stat_vars:
-                self.stat_vars[key].set(val)
-
-    def _done(self, output, msg, color):
-        """Processing complete — update UI, optionally open output."""
+    def _done(self, output_path: Optional[str], status_msg: str) -> None:
+        """Process complete — re-enable buttons, optionally offer to open."""
         self.is_running = False
-        self.run_btn.config(fg=GREEN)
-        self._set_status(msg, color)
+        self.gen_btn.config(state=tk.NORMAL)
+        self._set_status(status_msg)
 
-        if output:
-            self.last_output = output
-            self.last_path_var.set(os.path.basename(output))
-            self._log(f"Saved → {output}", 'inf')
-            if messagebox.askyesno("Done!",
-                    f"Processing complete!\n\n{msg}\n\nOpen output file?"):
-                self._open_output()
+        if output_path:
+            self.last_output = Path(output_path)
+            self.open_btn.config(state=tk.NORMAL)
+            self.d365_btn.config(state=tk.NORMAL)
+            self._log(f"Saved → {output_path}", 'inf')
 
+            if messagebox.askyesno(
+                    "Done!",
+                    f"Processing complete!\n\n{status_msg}\n\nOpen output file?"):
+                self._open_last()
 
-# ═══════════════════════════════════════════════════════════════════════════════
-#  STYLE
-# ═══════════════════════════════════════════════════════════════════════════════
+    def _open_last(self) -> None:
+        """Open the last output file in the default app."""
+        if not self.last_output or not self.last_output.exists():
+            messagebox.showwarning("Not Found", "No output file yet.")
+            return
+        try:
+            if os.name == 'nt':
+                os.startfile(str(self.last_output))
+            elif os.name == 'posix':
+                import subprocess
+                opener = ('open' if hasattr(os, 'uname') and
+                          os.uname().sysname == 'Darwin' else 'xdg-open')
+                subprocess.Popen([opener, str(self.last_output)])
+        except Exception as e:
+            messagebox.showerror("Error", f"Could not open file:\n{e}")
 
-def apply_style():
-    """Configure ttk scrollbar style to match current theme."""
-    style = ttk.Style()
-    style.theme_use('default')
-    style.configure('Vertical.TScrollbar',
-                    background=Theme.surface2(),
-                    troughcolor=Theme.surface(),
-                    arrowcolor=Theme.text_dim(),
-                    bordercolor=Theme.border(),
-                    lightcolor=Theme.surface2(),
-                    darkcolor=Theme.surface2())
-    style.map('Vertical.TScrollbar',
-              background=[('active', Theme.border())])
+    # ── D365 EXPORT ────────────────────────────────────────────────────────
+
+    def _export_d365(self) -> None:
+        """
+        Export D365 package(s) using last results.
+
+        v1.4: scans the last batch's TO numbers and emits TO and/or SO
+        packages depending on what's actually present. Behavior:
+
+        * Pure TO batch  → prompts for TO template only, writes
+                            ``D365_TO_Package_<ts>.xlsx``.
+        * Pure SO batch  → prompts for SO template only, writes
+                            ``D365_SO_Package_<ts>.xlsx``.
+        * Mixed batch    → prompts for BOTH templates back-to-back and
+                            writes both packages in one click.
+        * Empty batch    → log a warning and bail.
+
+        Each prompt's title makes it explicit which template is being
+        asked for so the user can't get them mixed up.
+        """
+        if not self.last_results:
+            messagebox.showwarning(
+                "No Data",
+                "Run processing first to generate data for D365 export.")
+            return
+
+        # ── Detect TO vs SO presence in last batch ──
+        has_to = False
+        has_so = False
+        for res in self.last_results:
+            for item in (res.regular_orders + res.tester_orders +
+                         res.pwp_orders + res.gwp_orders +
+                         res.nonstock_orders):
+                if item.to:
+                    if item.to.startswith('TO/'):
+                        has_to = True
+                    elif item.to.startswith('SO/'):
+                        has_so = True
+                if has_to and has_so:
+                    break
+            if has_to and has_so:
+                break
+
+        if not has_to and not has_so:
+            self._log("D365 export: no TO or SO numbers in last batch — "
+                      "nothing to export.", 'warn')
+            messagebox.showwarning(
+                "Nothing To Export",
+                "Last batch has no TO or SO numbers.\n\n"
+                "TO numbers come from EKA_DATA rows where Prefix = 'TO'.\n"
+                "SO numbers come from rows where Prefix = 'SO'.\n\n"
+                "Check that EKA_DATA was loaded and that the matching "
+                "filenames or location types resolved correctly.")
+            return
+
+        # ── Resolve output dir (next to source files) ──
+        if self.po_files:
+            out_dir = Path(self.po_files[0]).parent / 'eka_output'
+        elif self.so_path:
+            out_dir = Path(self.so_path).parent / 'eka_output'
+        else:
+            out_dir = get_script_dir() / 'eka_output'
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        ts = time.strftime('%d%m%Y_%H%M%S')
+
+        # ── Stage 1: TO template (if needed) ──
+        to_template: Optional[str] = None
+        if has_to:
+            to_template = filedialog.askopenfilename(
+                title="Select D365 TO Template (EKA_Sample_Package_TO.xlsx)",
+                filetypes=[("Excel files", "*.xlsx")],
+            )
+            if not to_template:
+                self._log("D365 export cancelled — no TO template selected.",
+                          'warn')
+                return
+
+        # ── Stage 2: SO template (if needed) ──
+        so_template: Optional[str] = None
+        if has_so:
+            so_template = filedialog.askopenfilename(
+                title="Select D365 SO Template (EKA_Sample_Package_SO.xlsx)",
+                filetypes=[("Excel files", "*.xlsx")],
+            )
+            if not so_template:
+                # If user already picked the TO template they probably
+                # still want it generated. Don't abort the whole flow.
+                self._log("D365 export: SO template skipped — only TO will "
+                          "be generated.", 'warn')
+                so_template = None
+
+        # ── Run exports ──
+        produced: List[Path] = []
+
+        if has_to and to_template:
+            try:
+                to_path = out_dir / f"D365_TO_Package_{ts}.xlsx"
+                D365TOExporter.export(
+                    self.last_results, to_template, str(to_path))
+                self._log(f"D365 TO package saved → {to_path}", 'ok')
+                produced.append(to_path)
+            except Exception as e:
+                self._log(f"D365 TO export failed: {e}", 'err')
+                messagebox.showerror(
+                    "D365 TO Export Failed",
+                    f"Could not produce the TO package:\n\n{e}")
+
+        if has_so and so_template:
+            try:
+                so_path = out_dir / f"D365_SO_Package_{ts}.xlsx"
+                D365SOExporter.export(
+                    self.last_results, so_template, str(so_path))
+                self._log(f"D365 SO package saved → {so_path}", 'ok')
+                produced.append(so_path)
+            except Exception as e:
+                self._log(f"D365 SO export failed: {e}", 'err')
+                messagebox.showerror(
+                    "D365 SO Export Failed",
+                    f"Could not produce the SO package:\n\n{e}")
+
+        # ── Wrap-up popup ──
+        if not produced:
+            return
+
+        files_list = "\n".join(f"  • {p.name}" for p in produced)
+        if messagebox.askyesno(
+                "D365 Exported",
+                f"Generated {len(produced)} D365 package(s):\n\n"
+                f"{files_list}\n\n"
+                f"Open the {'first ' if len(produced) > 1 else ''}file?"):
+            target = produced[0]
+            if os.name == 'nt':
+                os.startfile(str(target))
+            elif os.name == 'posix':
+                import subprocess
+                opener = ('open' if hasattr(os, 'uname') and
+                          os.uname().sysname == 'Darwin' else 'xdg-open')
+                subprocess.Popen([opener, str(target)])
+
+    # ── TEMPLATE DOWNLOADS ─────────────────────────────────────────────────
+
+    def _download_po_template(self) -> None:
+        """Generate a blank PO template (PO + PWP + GWP + Non Stock + Summary)."""
+        save_path = filedialog.asksaveasfilename(
+            title="Save Blank PO Template",
+            defaultextension=".xlsx",
+            initialfile="PO_Template_Blank.xlsx",
+            filetypes=[("Excel files", "*.xlsx")],
+        )
+        if not save_path:
+            return
+        try:
+            wb = Workbook()
+            wb.remove(wb.active)
+            hdr_fill = PatternFill('solid', fgColor='1A237E')
+            hdr_font = Font(bold=True, color='FFFFFF',
+                             name='Aptos Display', size=11)
+
+            def make_header(ws, headers, widths=None):
+                for c, h in enumerate(headers, 1):
+                    cell = ws.cell(row=1, column=c, value=h)
+                    cell.font = hdr_font
+                    cell.fill = hdr_fill
+                    cell.alignment = Alignment(horizontal='center')
+                if widths:
+                    for c, w in enumerate(widths, 1):
+                        ws.column_dimensions[get_column_letter(c)].width = w
+                ws.freeze_panes = 'A2'
+
+            # PO sheet
+            ws = wb.create_sheet('PO')
+            make_header(ws,
+                ['Rank', 'Category', 'EAN', 'SKU Code', 'Product Name',
+                 'Brand', 'MRP', 'Available', 'Order Qty', 'Tester Qty'],
+                [8, 20, 18, 14, 50, 14, 10, 12, 12, 12])
+            sample = [1, 'Eyes', '8906121646979', '06D19087',
+                      'SAMPLE PRODUCT NAME', 'RENEE', 450, 0, '', '']
+            for c, v in enumerate(sample, 1):
+                cell = ws.cell(row=2, column=c, value=v)
+                cell.font = Font(name='Aptos Display', size=11,
+                                  color='999999', italic=True)
+            ws.cell(row=3, column=1,
+                value='← Delete sample row. Fill EAN, Order Qty, '
+                      'Tester Qty.').font = Font(
+                          name='Aptos Display', size=11,
+                          color='FF6600', italic=True)
+
+            # PWP sheet
+            ws = wb.create_sheet('PWP')
+            make_header(ws, ['Sr. No.', 'Product Name', 'Avail.Qty', 'Req.Qty'],
+                          [10, 30, 12, 12])
+            for row_data in [
+                (1, 'Stay With Me - Mini', '', ''),
+                (2, 'Perfume', '', ''),
+                (3, 'Crème Mini', '', ''),
+            ]:
+                ws.append(row_data)
+            ws.append(('Total', None, 0, 0))
+
+            # GWP sheet
+            ws = wb.create_sheet('GWP')
+            make_header(ws,
+                ['Sr. No.', 'EAN', 'Product Name', 'Avail.Qty', 'Req.Qty'],
+                [10, 18, 45, 12, 12])
+            gwp_items = [
+                (1, 8904473101658, 'RENEE Lunar Luxe Trousseau box – Silver', '', ''),
+                (2, 8904473101672, 'RENEE Red Velvet Trousseau Box - Red', '', ''),
+                (3, 8904473101665, 'RENEE Rose Glow Trousseau Box - Pink', '', ''),
+                (4, 8904473101009, 'RENEE Pink Puffer Pouch', '', ''),
+                (5, 8904473101023, 'RENEE Red Puffer Pouch', '', ''),
+                (6, 8904473101016, 'RENEE Silver Puffer Pouch', '', ''),
+            ]
+            for row_data in gwp_items:
+                ws.append(row_data)
+            ws.append(('Total', None, None, None, 0))
+
+            # Non Stock sheet
+            ws = wb.create_sheet('Non Stock')
+            make_header(ws, ['Sr. No.', 'Product Name', 'QTY'],
+                          [10, 30, 10])
+            ns_items = [
+                (1, 'Cotton Rolls'), (2, 'Mirrors'), (3, 'Carry Bag (Small)'),
+                (4, 'Carry Bag (Big)'), (5, 'Cleansers'), (6, 'Calculator'),
+                (7, 'Blotters'), (8, 'Swabs'), (9, 'Bill Roll'),
+                (10, 'Renee Notebook'), (11, 'Pen'),
+            ]
+            for sr, name in ns_items:
+                ws.append((sr, name, ''))
+            ws.append(('Total', None, 0))
+
+            # Summary placeholder sheet
+            ws = wb.create_sheet('Summary')
+            ws.cell(row=3, column=2, value='[Location Name]')
+            for c, h in enumerate(
+                ['PO', 'Tester', 'PWP', 'GWP',
+                 'Non-Stock Requirement', 'Total'], 6):
+                ws.cell(row=3, column=c, value=h)
+
+            wb.save(save_path)
+            self._log(f"PO template saved → {save_path}", 'ok')
+            messagebox.showinfo(
+                "Template Saved",
+                f"Blank PO template saved to:\n{save_path}\n\n"
+                "Sheets: PO, PWP, GWP, Non Stock, Summary",
+            )
+        except Exception as e:
+            self._log(f"Template save failed: {e}", 'err')
+            messagebox.showerror("Error", f"Failed:\n{e}")
+
+    def _download_eka_template(self) -> None:
+        """Generate a blank EKA_DATA template."""
+        save_path = filedialog.asksaveasfilename(
+            title="Save EKA_DATA Template", defaultextension=".xlsx",
+            initialfile="EKA_DATA_Template.xlsx",
+            filetypes=[("Excel files", "*.xlsx")],
+        )
+        if not save_path:
+            return
+        try:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = 'EKA_DATA'
+
+            headers = ['Desc', 'Bill to', 'Ship to', 'Location',
+                        'Gen. Biz.  Posting Group', 'Short Name',
+                        'Prefix', 'Short Code', 'Transfer Code', 'Type',
+                        'Example Regular', 'Example Tester', 'Status']
+            widths = [40, 10, 12, 15, 22, 22, 8, 12, 15, 10, 25, 25, 10]
+
+            hdr_fill = PatternFill('solid', fgColor='E65100')
+            hdr_font = Font(bold=True, color='FFFFFF',
+                             name='Aptos Display', size=11)
+
+            for c, h in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=c, value=h)
+                cell.font = hdr_font
+                cell.fill = hdr_fill
+                cell.alignment = Alignment(horizontal='center')
+            for c, w in enumerate(widths, 1):
+                ws.column_dimensions[get_column_letter(c)].width = w
+
+            samples = [
+                ('RENEE COSMETICS-ISCON ARCADE', '20329', '20329_1', 'EBO_AMD01',
+                 'OFF-EBO', 'Ahmedabad EBO', 'TO', 'AHDEB', 'EBO_AMD01', 'EBO',
+                 'TO/AHDEB/04/18426', 'TO/AHDEB/TT/18427', 'Active'),
+                ('RENEE COSMETICS-CHENNAI AIRPORT', '20342', '20342_1', 'AP_CHEN01',
+                 'OFF-AIRPORT', 'Chennai Airport', 'TO', 'CHNAP', 'AP_CHEN01', 'Airport',
+                 'TO/CHNAP/04/18426', 'TO/CHNAP/TT/18427', 'Active'),
+                ('OG BEAUTY PRIVATE LIMITED', '20395', '20395_1', 'EBO_PUNE02',
+                 'OFF-EBO', 'Pune EBO', 'SO', 'PUNEB', '20395_1', 'EBO',
+                 'SO/PUNEB/04/18426', 'SO/PUNEB/TT/18427', 'Active'),
+            ]
+            sample_font = Font(name='Aptos Display', size=11,
+                                color='666666', italic=True)
+            for r, row_data in enumerate(samples, 2):
+                for c, v in enumerate(row_data, 1):
+                    cell = ws.cell(row=r, column=c, value=v)
+                    cell.font = sample_font
+
+            ws.cell(row=len(samples) + 2, column=1,
+                value='← Delete sample rows. Add one row per location. '
+                      'Prefix: TO for Transfer Order, SO for Sales Order. '
+                      'Status: Active or Inactive.').font = Font(
+                          name='Aptos Display', size=11,
+                          color='FF6600', italic=True)
+            ws.freeze_panes = 'A2'
+
+            wb.save(save_path)
+            self._log(f"EKA template saved → {save_path}", 'ok')
+            messagebox.showinfo(
+                "Template Saved",
+                f"EKA_DATA template saved to:\n{save_path}",
+            )
+        except Exception as e:
+            self._log(f"EKA template save failed: {e}", 'err')
+            messagebox.showerror("Error", f"Failed:\n{e}")
+
+    def _download_so_template(self) -> None:
+        """Generate a blank Special Order template."""
+        save_path = filedialog.asksaveasfilename(
+            title="Save Special Order Template", defaultextension=".xlsx",
+            initialfile="Special_Order_Template.xlsx",
+            filetypes=[("Excel files", "*.xlsx")],
+        )
+        if not save_path:
+            return
+        try:
+            wb = Workbook()
+            ws = wb.active
+            ws.title = 'Special Order'
+
+            headers = ['Description', 'EAN', 'Item Category Code', 'MRP',
+                        'EBO Qty', 'Airport Qty', 'Kiosk Qty', 'Tester Qty']
+            widths = [45, 18, 18, 10, 12, 12, 12, 12]
+
+            hdr_fill = PatternFill('solid', fgColor='1A237E')
+            hdr_font = Font(bold=True, color='FFFFFF',
+                             name='Aptos Display', size=11)
+
+            for c, h in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=c, value=h)
+                cell.font = hdr_font
+                cell.fill = hdr_fill
+                cell.alignment = Alignment(horizontal='center')
+            for c, w in enumerate(widths, 1):
+                ws.column_dimensions[get_column_letter(c)].width = w
+
+            samples = [
+                ('RENEE PRO HD 3-IN-1 - AMANDE_9 GM', '8906121648515',
+                 'POWDER', 650, 18, 18, 10, 1),
+                ('RENEE PRO HD CONCEALER - BUFF_8 ML', '8906121648317',
+                 'CONCEALER', 750, 18, 18, 10, 1),
+                ('RENEE PAPER BAG BIG MULTICOLOR', '8904473105984',
+                 'PAPER BAG', 750, '', '', '', 50),
+            ]
+            sample_font = Font(name='Aptos Display', size=11,
+                                color='666666', italic=True)
+            for r, row_data in enumerate(samples, 2):
+                for c, v in enumerate(row_data, 1):
+                    cell = ws.cell(row=r, column=c, value=v)
+                    cell.font = sample_font
+
+            ws.cell(row=len(samples) + 2, column=1,
+                value='← Delete sample rows. EAN must match GTIN in '
+                      'Items_March. Leave qty blank or 0 if not '
+                      'applicable. Tester Qty goes to ALL locations '
+                      'at ₹0.54.').font = Font(
+                          name='Aptos Display', size=11,
+                          color='FF6600', italic=True)
+            ws.freeze_panes = 'A2'
+
+            wb.save(save_path)
+            self._log(f"SO template saved → {save_path}", 'ok')
+            messagebox.showinfo(
+                "Template Saved",
+                f"Special Order template saved to:\n{save_path}",
+            )
+        except Exception as e:
+            self._log(f"SO template save failed: {e}", 'err')
+            messagebox.showerror("Error", f"Failed:\n{e}")
+
+    # ── RUN ────────────────────────────────────────────────────────────────
+
+    def run(self) -> None:
+        """Start the Tkinter main loop."""
+        self.root.mainloop()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 #  ENTRY POINT
 # ═══════════════════════════════════════════════════════════════════════════════
 
-if __name__ == '__main__':
-    # ── Fix Windows DPI blurriness ──
+def main() -> None:
+    """Application entry point."""
+    # v1.5.2: stdout banner so user sees the script is alive even if
+    # the GUI window takes time to appear (e.g. while loading a 30MB+
+    # master file). Without this the cursor just blinks and looks frozen.
+    print(f"{APP_TITLE} starting...")
+    print(f"  Script: {get_script_dir()}")
+    print(f"  Bundled folder: {get_bundled_folder()}")
+    print("  Initializing GUI window...")
+    sys.stdout.flush()
+
+    # Fix Windows DPI blurriness
     try:
         import ctypes
-        ctypes.windll.shcore.SetProcessDpiAwareness(2)
-    except Exception:
         try:
-            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
         except Exception:
             try:
-                ctypes.windll.user32.SetProcessDPIAware()
+                ctypes.windll.shcore.SetProcessDpiAwareness(1)
             except Exception:
-                pass
+                ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
 
-    app = ReneePOApp()
-    apply_style()
-    app.mainloop()
+    try:
+        app = ReneePOApp()
+        print("  GUI window ready. If you don't see it, check Alt+Tab.")
+        sys.stdout.flush()
+        app.run()
+    except Exception as e:
+        # Crash visible in terminal, not silent.
+        print(f"\n  FATAL ERROR during startup: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.stdout.flush()
+        input("\n  Press Enter to close...")
+        raise
+
+
+if __name__ == '__main__':
+    main()
