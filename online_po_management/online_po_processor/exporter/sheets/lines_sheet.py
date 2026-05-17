@@ -134,14 +134,17 @@ def write(wb, result: ProcessingResult) -> None:
         data_cell(ws, r, 6, 'PICK', align='center')           # Location Code
         data_cell(ws, r, 7, so_row.qty, align='center')       # Quantity
 
-        # v2.1.3: Unit Price — populated when override toggle is on.
-        # Per-row defensive: if calc_price is None (master lookup
-        # failed for this row) we leave col 8 blank for THIS row only,
-        # matching the D365 exporter's lenient behaviour. Other rows
-        # still get the override value. Format with 2-decimal currency
-        # so values render as ``111.75`` not ``111.7500000000``.
-        if override and so_row.calc_price is not None:
-            data_cell(ws, r, 8, round(so_row.calc_price, 2),
+        # v2.1.5: Unit Price override must ALWAYS use post-GST Cost
+        # Price, not the marketplace's active comparison value. For
+        # landing-basis marketplaces (BlinkMP/Myntra/Flipkart),
+        # ``calc_price`` is intentionally the pre-GST Landing Rate for
+        # validation; ``cost_price_ref`` is the naked Cost Price we
+        # want to stamp into Unit Price. Per-row defensive: if the
+        # master lookup failed and no cost can be computed, leave col 8
+        # blank for THIS row only, matching the D365 exporter's lenient
+        # behaviour.
+        if override and so_row.cost_price_ref is not None:
+            data_cell(ws, r, 8, round(so_row.cost_price_ref, 2),
                        number_format='#,##0.00', align='right')
         else:
             data_cell(ws, r, 8, '', align='right')
