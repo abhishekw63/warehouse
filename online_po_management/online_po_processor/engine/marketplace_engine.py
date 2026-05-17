@@ -370,7 +370,30 @@ class MarketplaceEngine:
         self._validate_optional_column(df, config, 'ean_col',
                                         log_warn_to_result=result)
 
-        # ── Per-row processing ──────────────────────────────────────────
+        # ── v2.0.0: Branch by output_type ────────────────────────────────
+        # Marketplaces with ``output_type='to'`` (currently Flipkart-TO)
+        # produce Transfer Orders, not Sales Orders. The TO pipeline is
+        # structurally simpler:
+        #
+        #   * No Items_March master lookup — Item No, MRP, and GST come
+        #     from the file's own columns
+        #   * No price validation — there's no fob_col to compare against
+        #   * No HSN cross-check — no master to compare against
+        #   * Rows with same Item No within a PO are aggregated (qty
+        #     summed) so D365 sees one Transfer Line per Item No
+        #   * Mapping returns Transfer-to Code (in the 'ship_to' field
+        #     of the Ship-To B2B sheet); 'cust_no' stays empty because
+        #     TOs have no customer
+        #
+        # The SO marketplaces above this branch are completely
+        # unaffected — they don't set ``output_type``, so it defaults
+        # to 'so' and they hit the per-row processing loop below as
+        # before.
+        if config.get('output_type') == 'to':
+            result.output_type = 'to'
+            return self._process_to(df, config, margin_pct, result)
+
+        # ── Per-row processing (SO path — unchanged) ────────────────────
         warned_keys: Set[Tuple] = set()  # dedupe warnings (e.g. one per PO)
         item_resolution = config.get('item_resolution', 'from_column')
         compare_basis = config.get('compare_basis', 'cost')
@@ -836,7 +859,337 @@ class MarketplaceEngine:
                     f"Available: {list(df.columns)[:10]}..."))
         return None
 
-    # ── Per-row processing ─────────────────────────────────────────────
+    # ── TO output pipeline (v2.0.0) ────────────────────────────────────
+
+    def _process_to(self, df: 'pd.DataFrame', config: Dict[str, Any],
+                     margin_pct: float,
+                     result: ProcessingResult) -> ProcessingResult:
+        """
+        Build SORows for the Transfer Order pipeline.
+
+        Called from :meth:`process` when the marketplace config sets
+        ``output_type='to'`` (currently only Flipkart-TO).
+
+        v2.1.4 redesign â switched from in-band item/MRP/GST resolution
+        to master-lookup via EAN. The Flipkart Branch dump shrank from
+        13 self-contained columns to 7 (the source no longer ships
+        Item No / MRP / GST), so this method now mirrors Blink's
+        ``from_ean`` resolution path.
+
+        Differences from the SO row-builder (:meth:`_process_row`):
+
+        1. **Aggregation.** Multiple rows in the same PO with the
+           same Item No are collapsed into a single ``SORow`` whose
+           ``qty`` is the sum. The Flipkart Branch dump has separate
+           rows per FSN, but D365 only cares about Item No. The
+           aggregation key is ``(po, item_no)`` exactly.
+
+        2. **Reference-only price comparison** (``compare_mode='reference_only'``
+           in config). The engine reads ``fob_col`` per row (Flipkart's
+           stated Cost Price) and computes ``diffn`` against the
+           engine's calculated value, but never marks the row as
+           MISMATCH. Rows where ``|diffn| > 0.01`` get a one-line
+           audit warning written to the Warnings sheet. Transfer
+           Price written to D365 always uses the engine's calculated
+           value regardless of diff.
+
+        3. **No customer.** ``cust_no`` stays empty because TOs have
+           no customer; ``ship_to`` holds the Transfer-to Code (e.g.
+           'FK_BHW_BTS') from Ship-To B2B.
+
+        Master miss handling (``NOT_IN_MASTER``) mirrors Blink:
+        the row IS emitted with ``item_no = f'?EAN:{ean}'`` and
+        ``validation_status = 'NOT_IN_MASTER'`` so the operator
+        can spot the gap in Items_March on the Validation sheet.
+        Transfer Price stays ``None`` for those rows (D365 will
+        default-fill from the vendor master).
+
+        Args:
+            df:         The Flipkart dump's data frame after column
+                         alias resolution + required-column validation
+                         (both already done by the caller).
+            config:     Resolved marketplace config dict.
+            margin_pct: Decimal margin (0.60 for Flipkart-TO).
+            result:     ProcessingResult to populate. Already has
+                         marketplace metadata + ``output_type='to'``
+                         set by the caller.
+
+        Returns:
+            The same ``result`` instance with ``rows`` populated and
+            any warnings appended.
+        """
+        po_col = config['po_col']
+        loc_col = config['loc_col']
+        qty_col = config['qty_col']
+        ean_col = config['ean_col']
+        fob_col = config.get('fob_col')         # optional reference comparison
+        compare_mode = config.get('compare_mode')  # e.g. 'reference_only'
+        party_name = config['party_name']
+
+        # v2.1.4: master is required now. Pre-v2.1.4 TO mode bypassed
+        # master entirely; we now need it to resolve item_no / mrp /
+        # gst_code via the EAN. Fail loudly if it isn't loaded so the
+        # operator gets a clear hint instead of silent NOT_IN_MASTER
+        # on every row.
+        if not self.master:
+            result.warnings.append(('', '',
+                "TO mode now requires Items_March master to be loaded "
+                "(v2.1.4 — Item No / MRP / GST come from master via "
+                f"EAN in '{ean_col}'). No master loaded → no rows "
+                "produced. Load the Items Master and re-run."))
+            return result
+
+        # Aggregator: (po_str, item_no) → accumulated SORow draft.
+        aggregator: Dict[Tuple[str, Any], Dict[str, Any]] = {}
+
+        # Warning de-dupe sets.
+        warned_locations: Set[Tuple[str, str]] = set()
+        skipped_no_ean = 0
+        skipped_no_qty = 0
+        ref_warning_count = 0
+
+        # Tolerance for reference-only diff warnings. Below this we
+        # don't bother emitting an audit line — sub-paisa rounding
+        # noise from MRP × margin / (1 + GST) isn't actionable.
+        REF_TOLERANCE = 0.01
+
+        for _, row in df.iterrows():
+            po_raw = row[po_col]
+            loc_raw = row[loc_col]
+            qty_raw = row[qty_col]
+            ean_raw = row[ean_col]
+            fob_raw = row[fob_col] if fob_col else None
+
+            # Skip totally blank rows (pandas trailing NaN rows).
+            if pd.isna(po_raw) and pd.isna(loc_raw) and pd.isna(qty_raw):
+                continue
+
+            po_str = self._coerce_po_to_str(po_raw)
+            loc_str = '' if pd.isna(loc_raw) else str(loc_raw).strip()
+
+            # ── EAN — required ──────────────────────────────
+            if pd.isna(ean_raw) or str(ean_raw).strip() == '':
+                skipped_no_ean += 1
+                continue
+            # EANs come in as int64 from openpyxl. str(int(...)) handles
+            # the common case; fall back to bare str() for non-numeric
+            # EAN-like values.
+            try:
+                ean = str(int(float(ean_raw)))
+            except (ValueError, TypeError):
+                ean = str(ean_raw).strip()
+
+            # ── Qty — required, must be > 0 ────────────────────────
+            try:
+                qty = int(float(qty_raw)) if not pd.isna(qty_raw) else 0
+            except (ValueError, TypeError):
+                qty = 0
+            if qty <= 0:
+                skipped_no_qty += 1
+                continue
+
+            # ── Master lookup via EAN ──────────────────────────
+            master_info = self.master.lookup(ean)
+
+            if master_info is None:
+                # NOT_IN_MASTER — emit row with placeholder item_no so
+                # the operator can spot the gap on the Validation
+                # sheet. No Transfer Price (calc_price=None) — D365
+                # will default-fill from vendor master if possible.
+                item_no: Any = f'?EAN:{ean}'
+                mrp: Optional[float] = None
+                gst_code = ''
+                description = ''
+                calc_price: Optional[float] = None
+                validation_status = 'NOT_IN_MASTER'
+            else:
+                resolved_item = master_info.get('item_no', '')
+                try:
+                    item_no = int(resolved_item)
+                except (ValueError, TypeError):
+                    item_no = str(resolved_item).strip()
+
+                mrp_master = master_info.get('mrp')
+                gst_master = master_info.get('gst_code', '') or ''
+                try:
+                    mrp = float(mrp_master) if mrp_master is not None else None
+                except (ValueError, TypeError):
+                    mrp = None
+                gst_code = str(gst_master).strip()
+                description = str(master_info.get('description', '') or '')
+
+                # Compute Transfer Price from master MRP + GST.
+                if mrp is not None and gst_code:
+                    calc_price = MasterLoader.calc_cost_price(
+                        mrp, gst_code, margin_pct,
+                    )
+                else:
+                    calc_price = None
+
+                validation_status = 'OK'
+
+            # ── Read Flipkart's stated cost (reference) ──────────────────
+            fob_price: Optional[float] = None
+            if fob_raw is not None and not pd.isna(fob_raw):
+                try:
+                    fob_price = float(fob_raw)
+                except (ValueError, TypeError):
+                    fob_price = None
+
+            # ── Reference-only comparison (v2.1.4) ───────────────────────
+            # When compare_mode is 'reference_only', we compute diffn
+            # but DON'T promote OK → MISMATCH. Diffs above tolerance
+            # still get a one-line audit warning so the operator can
+            # spot pricing drift.
+            #
+            # Dedup: the same SKU often appears in many POs at the same
+            # diff (Flipkart's pricing tier for that EAN drifted from
+            # ours). One warning per (item_no, rounded diff) keeps the
+            # Warnings sheet scannable. The total count is still
+            # reported in the roll-up at the bottom.
+            diffn: Optional[float] = None
+            if (calc_price is not None and fob_price is not None):
+                diffn = round(fob_price - calc_price, 4)
+                if (compare_mode == 'reference_only'
+                        and abs(diffn) > REF_TOLERANCE):
+                    ref_warning_count += 1
+                    warn_key = ('ref_diff', str(item_no), round(diffn, 2))
+                    if warn_key not in warned_locations:
+                        warned_locations.add(warn_key)
+                        result.warnings.append((po_str, loc_str,
+                            f"Cost diff (reference only): item {item_no} "
+                            f"EAN {ean} — Flipkart stated ₹{fob_price:.2f}, "
+                            f"engine calculated ₹{calc_price:.2f} "
+                            f"(diff ₹{diffn:+.2f}). Engine value used "
+                            f"in Transfer Price."))
+
+            # ── Mapping lookup (Ship-To B2B) ────────────────────────
+            cust_no, ship_to, mapped, mapped_loc = self._resolve_mapping(
+                loc_str, po_str, party_name, warned_locations, result,
+            )
+            if mapped and not ship_to:
+                key = ('blank_transfer_to', loc_str)
+                if key not in warned_locations:
+                    warned_locations.add(key)
+                    result.warnings.append((po_str, loc_str,
+                        f"Ship-To B2B has '{loc_str}' for Party "
+                        f"'{party_name}' but its 'Ship to' (Transfer-to "
+                        f"Code) is blank. Transfer Order will export "
+                        f"with EMPTY Transfer-to Code — fix in D365 "
+                        f"import preview or update Ship-To B2B."))
+
+            # ── Aggregate into the (PO, Item No) bucket ──────────────
+            agg_key = (po_str, item_no)
+            entry = aggregator.get(agg_key)
+            if entry is None:
+                aggregator[agg_key] = {
+                    'po_number': po_str,
+                    'location': loc_str,
+                    'item_no': item_no,
+                    'qty': qty,
+                    'cust_no': cust_no,
+                    'ship_to': ship_to,
+                    'mapped': mapped,
+                    'mapped_location': mapped_loc,
+                    'ean': ean,
+                    'description': description,
+                    'mrp': mrp,
+                    'gst_code': gst_code,
+                    'calc_price': calc_price,
+                    'fob_price': fob_price,
+                    'diffn': diffn,
+                    'validation_status': validation_status,
+                }
+            else:
+                entry['qty'] += qty
+                if loc_str != entry['location']:
+                    key = ('multi_loc', po_str, item_no)
+                    if key not in warned_locations:
+                        warned_locations.add(key)
+                        result.warnings.append((po_str, loc_str,
+                            f"Item No {item_no} appears in multiple "
+                            f"locations within PO {po_str}: "
+                            f"'{entry['location']}' + '{loc_str}'. "
+                            f"Aggregating qty under first-seen "
+                            f"location."))
+
+        # ── Emit aggregated SORows ──────────────────────────────────────
+        for entry in aggregator.values():
+            so_row = SORow(
+                po_number=entry['po_number'],
+                location=entry['location'],
+                item_no=entry['item_no'],
+                qty=entry['qty'],
+                cust_no=entry['cust_no'],
+                ship_to=entry['ship_to'],
+                mapped=entry['mapped'],
+                mapped_location=entry['mapped_location'],
+                ean=entry['ean'],
+                description=entry['description'],
+                mrp=entry['mrp'],
+                gst_code=entry['gst_code'],
+                fob_price=entry['fob_price'],
+                calc_price=entry['calc_price'],
+                cost_price_ref=entry['calc_price'],
+                diffn=entry['diffn'],
+                validation_status=entry['validation_status'],
+            )
+            result.rows.append(so_row)
+
+        # Roll-up warnings.
+        if skipped_no_ean:
+            result.warnings.append(('', '',
+                f"Skipped {skipped_no_ean} row(s) with missing/blank "
+                f"'{ean_col}'. These rows do NOT appear in the output."))
+        if skipped_no_qty:
+            result.warnings.append(('', '',
+                f"Skipped {skipped_no_qty} row(s) with qty=0 or invalid "
+                f"qty in '{qty_col}'."))
+        if ref_warning_count:
+            unique_diffs = sum(
+                1 for k in warned_locations
+                if isinstance(k, tuple) and k and k[0] == 'ref_diff'
+            )
+            result.warnings.append(('', '',
+                f"Reference-only diffs: {ref_warning_count} row(s) "
+                f"had |diff| > \u20b9{REF_TOLERANCE:.2f} between "
+                f"Flipkart's stated Cost and engine-calculated values. "
+                f"Showing {unique_diffs} unique (item, diff) line(s) "
+                f"above — same SKU/diff in multiple POs is collapsed. "
+                f"Transfer Price uses engine values; file values are "
+                f"on the Validation sheet for reference."))
+            logging.info(
+                "TO mode (reference_only): %d row-level diffs, "
+                "%d unique (item, diff) warnings logged",
+                ref_warning_count, unique_diffs,
+            )
+
+        logging.info("TO mode: emitted %d aggregated rows across %d PO(s)",
+                     len(result.rows),
+                     len({r.po_number for r in result.rows}))
+        return result
+
+    @staticmethod
+    def _coerce_po_to_str(po_raw: Any) -> str:
+        """
+        Convert a raw PO cell value to a clean string PO number.
+
+        Flipkart dumps store PO numbers as int64 (e.g. ``204345116``).
+        Casting via ``str()`` would give ``'204345116'`` which is fine,
+        but going through float first (``str(204345116.0)`` →
+        ``'204345116.0'``) breaks D365 imports — those trailing
+        zeros become part of the document number. Use int coercion
+        when the value is numeric to avoid that.
+        """
+        if pd.isna(po_raw):
+            return ''
+        if isinstance(po_raw, (int,)) or (
+            isinstance(po_raw, float) and po_raw.is_integer()
+        ):
+            return str(int(po_raw))
+        return str(po_raw).strip()
+
+    # ── Per-row processing (SO mode) ────────────────────────────────────
 
     def _process_row(
         self,

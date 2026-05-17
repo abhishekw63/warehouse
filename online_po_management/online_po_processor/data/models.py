@@ -204,6 +204,46 @@ class ProcessingResult:
     # and by the D365 export popup to show timing. None until measured.
     elapsed_seconds: Optional[float] = None
 
+    # v2.0.0: Output type — 'so' (default) or 'to'.
+    #
+    # Set by ``MarketplaceEngine.process()`` when the marketplace's
+    # config declares ``output_type='to'`` (currently Flipkart-TO).
+    # Drives downstream branching:
+    #   * ``D365Exporter`` fills 'Transfer Header'/'Transfer Line'
+    #     sheets (vs. 'Sales Header'/'Sales Line' for SO).
+    #   * Sheet writers (Validation, Summary, Headers, Lines) drop
+    #     SO-specific columns (price compare, customer no.) when 'to'.
+    #   * Email builder swaps the headline metric (Amount → Total Qty).
+    #
+    # Stays 'so' for all existing marketplaces (Blink/Myntra/Reliance/
+    # etc.) — they don't set ``output_type`` in their configs, so the
+    # engine never overrides this default.
+    output_type: str = 'so'
+
+    # v2.1.3: Runtime flag — write the engine-computed Cost Price into
+    # the Lines (SO) ``Unit Price`` column (col 8) and the D365 Sales
+    # Line ``Unit Price`` column (col H), instead of leaving them blank
+    # for downstream WMS / vendor-master defaulting.
+    #
+    # Driven by the GUI's "Override Unit Price" checkbox, NOT by any
+    # config flag. The marketplace config's legacy
+    # ``override_unit_price=True`` (currently only on BlinkMP) is now a
+    # GUI default-state hint — it pre-checks the box on marketplace
+    # change but doesn't enforce override at runtime.
+    #
+    # Why a runtime field instead of a config-driven one
+    # ---------------------------------------------------
+    # Operations occasionally need BlinkMP to NOT override (e.g. when
+    # validating a vendor-master refresh, or processing a one-off batch
+    # under the old margin agreement). Conversely, they sometimes want
+    # to force-override on a marketplace that doesn't normally need it
+    # (one-off price corrections). A per-run toggle covers both cases
+    # without config edits and without committing to a permanent change.
+    #
+    # Stays ``False`` for runs where the GUI doesn't set it (older code
+    # paths, tests, or marketplaces processed via the API directly).
+    override_unit_price: bool = False
+
     # v1.5.6: Alias-resolved marketplace config.
     #
     # The engine's ``_resolve_column_aliases`` picks a concrete header

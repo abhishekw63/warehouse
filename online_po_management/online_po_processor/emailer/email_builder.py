@@ -125,6 +125,11 @@ class EmailBuilder:
         Format: ``📦 <Marketplace> SO Report: <N> PO(s), <M> Items —
         <dd-mm-YYYY HH:MM>``
 
+        v2.0.0: Transfer Order results (output_type='to') use
+        "TO Report" instead of "SO Report" — the recipient should
+        be able to tell at a glance from the inbox which import
+        shape this batch produced.
+
         Uses the marketplace name from ``result`` when available, else
         falls back to a generic label. Timestamp helps the recipient
         sort the inbox when multiple reports land on the same day.
@@ -135,8 +140,12 @@ class EmailBuilder:
         po_count = len({r.po_number for r in result.rows})
         item_count = len(result.rows)
 
+        kind_label = (
+            'TO Report' if getattr(result, 'output_type', 'so') == 'to'
+            else 'SO Report'
+        )
         return (
-            f"📦 {marketplace} SO Report: {po_count} PO(s), "
+            f"📦 {marketplace} {kind_label}: {po_count} PO(s), "
             f"{item_count} Items — {ts}"
         )
 
@@ -306,6 +315,12 @@ class EmailBuilder:
             'total_amount': total_amount,
             'po_groups':    po_groups,
             'sku_groups':   sku_groups,
+            # v2.0.0: surface the result's output_type so the renderers
+            # downstream (which only see ``agg``, not ``result``) can
+            # decide between SO and TO copy without re-importing the
+            # result. ``is_to=True`` flips the PO-table heading and any
+            # other SO-specific copy in the body.
+            'is_to':        getattr(result, 'output_type', 'so') == 'to',
         }
 
     # ══════════════════════════════════════════════════════════════════
@@ -367,14 +382,35 @@ class EmailBuilder:
             if source_label else ''
         )
 
+        # v1.9.0: show which warehouse fulfilled this batch. Helpful
+        # for cross-team readers (operations, accounts) who need to
+        # know which RENEE warehouse the ERP posted against.
+        # Backwards-compatible: warehouse_display defaults to 'AHD'
+        # on older results without the field, so legacy code paths
+        # just keep showing AHD.
+        wh_display = getattr(result, 'warehouse_display', '') or 'AHD'
+        wh_code = getattr(result, 'warehouse_code', '') or 'PICK'
+        warehouse_line = (
+            f'<p style="margin:2px 0 0;font-size:11px;color:#9fa8da;">'
+            f'Warehouse: {wh_display} ({wh_code})</p>'
+        )
+
+        # v2.0.0: banner kind label flips for TO results.
+        kind_phrase = (
+            'Transfer Order Report'
+            if getattr(result, 'output_type', 'so') == 'to'
+            else 'Sales Order Report'
+        )
+
         return (
             f'<tr><td style="background:{C.NAVY};padding:25px 30px;'
             f'text-align:center;">'
             f'<p style="margin:0;font-size:22px;font-weight:bold;'
-            f'color:white;">📦 {marketplace} — Sales Order Report</p>'
+            f'color:white;">📦 {marketplace} — {kind_phrase}</p>'
             f'<p style="margin:8px 0 0;font-size:12px;color:#9fa8da;">'
             f'Generated: {ts} | Processing: {elapsed_str}</p>'
             f'{file_line}'
+            f'{warehouse_line}'
             f'<table style="margin:10px auto 0;"><tr>'
             f'<td style="background:#283593;padding:5px 15px;'
             f'border-radius:15px;">'
@@ -574,11 +610,23 @@ class EmailBuilder:
             '\u20B9' + _format_indian(int(round(total_amount_val)))
         )
 
+        # v2.0.0: For TO mode, the section heading is "Transfer Order
+        # Details" rather than "Sales Order Details". The table layout
+        # is unchanged — the Amount column simply shows ₹0 for TO
+        # marketplaces (they have no ``amount_col`` configured,
+        # following the same Myntra pattern in SO mode). The is_to
+        # flag is plumbed in via _aggregate's output dict.
+        section_label = (
+            'Transfer Order Details'
+            if agg.get('is_to')
+            else 'Sales Order Details'
+        )
+
         return (
             f'<tr><td style="padding:14px 20px;font-weight:bold;'
             f'font-size:14px;color:{C.NAVY};'
             f'border-left:5px solid {C.NAVY};'
-            f'background:#E8EAF6;">📋 Sales Order Details</td></tr>'
+            f'background:#E8EAF6;">📋 {section_label}</td></tr>'
             f'<tr><td style="padding:0;">'
             f'<table width="100%" cellpadding="0" cellspacing="0" '
             f'style="border-collapse:collapse;">'

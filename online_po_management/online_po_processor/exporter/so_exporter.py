@@ -34,6 +34,7 @@ The timestamp means repeat runs never clobber prior outputs.
 
 from __future__ import annotations
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 from tkinter import messagebox
@@ -56,13 +57,38 @@ class SOExporter:
     across runs is safe (and cheap).
     """
 
-    def export(self, result: ProcessingResult) -> Optional[Path]:
+    def export(self, result: ProcessingResult,
+                start_time: Optional[float] = None) -> Optional[Path]:
         """
         Render ``result`` to an .xlsx file on disk.
 
+        v2.1.0: ``start_time`` parameter added. When supplied (typically
+        a ``time.time()`` snapshot the GUI captured before any work
+        began), the exporter computes the full pipeline elapsed time
+        right before saving and stamps it onto ``result.elapsed_seconds``.
+        That makes the duration visible to:
+
+          * The Summary sheet's footer (read inline via
+            ``result.elapsed_seconds`` during ``summary_sheet.write``).
+          * The email report (read after this method returns).
+
+        When ``start_time`` is None, ``result.elapsed_seconds`` is left
+        untouched so older callers and tests behave exactly as before
+        (Summary footer omits the duration segment).
+
+        Sheets are written in order — Summary in particular reads
+        ``result.elapsed_seconds`` at write-time, so we set it BEFORE
+        the sheet writers run, not after. The actual file-save step
+        (a few hundred ms for typical workbook sizes) isn't reflected
+        in the printed duration; that's an acceptable trade-off for
+        having the value visible in the file at all.
+
         Args:
-            result: Fully-populated result from
-                    :meth:`MarketplaceEngine.process`.
+            result:     Fully-populated result from
+                        :meth:`MarketplaceEngine.process`.
+            start_time: Optional ``time.time()`` snapshot taken before
+                        the pipeline started. Used to compute and stamp
+                        the run duration.
 
         Returns:
             ``Path`` to the saved file on success, ``None`` when there
@@ -77,6 +103,14 @@ class SOExporter:
                 "No valid rows found.\nNothing to export.",
             )
             return None
+
+        # v2.1.0: compute elapsed BEFORE the sheet writers run so the
+        # Summary footer can see the value. The few hundred ms spent
+        # writing the workbook itself isn't reflected, but that's
+        # negligible compared to engine + master-load time on a
+        # typical batch (a few seconds).
+        if start_time is not None:
+            result.elapsed_seconds = time.time() - start_time
 
         file_path = self._resolve_output_path(result)
 
@@ -145,9 +179,14 @@ class SOExporter:
 
         # v1.7.0: multi-file batches get a count-based filename so
         # the batch size is visible without opening the workbook.
+        # v2.0.0: TO marketplaces use a '_to_' slug instead of '_so_'
+        # so the filename signals which import shape it carries (the
+        # ERP team consumes TO and SO files via different D365 import
+        # frames, so the distinction matters).
         n_files = getattr(result, 'input_files_count', 1) or 1
+        kind_slug = 'to' if getattr(result, 'output_type', 'so') == 'to' else 'so'
         if n_files > 1:
             stem = f'{marketplace_slug}_{n_files}PO_{timestamp}.xlsx'
         else:
-            stem = f'{marketplace_slug}_so_{timestamp}.xlsx'
+            stem = f'{marketplace_slug}_{kind_slug}_{timestamp}.xlsx'
         return output_folder / stem

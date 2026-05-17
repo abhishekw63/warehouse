@@ -25,6 +25,7 @@ what we matched it to (Summary sheet's "Location (Raw)" vs "Location
 
 from __future__ import annotations
 import logging
+import re
 from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
@@ -181,22 +182,76 @@ class MappingLoader:
             return ''
         return ' '.join(str(s).split()).lower()
 
+    @staticmethod
+    def _normalize_aggressive(s: str) -> str:
+        """
+        Stricter canonicalization — strips ALL whitespace and hyphens.
+
+        Used by tier 3 of :meth:`lookup`. Catches the spacing-around-
+        hyphen drift seen in real-world dumps where the same
+        warehouse ships as e.g.::
+
+            'BCPL - Bengaluru B3 - Feeder Warehouse'   (file)
+            'BCPL-Bengaluru B3 - Feeder Warehouse'     (mapping)
+
+        After this normalization both become
+        ``'bcplbengalurub3feederwarehouse'`` — equality match.
+
+        Distinct from :meth:`_normalize` which only collapses
+        whitespace; both are kept because tier 2 (case+whitespace
+        equality) is stricter and runs first to preserve hyphen-
+        bearing semantics where they matter (Reliance's
+        ``'-Nagpur'``-style row identifiers).
+
+        v2.1.1: introduced to handle BlinkMP's new dump format
+        where every location string gained spaces around the first
+        hyphen (``'BCPL-X'`` → ``'BCPL - X'``) plus dropped the
+        second hyphen before ``'Feeder'`` on most rows. Verified
+        zero-collision against the full 277-row Ship-To B2B before
+        adding — no two genuinely-distinct mapping entries fold
+        together under this normalization.
+
+        Args:
+            s: Raw location string (may be None / empty).
+
+        Returns:
+            Lowercased copy with ``\\s`` and ``-`` characters removed.
+            Empty string for None/empty input.
+        """
+        if not s:
+            return ''
+        return re.sub(r'[\s\-]', '', str(s).lower())
+
     def lookup(self, location: str) -> Optional[Dict[str, str]]:
         """
         Find the ERP codes for a delivery location string.
 
-        Three-tier match::
+        Four-tier match::
 
-            1. Exact                    (preferred — no ambiguity)
-            2. Case + whitespace normal (handles "Bilaspur" vs "bilaspur",
-                                         and "Foo  Bar" vs "Foo Bar")
-            3. Substring                (handles "Bilaspur Warehouse - Gurgaon"
-                                         vs canonical "Bilaspur")
+            1. Exact                      (preferred — no ambiguity)
+            2. Case + whitespace normal   ("Bilaspur" vs "bilaspur",
+                                            "Foo  Bar" vs "Foo Bar")
+            3. Punct+whitespace stripped  ("BCPL - Bengaluru B3 - Feeder"
+                                            vs "BCPL-Bengaluru B3 - Feeder"
+                                            — folds hyphen/space drift)
+            4. Substring                  ("Bilaspur Warehouse - Gurgaon"
+                                            vs canonical "Bilaspur")
 
-        v1.8.1 changes tier 2 from case-only to case+whitespace —
+        v1.8.1 changed tier 2 from case-only to case+whitespace —
         Reliance ships double-spaced location labels intermittently
         which used to drop to tier 3 substring matching with lower
         confidence.
+
+        v2.1.1 inserted a new tier 3 (punctuation+whitespace stripped
+        equality) above the substring tier. Required by BlinkMP's
+        new dump format where every BCPL-prefixed location gained
+        spaces around the first hyphen — the existing tier 2 didn't
+        catch this because hyphens were preserved, and the substring
+        tier missed because neither string is a substring of the
+        other (file string is 2 chars longer due to the extra spaces).
+        Verified zero-collision against the full Ship-To B2B before
+        adding: no two genuinely-distinct mapping entries fold
+        together under aggressive normalization.
 
         On a successful match the returned dict includes ``matched_key``
         — the canonical mapping key actually used. The GUI's Summary
@@ -232,7 +287,26 @@ class MappingLoader:
                     )
                 return {**val, 'matched_key': key}
 
-        # 3. Substring match (lossy — log it so a misuse is visible)
+        # 3. v2.1.1: Aggressive-normalization match — strips all
+        # whitespace and hyphens. Catches drift like
+        # 'BCPL - Bengaluru B3 - Feeder Warehouse' (file) vs
+        # 'BCPL-Bengaluru B3 - Feeder Warehouse' (mapping) where
+        # the only difference is spacing around the first hyphen.
+        # Stricter than tier 4 substring (requires equality after
+        # normalization, not partial overlap), so a false-positive
+        # match here implies a Ship-To B2B data error rather than
+        # a matcher bug.
+        loc_aggro = self._normalize_aggressive(loc_clean)
+        if loc_aggro:
+            for key, val in self.mappings.items():
+                if self._normalize_aggressive(key) == loc_aggro:
+                    logging.info(
+                        "Mapping: Punctuation-insensitive match '%s' → '%s'",
+                        loc_clean, key,
+                    )
+                    return {**val, 'matched_key': key}
+
+        # 4. Substring match (lossy — log it so a misuse is visible)
         loc_lower = loc_clean.lower()
         for key, val in self.mappings.items():
             key_lower = key.lower()

@@ -499,39 +499,334 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
         # shows "BlinkMP" — but behind the scenes the mapping lookup
         # uses the canonical ERP name. Lets the GUI label and the
         # operational spreadsheet stay independently correct.
-        'party_name': 'Blink RO',            # Must match 'Party' in mapping sheet
-        'po_col': 'PO',                      # [REQUIRED] int64 (e.g. 1735810027046)
-        'loc_col': 'Location',               # [REQUIRED] e.g. 'BCPL-Mumbai M10 - Feeder Warehouse'
-        'qty_col': 'Quantity',               # [REQUIRED]
-        'item_resolution': 'from_ean',
-        'ean_col': 'Product UPC',            # [REQUIRED in this mode]
-        'price_col': None,                   # WMS computes
-        'fob_col': 'Landing Rate',           # [VALIDATION] pre-GST (= MRP × 75%)
-        'default_margin': 75,                # 75% margin (higher than Blink's 70%)
-        'compare_basis': 'landing',          # Landing Rate IS pre-GST (unlike Blink's post-GST cost_price)
-        'compare_label': 'Landing Rate',
-        'amount_col': 'Total Amount',        # pre-calculated by BlinkMP: Landing Rate × Qty
-        # v1.9.1: Override the D365 Sales Line 'Unit Price' (col H)
-        # with our computed post-GST Cost Price. BCPL (Blinkit +
-        # BlinkMP) is registered in Business Central with 70% margin
-        # because that's Blinkit's rate — but BlinkMP's margin is
-        # 75%. Without the override the ERP auto-computes the wrong
-        # cost on BlinkMP rows (using the 70% vendor default),
-        # creating accounting discrepancies. Stamping our own
-        # post-GST Cost Price into col H forces the ERP to record
-        # the correct figure.
         #
-        # When a row has no computable Cost Price (e.g. master
-        # lookup failed), col H is left empty for that specific row
-        # and a log warning is emitted — matches the engine's
-        # existing lenient handling for NOT_IN_MASTER rows.
+        # v2.1.2: BlinkMP now arrives in TWO valid formats because the
+        # AHD (Ahmedabad) and BLR (Bengaluru) operations teams produce
+        # the dump independently and use slightly different column
+        # names. Both formats MUST be supported simultaneously; we
+        # don't know which file we'll receive on any given day.
+        #
+        # AHD format (sheet 'Sheet1', 17 cols):
+        #   PO | Location | Item Code | HSN Code | Product UPC |
+        #   Product Description | Grammage | CGST % | SGST % | IGST % |
+        #   CESS % | Additional CES | Tax Amount | Landing Rate |
+        #   Quantity | MRP | Total Amount
+        #
+        # BLR format (sheet 'Sheet1', 17 cols):
+        #   date | ro_number | location | entity_name | Item Code |
+        #   HSN Code | Product UPC | Product Description | Grammage |
+        #   CGST % | SGST % | IGST % | Tax Amount | LR | Quantity |
+        #   MRP | Total Amount
+        #
+        # Engine-critical column differences (everything else either
+        # matches or is absorbed by case_insensitive_cols):
+        #   * AHD 'PO'           ↔  BLR 'ro_number'
+        #   * AHD 'Landing Rate' ↔  BLR 'LR'
+        #
+        # Resolved via list-aliases on po_col + fob_col — the engine
+        # already supports list aliases (Myntra uses one for po_col),
+        # the resolver picks whichever entry matches an actual file
+        # column. AHD's 'Location' (Title) vs BLR's 'location' (lower)
+        # is handled by case_insensitive_cols=True.
+        #
+        # AHD-only columns (CESS %, Additional CES) and BLR-only
+        # columns (date, entity_name) appear on the Raw Data sheet
+        # for audit but are not consumed by the engine — the SO
+        # output is identical regardless of which source format
+        # arrived.
+        #
+        # Both files use 'Sheet1' as the data sheet (BLR's earlier
+        # 'DUMP' sheet was a one-off from a single sample file —
+        # confirmed not canonical). source_sheet config key is
+        # therefore omitted and defaults to 'Sheet1'.
+        'party_name': 'Blink RO',            # Must match 'Party' in mapping sheet
+        'po_col': ['PO', 'ro_number'],       # [REQUIRED] AHD uses 'PO', BLR uses 'ro_number'
+        'loc_col': 'location',               # [REQUIRED] case_insens absorbs AHD's 'Location'
+        'qty_col': 'Quantity',               # [REQUIRED] same in both
+        'item_resolution': 'from_ean',
+        'ean_col': 'Product UPC',            # [REQUIRED in this mode] same in both
+        'price_col': None,                   # WMS computes
+        'fob_col': ['Landing Rate', 'LR'],   # [VALIDATION] AHD 'Landing Rate', BLR 'LR'; both pre-GST
+        'default_margin': 75,                # 75% margin (higher than Blink's 70%)
+        'compare_basis': 'landing',          # Landing Rate / LR IS pre-GST
+        'compare_label': 'Landing Rate',     # Display label on Validation sheet (uniform across formats)
+        'amount_col': 'Total Amount',        # pre-calculated by BlinkMP, same in both formats
+        # v2.1.1: tolerate header case drift the same way Myntra and
+        # Reliance do. Critical for AHD ('Location') vs BLR
+        # ('location') — without this flag, BLR files would crash
+        # with "Required column 'location' not found" because the
+        # config asks for the lowercase variant. The flag also future-
+        # proofs against either operations team adding stray
+        # whitespace or capitalisation tweaks.
+        'case_insensitive_cols': True,
+        # v1.9.1 / v2.1.3: GUI default-state hint for the "Override
+        # Unit Price" checkbox. When this flag is True on the selected
+        # marketplace, the GUI pre-checks the override box on
+        # marketplace change so the user doesn't have to remember to
+        # enable it. The user can still uncheck per-run.
+        #
+        # Pre-v2.1.3 this flag was a runtime trigger — every BlinkMP
+        # run automatically overrode Unit Price. v2.1.3 moved the
+        # runtime decision to ``ProcessingResult.override_unit_price``
+        # (set from the GUI checkbox state), so this flag is now
+        # purely advisory: it tells the GUI "this marketplace
+        # typically needs override" but doesn't enforce it.
+        #
+        # Why BlinkMP needs override by default
+        # -------------------------------------
+        # BCPL (Blinkit + BlinkMP) is registered in Business Central
+        # with 70% margin because that's Blinkit's rate — but BlinkMP
+        # runs at 75%. Without overriding the Sales Line Unit Price
+        # the ERP auto-computes the wrong cost on BlinkMP rows (using
+        # the 70% vendor default), creating accounting discrepancies.
+        # Stamping our own post-GST Cost Price into col H forces the
+        # ERP to record the correct figure.
+        #
+        # When override is on and a row has no computable Cost Price
+        # (e.g. master lookup failed), col H is left empty for that
+        # specific row and a log warning is emitted — matches the
+        # engine's existing lenient handling for NOT_IN_MASTER rows.
         'override_unit_price': True,
+        # v2.1.2: template_headers shows BLR's 17-col format. Chosen
+        # over AHD's because BLR's is the more recent / forward-
+        # looking shape. Either format is accepted at runtime via
+        # the list-aliased po_col/fob_col, so the template only
+        # affects the "Download PO Template" button output for users
+        # building NEW dump files from scratch — operations teams
+        # using their existing dump pipelines aren't affected.
         'template_headers': [
+            'date', 'ro_number', 'location', 'entity_name',
+            'Item Code', 'HSN Code', 'Product UPC', 'Product Description',
+            'Grammage', 'CGST %', 'SGST %', 'IGST %',
+            'Tax Amount', 'LR', 'Quantity', 'MRP', 'Total Amount',
+        ],
+        # v2.1.3: extra template variant for the single-workbook PO
+        # template generator. The master template workbook ships with
+        # ONE sheet per marketplace; BlinkMP gets TWO sheets (AHD and
+        # BLR) because both formats are used in production by
+        # different operations teams. ``template_headers`` above
+        # populates the 'BlinkMP (BLR)' sheet; this list populates
+        # the 'BlinkMP (AHD)' sheet.
+        #
+        # AHD format differs from BLR by:
+        #   * No 'date', 'entity_name' columns
+        #   * Has 'CESS %', 'Additional CES' columns instead
+        #   * Uses 'PO' (not 'ro_number'), 'Landing Rate' (not 'LR')
+        # Engine resolves either format at runtime via list-aliased
+        # po_col / fob_col — only the template generator needs both
+        # spellings.
+        'template_headers_extra': [
             'PO', 'Location', 'Item Code', 'HSN Code', 'Product UPC',
             'Product Description', 'Grammage',
             'CGST %', 'SGST %', 'IGST %', 'CESS %', 'Additional CES',
             'Tax Amount', 'Landing Rate', 'Quantity', 'MRP',
             'Total Amount',
+        ],
+    },
+
+    # ────────────────────────────────────────────────────────────────────
+    # Flipkart  (v2.1.0 — first SO Flipkart marketplace, distinct from
+    #            Flipkart-TO below)
+    #
+    # Flipkart's punch arrives as a single-sheet workbook covering many
+    # POs (51 in our reference sample) shipping to multiple Flipkart-
+    # owned hubs. Unlike Flipkart-TO, this marketplace produces standard
+    # Sales Orders — there IS a Sell-to Customer (Renee's Flipkart
+    # Wholesale entity, 20020 in the ERP) and the Ship-to Code is the
+    # specific hub (e.g. 20020_11, 20020_22). Same SO output shape as
+    # Blink/RK/Myntra — no special handling needed.
+    #
+    # Why a separate config from Flipkart-TO
+    # --------------------------------------
+    # Flipkart-Branch (TO) ships into FK-owned dark warehouses for
+    # internal stock movements — no commercial transaction. Flipkart
+    # (this entry) ships into FK's wholesale hubs for resale on
+    # Flipkart.com — that's a B2B sale to FK Wholesale and gets
+    # invoiced. Two different commercial flows = two different ERP
+    # document types = two configs. They share the 'Flipkart' brand
+    # but nothing else operationally.
+    #
+    # Punch file shape (cols A-O, 15 cols):
+    #   Date | PO | FSN Code | EAN | Qty | COST PRICE With GST |
+    #   total_amount | description | Address | Ship TO | Item n |
+    #   MRP | GST Rate | 0.77 | Diff
+    #
+    # The user pre-fills cols J ('Ship TO'), K ('Item n'), N (0.77),
+    # O ('Diff') via XLOOKUP/formulas as a sanity check. The engine
+    # IGNORES all four — Item No comes from Items_March via EAN lookup
+    # (consistent with every other from_ean SO marketplace), Ship-to
+    # comes from Ship-To B2B via Address lookup, validation Diff is
+    # computed fresh from MRP × margin% vs the file's COST PRICE With
+    # GST column.
+    #
+    # Cost basis: 'landing'  (pre-GST)
+    # --------------------------------
+    # Flipkart's 'COST PRICE With GST' column is misleadingly named —
+    # despite the "With GST" suffix, the column actually stores the
+    # PRE-GST landing rate (= MRP × 0.77). Verified across 298 sample
+    # rows: file's own Diff column = COST_PRICE − (MRP × 0.77) = 0.00
+    # for every row. So compare_basis='landing' (NOT 'cost') and we
+    # match against MRP × margin%. Our Cost Price column on the
+    # Validation sheet still shows the post-GST cost for reference,
+    # same as Myntra (which also uses landing basis).
+    #
+    # Margin: 77%  (default, user can override per-run via GUI)
+    # --------------------------------------------------------
+    # Renee's standing agreement with Flipkart Wholesale. Verifiable in
+    # the file itself — col N is the literal numeric value 0.77 used in
+    # the user's reference Diff formula.
+    #
+    # Unmapped POs handling
+    # ---------------------
+    # In the 30-04-2026 sample, 6 of 51 POs ship to addresses NOT yet
+    # in Ship-To B2B (Ludhiana 'Plot no. B3 to B8' → 20020_22, and a
+    # Padgha CF warehouse → 20020_3). Treated like any other unmapped
+    # SO row: empty Cust No / Ship-to cells, UNMAPPED status badge on
+    # Summary, deduped warning on Warnings sheet — no special logic.
+    # User adds the missing rows to Ship-To B2B and re-runs.
+    # ────────────────────────────────────────────────────────────────────
+    'Flipkart': {
+        'party_name': 'Flipkart',            # Must match 'Party' in mapping sheet
+        'po_col': 'PO',                      # [REQUIRED] alphanumeric (e.g. 'FAGWN08092601')
+        'loc_col': 'Address',                # [REQUIRED] long descriptive — three-tier match handles drift
+        'qty_col': 'Qty',                    # [REQUIRED]
+        'item_resolution': 'from_ean',       # Same as Blink/RK/Myntra/Reliance/Zepto
+        'ean_col': 'EAN',                    # [REQUIRED in this mode] int64 in punch
+        'price_col': None,                   # WMS computes Unit Price downstream
+        'fob_col': 'COST PRICE With GST',    # [VALIDATION] file's stated landing — despite name, PRE-GST
+        'default_margin': 77,                # 77% landing — Renee × Flipkart Wholesale agreement
+        # Compare against MRP × margin% (pre-GST landing). Our own Cost
+        # Price column still appears on the Validation sheet for
+        # reference (engine populates cost_price_ref unconditionally).
+        # Same basis as Myntra/BlinkMP.
+        'compare_basis': 'landing',
+        'compare_label': 'Landing Rate',
+        'amount_col': 'total_amount',        # File's pre-calculated row amount (Cost × Qty)
+        'template_headers': [
+            'Date', 'PO', 'FSN Code', 'EAN', 'Qty',
+            'COST PRICE With GST', 'total_amount', 'description',
+            'Address', 'Ship TO', 'Item n', 'MRP', 'GST Rate',
+        ],
+    },
+
+    # ────────────────────────────────────────────────────────────────────
+    # Flipkart-TO  (v2.0.0 — first Transfer Order marketplace)
+    #
+    # Distinct from the 'Flipkart' SO entry above. Flipkart Branch
+    # dumps go to FK-owned warehouses (Bhiwandi BTS, Sanpka 01, etc.)
+    # via Transfer Orders, not Sales Orders. The downstream ERP record
+    # has no Sell-to Customer — only a Transfer-to Code (FK_BHW_BTS,
+    # FK_SANPKA1, ...).
+    #
+    # The 'output_type': 'to' flag tells the engine to take the TO
+    # code path, which:
+    #
+    #   * Aggregates rows by (PO, Item No) so duplicate FSNs for the
+    #     same Item No collapse to a single Transfer Line with summed
+    #     qty (cleaner D365 import; same total qty per Item No).
+    #   * Emits a Transfer Order package (Headers (TO) + Lines (TO))
+    #     instead of an SO package.
+    #
+    # The file's optional 'Ship to' col is IGNORED — that column is
+    # added by the user as a sanity-check, not authoritative.
+    # Transfer-to Code is always resolved fresh from Ship-To B2B
+    # (Party=Flipkart-TO, Del Location=row's Location → Ship to col).
+    #
+    # When a Ship-To B2B row exists for the location but its Ship to
+    # column is blank (currently 'Howrah'), the engine emits a
+    # WARNING and writes an empty Transfer-to cell so the user spots
+    # it on D365 import preview.
+    #
+    # ── v2.1.4: structural change to dump format ────────────────────────
+    # Pre-v2.1.4 the Flipkart Branch dump was self-contained (carried
+    # Item No, MRP, GST Code per row). As of 2026-05-06 the dump only
+    # ships 7 columns:
+    #
+    #   1. Po Number   (sometimes with trailing space — case_insensitive_cols
+    #                   absorbs it)
+    #   2. Location
+    #   3. FSN         (Flipkart's internal SKU code, display only)
+    #   4. SKU Id      (= EAN; used for Items_March master lookup)
+    #   5. Product Name
+    #   6. Cost Price  (Flipkart's stated cost — used for REFERENCE
+    #                   comparison only; engine still calculates its
+    #                   own Transfer Price from master)
+    #   7. Quantity Sent
+    #
+    # That structural change drove three config-level changes:
+    #
+    #   * ``item_resolution`` switched from ``'from_column'`` to
+    #     ``'from_ean'``. Item No / MRP / GST Code now come from
+    #     Items_March via SKU Id (= EAN) — same path Blink uses.
+    #
+    #   * ``mrp_col``, ``gst_col``, ``item_col`` removed. Those
+    #     columns no longer exist in the file.
+    #
+    #   * ``compare_mode='reference_only'`` added. Flipkart's stated
+    #     Cost Price (col 6) is logged + shown on the Validation
+    #     sheet, but never blocks — Transfer Price always uses the
+    #     engine's calculated value (MRP × 60% ÷ GST). Differences
+    #     are written to the Warnings sheet for audit but the row's
+    #     ``validation_status`` stays 'OK' instead of 'MISMATCH'.
+    #
+    # ────────────────────────────────────────────────────────────────────
+    'Flipkart-TO': {
+        'party_name': 'Flipkart-TO',         # Must match Ship-To B2B 'Party' col exactly
+        'output_type': 'to',                  # v2.0.0 — flips engine + exporter to TO pipeline
+
+        # Required columns (v2.1.4 standard 7-col format)
+        'po_col': 'Po Number',                # → D365 Transfer Header 'No.' column
+        'loc_col': 'Location',                # → looked up in Ship-To B2B
+        'qty_col': 'Quantity Sent',           # → Transfer Line Quantity (col D)
+
+        # v2.1.4: Item resolution moved to master lookup via EAN.
+        # SKU Id column contains EAN-format integers (e.g. 8906121646603).
+        # Engine resolves item_no, mrp, gst_code from Items_March via
+        # this EAN. Rows whose EAN isn't in master become
+        # NOT_IN_MASTER (warned, but row continues with item_no=
+        # f'?EAN:{ean}' placeholder — same behaviour as Blink).
+        'item_resolution': 'from_ean',
+        'ean_col': 'SKU Id',
+
+        # v2.1.4: Cost Price column on the file is Flipkart's stated
+        # cost. We compare against engine's calculated value and log
+        # diffs as warnings — see compare_mode='reference_only' below.
+        'fob_col': 'Cost Price',
+        'compare_basis': 'cost',
+        'compare_label': 'Cost (Flipkart)',
+
+        # v2.1.4: NEW flag. When set, the engine still computes diffn
+        # but downgrades MISMATCH → OK on the validation sheet, and
+        # writes one warning per mismatched row. Transfer Price
+        # written to D365 always uses the engine's calculated value
+        # (MRP × margin% ÷ (1+GST)) regardless of diff. Used for
+        # marketplaces where the source's price is informational only
+        # but worth tracking for audit.
+        'compare_mode': 'reference_only',
+
+        'default_margin': 60,                 # 60% — Flipkart Branch agreement
+
+        # No revenue tracking (TOs aren't revenue):
+        # 'amount_col' omitted
+
+        # v2.1.4: tolerate header drift the same way Myntra / Reliance
+        # / BlinkMP do. Critical for the trailing-space typo seen in
+        # the 06-05-2026 dump ('Po Number ' instead of 'Po Number');
+        # this flag normalises header names before matching.
+        'case_insensitive_cols': True,
+
+        'source_sheet': 'Sheet1',
+        'header_row': 0,
+
+        # v2.1.4: template_headers refreshed to match the new 7-col
+        # canonical format. Used by the 'Download All Templates'
+        # button — the user gets a blank template that mirrors what
+        # they'll actually receive. The 'Cost Price' column is kept
+        # because it's now the reference-comparison source (was
+        # purely informational pre-v2.1.4).
+        'template_headers': [
+            'Po Number', 'Location', 'FSN', 'SKU Id', 'Product Name',
+            'Cost Price', 'Quantity Sent',
         ],
     },
 

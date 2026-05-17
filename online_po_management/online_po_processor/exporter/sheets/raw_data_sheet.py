@@ -49,7 +49,7 @@ Row styling
 """
 
 from __future__ import annotations
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import pandas as pd
 
@@ -161,26 +161,39 @@ def write(wb, result: ProcessingResult) -> None:
     orig_col_count = source_offset + len(display_cols)
 
     # ── Calc (right) header labels ──────────────────────────────────────
-    diff_label = (f"Diffn with {result.compare_label}"
-                  if result.compare_label else "Diffn")
-    calc_headers = [
-        'Item No (Master)',
-        'MRP',
-        f'Landing ({int(result.margin_pct * 100)}%)',
-        'GST Code',
-        'Cost Price',
-    ]
-    if has_ref_diff:
-        # Reference Diffn goes BEFORE the active Diffn so the active
-        # column is rightmost — that's the one the user glances at last
-        # to confirm the status, so it gets visual precedence.
-        calc_headers.append(f'Diffn with {ref_fob_col_name}')
-    calc_headers.append(diff_label)
+    # v2.0.0: TO marketplaces (Flipkart-TO) read Item No / MRP / GST
+    # directly from the dump file, so there's no master to derive
+    # per-row calc values from — and no fob_price to diff against.
+    # Set is_to to skip the calc-column build entirely. The dump's
+    # own Item No / MRP / GST / Cost Price columns remain visible
+    # in the raw section, which is sufficient for audit.
+    is_to = getattr(result, 'output_type', 'so') == 'to'
 
-    # 0-based indices of reference and active Diffn columns within
-    # calc_headers. ref_idx is None when no reference diff is shown.
-    ref_idx = (len(calc_headers) - 2) if has_ref_diff else None
-    active_idx = len(calc_headers) - 1
+    if is_to:
+        calc_headers: List[str] = []
+        ref_idx = None
+        active_idx = -1
+    else:
+        diff_label = (f"Diffn with {result.compare_label}"
+                      if result.compare_label else "Diffn")
+        calc_headers = [
+            'Item No (Master)',
+            'MRP',
+            f'Landing ({int(result.margin_pct * 100)}%)',
+            'GST Code',
+            'Cost Price',
+        ]
+        if has_ref_diff:
+            # Reference Diffn goes BEFORE the active Diffn so the
+            # active column is rightmost — that's the one the user
+            # glances at last to confirm the status.
+            calc_headers.append(f'Diffn with {ref_fob_col_name}')
+        calc_headers.append(diff_label)
+
+        # 0-based indices of reference and active Diffn columns within
+        # calc_headers. ref_idx is None when no reference diff is shown.
+        ref_idx = (len(calc_headers) - 2) if has_ref_diff else None
+        active_idx = len(calc_headers) - 1
 
     # ── Calc header row ─────────────────────────────────────────────────
     for i, header_text in enumerate(calc_headers):
@@ -197,6 +210,36 @@ def write(wb, result: ProcessingResult) -> None:
     config_ean_col = (marketplace_cfg or {}).get('ean_col')
     config_po_col = (marketplace_cfg or {}).get('po_col')
 
+    # v2.1.0: build the set of raw input columns that should be
+    # center-aligned (ID-style numeric values that the auto-align
+    # would otherwise push right). Includes the marketplace's
+    # configured PO / Item / EAN / HSN column names plus a small
+    # set of common identifier headers seen across marketplaces
+    # (FSN, Item Code, etc.). The set is filtered to only columns
+    # present on the DataFrame so we never reference a non-existent
+    # column. Synthetic columns (__po__/__loc__) excluded from the
+    # display already, so no need to special-case them.
+    config_hsn_col = (marketplace_cfg or {}).get('hsn_col')
+    id_cols: Set[str] = set()
+    for c in (config_po_col, config_item_col, config_ean_col,
+              config_hsn_col):
+        if c and c in df.columns:
+            id_cols.add(c)
+    # Common ID-style raw column names seen across marketplaces.
+    # Matched case-insensitively against the actual headers so we
+    # catch 'FSN Code' / 'fsn code' / 'Item Code' / 'item code' etc.
+    # GST and CESS codes are short fixed-length codes; centering reads
+    # better than the left-by-default text behaviour.
+    _id_keywords = {'fsn', 'fsn code', 'item code', 'item no',
+                     'item id', 'sku', 'sku id', 'sku code',
+                     'hsn', 'hsn code', 'hsn/sac code',
+                     'upc', 'gtin', 'ean', 'gst', 'gst code',
+                     'gst rate', 'gst group code', 'cess'}
+    for col in df.columns:
+        low = ' '.join(str(col).split()).lower()
+        if low in _id_keywords:
+            id_cols.add(col)
+
     n_calc = len(calc_headers)
     base_c = orig_col_count + 1  # first calc column (1-based)
 
@@ -205,14 +248,21 @@ def write(wb, result: ProcessingResult) -> None:
         # Uses the precomputed values from source_values rather than
         # re-deriving per row.
         if has_source:
-            data_cell(ws, r, 1, source_values[r - 2])
+            data_cell(ws, r, 1, source_values[r - 2], align='center')
 
         # Write the marketplace's own raw columns, skipping the
         # synthetic __po__/__loc__/__source_file__ markers that we
         # already distilled into the Source column.
         _write_raw_row(
             ws, r, raw_row, display_cols, start_col=source_offset + 1,
+            id_cols=id_cols,
         )
+
+        # v2.0.0: TO marketplaces emit no calc columns (no master =
+        # nothing to derive). The dump's own Item No / MRP / GST /
+        # Cost Price columns are already in the raw section.
+        if is_to:
+            continue
 
         # Find this row's validation match. The PO-column rename for
         # Reliance (po_col='__po__') is fine here because the raw_row
@@ -229,9 +279,11 @@ def write(wb, result: ProcessingResult) -> None:
             )
         else:
             # Likely a zero-qty row that the engine skipped — leave the
-            # calc cells blank so the row aligns visually.
+            # calc cells blank so the row aligns visually. Right-align
+            # the blanks so column-wise visual rhythm matches the
+            # populated rows above/below.
             for i in range(n_calc):
-                data_cell(ws, r, base_c + i, '')
+                data_cell(ws, r, base_c + i, '', align='right')
 
     auto_width(ws)
     ws.freeze_panes = 'A2'
@@ -258,6 +310,7 @@ def _build_validation_lookup(
 def _write_raw_row(
     ws, r: int, raw_row: pd.Series,
     display_cols: List[str], start_col: int = 1,
+    id_cols: Optional[Set[str]] = None,
 ) -> None:
     """
     Copy ``raw_row`` into sheet row ``r``, writing only the columns
@@ -268,6 +321,14 @@ def _write_raw_row(
     reading ``df.columns`` so callers can exclude synthetic columns
     (``__po__``/``__loc__``/``__source_file__``) from the display
     while keeping them available on ``raw_row`` for lookups.
+
+    v2.1.0: ``id_cols`` parameter added. Columns whose names are in
+    this set get center-aligned regardless of their value type
+    (treats them as ID-style columns even when numeric). Columns
+    not in the set fall through to ``data_cell``'s smart defaults
+    (numbers right, text left). This lets the caller mark PO / EAN /
+    Item Code / HSN / FSN columns for centering without knowing
+    every marketplace's column names in this helper.
 
     Timestamps are formatted ``dd-mm-yyyy``. NaNs become empty strings.
     Everything else is passed through to openpyxl as-is.
@@ -281,14 +342,19 @@ def _write_raw_row(
         start_col:     Spreadsheet column (1-based) to start writing
                        at. Used to leave room for a leading Source
                        column when Reliance's pre-process ran.
+        id_cols:       Optional set of column names to render with
+                       center alignment (ID-style). Columns not in
+                       the set use the auto alignment from value type.
     """
+    id_cols = id_cols or set()
     for col_offset, col_name in enumerate(display_cols):
         val = raw_row[col_name]
         if isinstance(val, pd.Timestamp):
             val = val.strftime('%d-%m-%Y')
         elif pd.isna(val):
             val = ''
-        data_cell(ws, r, start_col + col_offset, val)
+        align = 'center' if col_name in id_cols else None
+        data_cell(ws, r, start_col + col_offset, val, align=align)
 
 
 def _derive_row_key(raw_row: pd.Series, df: pd.DataFrame,
@@ -352,24 +418,28 @@ def _write_calc_cells(
     landing = (float(vrow.mrp) * result.margin_pct
                if vrow.mrp and not pd.isna(vrow.mrp) else None)
 
-    data_cell(ws, r, base_c + 0, vrow.item_no)
-    data_cell(ws, r, base_c + 1, vrow.mrp, '#,##0.00')
+    # v2.1.0 alignment for appended calc cells:
+    #   Item No (Master), GST Code → center  (identifiers/short codes)
+    #   MRP, Landing, Cost Price, Diffns → right (monetary)
+    data_cell(ws, r, base_c + 0, vrow.item_no, align='center')
+    data_cell(ws, r, base_c + 1, vrow.mrp, '#,##0.00', align='right')
     data_cell(ws, r, base_c + 2,
-               round(landing, 2) if landing else '', '#,##0.00')
-    data_cell(ws, r, base_c + 3, vrow.gst_code)
+               round(landing, 2) if landing else '', '#,##0.00',
+               align='right')
+    data_cell(ws, r, base_c + 3, vrow.gst_code, align='center')
     data_cell(ws, r, base_c + 4,
                round(vrow.cost_price_ref, 2) if vrow.cost_price_ref else '',
-               '#,##0.00')
+               '#,##0.00', align='right')
 
     if has_ref_diff and ref_idx is not None:
         data_cell(ws, r, base_c + ref_idx,
                    round(vrow.ref_diffn, 2)
                    if vrow.ref_diffn is not None else '',
-                   '#,##0.00')
+                   '#,##0.00', align='right')
 
     data_cell(ws, r, base_c + active_idx,
                round(vrow.diffn, 2) if vrow.diffn is not None else '',
-               '#,##0.00')
+               '#,##0.00', align='right')
 
     # Apply row tint across the whole calc block
     is_mismatch = vrow.validation_status == 'MISMATCH'

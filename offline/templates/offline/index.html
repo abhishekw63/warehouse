@@ -11,357 +11,352 @@
 {% endblock %}
 
 {% block content %}
-    <style>
-        .tool-container {
-            background: white;
-            padding: 40px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-            border: 1px solid #eaeaea;
-            text-align: center;
-            max-width: 560px;
-            width: 100%;
-            margin: 0 auto;
-        }
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap');
 
-        .tool-container h2 {
-            color: #000;
-            margin-top: 0;
-            margin-bottom: 5px;
-        }
+    :root {
+        --gt-ink: #0a0a0a; --gt-slate: #3a3a3a; --gt-dim: #7a7a7a;
+        --gt-silver: #b0b0b0; --gt-mist: #f4f4f4; --gt-white: #fff;
+        --gt-accent: #1a237e; --gt-accent-light: #e8eaf6;
+        --gt-green: #1b7a3d; --gt-green-bg: #e6f4ea;
+        --gt-red: #b71c1c; --gt-red-bg: #fce8e6;
+        --gt-amber: #e65100; --gt-amber-bg: #fff3e0;
+        --gt-radius: 6px;
+    }
 
-        .tool-container h4 {
-            color: #666;
-            margin-top: 0;
-            margin-bottom: 30px;
-            font-weight: 400;
-        }
+    .gt-page { max-width: 580px; margin: 40px auto; font-family: 'DM Sans', system-ui, sans-serif; }
 
-        .version-tag {
-            display: inline-block;
-            background: #f0f0f0;
-            color: #888;
-            font-size: 11px;
-            padding: 2px 10px;
-            border-radius: 10px;
-            margin-bottom: 15px;
-            letter-spacing: 0.5px;
-        }
+    .gt-card { background: var(--gt-white); border: 1px solid #e0e0e0; border-radius: var(--gt-radius); overflow: hidden; }
+    .gt-card__header { padding: 28px 32px 20px; border-bottom: 1px solid #eee; }
+    .gt-card__tag { display: inline-block; font-size: 10px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--gt-accent); background: var(--gt-accent-light); padding: 3px 10px; border-radius: 3px; margin-bottom: 10px; }
+    .gt-card__title { font-size: 22px; font-weight: 700; color: var(--gt-ink); margin: 0 0 4px; }
+    .gt-card__subtitle { font-size: 13px; color: var(--gt-dim); margin: 0; }
+    .gt-card__body { padding: 24px 32px 28px; }
 
-        .file-upload-wrapper {
-            margin: 20px 0;
-        }
+    .gt-dropzone { border: 2px dashed #d0d0d0; border-radius: var(--gt-radius); padding: 32px 20px; text-align: center; cursor: pointer; transition: all 0.2s; background: #fafafa; display: block; }
+    .gt-dropzone:hover, .gt-dropzone.drag-over { border-color: var(--gt-accent); background: var(--gt-accent-light); }
+    .gt-dropzone__icon { width: 36px; height: 36px; margin: 0 auto 10px; color: var(--gt-silver); transition: color 0.2s; }
+    .gt-dropzone:hover .gt-dropzone__icon { color: var(--gt-accent); }
+    .gt-dropzone__text { font-size: 14px; color: var(--gt-dim); margin: 0; }
+    .gt-dropzone__hint { font-size: 11px; color: var(--gt-silver); margin: 6px 0 0; }
+    .gt-dropzone input[type="file"] { display: none; }
 
-        input[type="file"] {
-            display: none;
-        }
+    .gt-file-count { text-align: center; font-size: 13px; font-weight: 600; color: var(--gt-slate); margin: 14px 0 0; min-height: 20px; }
+    .gt-file-count span { background: var(--gt-mist); padding: 3px 12px; border-radius: 3px; }
 
-        .custom-file-upload {
-            border: 1px dashed #ccc;
-            display: block;
-            padding: 30px 20px;
-            cursor: pointer;
-            border-radius: 6px;
-            background-color: #fafafa;
-            color: #555;
-            transition: all 0.2s;
-        }
+    .gt-btn { display: block; width: 100%; padding: 13px 20px; margin-top: 10px; border: none; border-radius: var(--gt-radius); font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+    .gt-btn--primary { background: var(--gt-ink); color: var(--gt-white); margin-top: 18px; font-size: 15px; padding: 14px 20px; }
+    .gt-btn--primary:hover { background: #222; }
+    .gt-btn--secondary { background: var(--gt-mist); color: var(--gt-slate); border: 1px solid #ddd; }
+    .gt-btn--secondary:hover { background: #eaeaea; }
+    .gt-btn:disabled { background: #ccc; color: #999; cursor: not-allowed; }
 
-        .custom-file-upload:hover {
-            background-color: #f0f0f0;
-            border-color: #999;
-        }
+    .gt-actions { margin-top: 16px; display: none; border-top: 1px solid #eee; padding-top: 16px; }
+    .gt-actions.active { display: block; }
+    .gt-actions__label { font-size: 11px; font-weight: 600; color: var(--gt-silver); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+    .gt-actions__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 
-        .btn-generate {
-            background-color: #000;
-            color: white;
-            padding: 14px 20px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: 600;
-            width: 100%;
-            margin-top: 20px;
-            transition: background-color 0.2s;
-        }
+    .gt-progress { margin-top: 20px; display: none; }
+    .gt-progress.active { display: block; }
+    .gt-progress__track { height: 3px; background: #e8e8e8; border-radius: 2px; overflow: hidden; }
+    .gt-progress__fill { height: 100%; background: var(--gt-accent); border-radius: 2px; animation: gt-pulse 1.8s ease-in-out infinite; }
+    @keyframes gt-pulse { 0% { width:0%;margin-left:0; } 50% { width:60%;margin-left:20%; } 100% { width:0%;margin-left:100%; } }
+    .gt-progress__label { font-size: 12px; color: var(--gt-dim); margin-top: 8px; text-align: center; }
 
-        .btn-generate:hover {
-            background-color: #333;
-        }
+    .gt-result { margin-top: 20px; display: none; }
+    .gt-result.active { display: block; animation: gt-in 0.4s ease; }
+    @keyframes gt-in { from { opacity:0;transform:translateY(8px); } to { opacity:1;transform:translateY(0); } }
 
-        .btn-generate:disabled {
-            background-color: #ccc;
-            cursor: not-allowed;
-        }
+    .gt-banner { padding: 10px 14px; border-radius: var(--gt-radius); font-size: 13px; font-weight: 500; display: flex; align-items: center; gap: 8px; }
+    .gt-banner--success { background: var(--gt-green-bg); color: var(--gt-green); border: 1px solid #a5d6a7; }
+    .gt-banner--warning { background: var(--gt-amber-bg); color: var(--gt-amber); border: 1px solid #ffcc80; }
+    .gt-banner--error { background: var(--gt-red-bg); color: var(--gt-red); border: 1px solid #ef9a9a; }
 
-        .status {
-            margin-top: 20px;
-            font-size: 14px;
-            padding: 12px 16px;
-            border-radius: 6px;
-            text-align: left;
-        }
+    .gt-stats { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 14px; }
+    .gt-stat { background: var(--gt-mist); border: 1px solid #e8e8e8; border-radius: var(--gt-radius); padding: 14px 10px; text-align: center; animation: gt-pop 0.5s ease both; }
+    .gt-stat:nth-child(1) { animation-delay:.05s; } .gt-stat:nth-child(2) { animation-delay:.1s; }
+    .gt-stat:nth-child(3) { animation-delay:.15s; } .gt-stat:nth-child(4) { animation-delay:.2s; }
+    .gt-stat:nth-child(5) { animation-delay:.25s; }
+    @keyframes gt-pop { from { opacity:0;transform:scale(0.9); } to { opacity:1;transform:scale(1); } }
+    .gt-stat__value { font-size: 26px; font-weight: 700; color: var(--gt-accent); line-height: 1; }
+    .gt-stat__label { font-size: 9px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--gt-silver); margin-top: 6px; }
+    .gt-stat--fail .gt-stat__value { color: var(--gt-red); }
+    .gt-stat--warn .gt-stat__value { color: var(--gt-amber); }
+    .gt-stat--green .gt-stat__value { color: var(--gt-green); }
 
-        .status.processing {
-            color: #1565c0;
-            background: #e3f2fd;
-            border: 1px solid #bbdefb;
-        }
+    .gt-alerts { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+    .gt-alert { font-size: 12px; padding: 8px 12px; border-radius: 4px; display: flex; align-items: center; gap: 6px; }
+    .gt-alert--red { background: var(--gt-red-bg); color: var(--gt-red); border-left: 3px solid var(--gt-red); }
+    .gt-alert--amber { background: var(--gt-amber-bg); color: var(--gt-amber); border-left: 3px solid var(--gt-amber); }
+    .gt-alert--green { background: var(--gt-green-bg); color: var(--gt-green); border-left: 3px solid var(--gt-green); }
 
-        .status.success {
-            color: #2e7d32;
-            background: #e8f5e9;
-            border: 1px solid #c8e6c9;
-        }
+    .gt-errors { margin-top: 10px; font-size: 12px; color: var(--gt-red); background: var(--gt-red-bg); border: 1px solid #ef9a9a; border-radius: var(--gt-radius); padding: 10px 14px; }
+    .gt-errors__item { padding: 3px 0; border-bottom: 1px solid rgba(183,28,28,0.1); }
+    .gt-errors__item:last-child { border-bottom: none; }
+    .gt-errors__file { font-weight: 600; }
 
-        .status.error {
-            color: #c62828;
-            background: #ffebee;
-            border: 1px solid #ef9a9a;
-        }
+    /* D365 template upload modal */
+    .gt-modal-overlay { display: none; position: fixed; top:0;left:0;right:0;bottom:0; background: rgba(0,0,0,0.4); z-index: 1000; align-items: center; justify-content: center; }
+    .gt-modal-overlay.active { display: flex; }
+    .gt-modal { background: var(--gt-white); border-radius: 8px; padding: 28px 32px; max-width: 420px; width: 90%; box-shadow: 0 20px 40px rgba(0,0,0,0.15); }
+    .gt-modal h3 { margin: 0 0 6px; font-size: 18px; color: var(--gt-ink); }
+    .gt-modal p { margin: 0 0 16px; font-size: 13px; color: var(--gt-dim); }
+    .gt-modal__actions { display: flex; gap: 8px; margin-top: 16px; }
+    .gt-modal__actions .gt-btn { flex: 1; text-align: center; }
+</style>
 
-        .status.warning {
-            color: #e65100;
-            background: #fff3e0;
-            border: 1px solid #ffe0b2;
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 10px;
-            margin-top: 12px;
-        }
-
-        .stat-box {
-            background: #fafafa;
-            border: 1px solid #eee;
-            border-radius: 6px;
-            padding: 10px 8px;
-            text-align: center;
-        }
-
-        .stat-box .value {
-            font-size: 22px;
-            font-weight: 700;
-            color: #1a237e;
-        }
-
-        .stat-box .label {
-            font-size: 10px;
-            color: #999;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-top: 2px;
-        }
-
-        .stat-box.failed .value { color: #c62828; }
-        .stat-box.warned .value { color: #e65100; }
-
-        .alert-line {
-            font-size: 13px;
-            margin-top: 8px;
-            padding: 6px 10px;
-            border-radius: 4px;
-        }
-
-        .alert-line.red {
-            background: #ffebee;
-            color: #c62828;
-            border-left: 3px solid #c62828;
-        }
-
-        .alert-line.orange {
-            background: #fff3e0;
-            color: #e65100;
-            border-left: 3px solid #e65100;
-        }
-    </style>
-
-    <div class="tool-container">
-        <div class="header">
-            <span class="version-tag">v2.4</span>
-            <h2>GT Mass Dump Generator</h2>
-            <h4>Upload GT-Mass / Everyday PO Excel files</h4>
+<div class="gt-page">
+    <div class="gt-card">
+        <div class="gt-card__header">
+            <div class="gt-card__tag">Offline · v2.4</div>
+            <h1 class="gt-card__title">GT Mass Dump Generator</h1>
+            <p class="gt-card__subtitle">Upload GT-Mass / Everyday PO files → 7-sheet ERP import</p>
         </div>
 
-        <form id="uploadForm">
-            {% csrf_token %}
-            <div class="file-upload-wrapper">
-                <label for="fileInput" class="custom-file-upload">
-                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                         style="display:block; margin: 0 auto 10px;">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                        <polyline points="17 8 12 3 7 8"></polyline>
-                        <line x1="12" y1="3" x2="12" y2="15"></line>
+        <div class="gt-card__body">
+            <!-- ── Upload + Generate ── -->
+            <form id="gtForm">
+                {% csrf_token %}
+                <label class="gt-dropzone" id="dropzone" for="fileInput">
+                    <svg class="gt-dropzone__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
                     </svg>
-                    Click to Select Excel Files
+                    <p class="gt-dropzone__text">Click or drag Excel files here</p>
+                    <p class="gt-dropzone__hint">.xlsx · .xls · .xlsm — multiple files</p>
+                    <input type="file" id="fileInput" name="files" accept=".xlsx,.xls,.xlsm" multiple required>
                 </label>
-                <input type="file" id="fileInput" name="files" accept=".xlsx,.xls,.xlsm" multiple required>
+                <div class="gt-file-count" id="fileCount"></div>
+                <button type="submit" class="gt-btn gt-btn--primary" id="generateBtn">Generate Dump</button>
+            </form>
+
+            <!-- ── Post-Generate Actions (hidden until dump is generated) ── -->
+            <div class="gt-actions" id="actionsPanel">
+                <div class="gt-actions__label">Post-Generation Actions</div>
+                <div class="gt-actions__grid">
+                    <button class="gt-btn gt-btn--secondary" id="d365Btn" onclick="openD365Modal()">📤 Export D365</button>
+                    <button class="gt-btn gt-btn--secondary" id="emailBtn" onclick="sendEmail()">📧 Send Email</button>
+                </div>
+                <a href="{% url 'download_template' %}" class="gt-btn gt-btn--secondary" style="margin-top:8px;text-align:center;text-decoration:none;display:block;">📋 Download PO Template</a>
             </div>
 
-            <div id="fileCount" style="font-size: 14px; font-weight: 500;">Selected Files: 0</div>
+            <!-- ── Progress ── -->
+            <div class="gt-progress" id="progressBox">
+                <div class="gt-progress__track"><div class="gt-progress__fill"></div></div>
+                <div class="gt-progress__label" id="progressLabel">Processing files…</div>
+            </div>
 
-            <button type="submit" class="btn-generate" id="generateBtn">Generate Dump</button>
-        </form>
-
-        <div class="status" id="statusBox" style="display: none;"></div>
-        <div id="statsContainer" style="display: none;"></div>
-        <div id="alertsContainer"></div>
+            <!-- ── Results ── -->
+            <div class="gt-result" id="resultBox">
+                <div id="bannerSlot"></div>
+                <div class="gt-stats" id="statsSlot"></div>
+                <div class="gt-alerts" id="alertsSlot"></div>
+                <div id="errorSlot"></div>
+            </div>
+        </div>
     </div>
+</div>
 
-    <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            const fileInput = document.getElementById('fileInput');
-            const fileCount = document.getElementById('fileCount');
-            const uploadForm = document.getElementById('uploadForm');
-            const statusBox = document.getElementById('statusBox');
-            const statsContainer = document.getElementById('statsContainer');
-            const alertsContainer = document.getElementById('alertsContainer');
-            const generateBtn = document.getElementById('generateBtn');
+<!-- ── D365 Template Upload Modal ── -->
+<div class="gt-modal-overlay" id="d365Modal">
+    <div class="gt-modal">
+        <h3>📤 Export D365 Package</h3>
+        <p>Upload your D365 sample package template. The system will fill it with the processed data.</p>
+        <form id="d365Form">
+            {% csrf_token %}
+            <label class="gt-dropzone" for="d365TemplateInput" style="padding:20px;">
+                <p class="gt-dropzone__text" id="d365FileLabel">Click to select D365 template (.xlsx)</p>
+                <input type="file" id="d365TemplateInput" name="template" accept=".xlsx" required>
+            </label>
+            <div class="gt-modal__actions">
+                <button type="button" class="gt-btn gt-btn--secondary" onclick="closeD365Modal()">Cancel</button>
+                <button type="submit" class="gt-btn gt-btn--primary" style="margin-top:0;">Export</button>
+            </div>
+        </form>
+    </div>
+</div>
 
-            fileInput.addEventListener('change', () => {
-                fileCount.textContent = `Selected Files: ${fileInput.files.length}`;
-                // Reset previous results
-                statusBox.style.display = 'none';
-                statsContainer.style.display = 'none';
-                alertsContainer.innerHTML = '';
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const fileInput = document.getElementById('fileInput'),
+          fileCount = document.getElementById('fileCount'),
+          form      = document.getElementById('gtForm'),
+          btn       = document.getElementById('generateBtn'),
+          dropzone  = document.getElementById('dropzone'),
+          progress  = document.getElementById('progressBox'),
+          progLabel = document.getElementById('progressLabel'),
+          resultBox = document.getElementById('resultBox'),
+          banner    = document.getElementById('bannerSlot'),
+          stats     = document.getElementById('statsSlot'),
+          alerts    = document.getElementById('alertsSlot'),
+          errors    = document.getElementById('errorSlot'),
+          actions   = document.getElementById('actionsPanel');
+
+    const csrf = () => document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+    fileInput.addEventListener('change', () => {
+        const n = fileInput.files.length;
+        fileCount.innerHTML = n ? `<span>${n} file${n>1?'s':''} selected</span>` : '';
+        resetResult();
+    });
+
+    ['dragenter','dragover'].forEach(e => dropzone.addEventListener(e, ev => { ev.preventDefault(); dropzone.classList.add('drag-over'); }));
+    ['dragleave','drop'].forEach(e => dropzone.addEventListener(e, ev => { ev.preventDefault(); dropzone.classList.remove('drag-over'); }));
+    dropzone.addEventListener('drop', e => { fileInput.files = e.dataTransfer.files; fileInput.dispatchEvent(new Event('change')); });
+
+    // ── Generate Dump ──
+    form.addEventListener('submit', async e => {
+        e.preventDefault();
+        if (!fileInput.files.length) { alert('Select files first'); return; }
+
+        showProgress('Processing files…');
+        resetResult();
+        btn.disabled = true;
+
+        try {
+            const res = await fetch("{% url 'process_files' %}", {
+                method: 'POST', body: new FormData(form), headers: { 'X-CSRFToken': csrf() }
             });
+            hideProgress();
 
-            uploadForm.addEventListener('submit', async (e) => {
-                e.preventDefault();
+            if (res.ok) {
+                const h = k => res.headers.get(k) || '0';
+                const attempted=h('X-GT-Attempted'), rows=h('X-GT-Rows'), sos=h('X-GT-SOs'),
+                      failed=h('X-GT-Failed'), warnings=h('X-GT-Warnings'), missingLoc=h('X-GT-MissingLocation');
 
-                if (fileInput.files.length === 0) {
-                    alert("Please select files first");
-                    return;
-                }
+                downloadBlob(res);
 
-                // Show processing state
-                statusBox.style.display = 'block';
-                statusBox.className = 'status processing';
-                statusBox.textContent = '⏳ Processing files...';
-                statsContainer.style.display = 'none';
-                alertsContainer.innerHTML = '';
-                generateBtn.disabled = true;
+                const bad = +failed>0 || +warnings>0;
+                banner.innerHTML = `<div class="gt-banner gt-banner--${bad?'warning':'success'}">
+                    ${bad ? '⚠️ Dump generated with issues — check Warnings sheet' : '✅ Dump generated — file downloaded'}</div>`;
 
-                const formData = new FormData(uploadForm);
-                const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+                let s = `<div class="gt-stat"><div class="gt-stat__value">${attempted}</div><div class="gt-stat__label">Files</div></div>
+                    <div class="gt-stat gt-stat--green"><div class="gt-stat__value">${sos}</div><div class="gt-stat__label">Sales Orders</div></div>
+                    <div class="gt-stat"><div class="gt-stat__value">${rows}</div><div class="gt-stat__label">Line Items</div></div>`;
+                if (+failed>0)   s += `<div class="gt-stat gt-stat--fail"><div class="gt-stat__value">${failed}</div><div class="gt-stat__label">Failed</div></div>`;
+                if (+warnings>0) s += `<div class="gt-stat gt-stat--warn"><div class="gt-stat__value">${warnings}</div><div class="gt-stat__label">Warnings</div></div>`;
+                stats.innerHTML = s;
 
-                try {
-                    const response = await fetch("{% url 'process_files' %}", {
-                        method: 'POST',
-                        body: formData,
-                        headers: { 'X-CSRFToken': csrfToken },
-                    });
+                let a = '';
+                if (+failed>0)     a += `<div class="gt-alert gt-alert--red">🚫 ${failed} file(s) failed — see File → SO Mapping</div>`;
+                if (+missingLoc>0) a += `<div class="gt-alert gt-alert--amber">📍 ${missingLoc} SO(s) missing Location Code</div>`;
+                alerts.innerHTML = a;
 
-                    if (response.ok) {
-                        // ── Read summary from custom headers ──
-                        const attempted = response.headers.get('X-GT-Attempted') || '0';
-                        const rows = response.headers.get('X-GT-Rows') || '0';
-                        const sos = response.headers.get('X-GT-SOs') || '0';
-                        const failed = response.headers.get('X-GT-Failed') || '0';
-                        const warnings = response.headers.get('X-GT-Warnings') || '0';
-                        const missingLoc = response.headers.get('X-GT-MissingLocation') || '0';
+                resultBox.classList.add('active');
+                actions.classList.add('active');  // Show post-generate buttons
 
-                        // ── Download the file ──
-                        const blob = await response.blob();
-                        const disposition = response.headers.get('Content-Disposition');
-                        let filename = 'gt_mass_dump.xlsx';
+            } else {
+                const err = await res.json();
+                showError(err);
+            }
+        } catch(ex) {
+            hideProgress();
+            banner.innerHTML = `<div class="gt-banner gt-banner--error">❌ Network error</div>`;
+            resultBox.classList.add('active');
+        } finally { btn.disabled = false; }
+    });
 
-                        if (disposition && disposition.includes('filename=')) {
-                            const match = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
-                            if (match) filename = match[1].replace(/['"]/g, '');
-                        }
+    // ── D365 Export ──
+    const d365Input = document.getElementById('d365TemplateInput');
+    d365Input.addEventListener('change', () => {
+        document.getElementById('d365FileLabel').textContent = d365Input.files[0]?.name || 'Click to select';
+    });
 
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = filename;
-                        document.body.appendChild(a);
-                        a.click();
-                        a.remove();
-                        window.URL.revokeObjectURL(url);
+    document.getElementById('d365Form').addEventListener('submit', async e => {
+        e.preventDefault();
+        if (!d365Input.files.length) { alert('Select a template file'); return; }
 
-                        // ── Show success status ──
-                        const hasIssues = parseInt(failed) > 0 || parseInt(warnings) > 0;
-                        statusBox.className = hasIssues ? 'status warning' : 'status success';
-                        statusBox.textContent = hasIssues
-                            ? `✅ Dump generated with issues — check the Warnings sheet`
-                            : `✅ Dump generated successfully!`;
+        closeD365Modal();
+        showProgress('Filling D365 template…');
 
-                        // ── Show stats grid ──
-                        statsContainer.style.display = 'block';
-                        statsContainer.innerHTML = `
-                            <div class="stats-grid">
-                                <div class="stat-box">
-                                    <div class="value">${attempted}</div>
-                                    <div class="label">Files</div>
-                                </div>
-                                <div class="stat-box">
-                                    <div class="value">${sos}</div>
-                                    <div class="label">Sales Orders</div>
-                                </div>
-                                <div class="stat-box">
-                                    <div class="value">${rows}</div>
-                                    <div class="label">Line Items</div>
-                                </div>
-                                ${parseInt(failed) > 0 ? `
-                                <div class="stat-box failed">
-                                    <div class="value">${failed}</div>
-                                    <div class="label">Failed</div>
-                                </div>` : ''}
-                                ${parseInt(warnings) > 0 ? `
-                                <div class="stat-box warned">
-                                    <div class="value">${warnings}</div>
-                                    <div class="label">Warnings</div>
-                                </div>` : ''}
-                            </div>
-                        `;
+        const fd = new FormData();
+        fd.append('template', d365Input.files[0]);
+        fd.append('csrfmiddlewaretoken', csrf());
 
-                        // ── Show alerts for critical issues ──
-                        if (parseInt(failed) > 0) {
-                            alertsContainer.innerHTML += `
-                                <div class="alert-line red">
-                                    🚫 ${failed} file(s) failed template validation — see File → SO Mapping sheet
-                                </div>`;
-                        }
-                        if (parseInt(missingLoc) > 0) {
-                            alertsContainer.innerHTML += `
-                                <div class="alert-line orange">
-                                    🔴 ${missingLoc} SO(s) have empty Location Code — fill manually in output
-                                </div>`;
-                        }
-
-                    } else {
-                        // ── Error response ──
-                        const errorData = await response.json();
-                        statusBox.className = 'status error';
-
-                        if (errorData.details && errorData.details.failures) {
-                            let msg = `❌ ${errorData.error}\n\n`;
-                            errorData.details.failures.forEach(f => {
-                                msg += `• ${f.file}: ${f.reason}\n`;
-                            });
-                            statusBox.innerHTML = `<strong>❌ ${errorData.error}</strong>`;
-
-                            alertsContainer.innerHTML = errorData.details.failures.map(f =>
-                                `<div class="alert-line red">• ${f.file}: ${f.reason.substring(0, 80)}${f.reason.length > 80 ? '...' : ''}</div>`
-                            ).join('');
-                        } else {
-                            statusBox.textContent = `❌ ${errorData.error || 'An error occurred'}`;
-                        }
-                    }
-
-                } catch (error) {
-                    console.error('Error:', error);
-                    statusBox.className = 'status error';
-                    statusBox.textContent = '❌ Network error — check your connection';
-                } finally {
-                    generateBtn.disabled = false;
-                }
+        try {
+            const res = await fetch("{% url 'export_d365' %}", {
+                method: 'POST', body: fd, headers: { 'X-CSRFToken': csrf() }
             });
+            hideProgress();
+
+            if (res.ok) {
+                downloadBlob(res);
+                const sos = res.headers.get('X-D365-SOs') || '?';
+                const items = res.headers.get('X-D365-Items') || '?';
+                alerts.innerHTML += `<div class="gt-alert gt-alert--green">✅ D365 package exported — ${sos} SOs, ${items} items</div>`;
+            } else {
+                const err = await res.json();
+                alerts.innerHTML += `<div class="gt-alert gt-alert--red">❌ D365 export failed: ${err.error}</div>`;
+            }
+        } catch(ex) {
+            hideProgress();
+            alerts.innerHTML += `<div class="gt-alert gt-alert--red">❌ D365 network error</div>`;
+        }
+    });
+
+    // ── Helpers ──
+    function showProgress(msg) { progLabel.textContent = msg; progress.classList.add('active'); }
+    function hideProgress() { progress.classList.remove('active'); }
+
+    function resetResult() {
+        resultBox.classList.remove('active');
+        actions.classList.remove('active');
+        banner.innerHTML = stats.innerHTML = alerts.innerHTML = errors.innerHTML = '';
+    }
+
+    function showError(err) {
+        banner.innerHTML = `<div class="gt-banner gt-banner--error">❌ ${err.error || 'Failed'}</div>`;
+        if (err.details?.failures) {
+            errors.innerHTML = `<div class="gt-errors">${err.details.failures.map(f =>
+                `<div class="gt-errors__item"><span class="gt-errors__file">${f.file}</span>: ${f.reason.substring(0,100)}${f.reason.length>100?'…':''}</div>`
+            ).join('')}</div>`;
+        }
+        resultBox.classList.add('active');
+    }
+
+    async function downloadBlob(res) {
+        const blob = await res.blob();
+        const disp = res.headers.get('Content-Disposition') || '';
+        let fname = 'output.xlsx';
+        const m = /filename="?([^";\n]+)"?/.exec(disp);
+        if (m) fname = m[1];
+        const url = URL.createObjectURL(blob);
+        Object.assign(document.createElement('a'), {href:url, download:fname}).click();
+        URL.revokeObjectURL(url);
+    }
+});
+
+// ── D365 Modal ──
+function openD365Modal() { document.getElementById('d365Modal').classList.add('active'); }
+function closeD365Modal() { document.getElementById('d365Modal').classList.remove('active'); }
+
+// ── Send Email ──
+async function sendEmail() {
+    const btn = document.getElementById('emailBtn');
+    const alerts = document.getElementById('alertsSlot');
+    const csrf = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+    btn.disabled = true;
+    btn.textContent = '📧 Sending...';
+
+    try {
+        const res = await fetch("{% url 'send_email' %}", {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrf, 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
         });
-    </script>
+        const data = await res.json();
+
+        if (data.success) {
+            alerts.innerHTML += `<div class="gt-alert gt-alert--green">✅ Email sent to ${data.to} (CC: ${data.cc})</div>`;
+        } else {
+            alerts.innerHTML += `<div class="gt-alert gt-alert--red">❌ ${data.error}</div>`;
+        }
+    } catch(ex) {
+        alerts.innerHTML += `<div class="gt-alert gt-alert--red">❌ Email network error</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '📧 Send Email';
+    }
+}
+</script>
 {% endblock %}

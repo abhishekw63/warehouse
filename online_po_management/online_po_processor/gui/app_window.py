@@ -248,6 +248,36 @@ class OnlinePOApp:
             '<<ComboboxSelected>>', self._on_warehouse_change,
         )
 
+        # ── v2.1.3: Override Unit Price toggle ──────────────────────────
+        # Per-run checkbox controlling whether the engine-computed Cost
+        # Price gets stamped into:
+        #   * Lines (SO) col 8 (audit workbook)
+        #   * D365 Sales Line col H (ERP import package)
+        # Default state on marketplace change is taken from that
+        # marketplace's ``override_unit_price`` config flag (currently
+        # only BlinkMP has True). User can tick/untick either way per
+        # run — this widget is the canonical runtime decision; the
+        # config flag is only the default-state hint.
+        ovr_frame = tk.Frame(self.root)
+        ovr_frame.pack(fill='x', padx=20, pady=(0, 8))
+        self.override_var = tk.BooleanVar(
+            value=self._get_default_override(),
+        )
+        self.override_check = tk.Checkbutton(
+            ovr_frame,
+            text="Override Unit Price",
+            variable=self.override_var, font=("Arial", 10, "bold"),
+        )
+        self.override_check.pack(side='left')
+        # Hint label — explains what the toggle does at a glance.
+        # Kept short; the Lines (SO) sheet itself carries the full
+        # explanation as an info row when the toggle is on.
+        tk.Label(
+            ovr_frame,
+            text="(stamps computed Cost Price into Sales Line Unit Price)",
+            font=("Arial", 8), fg='gray',
+        ).pack(side='left', padx=4)
+
         # ── File selectors ──────────────────────────────────────────────
         files_frame = tk.LabelFrame(
             self.root, text="Input Files", font=("Arial", 10, "bold"),
@@ -365,12 +395,47 @@ class OnlinePOApp:
             return MARKETPLACE_CONFIGS[mkt].get('default_margin', 70)
         return 70
 
+    def _get_default_override(self) -> bool:
+        """
+        v2.1.3: Default state of the "Override Unit Price" checkbox
+        for the currently-selected marketplace.
+
+        Reads the marketplace's ``override_unit_price`` config flag —
+        True means the box pre-checks on marketplace change, False
+        means it pre-unchecks. The user can still toggle either way
+        per run; this is just the convenience default.
+
+        Currently only BlinkMP has the flag set to True (because BCPL
+        is registered in BC at 70% but BlinkMP runs at 75% and the
+        ERP would otherwise post wrong cost figures).
+        """
+        mkt = (self.marketplace_var.get()
+               if hasattr(self, 'marketplace_var') else '')
+        if mkt and mkt in MARKETPLACE_CONFIGS:
+            return bool(MARKETPLACE_CONFIGS[mkt].get(
+                'override_unit_price', False))
+        return False
+
     def _on_marketplace_change(self, _event=None) -> None:
-        """Reset margin to the newly-selected marketplace's default."""
+        """
+        Reset margin and override-toggle to the newly-selected
+        marketplace's defaults.
+
+        v2.1.3: also refreshes the "Override Unit Price" checkbox state
+        from the marketplace's ``override_unit_price`` config hint.
+        Auto-checks for BlinkMP, auto-unchecks for everything else.
+        Operator can still override either way before clicking Generate.
+        """
         margin = self._get_default_margin()
         self.margin_var.set(str(margin))
+
+        override_default = self._get_default_override()
+        if hasattr(self, 'override_var'):
+            self.override_var.set(override_default)
+
+        ovr_str = ' (Override Unit Price ON)' if override_default else ''
         self._log(f"Marketplace changed to {self.marketplace_var.get()}, "
-                  f"margin set to {margin}%")
+                  f"margin set to {margin}%{ovr_str}")
 
     def _on_warehouse_change(self, _event=None) -> None:
         """
@@ -762,6 +827,23 @@ class OnlinePOApp:
             f"Warehouse: {selected_wh} → ERP code {result.warehouse_code}"
         )
 
+        # v2.1.3: stamp the runtime override flag from the GUI checkbox
+        # onto the result. Consumed by:
+        #   * lines_sheet.write — populates Lines (SO) col 8 + adds
+        #     header tint and footer info-row when True
+        #   * d365_exporter.export — populates Sales Line col H when True
+        # Default False if the widget is missing (older code paths /
+        # tests / direct API calls).
+        result.override_unit_price = bool(
+            getattr(self, 'override_var', None)
+            and self.override_var.get()
+        )
+        if result.override_unit_price:
+            self._log(
+                "Override Unit Price: ON — Sales Line col H will carry "
+                "computed Cost Price"
+            )
+
         if not result.rows:
             self._log("ERROR: No valid rows extracted!")
             for _, _, msg in result.warnings:
@@ -785,8 +867,14 @@ class OnlinePOApp:
                           f"(see Warnings sheet)")
 
         # ── Export ──────────────────────────────────────────────────────
+        # v2.1.0: pass start_time so the exporter can stamp the full
+        # pipeline elapsed time onto result.elapsed_seconds BEFORE
+        # writing the Summary sheet — that's what makes the duration
+        # visible in the file's footer. Without this, the Summary
+        # writer sees elapsed_seconds=None and silently omits the
+        # duration segment.
         self._log("Writing output...")
-        output_path = self.exporter.export(result)
+        output_path = self.exporter.export(result, start_time=start_time)
 
         elapsed = time.time() - start_time
 
@@ -1032,10 +1120,25 @@ class OnlinePOApp:
 
     def _download_template(self) -> None:
         """
-        Generate a blank PO template for the selected marketplace.
+        v2.1.3: Generate a SINGLE workbook containing one sheet per
+        marketplace — the master PO template covering every supported
+        marketplace.
 
-        Headers are colour-coded so the user knows which columns to
-        actually fill in:
+        Sheets are named after the marketplace dict keys, with one
+        exception: BlinkMP gets two sheets ('BlinkMP (BLR)' and
+        'BlinkMP (AHD)') because both formats are valid in production
+        and the AHD/BLR ops teams use different column layouts. The
+        engine accepts either format at runtime via list-aliased
+        ``po_col`` / ``fob_col``; this template just shows both.
+
+        Pre-v2.1.3 this method generated a single-sheet workbook for
+        the currently-selected marketplace only, with a 'How this
+        works' reference sheet attached. The reference sheet pattern
+        doesn't scale to 9 marketplaces (would produce 18 sheets),
+        so it's dropped — the colour-coded headers + legend rows on
+        each marketplace sheet still convey the same information.
+
+        Headers are colour-coded the same way as before:
 
         * **BLUE** (``#1A237E``) — Required. Script fails without these.
         * **GREEN** (``#1B5E20``) — Validation. Used for price check +
@@ -1043,38 +1146,27 @@ class OnlinePOApp:
         * **GREY** (``#9E9E9E``) — Not read by script. Kept only to
           mirror the marketplace's native file format.
 
-        Includes a 3-row legend below the header explaining each colour
-        plus a final orange instruction line.
-
-        The required set adapts to ``item_resolution``:
-          * ``from_column`` → item_col is the required identifier.
-          * ``from_ean`` → ean_col is the required identifier
-            (promoted from GREEN to BLUE).
+        Each sheet's legend rows list which columns fall in each bucket.
         """
-        marketplace = self.marketplace_var.get()
-        if not marketplace or marketplace not in MARKETPLACE_CONFIGS:
-            messagebox.showwarning(
-                "No Marketplace", "Please select a marketplace first.",
-            )
-            return
-
-        config = MARKETPLACE_CONFIGS[marketplace]
-
         save_path = filedialog.asksaveasfilename(
-            title=f"Save {marketplace} PO Template",
+            title="Save All Marketplaces PO Template",
             defaultextension=".xlsx",
-            initialfile=f"{marketplace}_PO_Template.xlsx",
+            initialfile="PO_Templates_All_Marketplaces.xlsx",
             filetypes=[("Excel files", "*.xlsx")],
         )
         if not save_path:
             return
 
         try:
-            self._write_template_workbook(save_path, marketplace, config)
-            self._log(f"{marketplace} template saved → {save_path}")
+            self._write_master_template_workbook(save_path)
+            self._log(f"All-marketplaces template saved → {save_path}")
+            n_sheets = sum(1 for cfg in MARKETPLACE_CONFIGS.values()
+                            if 'template_headers_extra' in cfg) + len(MARKETPLACE_CONFIGS)
             messagebox.showinfo(
-                "Template Saved",
-                f"{marketplace} PO template saved to:\n{save_path}\n\n"
+                "Templates Saved",
+                f"Master PO template saved to:\n{save_path}\n\n"
+                f"{n_sheets} sheets (one per marketplace; BlinkMP has "
+                f"two for AHD and BLR formats).\n\n"
                 f"Header colours:\n"
                 f"  • Blue  = Required (must fill)\n"
                 f"  • Green = Validation (recommended)\n"
@@ -1086,18 +1178,83 @@ class OnlinePOApp:
                 "Error", f"Failed to save template:\n{e}",
             )
 
-    @staticmethod
-    def _write_template_workbook(save_path: str, marketplace: str,
-                                   config: dict) -> None:
+    @classmethod
+    def _write_master_template_workbook(cls, save_path: str) -> None:
         """
-        Actually build + save the PO template workbook.
+        v2.1.3: Build the multi-sheet master PO template workbook.
 
-        Split out of :meth:`_download_template` so the wrapping
-        save-dialog / success-messagebox flow stays short and readable.
+        Iterates over every marketplace in ``MARKETPLACE_CONFIGS`` and
+        appends one sheet per marketplace (two for BlinkMP — AHD and
+        BLR formats). Sheet names match dict keys, except BlinkMP
+        which becomes 'BlinkMP (BLR)' + 'BlinkMP (AHD)'.
+
+        Args:
+            save_path: Where to save the .xlsx file.
         """
         wb = Workbook()
-        ws = wb.active
-        ws.title = f'{marketplace} PO'
+        # Workbook() auto-creates an empty 'Sheet' — remove it so the
+        # final book contains only our named marketplace sheets.
+        wb.remove(wb.active)
+
+        for marketplace, config in MARKETPLACE_CONFIGS.items():
+            extra = config.get('template_headers_extra')
+            if extra:
+                # BlinkMP today is the only marketplace with an extra
+                # variant. Renders TWO sheets: the primary one (named
+                # '<marketplace> (BLR)' for BlinkMP — the current canonical
+                # format) and an extra one (named '<marketplace> (AHD)').
+                # Hardcoding the suffix here because the only marketplace
+                # using template_headers_extra is BlinkMP and its two
+                # variants are AHD/BLR. If a future marketplace gains a
+                # similar split, generalise the suffixing then.
+                cls._append_marketplace_template_sheet(
+                    wb, marketplace, config,
+                    sheet_name=f'{marketplace} (BLR)',
+                    headers_override=None,
+                )
+                cls._append_marketplace_template_sheet(
+                    wb, marketplace, config,
+                    sheet_name=f'{marketplace} (AHD)',
+                    headers_override=extra,
+                )
+            else:
+                cls._append_marketplace_template_sheet(
+                    wb, marketplace, config,
+                    sheet_name=marketplace,
+                    headers_override=None,
+                )
+
+        wb.save(save_path)
+
+    @staticmethod
+    def _append_marketplace_template_sheet(wb, marketplace: str,
+                                             config: dict,
+                                             sheet_name: str,
+                                             headers_override=None) -> None:
+        """
+        v2.1.3: Append one marketplace's template sheet to ``wb``.
+
+        Refactored from the pre-v2.1.3 ``_write_template_workbook``
+        method — same colour-coded header logic and legend rows, but
+        operates on an existing workbook instead of creating a new one.
+        Lets the master-template generator iterate over marketplaces
+        without each call instantiating a fresh ``Workbook()``.
+
+        Args:
+            wb:                Target ``openpyxl.Workbook``.
+            marketplace:       Marketplace dict key (e.g. ``'Blink'``).
+                               Used in legend / instruction text.
+            config:            Marketplace's config dict.
+            sheet_name:        Tab name for the new sheet. Must be unique
+                               within ``wb`` (caller ensures by handling
+                               BlinkMP's AHD/BLR split).
+            headers_override:  Optional alternate headers list (used for
+                               BlinkMP's 'AHD' variant which uses
+                               ``template_headers_extra`` instead of
+                               ``template_headers``). When None, the
+                               canonical ``template_headers`` is used.
+        """
+        ws = wb.create_sheet(sheet_name)
 
         # ── Determine required vs validation vs unused cols ─────────────
         # v1.5.5: column-config values can be either a scalar string
@@ -1146,11 +1303,10 @@ class OnlinePOApp:
         validation_cols |= _normalize(config.get('fob_col'))
 
         # ── Build column list ───────────────────────────────────────────
-        # Prefer the full marketplace template_headers; fall back to a
-        # minimal list built from required + validation columns.
-        # v1.5.5: list-valued column configs collapse to their
-        # slash-joined combined label here ('A/B' form), matching the
-        # convention used in the canonical template_headers.
+        # v2.1.3: when headers_override is supplied (BlinkMP AHD case),
+        # use it instead of config['template_headers']. Both lists are
+        # equally valid template forms; the override mechanism just
+        # lets us render multiple variants from one config entry.
         def _primary_label(val):
             if val is None:
                 return None
@@ -1158,26 +1314,29 @@ class OnlinePOApp:
                 return '/'.join(val)
             return val
 
-        headers = config.get('template_headers')
-        if not headers:
-            headers = [
-                _primary_label(config.get('po_col')),
-                _primary_label(config.get('loc_col')),
-            ]
-            if (item_resolution == 'from_column'
-                    and config.get('item_col')):
-                headers.append(_primary_label(config.get('item_col')))
-            headers.append(_primary_label(config.get('qty_col')))
-            ean_label = _primary_label(config.get('ean_col'))
-            if ean_label and ean_label not in headers:
-                headers.append(ean_label)
-            fob_label = _primary_label(config.get('fob_col'))
-            if fob_label and fob_label not in headers:
-                headers.append(fob_label)
-            # Filter out None in case any of the above weren't
-            # configured — shouldn't happen for a valid marketplace
-            # config but belt-and-braces.
-            headers = [h for h in headers if h]
+        if headers_override is not None:
+            headers = list(headers_override)
+        else:
+            headers = config.get('template_headers')
+            if not headers:
+                headers = [
+                    _primary_label(config.get('po_col')),
+                    _primary_label(config.get('loc_col')),
+                ]
+                if (item_resolution == 'from_column'
+                        and config.get('item_col')):
+                    headers.append(_primary_label(config.get('item_col')))
+                headers.append(_primary_label(config.get('qty_col')))
+                ean_label = _primary_label(config.get('ean_col'))
+                if ean_label and ean_label not in headers:
+                    headers.append(ean_label)
+                fob_label = _primary_label(config.get('fob_col'))
+                if fob_label and fob_label not in headers:
+                    headers.append(fob_label)
+                # Filter out None in case any of the above weren't
+                # configured — shouldn't happen for a valid marketplace
+                # config but belt-and-braces.
+                headers = [h for h in headers if h]
 
         # ── Styles per role ─────────────────────────────────────────────
         required_fill = PatternFill('solid', fgColor='1A237E')   # blue
@@ -1207,12 +1366,6 @@ class OnlinePOApp:
             )
 
         # ── Legend rows (3-5) ───────────────────────────────────────────
-        # v1.5.5: for list-valued column configs, ``required_cols``
-        # contains BOTH every alias AND the slash-joined combined
-        # label. When we list the required/validation column NAMES
-        # in the legend we only want the user-facing labels — the
-        # ones that actually appear in the header row. So we filter
-        # to the intersection with ``headers``.
         header_set = set(headers)
         required_labels = sorted(required_cols & header_set)
         validation_labels = sorted(validation_cols & header_set)
@@ -1273,311 +1426,13 @@ class OnlinePOApp:
         # ── Final orange instruction row ────────────────────────────────
         ws.cell(
             row=legend_row + 1, column=1,
-            value=(f'← {marketplace} PO template. Fill data rows below '
+            value=(f'← {sheet_name} PO template. Fill data rows below '
                    f'the header. Only the BLUE & GREEN columns are read '
                    f'by the script.'),
         ).font = Font(name='Aptos Display', size=10,
                       color='FF6600', italic=True)
 
         ws.freeze_panes = 'A2'
-
-        # ── v1.8.1: 'How this works' reference sheet ────────────────────
-        # Adds a second sheet to the template workbook that documents
-        # exactly what the engine does with this marketplace's data:
-        # which columns are consulted, what the match mode is
-        # (exact / case-insensitive / alias list), what each column
-        # contributes to the output (lookup / calculation / reference
-        # only). The goal is that opening the template answers the
-        # question "which of these columns actually matter?" without
-        # having to read Python code.
-        OnlinePOApp._append_how_this_works_sheet(wb, marketplace, config)
-
-        wb.save(save_path)
-
-    @staticmethod
-    def _append_how_this_works_sheet(wb, marketplace: str,
-                                       config: dict) -> None:
-        """
-        Append a readable reference sheet explaining the engine's
-        behavior for this marketplace.
-
-        Layout::
-
-            Row 1    : title banner
-            Row 2    : blank
-            Row 3    : "OVERVIEW" subheading
-            Row 4-5  : paragraph covering sheet selection, compare
-                       basis, HSN check, pre-processing, case-
-                       insensitivity — whichever apply
-            Row 6    : blank
-            Row 7    : per-column reference table header
-            Row 8+   : one row per column with 4 fields:
-                         Column header in file
-                         Required / Optional / Not read
-                         Match mode (Exact / Case-insensitive /
-                           Alias list / Synthetic)
-                         What the engine does with it
-            Row N    : blank
-            Row N+1  : footer note about version + generation date
-
-        The table is deterministic — derived from the same config
-        dict the engine uses — so any config change auto-updates the
-        docs on the next template download.
-        """
-        from datetime import datetime as _dt
-        from openpyxl.styles import Alignment as _Align
-
-        ref_ws = wb.create_sheet('How this works')
-
-        # Colors: match the main template's scheme so users recognise
-        # them instantly.
-        BLUE = PatternFill('solid', fgColor='001A237E')     # Required
-        GREEN = PatternFill('solid', fgColor='FF2E7D32')    # Validation
-        GREY = PatternFill('solid', fgColor='FFBDBDBD')     # Not read
-        SYN = PatternFill('solid', fgColor='FF6A1B9A')      # Synthetic
-        HEADER_FILL = PatternFill('solid', fgColor='FF37474F')
-        WHITE_FONT = Font(color='FFFFFFFF', bold=True,
-                           name='Aptos Display', size=11)
-        TITLE_FONT = Font(color='FF1A237E', bold=True,
-                           name='Aptos Display', size=16)
-        SECTION_FONT = Font(color='FF1A237E', bold=True,
-                             name='Aptos Display', size=12)
-        BODY_FONT = Font(name='Aptos Display', size=10)
-
-        # ── Row 1: title ────────────────────────────────────────────────
-        ref_ws.cell(row=1, column=1,
-                     value=f'{marketplace} — How this template is read')
-        ref_ws.cell(row=1, column=1).font = TITLE_FONT
-        ref_ws.merge_cells('A1:D1')
-
-        # ── Row 3: overview heading + paragraph ─────────────────────────
-        ref_ws.cell(row=3, column=1, value='OVERVIEW').font = SECTION_FONT
-
-        # Build the overview paragraph dynamically based on what the
-        # config opts into.
-        lines = []
-
-        # Which sheet / file structure.
-        source_sheet = config.get('source_sheet', 'Sheet1')
-        if source_sheet.endswith('*'):
-            prefix = source_sheet[:-1]
-            lines.append(
-                f"• Data sheet: any sheet name starting with "
-                f"'{prefix}' (wildcard match)."
-            )
-        else:
-            lines.append(f"• Data sheet: '{source_sheet}' (exact).")
-
-        header_row = config.get('header_row', 0)
-        if header_row:
-            lines.append(
-                f"• Column headers are on row {header_row + 1} (the "
-                f"file's title/merged-cell occupies row 1)."
-            )
-
-        # Pre-processor (Reliance).
-        if config.get('pre_process') == 'reliance_po_sheet':
-            lines.append(
-                "• PO number and location are parsed from the title "
-                "cell on row 1 ('<PO>  <Location>') and injected onto "
-                "every data row."
-            )
-
-        # Case-insensitivity.
-        if config.get('case_insensitive_cols'):
-            lines.append(
-                "• Column headers are matched case-insensitively and "
-                "whitespace-tolerantly. 'HSN', 'Hsn', 'hsn' all match; "
-                "'PO Number' and 'Po  Number' (double space) also "
-                "match. Only applies to this marketplace."
-            )
-
-        # Compare basis explainer.
-        compare_basis = config.get('compare_basis', 'cost')
-        compare_label = config.get('compare_label', 'Cost')
-        if compare_basis == 'landing':
-            lines.append(
-                f"• Price check basis: 'landing' — marketplace's "
-                f"'{compare_label}' column is compared against "
-                f"MRP × margin% (pre-GST)."
-            )
-        else:
-            lines.append(
-                f"• Price check basis: 'cost' — marketplace's "
-                f"'{compare_label}' column is compared against "
-                f"MRP × margin% ÷ GST divisor (post-GST)."
-            )
-
-        # HSN check.
-        if config.get('hsn_col'):
-            lines.append(
-                f"• HSN cross-check: ENABLED. The '{config['hsn_col']}' "
-                f"column is compared against 'HSN/SAC Code' in "
-                f"Items_March master. Mismatches surface on the "
-                f"Validation sheet and in Warnings."
-            )
-
-        # Amount formula.
-        amount_col = config.get('amount_col')
-        if amount_col:
-            if isinstance(amount_col, dict) and amount_col.get('multiply'):
-                factors = amount_col['multiply']
-                formula = ' × '.join(factors)
-                if amount_col.get('apply_margin'):
-                    formula += ' × margin%'
-                lines.append(
-                    f"• Amount per row: computed as {formula}."
-                )
-            elif isinstance(amount_col, str):
-                lines.append(
-                    f"• Amount per row: read directly from "
-                    f"'{amount_col}' column."
-                )
-
-        # v1.9.1: D365 Unit Price override (BlinkMP).
-        if config.get('override_unit_price'):
-            lines.append(
-                "• D365 Sales Line Unit Price (col H): OVERRIDDEN — "
-                "populated with our computed post-GST Cost Price "
-                "per row. Forces the ERP to record the correct "
-                "cost (e.g. BlinkMP's 75% margin) instead of the "
-                "vendor master's default (BCPL's 70% for Blinkit)."
-            )
-
-        # Render the lines.
-        for i, line in enumerate(lines):
-            cell = ref_ws.cell(row=4 + i, column=1, value=line)
-            cell.font = BODY_FONT
-            cell.alignment = _Align(wrap_text=True, vertical='top')
-            ref_ws.merge_cells(start_row=4 + i, start_column=1,
-                                end_row=4 + i, end_column=4)
-
-        # ── Per-column reference table ──────────────────────────────────
-        table_start = 4 + len(lines) + 2
-        ref_ws.cell(row=table_start, column=1,
-                     value='COLUMN REFERENCE').font = SECTION_FONT
-
-        # Table header row
-        hdr_row = table_start + 1
-        for col_idx, label in enumerate(
-            ['Column header', 'Required?', 'Match mode',
-             'What the engine does with it'], start=1,
-        ):
-            c = ref_ws.cell(row=hdr_row, column=col_idx, value=label)
-            c.fill = HEADER_FILL
-            c.font = WHITE_FONT
-            c.alignment = _Align(horizontal='center', vertical='center')
-
-        # Build the table rows from the config.
-        case_insensitive = bool(config.get('case_insensitive_cols'))
-        match_mode_scalar = (
-            'Case-insensitive' if case_insensitive else 'Exact'
-        )
-        rows = []
-
-        def _add_row(col_val, required, fill, explanation):
-            """Helper: append one ref-table row for a config column."""
-            if col_val is None:
-                return
-            if isinstance(col_val, list):
-                display = ' / '.join(col_val)
-                match_mode = f'Alias list ({match_mode_scalar})'
-            elif col_val.startswith('__') and col_val.endswith('__'):
-                display = col_val
-                match_mode = 'Synthetic (set by pre-processor)'
-            else:
-                display = col_val
-                match_mode = match_mode_scalar
-            rows.append((display, required, match_mode, explanation, fill))
-
-        # Required columns.
-        _add_row(config.get('po_col'), 'Required', BLUE,
-                  'PO number — grouped and emitted in the SO output.')
-        _add_row(config.get('loc_col'), 'Required', BLUE,
-                  'Delivery location — looked up in Ship-To B2B to '
-                  'get Cust No + Ship-to code.')
-        _add_row(config.get('qty_col'), 'Required', BLUE,
-                  'Quantity per line.')
-
-        item_resolution = config.get('item_resolution', 'from_column')
-        if item_resolution == 'from_ean':
-            _add_row(config.get('ean_col'), 'Required', BLUE,
-                      'EAN/GTIN — looked up in Items_March master '
-                      'to resolve the ERP Item No.')
-        else:
-            _add_row(config.get('item_col'), 'Required', BLUE,
-                      'ERP Item No — used directly (no master '
-                      'resolution needed).')
-
-        # Validation columns.
-        _add_row(config.get('fob_col'), 'Validation', GREEN,
-                  f"Marketplace's stated {config.get('compare_label', 'price')} "
-                  f"per unit — compared against our calculated price "
-                  f"to produce the Validation sheet's diff.")
-
-        ref_fob = config.get('ref_fob_col')
-        if ref_fob:
-            _add_row(ref_fob, 'Optional', GREEN,
-                      'Reference-only comparison column. Surfaces a '
-                      'parallel diff on the Raw Data sheet but does '
-                      'NOT affect OK/MISMATCH status.')
-
-        if config.get('hsn_col'):
-            _add_row(config.get('hsn_col'), 'Validation', GREEN,
-                      "Marketplace's HSN code — compared against "
-                      "Items_March's 'HSN/SAC Code'. Mismatches are "
-                      "flagged but don't abort the run.")
-
-        # Amount column (when scalar).
-        if isinstance(amount_col, str):
-            _add_row(amount_col, 'Validation', GREEN,
-                      'Per-row amount — summed into the email '
-                      "report's Amount stat and the Summary sheet's "
-                      'Total Amount column.')
-
-        # Write the table body.
-        for r_offset, (disp, req, mode, explain, fill) in enumerate(rows, start=1):
-            r = hdr_row + r_offset
-            # Column 1 — header cell with required-color fill
-            hdr_cell_fill = PatternFill('solid',
-                                          fgColor=fill.fgColor.rgb)
-            hc = ref_ws.cell(row=r, column=1, value=disp)
-            hc.fill = hdr_cell_fill
-            hc.font = Font(color='FFFFFFFF', bold=True,
-                           name='Aptos Display', size=10)
-            hc.alignment = _Align(vertical='center')
-
-            # Column 2 — required / optional / not read
-            rc = ref_ws.cell(row=r, column=2, value=req)
-            rc.font = BODY_FONT
-
-            # Column 3 — match mode
-            mc = ref_ws.cell(row=r, column=3, value=mode)
-            mc.font = BODY_FONT
-
-            # Column 4 — what the engine does (wraps)
-            ec = ref_ws.cell(row=r, column=4, value=explain)
-            ec.font = BODY_FONT
-            ec.alignment = _Align(wrap_text=True, vertical='center')
-
-        # ── Footer ──────────────────────────────────────────────────────
-        footer_row = hdr_row + len(rows) + 2
-        ref_ws.cell(
-            row=footer_row, column=1,
-            value=(f'Generated by Online PO Processor for {marketplace}. '
-                   f'This description is derived from the live engine '
-                   f'config — if behavior changes in a future version, '
-                   f'downloading a fresh template will reflect it.'),
-        ).font = Font(italic=True, color='FF6A6A6A',
-                       name='Aptos Display', size=9)
-        ref_ws.merge_cells(start_row=footer_row, start_column=1,
-                            end_row=footer_row, end_column=4)
-
-        # ── Column widths ──────────────────────────────────────────────
-        ref_ws.column_dimensions['A'].width = 32
-        ref_ws.column_dimensions['B'].width = 13
-        ref_ws.column_dimensions['C'].width = 22
-        ref_ws.column_dimensions['D'].width = 60
 
     # ── Run the app ────────────────────────────────────────────────────
 
