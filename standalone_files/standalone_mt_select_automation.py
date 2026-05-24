@@ -2,376 +2,437 @@
 # -*- coding: utf-8 -*-
 """
 ================================================================================
-MT Select (Health & Glow) Processor  —  v3.0
+MT Select (Health & Glow) Processor  —  v4.0
 ================================================================================
 
 PURPOSE
 -------
 Converts Health & Glow (H&G) marketplace PO CSV files into a D365-ready Excel
-workbook containing Sales Order Headers and Lines, matching the format used by
-the Online PO Management system (6 sheets: Headers, Lines, Summary, Validation,
-Warnings, Raw Data).
+workbook.  Every run produces TWO sets of Sales Orders:
+  1. Regular SOs  (SO/HG/MM/NNNNN)  — always generated
+  2. Tester SOs   (SO/HG/TT/NNNNN)  — generated IN ADDITION when the Tester
+                                       checkbox is ticked
 
-WORKFLOW OVERVIEW
------------------
-1.  App starts → auto-loads all three master files from  data_mt/  folder.
-2.  A background file-watcher thread monitors  data_mt/  every 30 seconds.
-    If any master file is updated on disk (newer mtime), it is silently
-    reloaded without user intervention — no restart required.
-3.  User selects one or more H&G PO CSV files via Browse button.
-4.  User selects warehouse (AHD / BLR) and optionally enables Tester mode.
-5.  User clicks ▶ Generate SO.
-6.  Each unique PO gets one Sales Order number:
-      Regular:  SO/HG/MM/SEQUENCE   (e.g. SO/HG/05/23526)
-      Tester:   SO/TT/MM/SEQUENCE   (e.g. SO/TT/05/101)
-    HG and TT sequences are stored SEPARATELY in data_mt/mt_select_seq.json.
-7.  Output Excel is written to  output_mt/  subfolder inside the CSV folder.
-8.  Full run log is written to  Logs/  subfolder next to the script.
+Both sets are written into the SAME output workbook so the user can review and
+upload them together or separately.
 
+================================================================================
+SO NUMBER FORMAT  (v4.0 rules)
+================================================================================
+
+REGULAR:
+  SO/HG/{MM}/{DDMYY}   where DDMYY = day(2d) + month(no pad) + year(2d)
+  Example: 24-May-2026  →  first SO = SO/HG/05/24526
+           next SO      = SO/HG/05/24527
+           next         = SO/HG/05/24528  (increment the last 5-digit block by 1)
+
+  Key rule: The FIRST SO of each day starts from today's DDMYY.
+            If today's stored sequence is already higher because the tool ran
+            earlier today, continue from it to prevent duplicate SO numbers.
+            On a new date, start again from that date's DDMYY benchmark.
+
+TESTER:
+  SO/HG/TT/{DDMYY+offset}  — uses the SAME sequence value as the regular SO.
+  Tester SOs are generated FOR EVERY PO alongside their paired regular SO.
+  Example: regular SO/HG/05/24526 pairs with tester SO/HG/TT/24526.
+
+  Example: 5 POs  →  5 regular SOs  +  5 tester SOs  = 10 SOs in the output.
+
+SEQUENCE PERSISTENCE:
+  The shared counter and its calendar date are saved in data_mt/mt_select_seq.json.
+  Format: {"date": "2026-05-24", "HG": 24530, "TT": 24530}
+  "TT" is mirrored for backward compatibility; it is not an independent counter.
+  On a new calendar date, the counter resets to DDMYY-1 so the first generated
+  regular/tester pair receives today's DDMYY benchmark.
+
+================================================================================
+WORKFLOW
+================================================================================
+1.  App starts → auto-loads 3 master files from data_mt/ folder.
+2.  Background watcher thread monitors data_mt/ every 30 s; silently reloads
+    any master file that has been updated on disk (newer mtime).
+3.  User selects CSV file(s) → chooses warehouse → optionally ticks Tester.
+4.  Click ▶ Generate SO:
+      a. Each unique PO gets one regular SO.
+      b. If Tester ticked, the SAME PO also gets one tester SO (qty=1, CP=0.54).
+      c. Both sets are written to a single Excel workbook (9 sheets).
+5.  Output saved to  <csv_folder>/output_mt/  next to the source CSVs.
+6.  Log saved to  Logs/  next to the script.
+
+================================================================================
 FOLDER STRUCTURE
-----------------
+================================================================================
   <script_folder>/
   ├── mt_select_hg_processor.py       ← this script
   ├── data_mt/                        ← master files + sequence tracker
   │   ├── HG Master*.xlsx             ← SKU → EAN mapping
   │   ├── Items*.xlsx                 ← EAN → D365 Item No, MRP, GST
   │   ├── H&G Addresses*.xlsx         ← Store Name → Ship-to / Cust No
-  │   └── mt_select_seq.json          ← persisted HG + TT sequence counters
-  ├── Logs/                           ← one timestamped .log file per run
-  └── <your_csv_folder>/
-      ├── YourPO.csv                  ← input files (selected via Browse)
-      └── output_mt/                  ← generated Excel output lands here
+  │   └── mt_select_seq.json          ← {"HG": int, "TT": int}
+  ├── Logs/                           ← timestamped .log per run
+  └── <csv_folder>/
+      ├── YourPO.csv
+      └── output_mt/
+          └── MT_Select_HG_TT_DD-MM-YYYY_HHMMSS.xlsx
 
+================================================================================
 MASTER FILE FORMATS
--------------------
+================================================================================
 HG Master (SKU → EAN):
-  • Excel (.xlsx), header auto-detected (scans first 6 rows for 'sku_code')
-  • Required columns: sku_code  (or 'sku', 'SKU CODE')
-                      ENN code  (or 'EAN', 'GTIN', 'ENN')
-  • Duplicate 'ENN code' columns handled — first occurrence is used
-  • Rows with blank EAN are skipped with a WARNING log entry
+  - Sheet: 'HG SKU MASTER' (preferred) or first sheet
+  - Header auto-detected (scans first 6 rows for 'sku_code')
+  - Columns: sku_code, ENN code  (duplicate ENN code → first used)
+  - Blank EAN rows skipped with WARNING
 
 Items Master (EAN → D365 Item):
-  • Excel (.xlsx), header at row 1
-  • Required columns: GTIN, No., Description, Mrp, GST Group Code
+  - Sheet: 'Item Master' (preferred) or first sheet
+  - Columns: GTIN, No., Description, Mrp, GST Group Code
 
 Address Master (Store → Ship-to):
-  • Excel (.xlsx), sheet name must be 'Ship-to Address List'
-  • Required columns: Name (store display name), Code (ship-to = cust no)
+  - Sheet: 'Ship-To B2B' (preferred) or 'Ship-to Address List'
+  - Columns: Del Location (or Name), Ship to (or Code), Cust No (optional)
 
-CSV INPUT FORMAT
-----------------
-Required columns (case-sensitive): PO_NO, STORE_NAME, SKU_CODE, QUANTITY, MRP
-All other columns are ignored.
-Duplicate (PO_NO, SKU_CODE) pairs across files are merged (quantities summed).
+CSV INPUT FORMAT (case-sensitive column names):
+  PO_NO, STORE_NAME, SKU_CODE, QUANTITY, MRP
+  Duplicate (PO_NO, SKU_CODE) → quantities are summed.
 
-OUTPUT FORMAT  —  6 Excel sheets
----------------------------------
-  Sheet 1 — Headers (SO)   : One row per PO / Sales Order header
-  Sheet 2 — Lines (SO)     : One row per SKU line; line numbers reset per PO
-  Sheet 3 — Summary        : One row per PO with totals and OK/WARN status
-  Sheet 4 — Validation     : Full line detail for inspection (EAN, MRP, tester)
-  Sheet 5 — Warnings       : All mapping issues in one place
-  Sheet 6 — Raw Data       : Audit trail of every processed line
+================================================================================
+OUTPUT — 9 SHEETS
+================================================================================
+  Sheet 1 — Headers (SO)  : all SOs (regular + tester) — D365 import ready
+  Sheet 2 — Lines (SO)    : all lines; line numbers reset per SO
+  Sheet 3 — Summary       : one row per PO showing both regular + tester SOs
+  Sheet 4 — SKU Pivot     : totals per SKU across regular + tester orders
+  Sheet 5 — Validation    : line-level detail — EAN, MRP, qty, type, status
+  Sheet 6 — Warnings      : all mapping issues
+  Sheet 7 — Raw Data      : generated-line audit trail with source/master detail
+  Sheet 8 — Control Check : non-blocking reconciliation checks with PASS/WARN
+  Sheet 9 — Input Audit   : every source CSV row with its processing disposition
 
-SEQUENCE LOGIC
---------------
-  Regular SO:  SO/HG/MM/NNNNN  — HG counter increments by 1 per PO
-  Tester SO:   SO/TT/MM/NNN    — TT counter increments by 1 per PO
-  Counters are INDEPENDENT — tester runs never affect regular numbering.
-  Both counters survive restarts via data_mt/mt_select_seq.json.
-  Month (MM) is always the current calendar month — auto-updates at midnight.
+================================================================================
+INTERNAL COMMERCIAL REFERENCE  (review whenever features materially change)
+================================================================================
+Current as-is handover position for this standalone workflow:
+  - One-company internal-use licence, .py + executable, no future support:
+    quote INR 1,25,000; negotiation floor normally INR 75,000 to INR 1,00,000.
+  - Exclusive ownership / resale rights: do not quote below INR 2,50,000 to
+    INR 3,50,000 without re-evaluating scope, documentation, and liability.
 
-TESTER MODE
------------
-  • All SKU quantities forced to 1 regardless of PO demand.
-  • Unit Price set to 0.54 (TESTER_CP constant) for all lines.
-  • SO prefix changes from HG to TT.
-  • TT sequence increments; HG sequence is untouched.
+This is an internal commercial estimate, not a guarantee of sale value. Reassess
+it after meaningful upgrades, new marketplace/D365 integrations, packaging,
+formal automated tests, support obligations, or proven production results.
 
-AUTO-RELOAD (background watcher)
----------------------------------
-  A daemon thread polls data_mt/ every MASTER_WATCH_INTERVAL_SEC seconds.
-  When it detects that a master file's last-modified timestamp is newer than
-  when it was last loaded, it reloads that file silently and updates the GUI
-  label.  No popup, no interruption — the GUI stays responsive because all
-  actual reload work is done in the background thread via root.after() calls
-  back onto the main Tkinter thread.
-
-DEPENDENCIES
-------------
-  pip install pandas openpyxl
-
-AUTHOR / MAINTAINER
--------------------
-  Order Management Automation Team
-  Version:  3.0
-  Updated:  2026-05-23
-  Expiry:   2026-06-30  (hard-coded; script refuses to run after this date)
-
-CHANGE LOG
-----------
-  v1.0  Initial release — basic CSV → D365 Excel conversion
-  v2.0  Added 6-sheet output, separate HG/TT sequences, logging, data_mt folder
-  v3.0  Added background auto-reload watcher, full inline documentation,
-        improved EAN deduplication, SKU column kept on SORow for Raw Data sheet
+================================================================================
+DEPENDENCIES:  pip install pandas openpyxl
+EXPIRY:        30-06-2026
+VERSION:       4.0  |  2026-05-24
 ================================================================================
 """
 
-# ── Standard library ──────────────────────────────────────────────────────────
-import os           # os.path.basename, os.startfile (Windows open-file)
-import sys          # sys.exit on expiry, sys.stdout for console logging
+# ==============================================================================
+# IMPORTS
+# ==============================================================================
+
+import os           # file operations, os.startfile (Windows open)
+import sys          # sys.exit on expiry
 import json         # sequence file read/write
-import time         # elapsed time measurement, watcher sleep
-import logging      # structured log output to file + GUI + console
-import threading    # background master-file watcher daemon thread
-import tkinter as tk                        # main GUI framework
-from tkinter import ttk, filedialog, messagebox  # themed widgets, file dialogs, popups
-from pathlib import Path                    # cross-platform path manipulation
-from datetime import datetime               # current date/time for SO month, timestamps
-from typing import List, Dict, Optional, Tuple  # type hints for IDE support
-from dataclasses import dataclass, field    # clean data model definitions
+import time         # elapsed timing, watcher sleep
+import shutil       # copy master files into data_mt/
+import logging      # structured logging: file + console + GUI
+import threading    # background watcher daemon thread
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+from pathlib import Path
+from datetime import datetime
+from typing import List, Dict, Optional, Tuple
+from dataclasses import dataclass, field
 
-# ── Third-party (must be pip-installed) ───────────────────────────────────────
-import pandas as pd                         # CSV / Excel reading, DataFrame operations
-from openpyxl import Workbook               # Excel workbook creation
-from openpyxl.styles import (               # cell styling
-    Font, PatternFill, Alignment, Border, Side
-)
+import pandas as pd
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 
 
 # ==============================================================================
-# SECTION 1 — FOLDER PATHS  (all derived from script location)
+# SECTION 1 — FOLDER PATHS
 # ==============================================================================
-# Using Path(__file__).parent ensures paths work regardless of where the user
-# launches the script from (double-click, terminal, scheduled task, etc.).
 
 SCRIPT_DIR  = Path(__file__).parent
-# SCRIPT_DIR — the folder containing this .py file.  All other paths branch
-# from here so the entire tool is self-contained and portable.
+# All paths are relative to the script file so the tool is fully portable.
 
 DATA_MT_DIR = SCRIPT_DIR / "data_mt"
-# DATA_MT_DIR — holds all three master Excel files and the sequence JSON.
-# The user never needs to touch this folder directly; auto-load handles it.
-# Naming convention "data_mt" keeps H&G master data separate from other tools.
+# Holds all three master Excel files + sequence JSON.
+# The watcher monitors this folder for file changes.
 
 OUTPUT_MT   = SCRIPT_DIR / "output_mt"
-# OUTPUT_MT — fallback output folder used only if no CSV has been loaded yet
-# (e.g. when testing the writer directly).  In normal usage the output goes to
-# <csv_folder>/output_mt/ so the Excel sits next to its source CSVs.
+# Fallback output folder. In normal use output goes to <csv_folder>/output_mt/.
 
 LOG_DIR = SCRIPT_DIR / "Logs"
-# LOG_DIR — one timestamped .log file is written here per run.
-# Logs are never deleted automatically — archive or clean manually.
+# One timestamped .log file per run. Never auto-deleted.
 
-# Create all folders immediately at import time so later code can assume they
-# exist without individual guards.
+# Create all required folders at import time.
 DATA_MT_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_MT.mkdir(parents=True, exist_ok=True)
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ==============================================================================
-# SECTION 2 — LOGGING  (file + console + GUI handler added later)
+# SECTION 2 — LOGGING
 # ==============================================================================
-# Log file name includes a timestamp so each run has its own file and old logs
-# are never overwritten.  This is critical for post-run debugging.
 
 LOG_FILE = LOG_DIR / f"mt_select_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+# Timestamped log — each run gets its own file.
 
-# File handler — DEBUG and above written to disk in UTC+local time.
-# UTF-8 encoding handles Unicode store names and product descriptions.
 file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
 file_handler.setLevel(logging.DEBUG)
 file_handler.setFormatter(
     logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%H:%M:%S")
 )
 
-# Console handler — mirrors file output to stdout so developers running from
-# a terminal can see live progress without opening the log file.
 console_handler = logging.StreamHandler(sys.stdout)
 console_handler.setLevel(logging.DEBUG)
 console_handler.setFormatter(
     logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%H:%M:%S")
 )
 
-# Named logger "mt_select" — avoids polluting the root logger, which could
-# interfere with pandas / openpyxl's own logging if they share the root.
 log = logging.getLogger("mt_select")
-log.setLevel(logging.DEBUG)          # capture everything; handlers filter level
+log.setLevel(logging.DEBUG)
 log.addHandler(file_handler)
 log.addHandler(console_handler)
-# Note: a GuiLogHandler is added AFTER the Tkinter Text widget is built —
-# see MTSelectApp.__init__() for that attachment.
+# GuiLogHandler attached later after the Tkinter Text widget is built.
 
 
 # ==============================================================================
-# SECTION 3 — CONFIGURATION CONSTANTS
+# SECTION 3 — CONFIGURATION
 # ==============================================================================
 
 EXPIRY_DATE = "30-06-2026"
-# Hard expiry date (DD-MM-YYYY).  The script checks this at startup and refuses
-# to run if today's date is past it.  Update this before deploying a new build.
+# Hard expiry (DD-MM-YYYY). Update before deploying a new build.
 
 WAREHOUSES: Dict[str, str] = {
-    "AHD": "PICK",       # Ahmedabad warehouse → D365 Location Code "PICK"
-    "BLR": "DS_BL_OFF1", # Bangalore warehouse → D365 Location Code "DS_BL_OFF1"
+    "AHD": "PICK",        # Ahmedabad → D365 Location Code
+    "BLR": "DS_BL_OFF1",  # Bangalore → D365 Location Code
 }
-# WAREHOUSES maps the user-friendly dropdown label to the exact D365 Location
-# Code that must appear in both the Header and Line sheets.  Add new warehouses
-# here without touching any other code.
+# To add a new warehouse: add key/value here only. No other changes needed.
 
 DEFAULT_WAREHOUSE = "AHD"
-# Pre-selected warehouse when the app opens.  Change if AHD is rarely used.
 
 TESTER_CP: float = 0.54
-# Cost Price used for ALL tester order lines regardless of product MRP.
-# This is a business rule — testers are always invoiced at ₹0.54.
+# Fixed Cost Price for ALL tester order lines. Business rule — never changes
+# based on product MRP.
 
 MASTER_WATCH_INTERVAL_SEC: int = 30
-# How often (in seconds) the background watcher thread checks data_mt/ for
-# updated master files.  30 seconds balances responsiveness vs CPU overhead.
-# Increase to 60+ in production if the folder is on a network share.
+# Background watcher poll interval. Increase to 60+ on network shares.
 
 SEQ_FILE = DATA_MT_DIR / "mt_select_seq.json"
-# Path to the JSON file that persists SO sequence counters across restarts.
-# Stored inside data_mt/ so it travels with the master files when the folder
-# is copied to another machine.
-# Format: {"HG": 23548, "TT": 118}
+# Persists the shared sequence and the date on which it was last used.
+# "TT" mirrors "HG" for compatibility with older builds.
+# Format: {"date": "2026-05-24", "HG": 24530, "TT": 24530}
 
 
 # ==============================================================================
 # SECTION 4 — SEQUENCE MANAGEMENT
 # ==============================================================================
-# HG (regular) and TT (tester) sequences are stored INDEPENDENTLY.
-# This prevents tester runs from consuming HG sequence numbers and keeps
-# audit trails clean — you can always tell from the SO number whether it
-# was a real order or a tester run.
+#
+# HOW SEQUENCES WORK (v4.0):
+# ---------------------------
+# The 5-digit sequence number in the SO is based on today's date in DDMYY format.
+#
+#   DDMYY = day(zero-padded 2 digits) + month(1-2 digits, no padding) + year(last 2)
+#   Example: 24-May-2026  → DD=24, M=5, YY=26  → base = 24526
+#
+# Rule 1 — First SO of the day:
+#   If the stored sequence < (today's base - 1), reset to (base - 1).
+#   This ensures the first generated SO of the day = base (after +1 increment).
+#
+# Rule 2 — Subsequent SOs same day:
+#   Each new PO increments the sequence by 1.
+#   So:  24526, 24527, 24528, ...
+#
+# Rule 3 — Stored value already higher:
+#   If a previous run today already reached 24530, the next run continues
+#   from 24530 (not reset to base). This prevents duplicate SO numbers.
+#
+# Rule 4 — Regular and tester SOs share the sequence:
+#   For a PO assigned regular SO/HG/05/24526, its tester SO is
+#   SO/HG/TT/24526. The next PO receives 24527 for both forms.
+#
+# Rule 5 — Tester runs alongside Regular:
+#   When the Tester checkbox is ticked, BOTH regular and tester SOs are
+#   generated for every PO. 5 POs → 5 regular SOs + 5 tester SOs = 10 total.
 
-def load_sequences() -> Dict[str, int]:
+def _todays_base_sequence() -> int:
     """
-    Read the persisted sequence counters from SEQ_FILE.
+    Calculate today's DDMYY base sequence number.
 
-    Returns a dict {"HG": int, "TT": int}.
-    If the file does not exist or is corrupt, returns safe defaults so the
-    app can still run — the user will see a log WARNING but no crash.
+    Formula: int(f"{day:02d}{month}{year%100:02d}")
+    Examples:
+        24-May-2026  → int("24526")  = 24526
+        01-Jan-2026  → int("01126")  = 1126
+        31-Dec-2026  → int("311226") = 311226  (6-digit for Dec 31+)
 
-    Backward compatibility: the v1 format stored {"last_sequence": N}.
-    That is detected and migrated to the new format automatically.
+    Returns:
+        Integer base sequence for today.
     """
-    # Safe defaults used when no sequence file exists yet (first run).
-    defaults: Dict[str, int] = {"HG": 23525, "TT": 100}
+    now = datetime.now()
+    # day: zero-padded 2 digits | month: no padding | year: last 2 digits
+    return int(f"{now.day:02d}{now.month}{now.year % 100:02d}")
+
+
+def load_sequences() -> Dict[str, object]:
+    """
+    Load the shared regular/tester sequence counter from SEQ_FILE.
+
+    On each call:
+    1. Read stored values (or use defaults if file missing/corrupt).
+    2. Calculate today's DDMYY benchmark and ISO calendar date.
+    3. If a dated saved sequence belongs to another calendar day, reset it to
+       benchmark - 1 so the first PO today receives the benchmark.
+    4. If an older undated file is found, preserve a higher stored HG value for
+       one migration run to avoid issuing duplicate SO numbers.
+    5. Return the counter ready for the caller to increment before assignment.
+
+    Returns:
+        dict containing ``date``, ``HG``, and mirrored ``TT`` values.
+    """
+    today_base = _todays_base_sequence()
+    today_date = datetime.now().date().isoformat()
+    defaults   = {"date": today_date, "HG": today_base - 1, "TT": today_base - 1}
 
     if not SEQ_FILE.exists():
-        # First run or data_mt was wiped — start from defaults.
-        log.debug(f"[Sequence] File not found at {SEQ_FILE}, using defaults: {defaults}")
+        log.info(
+            f"[Sequence] No sequence file found. "
+            f"Starting fresh from today's base: shared={today_base - 1} "
+            f"(first SO will be {today_base})"
+        )
         return defaults
 
     try:
         with open(SEQ_FILE, 'r') as f:
-            data = json.load(f)   # raises json.JSONDecodeError if file is corrupt
+            data = json.load(f)
 
-        if isinstance(data, dict) and "HG" in data:
-            # New format — both keys present, read them directly.
-            result = {
-                "HG": int(data.get("HG", defaults["HG"])),
-                "TT": int(data.get("TT", defaults["TT"]))
-            }
-        else:
-            # Old v1 format — migrate: HG takes the old single sequence,
-            # TT starts at its default because it didn't exist before.
-            old_seq = int(data.get("last_sequence", defaults["HG"]))
-            result = {"HG": old_seq, "TT": defaults["TT"]}
-            log.info(f"[Sequence] Migrated old format → HG={old_seq}, TT={defaults['TT']}")
+        # Migrate old v1 format {"last_sequence": N} if present.
+        if isinstance(data, dict) and "HG" not in data:
+            old = int(data.get("last_sequence", today_base - 1))
+            data = {"HG": old}
+            log.info(f"[Sequence] Reading legacy last_sequence value: HG={old}")
 
-        log.debug(f"[Sequence] Loaded: HG={result['HG']}, TT={result['TT']}")
+        hg = int(data.get("HG", today_base - 1))
+        stored_date = data.get("date")
+
+        if stored_date and stored_date != today_date:
+            log.info(
+                f"[Sequence] New calendar date: stored={stored_date}, today={today_date}. "
+                f"Resetting shared counter to {today_base-1} "
+                f"(first SO pair will use {today_base})"
+            )
+            hg = today_base - 1
+        elif hg < (today_base - 1):
+            log.info(
+                f"[Sequence] Stored shared={hg} < base-1={today_base-1}. "
+                f"Resetting to {today_base-1} (first SO pair will use {today_base})"
+            )
+            hg = today_base - 1
+        elif not stored_date:
+            log.info(
+                "[Sequence] Legacy undated sequence loaded; preserving the stored "
+                "value for duplicate protection and stamping today's date on save."
+            )
+
+        result = {"date": today_date, "HG": hg, "TT": hg}
+        log.debug(
+            f"[Sequence] Loaded: shared={hg} | date={today_date} | "
+            f"Today base={today_base} | "
+            f"Next HG SO=SO/HG/{datetime.now().strftime('%m')}/{hg+1} | "
+            f"Next Tester SO=SO/HG/TT/{hg+1}"
+        )
         return result
 
     except Exception as e:
-        # Corrupt JSON, permission error, etc. — log and fall back gracefully.
-        log.warning(f"[Sequence] Failed to read {SEQ_FILE}: {e} — using defaults")
+        log.warning(f"[Sequence] Failed to read {SEQ_FILE}: {e}. Using today's base.")
         return defaults
 
 
-def save_sequences(seqs: Dict[str, int]) -> None:
+def save_sequences(seqs: Dict[str, object]) -> None:
     """
-    Persist the current HG and TT counters to SEQ_FILE.
+    Persist the shared sequence counter to SEQ_FILE immediately after generation.
 
-    Called immediately after each successful generation run so that even if
-    the app is force-killed before the window is closed, the last sequence is
-    already saved and duplicate SOs cannot be issued on the next run.
+    Written before the popup so a force-kill cannot cause duplicate SOs.
+    The legacy ``TT`` key is written as a mirror of ``HG`` so older builds can
+    still read the file without creating a second active sequence.
 
     Args:
-        seqs:  dict with keys "HG" and "TT", both int.
+        seqs: Mapping containing the latest ``HG`` shared counter value.
     """
+    shared = int(seqs["HG"])
+    payload = {
+        "date": datetime.now().date().isoformat(),
+        "HG": shared,
+        "TT": shared,
+    }
     with open(SEQ_FILE, 'w') as f:
-        json.dump(seqs, f, indent=2)   # indent=2 makes the file human-readable
-    log.debug(f"[Sequence] Saved: {seqs}")
+        json.dump(payload, f, indent=2)
+    log.debug(f"[Sequence] Saved: date={payload['date']}, shared={shared}")
 
 
 def generate_so_number(seq: int, is_tester: bool = False) -> str:
     """
-    Build a formatted Sales Order number string.
-
-    Format:  SO/{prefix}/{MM}/{sequence}
-    Examples:
-        Regular:  SO/HG/05/23526
-        Tester:   SO/TT/05/101
-
-    The month component (MM) is derived from today's date at call time so that
-    a batch run spanning midnight automatically uses the correct month for each
-    SO without any user intervention.
+    Build a formatted SO number string.
 
     Args:
-        seq:        The integer sequence number (e.g. 23526).
-        is_tester:  If True, prefix is "TT"; otherwise "HG".
+        seq:        Integer sequence (e.g. 24526).
+        is_tester:  True → format "SO/HG/TT/seq"; False → format "SO/HG/MM/seq".
 
     Returns:
-        Formatted SO number string.
+        Regular:  e.g. "SO/HG/05/24526"
+        Tester:   e.g. "SO/HG/TT/24526"  (same seq, different prefix)
     """
-    month  = datetime.now().strftime("%m")   # zero-padded month, e.g. "05"
-    prefix = "TT" if is_tester else "HG"    # tester vs regular marketplace code
-    return f"SO/{prefix}/{month}/{seq}"
+    if is_tester:
+        return f"SO/HG/TT/{seq}"
+    else:
+        month = datetime.now().strftime("%m")   # zero-padded current month
+        return f"SO/HG/{month}/{seq}"
 
 
 # ==============================================================================
 # SECTION 5 — DATA MODELS
 # ==============================================================================
-# Using @dataclass keeps the data models concise and self-documenting.
-# All fields have explicit types so IDE type checkers catch misuse early.
 
 @dataclass
 class SORow:
     """
-    Represents one processed Sales Order line (one SKU within one PO).
+    One processed Sales Order line (one SKU within one PO).
 
-    Each SORow maps to exactly one row in the Lines (SO) sheet and one row
-    in the Validation and Raw Data sheets.  Multiple SORows share the same
-    so_number when they belong to the same PO.
+    One SORow → one row in Lines (SO), Validation, and Raw Data sheets.
+    Multiple SORows share so_number when they belong to the same PO.
 
     Fields
     ------
-    po_number   : Original PO number from the CSV (e.g. "6449964").
-    so_number   : Generated SO number (e.g. "SO/HG/05/23526").
-    sku_code    : Original SKU code from the CSV — kept for Raw Data audit.
-    item_no     : D365 Item Number resolved via EAN → Items Master lookup.
-                  "?MISSING_SKU" if SKU not found in HG Master.
-                  "?MISSING_EAN" if EAN not found in Items Master.
-    qty         : Final quantity after tester override (1 for tester, actual for regular).
-    store_name  : Store/location name from CSV STORE_NAME column.
-    ship_to     : Ship-to Code from Address Master (e.g. "HG-MUM-001").
-    cust_no     : Customer Number from Address Master (same value as ship_to for H&G).
-    ean         : EAN barcode resolved via SKU → HG Master lookup.
+    po_number   : Original PO number from CSV (e.g. "6449964").
+    so_number   : Generated SO (e.g. "SO/HG/05/24526").
+    row_type    : "REGULAR" or "TESTER" — distinguishes which set this row
+                  belongs to. Critical for inspection in Summary/Validation.
+    sku_code    : Original SKU from CSV (kept for Raw Data audit).
+    item_no     : D365 Item Number from Items Master.
+                  Blank if SKU/EAN mapping is missing; see Warnings sheet.
+    qty         : Final quantity (always 1 for tester; actual for regular).
+    store_name  : CSV STORE_NAME value.
+    ship_to     : Ship-to Code from Address Master.
+    cust_no     : Customer Number (= ship_to for H&G).
+    ean         : EAN resolved via HG Master. Empty if lookup failed.
     description : Product description from Items Master.
-    mrp         : Maximum Retail Price from Items Master (0.0 if missing).
-    unit_price  : 0.54 for tester orders; empty string in output for regular.
-    line_no     : Line number within the SO (10000, 20000, …); reset per PO.
-    is_tester   : True when generated in Tester mode.
-    status      : "OK" if all lookups succeeded; "WARN" if any mapping failed.
+    mrp         : MRP from Items Master (0.0 if missing).
+    input_mrp   : MRP supplied in the input CSV for source/master comparison.
+    source_files: Source CSV filename(s) contributing to this consolidated line.
+    unit_price  : 0.54 for tester; 0.0 (written blank) for regular.
+    line_no     : 1000, 2000,... resets per SO (not per PO, so regular and
+                  tester versions of the same PO each have their own line sequence).
+    is_tester   : True when row was generated in tester mode.
+    status      : "OK" if all lookups succeeded; "WARN" if any failed.
     """
     po_number:   str
     so_number:   str
-    sku_code:    str          # kept for full audit trail in Raw Data sheet
+    row_type:    str          # "REGULAR" or "TESTER"
+    sku_code:    str
     item_no:     str
     qty:         int
     store_name:  str
@@ -380,6 +441,8 @@ class SORow:
     ean:         str
     description: str
     mrp:         float = 0.0
+    input_mrp:   float = 0.0
+    source_files: str  = ""
     unit_price:  float = 0.0
     line_no:     int   = 0
     is_tester:   bool  = False
@@ -389,212 +452,197 @@ class SORow:
 @dataclass
 class ProcessingResult:
     """
-    Container for everything produced by a single process_csv_files() call.
+    Everything produced by one process_csv_files() call.
 
-    This object is created once per Generate button click and passed to the
-    writer.  Keeping all outputs here (rather than globals) makes the
-    processing engine stateless and easy to unit-test.
+    Stateless container — created once per Generate click, passed to writer.
 
     Fields
     ------
-    rows          : Ordered list of SORow objects — one per SKU per PO.
-    warnings      : List of (po_number, sku_code, message) tuples for the
-                    Warnings sheet.  Non-fatal — processing continues.
-    input_files   : List of CSV file paths that were processed (for Raw Data).
-    warehouse_code: D365 Location Code (e.g. "PICK") used on all lines.
-    warehouse_display: User-facing warehouse name (e.g. "AHD").
-    is_tester     : Whether this run was in tester mode.
-    hg_sequence   : The HG counter value AFTER this run (saved to JSON).
-    tt_sequence   : The TT counter value AFTER this run (saved to JSON).
-    so_map        : dict mapping po_number → so_number for quick lookup.
-    po_summary    : dict mapping po_number → summary dict used for Summary sheet.
-                    Each summary dict has keys: so_number, store, ship_to,
-                    cust_no, items (count), total_qty, status.
+    rows            : All SORow objects (regular + tester interleaved by PO).
+    warnings        : (po_number, sku_code, message) tuples.
+    input_files     : CSV paths processed (for Raw Data source column).
+    warehouse_code  : D365 Location Code (e.g. "PICK").
+    warehouse_display: User label (e.g. "AHD").
+    generate_tester : Whether tester SOs were also generated this run.
+    hg_sequence     : HG counter AFTER this run (used for both regular and tester).
+    regular_so_map  : {po_number → regular_so_number}
+    tester_so_map   : {po_number → tester_so_number}  (empty if no tester)
+    po_summary      : {po_number → summary_dict} for Summary sheet.
+                      summary_dict keys: regular_so, tester_so, store,
+                      ship_to, cust_no, items, regular_qty, tester_qty,
+                      status, warnings_count.
+    input_po_count  : Unique valid PO count after input validation.
+    input_line_count: Unique valid (PO, SKU) count after duplicate consolidation.
+    input_qty_total : Total valid regular quantity after duplicate consolidation.
+    skipped_rows    : Count of invalid input rows skipped with warnings.
+    input_rows_read : Count of physical data rows read from CSV files.
+    input_file_events: File-level audit entries where rows could not be audited.
+    control_checks  : Non-blocking reconciliation results written to Excel.
+    input_audit     : One trace record per source CSV row, plus file-level
+                      errors where a CSV cannot be read.
     """
-    rows:              List[SORow]          = field(default_factory=list)
-    warnings:          List[Tuple[str, str, str]] = field(default_factory=list)
-    input_files:       List[str]            = field(default_factory=list)
-    warehouse_code:    str                  = "PICK"
-    warehouse_display: str                  = "AHD"
-    is_tester:         bool                 = False
-    hg_sequence:       int                  = 0
-    tt_sequence:       int                  = 0
-    so_map:            Dict[str, str]       = field(default_factory=dict)
-    po_summary:        Dict[str, dict]      = field(default_factory=dict)
+    rows:             List[SORow]               = field(default_factory=list)
+    warnings:         List[Tuple[str, str, str]] = field(default_factory=list)
+    input_files:      List[str]                 = field(default_factory=list)
+    warehouse_code:   str                       = "PICK"
+    warehouse_display: str                      = "AHD"
+    generate_tester:  bool                      = False
+    hg_sequence:      int                       = 0
+    regular_so_map:   Dict[str, str]            = field(default_factory=dict)
+    tester_so_map:    Dict[str, str]            = field(default_factory=dict)
+    po_summary:       Dict[str, dict]           = field(default_factory=dict)
+    input_po_count:   int                       = 0
+    input_line_count: int                       = 0
+    input_qty_total:  int                       = 0
+    skipped_rows:     int                       = 0
+    input_rows_read:  int                       = 0
+    input_file_events: int                      = 0
+    control_checks:   List[Tuple[str, str, str, str, str]] = field(default_factory=list)
+    input_audit:      List[Dict[str, object]]    = field(default_factory=list)
 
 
 # ==============================================================================
 # SECTION 6 — MASTER FILE LOADERS
 # ==============================================================================
-# Each loader class is responsible for exactly one master file.
-# They expose a .load(path) method that returns the count of records loaded
-# and populates an internal dict used by the processing engine.
-# Keeping them as classes (not plain functions) lets the MTSelectApp hold
-# references and the watcher thread reload them in place.
 
 class HGMasterLoader:
     """
-    Loads the SKU → EAN mapping from the HG Master Excel file.
+    Loads SKU → EAN mapping from the HG Master Excel file.
 
-    Handles:
-    - Auto-detecting the header row (scans first 6 rows for 'sku_code').
-    - Duplicate column names: your file has 'ENN code' twice; pandas renames
-      the second one to 'ENN code.1'. We always pick the FIRST occurrence.
-    - Float EANs: Excel sometimes stores 8906121641769 as 8906121641769.0.
-      These are converted to clean integer strings.
-    - Blank EAN rows (rows 141-147 in your master): skipped with WARNING.
+    Sheet priority:
+      1. Sheet named 'HG SKU MASTER' (case-insensitive).
+      2. Fallback: first sheet with header auto-detected (scans 6 rows).
+
+    Column detection:
+      SKU: any of  sku_code | sku code | sku  (case-insensitive).
+      EAN: any of  enn code | ean | gtin | enn  (first match wins —
+           handles your duplicate 'ENN code' columns by always taking col C).
+
+    Blank EAN rows (e.g. rows 141-147 in your master) are skipped with
+    a WARNING log entry — they do not crash the load.
 
     Attributes:
-        sku_to_ean  (dict):   Maps str(sku_code) → str(ean).
-        source_path (Path):   Path of the last successfully loaded file.
-        last_mtime  (float):  os.path.getmtime at load time — used by watcher.
+        sku_to_ean  : {str(sku) → str(ean)}
+        source_path : Last successfully loaded file.
+        last_mtime  : os.path.getmtime at load time (used by watcher).
     """
 
     def __init__(self):
         self.sku_to_ean:  Dict[str, str] = {}
         self.source_path: Optional[Path] = None
-        self.last_mtime:  float          = 0.0   # epoch seconds; 0 means never loaded
+        self.last_mtime:  float          = 0.0
 
     def load(self, path: Path) -> int:
         """
-        Load SKU→EAN mappings from the given Excel file.
-
-        Args:
-            path:  Absolute Path to the HG Master .xlsx file.
-
-        Returns:
-            Number of valid SKU→EAN pairs loaded.
-
-        Raises:
-            FileNotFoundError: if path does not exist.
-            ValueError:        if SKU or EAN column cannot be found, or if
-                               the file is unreadable.
+        Load SKU→EAN mappings. Returns count of valid pairs loaded.
+        Raises FileNotFoundError or ValueError on failure.
         """
-        log.info(f"[HG Master] Loading from: {path}")
-
+        log.info(f"[HG Master] Loading: {path.name}")
         if not path.exists():
             raise FileNotFoundError(f"File not found: {path}")
 
         self.source_path = path
-        self.last_mtime  = os.path.getmtime(path)  # record mtime BEFORE reading
+        self.last_mtime  = os.path.getmtime(path)
 
-        # ── Step 1: Auto-detect header row ───────────────────────────────────
-        # We read the first 6 rows WITHOUT a header (header=None) so we can
-        # inspect raw cell values.  We look for a row where any cell equals
-        # 'sku_code', 'sku code', or 'sku' (case-insensitive).  This survives
-        # files where someone inserted a title row at the top.
+        # Inspect available sheets.
         try:
-            df_scan = pd.read_excel(path, header=None, nrows=6)
+            xls = pd.ExcelFile(path)
+            sheets = [s.strip() for s in xls.sheet_names]
+            log.debug(f"[HG Master] Sheets found: {sheets}")
         except Exception as e:
-            raise ValueError(f"Cannot read Excel for header scan: {e}")
+            raise ValueError(f"Cannot open Excel: {e}")
 
-        header_row: Optional[int] = None
-        for i, row in df_scan.iterrows():
-            # Normalise each cell to lowercase stripped string for comparison.
-            row_vals = [str(v).strip().lower() for v in row.values]
-            if any(v in ('sku_code', 'sku code', 'sku') for v in row_vals):
-                header_row = i   # found the row index (0-based)
-                log.info(f"[HG Master] Header auto-detected at row index {i} (Excel row {i+1})")
-                break
+        # Choose sheet: prefer 'HG SKU MASTER', fall back to auto-detect.
+        target = next(
+            (s for s in sheets if s.lower() in ('hg sku master', 'hg_sku_master')), None
+        )
 
-        if header_row is None:
-            # No recognisable header found in first 6 rows — fall back to row 0
-            # and let the column-finding logic below raise a clearer error.
-            log.warning("[HG Master] Could not auto-detect header row — defaulting to index 0")
-            header_row = 0
+        if target:
+            try:
+                df = pd.read_excel(path, sheet_name=target, header=0)
+                log.info(f"[HG Master] Using sheet '{target}'")
+            except Exception as e:
+                raise ValueError(f"Cannot read sheet '{target}': {e}")
+        else:
+            # Auto-detect header row by scanning first 6 rows.
+            try:
+                df_scan = pd.read_excel(path, header=None, nrows=6)
+            except Exception as e:
+                raise ValueError(f"Cannot scan Excel: {e}")
 
-        # ── Step 2: Re-read with correct header row ───────────────────────────
-        try:
-            df = pd.read_excel(path, header=header_row)
-        except Exception as e:
-            raise ValueError(f"Cannot read Excel with header={header_row}: {e}")
+            header_row = None
+            for i, row in df_scan.iterrows():
+                vals = [str(v).strip().lower() for v in row.values]
+                if any(v in ('sku_code', 'sku code', 'sku') for v in vals):
+                    header_row = i
+                    log.info(f"[HG Master] Header auto-detected at row {i} (Excel row {i+1})")
+                    break
 
-        # Strip leading/trailing whitespace from every column name so that
-        # '  sku_code  ' still matches 'sku_code'.
+            if header_row is None:
+                log.warning("[HG Master] Header not found — defaulting to row 0")
+                header_row = 0
+
+            try:
+                df = pd.read_excel(path, header=header_row)
+            except Exception as e:
+                raise ValueError(f"Cannot read with header={header_row}: {e}")
+
         df.columns = [str(c).strip() for c in df.columns]
-        log.debug(f"[HG Master] Columns after strip: {list(df.columns)}")
-        log.debug(f"[HG Master] Total data rows: {len(df)}")
+        log.debug(f"[HG Master] Columns: {list(df.columns)} | Rows: {len(df)}")
 
-        # ── Step 3: Locate SKU column ─────────────────────────────────────────
-        sku_col: Optional[str] = None
-        for col in df.columns:
-            if col.lower() in ('sku_code', 'sku code', 'sku'):
-                sku_col = col
-                log.info(f"[HG Master] SKU column identified: '{sku_col}'")
-                break
-        if sku_col is None:
+        # Locate SKU column.
+        sku_col = next(
+            (c for c in df.columns if c.lower() in ('sku_code', 'sku code', 'sku')), None
+        )
+        if not sku_col:
             raise ValueError(
-                f"No SKU column found in HG Master.\n"
-                f"Available columns: {list(df.columns)}\n"
-                f"Expected one of: sku_code, sku code, sku"
+                f"No SKU column found.\nAvailable: {list(df.columns)}\n"
+                f"Expected: sku_code | sku code | sku"
             )
+        log.info(f"[HG Master] SKU column: '{sku_col}'")
 
-        # ── Step 4: Locate EAN column ─────────────────────────────────────────
-        # YOUR FILE has two columns both named 'ENN code'.  Pandas auto-renames
-        # the second to 'ENN code.1'.  We iterate in column order and take the
-        # FIRST match so we always get the correct EAN (column C, not G).
-        # We strip '.1', '.2' etc. suffixes before comparing so the duplicate
-        # detection works regardless of how many duplicates exist.
-        ean_col: Optional[str] = None
-        for col in df.columns:
-            # Remove pandas duplicate suffix (e.g. '.1', '.2') then compare.
-            col_norm = col.lower().split('.')[0].strip()
-            if col_norm in ('enn code', 'enn', 'ean', 'gtin', 'ean code'):
-                ean_col = col
-                log.info(f"[HG Master] EAN column identified: '{ean_col}' (first match wins)")
-                break
-        if ean_col is None:
+        # Locate EAN column — FIRST match only (handles duplicate 'ENN code').
+        # Stripping pandas suffix '.1'/'.2' before comparing.
+        ean_col = next(
+            (c for c in df.columns
+             if c.lower().split('.')[0].strip() in ('enn code', 'ean', 'gtin', 'enn', 'ean code')),
+            None
+        )
+        if not ean_col:
             raise ValueError(
-                f"No EAN column found in HG Master.\n"
-                f"Available columns: {list(df.columns)}\n"
-                f"Expected one of: ENN code, EAN, GTIN, ENN"
+                f"No EAN column found.\nAvailable: {list(df.columns)}\n"
+                f"Expected: ENN code | EAN | GTIN | ENN"
             )
+        log.info(f"[HG Master] EAN column: '{ean_col}' (first match — duplicates ignored)")
 
-        # ── Step 5: Build SKU → EAN dict ─────────────────────────────────────
-        self.sku_to_ean.clear()   # reset in case this is a reload
-        loaded        = 0   # count of valid mappings added
-        skipped_blank = 0   # rows where EAN is empty/NaN (known gap in master)
-        skipped_sku   = 0   # rows where SKU itself is empty
+        # Build SKU → EAN dict.
+        self.sku_to_ean.clear()
+        loaded = 0
+        skipped_blank_ean = 0
+        skipped_blank_sku = 0
 
         for idx, row in df.iterrows():
             raw_sku = row[sku_col]
             raw_ean = row[ean_col]
 
-            # ── SKU validation ────────────────────────────────────────────────
             if pd.isna(raw_sku):
-                # Completely empty row (e.g. trailing blank rows in Excel).
-                skipped_sku += 1
+                skipped_blank_sku += 1
                 continue
-
             sku = str(raw_sku).strip()
             if not sku or sku.lower() == 'nan':
-                # Cell contained a literal "nan" string or just spaces.
-                skipped_sku += 1
+                skipped_blank_sku += 1
                 continue
 
-            # ── EAN validation ────────────────────────────────────────────────
-            # Rows 141-147 in your master have blank EAN — do NOT crash,
-            # just skip with a WARNING so it appears in the run log.
+            # Blank EAN — skip gracefully with a WARNING (not a crash).
             if pd.isna(raw_ean) or str(raw_ean).strip().lower() in ('', 'nan'):
-                skipped_blank += 1
-                log.warning(
-                    f"[HG Master] Row {idx + 2} (Excel): "
-                    f"SKU '{sku}' has blank EAN — skipped (add EAN to master to fix)"
-                )
+                skipped_blank_ean += 1
+                log.warning(f"[HG Master] Row {idx+2}: SKU '{sku}' has blank EAN — skipped")
                 continue
 
-            # ── EAN type normalisation ────────────────────────────────────────
-            # Excel often stores 13-digit GTINs as floats (e.g. 8906121641769.0).
-            # We convert:
-            #   float  → int → str  (removes the .0)
-            #   int    → str        (already clean)
-            #   str    → strip + remove trailing .0 if present
+            # Normalise EAN type (float, int, str).
             if isinstance(raw_ean, float):
-                # Check for float NaN that slipped through the isna() check
-                # (can happen with some openpyxl/xlrd versions).
-                if raw_ean != raw_ean:   # NaN is the only float that != itself
-                    skipped_blank += 1
-                    log.warning(f"[HG Master] Row {idx+2}: SKU '{sku}' EAN is float NaN — skipped")
+                if raw_ean != raw_ean:   # NaN check (NaN != NaN is the only such float)
+                    skipped_blank_ean += 1
                     continue
                 ean = str(int(raw_ean)) if raw_ean == int(raw_ean) else str(raw_ean)
             elif isinstance(raw_ean, int):
@@ -602,58 +650,43 @@ class HGMasterLoader:
             else:
                 ean = str(raw_ean).strip()
                 if ean.endswith('.0'):
-                    ean = ean[:-2]   # strip the ".0" suffix from string form
+                    ean = ean[:-2]
 
-            # Final check — ensure we didn't end up with an empty/nan string.
             if not ean or ean.lower() == 'nan':
-                skipped_blank += 1
-                log.warning(f"[HG Master] Row {idx+2}: SKU '{sku}' EAN resolved to empty — skipped")
+                skipped_blank_ean += 1
                 continue
 
-            # ── Store mapping ─────────────────────────────────────────────────
             self.sku_to_ean[sku] = ean
             loaded += 1
 
-        # ── Summary log ───────────────────────────────────────────────────────
         log.info(
-            f"[HG Master] Load complete — "
-            f"Loaded: {loaded} | Blank EAN skipped: {skipped_blank} | "
-            f"Blank SKU skipped: {skipped_sku}"
+            f"[HG Master] Done: loaded={loaded} | "
+            f"blank_EAN={skipped_blank_ean} | blank_SKU={skipped_blank_sku}"
         )
-
         if loaded == 0:
-            # Nothing loaded at all — raise so the GUI shows an error popup.
             raise ValueError(
-                f"No valid SKU→EAN mappings found in HG Master.\n"
-                f"SKU column used: '{sku_col}'\n"
-                f"EAN column used: '{ean_col}'\n"
-                f"All columns found: {list(df.columns)}\n"
-                f"Check that header row {header_row+1} is correct and data starts below it."
+                f"No valid SKU→EAN mappings found.\n"
+                f"SKU col='{sku_col}', EAN col='{ean_col}'\n"
+                f"All cols: {list(df.columns)}"
             )
-
-        # Log a 5-item sample for quick sanity check in the run log.
-        sample = list(self.sku_to_ean.items())[:5]
-        log.debug(f"[HG Master] Sample mappings (first 5): {sample}")
-
+        log.debug(f"[HG Master] Sample (first 5): {list(self.sku_to_ean.items())[:5]}")
         return loaded
 
 
 class ItemsMasterLoader:
     """
-    Loads the EAN → D365 Item details mapping from the Items Master Excel file.
+    Loads EAN → D365 Item details from the Items Master Excel file.
 
-    Expected columns (header at row 1):
-        GTIN            — 13-digit EAN barcode (used as key)
-        No.             — D365 Item Number
-        Description     — Product description text
-        Mrp             — Maximum Retail Price (float)
-        GST Group Code  — e.g. "G-18-S" (used for validation, not D365 import)
+    Sheet priority:
+      1. Sheet named 'Item Master' (case-insensitive).
+      2. Fallback: first sheet.
+
+    Required columns: GTIN, No., Description, Mrp, GST Group Code
 
     Attributes:
-        ean_to_item  (dict):  Maps str(EAN) → {"item_no", "description",
-                                                "mrp", "gst_code"}.
-        source_path  (Path):  Path of the last loaded file.
-        last_mtime   (float): File modification time at last load.
+        ean_to_item : {str(EAN) → {item_no, description, mrp, gst_code}}
+        source_path : Last loaded file.
+        last_mtime  : Mtime at last load.
     """
 
     def __init__(self):
@@ -662,87 +695,74 @@ class ItemsMasterLoader:
         self.last_mtime:   float           = 0.0
 
     def load(self, path: Path) -> int:
-        """
-        Load EAN→Item mappings from the given Excel file.
-
-        Returns count of EAN mappings loaded.
-        Raises FileNotFoundError or ValueError on failure.
-        """
-        log.info(f"[Items Master] Loading from: {path}")
-
+        """Load EAN→Item mappings. Returns count loaded."""
+        log.info(f"[Items Master] Loading: {path.name}")
         if not path.exists():
-            raise FileNotFoundError(f"Items Master not found: {path}")
+            raise FileNotFoundError(f"Not found: {path}")
 
         self.source_path = path
         self.last_mtime  = os.path.getmtime(path)
 
-        df = pd.read_excel(path, header=0)   # header at first row
-        log.debug(f"[Items Master] Columns: {list(df.columns)}, Rows: {len(df)}")
+        try:
+            xls    = pd.ExcelFile(path)
+            sheets = [s.strip() for s in xls.sheet_names]
+        except Exception as e:
+            raise ValueError(f"Cannot open Excel: {e}")
 
-        # Validate required columns before processing.
-        for required_col in ('GTIN', 'No.'):
-            if required_col not in df.columns:
+        target = next((s for s in sheets if s.lower() == 'item master'), None)
+        try:
+            df = pd.read_excel(path, sheet_name=target, header=0) if target \
+                 else pd.read_excel(path, header=0)
+        except Exception as e:
+            raise ValueError(f"Cannot read Items Master: {e}")
+
+        log.debug(f"[Items Master] Columns: {list(df.columns)} | Rows: {len(df)}")
+
+        for col in ('GTIN', 'No.'):
+            if col not in df.columns:
                 raise ValueError(
-                    f"Items Master is missing required column '{required_col}'.\n"
-                    f"Available columns: {list(df.columns)}"
+                    f"Missing column '{col}'.\nAvailable: {list(df.columns)}"
                 )
 
-        # Convert GTIN (which Excel may store as float) to clean string.
-        # .str.replace removes trailing '.0' from float-derived strings.
         df['GTIN_str'] = (
-            df['GTIN']
-            .astype(str)
-            .str.strip()
-            .str.replace(r'\.0$', '', regex=True)
+            df['GTIN'].astype(str).str.strip()
+                      .str.replace(r'\.0$', '', regex=True)
         )
 
-        self.ean_to_item.clear()   # reset for reload support
-
+        self.ean_to_item.clear()
         for _, row in df.iterrows():
             ean     = row['GTIN_str']
             item_no = str(row['No.']).strip()
-
-            # Description may be missing for some items — default to empty string.
-            desc = (
-                str(row.get('Description', ''))
-                if pd.notna(row.get('Description'))
-                else ''
-            )
-
-            # MRP — float, default 0.0 if missing.
-            mrp_raw = row.get('Mrp')
-            mrp = float(mrp_raw) if pd.notna(mrp_raw) else 0.0
-
-            # GST Group Code — e.g. "G-18-S"; default empty if missing.
+            desc    = str(row.get('Description', '')) if pd.notna(row.get('Description')) else ''
+            mrp     = float(row['Mrp']) if pd.notna(row.get('Mrp')) else 0.0
             gst_raw = row.get('GST Group Code')
-            gst = str(gst_raw).strip() if pd.notna(gst_raw) else ''
-
+            gst     = str(gst_raw).strip() if pd.notna(gst_raw) else ''
             self.ean_to_item[ean] = {
-                'item_no':     item_no,
-                'description': desc,
-                'mrp':         mrp,
-                'gst_code':    gst,
+                'item_no': item_no, 'description': desc,
+                'mrp': mrp, 'gst_code': gst,
             }
 
-        log.info(f"[Items Master] Loaded {len(self.ean_to_item)} EAN→Item mappings")
-        log.debug(f"[Items Master] Sample (first 3): {list(self.ean_to_item.items())[:3]}")
+        log.info(f"[Items Master] Loaded {len(self.ean_to_item)} EAN mappings")
         return len(self.ean_to_item)
 
 
 class AddressMasterLoader:
     """
-    Loads the Store Name → Ship-to Code / Customer Number mapping from
-    the H&G Addresses Excel file.
+    Loads Store Name → Ship-to / Customer Number from H&G Addresses Excel.
 
-    Expected sheet name: 'Ship-to Address List'  (exact match required)
-    Expected columns:
-        Name  — store display name matching STORE_NAME in the CSV
-        Code  — ship-to code (also used as Customer No. for H&G)
+    Sheet priority:
+      1. 'Ship-To B2B'
+      2. 'Ship-to Address List'
+
+    Column detection (flexible):
+      Store:   Del Location | Del_Location | Name | Store | Location Name
+      Ship-to: Ship to | Ship-to | Ship_to | ShipTo
+      Cust No: Cust No | Cust_No | Customer  (falls back to ship_to if absent)
 
     Attributes:
-        store_to_ship (dict):  Maps str(store_name) → {"ship_to", "cust_no"}.
-        source_path   (Path):  Path of the last loaded file.
-        last_mtime    (float): File modification time at last load.
+        store_to_ship : {str(store_name) → {ship_to, cust_no}}
+        source_path   : Last loaded file.
+        last_mtime    : Mtime at last load.
     """
 
     def __init__(self):
@@ -751,193 +771,193 @@ class AddressMasterLoader:
         self.last_mtime:    float           = 0.0
 
     def load(self, path: Path) -> int:
-        """
-        Load Store→Ship-to mappings from the given Excel file.
-
-        Returns count of store mappings loaded.
-        Raises FileNotFoundError or ValueError on failure.
-        """
-        log.info(f"[Address Master] Loading from: {path}")
-
+        """Load Store→ShipTo mappings. Returns count loaded."""
+        log.info(f"[Address Master] Loading: {path.name}")
         if not path.exists():
-            raise FileNotFoundError(f"Address Master not found: {path}")
+            raise FileNotFoundError(f"Not found: {path}")
 
         self.source_path = path
         self.last_mtime  = os.path.getmtime(path)
 
-        # sheet_name must match exactly — 'Ship-to Address List'.
-        # If the sheet is renamed, this raises a ValueError with a clear message.
         try:
-            df = pd.read_excel(path, sheet_name='Ship-to Address List', header=0)
+            xls    = pd.ExcelFile(path)
+            sheets = [s.strip() for s in xls.sheet_names]
         except Exception as e:
+            raise ValueError(f"Cannot open Excel: {e}")
+
+        # Find the best sheet.
+        target = None
+        for name in ('ship-to b2b', 'ship-to address list', 'shipto', 'addresses'):
+            target = next((s for s in sheets if s.strip().lower() == name), None)
+            if target:
+                break
+        if not target:
             raise ValueError(
-                f"Could not read sheet 'Ship-to Address List' from {path.name}.\n"
-                f"Error: {e}\n"
-                f"Check that the sheet exists with this exact name."
+                f"Cannot find sheet. Available: {sheets}\n"
+                f"Expected: 'Ship-To B2B' or 'Ship-to Address List'"
             )
 
-        log.debug(f"[Address Master] Columns: {list(df.columns)}, Rows: {len(df)}")
+        try:
+            df = pd.read_excel(path, sheet_name=target, header=0)
+            log.info(f"[Address Master] Using sheet '{target}'")
+        except Exception as e:
+            raise ValueError(f"Cannot read sheet '{target}': {e}")
 
-        # Find 'Name' and 'Code' columns (case-insensitive).
-        store_col = next((c for c in df.columns if c.lower() == 'name'), None)
-        ship_col  = next((c for c in df.columns if c.lower() == 'code'), None)
+        log.debug(f"[Address Master] Columns: {list(df.columns)} | Rows: {len(df)}")
+        cols_lower = {str(c).strip().lower(): c for c in df.columns}
+
+        # Flexible column detection.
+        store_col = next(
+            (cols_lower[k] for k in
+             ('del location', 'del_location', 'del-location', 'name', 'store',
+              'location name', 'location_name')
+             if k in cols_lower), None
+        )
+        ship_col = next(
+            (cols_lower[k] for k in
+             ('ship to', 'ship-to', 'ship_to', 'shipto', 'ship to code', 'code')
+             if k in cols_lower), None
+        )
+        cust_col = next(
+            (cols_lower[k] for k in ('cust no', 'cust_no', 'custno', 'customer', 'cust')
+             if k in cols_lower), None
+        )
 
         if not store_col or not ship_col:
             raise ValueError(
-                f"Address Master: Missing 'Name' or 'Code' column.\n"
-                f"Available columns: {list(df.columns)}"
+                f"Missing store or ship-to column.\n"
+                f"Available: {list(df.columns)}\n"
+                f"Expected store: Del Location / Name\n"
+                f"Expected ship-to: Ship to / Code"
             )
+        log.info(
+            f"[Address Master] store='{store_col}' | "
+            f"ship_to='{ship_col}' | cust='" + str(cust_col or '(none, using ship_to)') + "'"
+        )
 
-        self.store_to_ship.clear()   # reset for reload support
-
+        self.store_to_ship.clear()
         for _, row in df.iterrows():
-            store   = str(row[store_col]).strip()
-            ship_to = str(row[ship_col]).strip() if pd.notna(row[ship_col]) else ''
+            store   = str(row[store_col]).strip() if pd.notna(row.get(store_col)) else ''
+            ship_to = str(row[ship_col]).strip()  if pd.notna(row.get(ship_col))  else ''
+            cust_no = str(row[cust_col]).strip()  if cust_col and pd.notna(row.get(cust_col)) else ''
 
-            # Skip empty rows or rows without a ship-to code.
-            if not store or store == 'nan' or not ship_to:
+            if not cust_no:
+                cust_no = ship_to   # H&G default: Customer No = Ship-to Code
+
+            if not store or store.lower() == 'nan' or not ship_to:
                 continue
 
-            # For H&G the Customer No. is identical to the Ship-to Code.
-            self.store_to_ship[store] = {
-                'ship_to': ship_to,
-                'cust_no': ship_to,
-            }
+            self.store_to_ship[store] = {'ship_to': ship_to, 'cust_no': cust_no}
 
-        log.info(f"[Address Master] Loaded {len(self.store_to_ship)} store→ship-to mappings")
+        log.info(f"[Address Master] Loaded {len(self.store_to_ship)} store mappings")
         return len(self.store_to_ship)
 
 
 # ==============================================================================
 # SECTION 7 — BACKGROUND MASTER-FILE WATCHER
 # ==============================================================================
-# The watcher runs as a daemon thread so it is automatically killed when the
-# main GUI window closes.  It polls data_mt/ every MASTER_WATCH_INTERVAL_SEC
-# seconds.  When a file's mtime on disk is newer than .last_mtime on the loader
-# object, it reloads that file and schedules a GUI label update via root.after()
-# (which is thread-safe; direct Tkinter calls from background threads are not).
 
 class MasterWatcher(threading.Thread):
     """
-    Background daemon thread that monitors data_mt/ for master file changes
-    and auto-reloads them without requiring user interaction.
+    Daemon thread that silently reloads master files when they change on disk.
 
-    Args:
-        app:  Reference to the running MTSelectApp instance.
-              Used to access loader objects and schedule GUI updates.
-
-    Design notes:
-    - Uses threading.Event for a clean shutdown signal (set by stop()).
-    - All Tkinter GUI mutations are scheduled via self.app.root.after(0, fn)
-      to ensure they run on the main thread (Tkinter is not thread-safe).
-    - A short initial sleep (2 s) lets the GUI finish initialising before
-      the first watch cycle, avoiding a race condition on startup.
+    Design:
+    - daemon=True so it dies automatically when the main window closes.
+    - Uses threading.Event for clean shutdown via stop().
+    - All GUI updates scheduled via root.after(0, fn) — never touches Tkinter
+      directly from the background thread (Tkinter is not thread-safe).
+    - 2-second startup delay lets the GUI fully initialise first.
+    - Polls DATA_MT_DIR every MASTER_WATCH_INTERVAL_SEC seconds.
+    - Each loader is checked independently — a change in one file doesn't
+      force reload of the others.
     """
 
     def __init__(self, app: 'MTSelectApp'):
-        super().__init__(daemon=True)   # daemon=True: thread dies with the process
+        super().__init__(daemon=True)
         self.app   = app
-        self._stop = threading.Event()  # set this to request clean shutdown
+        self._stop = threading.Event()
 
     def stop(self):
-        """Signal the thread to exit on its next iteration."""
+        """Signal the watcher to exit cleanly."""
         self._stop.set()
 
     def run(self):
-        """
-        Main loop — runs until stop() is called or the process exits.
-
-        Each iteration checks all three master files.  If any is newer than
-        its last load time, it is reloaded.  The GUI is updated via after().
-        """
-        log.debug("[Watcher] Master file watcher started")
-        time.sleep(2)   # brief startup delay so GUI is fully built
-
+        log.debug("[Watcher] Started")
+        time.sleep(2)   # wait for GUI init
         while not self._stop.is_set():
-            self._check_and_reload()
-            # Wait for the interval, but wake immediately if stop() is called.
+            self._check_all()
             self._stop.wait(timeout=MASTER_WATCH_INTERVAL_SEC)
+        log.debug("[Watcher] Stopped")
 
-        log.debug("[Watcher] Master file watcher stopped")
-
-    def _check_and_reload(self):
-        """
-        Check each master file and reload if its on-disk mtime has advanced.
-
-        Three separate checks — each loader is independent so a change in
-        the Items Master doesn't force a reload of the HG Master, etc.
-        """
-        self._check_loader(
-            loader     = self.app.hg_master,
-            glob_pat   = "HG Master*.xlsx",
-            label_var  = self.app.hg_path_var,
-            label_fmt  = lambda f, n: f"{f.name} ({n} SKUs) ✓ (auto-reloaded)",
-            log_prefix = "HG Master"
-        )
-        self._check_loader(
-            loader     = self.app.items_master,
-            glob_pat   = "Items*.xlsx",
-            label_var  = self.app.items_path_var,
-            label_fmt  = lambda f, n: f"{f.name} ({n} EANs) ✓ (auto-reloaded)",
-            log_prefix = "Items Master"
-        )
-        self._check_loader(
-            loader     = self.app.address_master,
-            glob_pat   = "H&G Addresses*.xlsx",
-            label_var  = self.app.address_path_var,
-            label_fmt  = lambda f, n: f"{f.name} ({n} stores) ✓ (auto-reloaded)",
-            log_prefix = "Address Master"
-        )
-
-    def _check_loader(self, loader, glob_pat: str, label_var,
-                      label_fmt, log_prefix: str):
-        """
-        Check a single loader's file for a newer mtime and reload if needed.
-
-        Args:
-            loader:     One of HGMasterLoader / ItemsMasterLoader / AddressMasterLoader.
-            glob_pat:   Glob pattern to find the file inside DATA_MT_DIR.
-            label_var:  tkinter StringVar to update on reload.
-            label_fmt:  Callable(file_path, count) → label string.
-            log_prefix: Human-readable name for log messages.
-        """
-        # Find the most-recently named matching file in data_mt/.
-        candidates = sorted(DATA_MT_DIR.glob(glob_pat), reverse=True)
-        if not candidates:
-            return   # no matching file — nothing to do
-
-        file_path = candidates[0]   # use the alphabetically last (usually newest)
-
-        try:
-            current_mtime = os.path.getmtime(file_path)
-        except OSError:
-            return   # file may have been deleted mid-check — skip safely
-
-        # Compare on-disk mtime with what the loader recorded when it last loaded.
-        if current_mtime <= loader.last_mtime:
-            return   # file unchanged — no reload needed
-
-        # File is newer — reload it.
-        log.info(f"[Watcher] {log_prefix} changed on disk — auto-reloading: {file_path.name}")
-        try:
-            count = loader.load(file_path)
-            new_label = label_fmt(file_path, count)
-            log.info(f"[Watcher] {log_prefix} reloaded: {count} records")
-
-            # Schedule GUI update on the main thread (thread-safe via after()).
-            def _update_gui(lv=label_var, nl=new_label):
-                lv.set(nl)
-                self.app._update_master_status()   # refresh the "Masters: Ready ✓" bar
-
-            self.app.root.after(0, _update_gui)
-
-        except Exception as e:
-            log.error(f"[Watcher] {log_prefix} auto-reload failed: {e}")
+    def _check_all(self):
+        """Check each master loader for file changes and reload if needed."""
+        checks = [
+            (self.app.hg_master,      "HG Master*.xlsx",      self.app.hg_path_var,      "HG Master",      lambda f, n: f"{f.name}  ({n} SKUs) ✓ [auto-reloaded]"),
+            (self.app.items_master,   "Items*.xlsx",           self.app.items_path_var,   "Items Master",   lambda f, n: f"{f.name}  ({n} EANs) ✓ [auto-reloaded]"),
+            (self.app.address_master, "H&G Addresses*.xlsx",   self.app.address_path_var, "Address Master", lambda f, n: f"{f.name}  ({n} stores) ✓ [auto-reloaded]"),
+        ]
+        for loader, pattern, label_var, tag, fmt in checks:
+            files = sorted(DATA_MT_DIR.glob(pattern), reverse=True)
+            if not files:
+                continue
+            f = files[0]
+            try:
+                mtime = os.path.getmtime(f)
+            except OSError:
+                continue
+            if mtime <= loader.last_mtime:
+                continue
+            log.info(f"[Watcher] {tag} changed — reloading {f.name}")
+            try:
+                n     = loader.load(f)
+                label = fmt(f, n)
+                def _gui(lv=label_var, lbl=label):
+                    lv.set(lbl)
+                    self.app._update_master_status()
+                self.app.root.after(0, _gui)
+            except Exception as e:
+                log.error(f"[Watcher] {tag} reload failed: {e}")
 
 
 # ==============================================================================
 # SECTION 8 — CSV PROCESSING ENGINE
 # ==============================================================================
+
+def _resolve_sku(sku: str, po: str,
+                 hg_master: HGMasterLoader,
+                 items_master: ItemsMasterLoader,
+                 warnings: List[Tuple[str, str, str]]) -> Tuple[str, str, str, float, str]:
+    """
+    Resolve a single SKU to its D365 item details.
+
+    Pipeline: SKU → HG Master → EAN → Items Master → item_no, description, mrp, gst
+
+    Returns:
+        (ean, item_no, description, mrp, status)
+        status is "OK" or "WARN".
+    """
+    ean = hg_master.sku_to_ean.get(sku)
+    if not ean:
+        msg = f"SKU '{sku}' not in HG Master — no EAN mapping"
+        log.warning(f"[Process] PO={po}: {msg}")
+        warnings.append((po, sku, msg))
+        return "", "", "", 0.0, "WARN"
+
+    info = items_master.ean_to_item.get(ean)
+    if not info:
+        msg = f"EAN '{ean}' (SKU '{sku}') not in Items Master"
+        log.warning(f"[Process] PO={po}: {msg}")
+        warnings.append((po, sku, msg))
+        return ean, "", "", 0.0, "WARN"
+
+    return (
+        ean,
+        info['item_no'],
+        info.get('description', ''),
+        info.get('mrp', 0.0),
+        "OK"
+    )
+
 
 def process_csv_files(
     file_paths:      List[str],
@@ -945,272 +965,355 @@ def process_csv_files(
     items_master:    ItemsMasterLoader,
     address_master:  AddressMasterLoader,
     warehouse_code:  str,
-    is_tester:       bool,
-    sequences:       Dict[str, int]
+    generate_tester: bool,
+    sequences:       Dict[str, object]
 ) -> ProcessingResult:
     """
-    Core processing engine — reads CSV files, resolves all lookups, and
-    builds the ProcessingResult object ready for writing to Excel.
+    Core processing engine.
 
-    Processing pipeline:
-    1.  Read each CSV file into a DataFrame.
-    2.  Validate required columns; skip file with WARNING if missing.
-    3.  Collect all valid rows; detect duplicates (merge by summing qty).
-    4.  Group rows by PO_NO.
-    5.  For each PO: assign a new SO number (incrementing the appropriate
-        sequence counter), resolve store → ship-to, then for each SKU resolve
-        SKU → EAN → D365 Item No + description + MRP.
-    6.  Apply tester overrides (qty=1, unit_price=0.54) if is_tester=True.
-    7.  Build po_summary dict for the Summary sheet.
-    8.  Return the populated ProcessingResult.
+    For each unique PO:
+      1. Assign a regular SO number from the shared daily sequence.
+      2. If generate_tester=True, assign the paired tester SO using the same
+         numeric sequence with the ``SO/HG/TT/`` prefix.
+      3. For each SKU in the PO:
+           - Resolve SKU → EAN → Item No + MRP + description.
+           - Create a regular SORow (actual qty, blank price).
+           - If tester: create a second SORow (qty=1, price=0.54).
+      4. Build po_summary showing BOTH the regular and tester SOs.
+
+    Rows are grouped by PO. When testers are enabled, each SKU contributes its
+    regular row followed by its paired tester row.
 
     Args:
-        file_paths:     List of absolute paths to H&G CSV files.
-        hg_master:      Loaded HGMasterLoader instance.
-        items_master:   Loaded ItemsMasterLoader instance.
-        address_master: Loaded AddressMasterLoader instance.
-        warehouse_code: D365 Location Code (e.g. "PICK").
-        is_tester:      True → tester mode (SO/TT, qty=1, price=0.54).
-        sequences:      dict {"HG": int, "TT": int} — starting counters.
-                        These are NOT mutated; updated copies are stored on
-                        the result object instead.
+        file_paths:      Absolute paths to H&G CSV files.
+        hg_master:       Loaded HGMasterLoader.
+        items_master:    Loaded ItemsMasterLoader.
+        address_master:  Loaded AddressMasterLoader.
+        warehouse_code:  D365 Location Code (e.g. "PICK").
+        generate_tester: True → also generate tester SOs for every PO.
+        sequences:       Mapping containing the shared ``HG`` starting counter.
+                         It is incremented once per PO and is not mutated here.
 
     Returns:
-        ProcessingResult populated with rows, warnings, summary, and
-        updated sequence counters.
+        Populated ProcessingResult.
     """
     result = ProcessingResult()
-    result.input_files    = file_paths
-    result.warehouse_code = warehouse_code
+    result.input_files      = file_paths
+    result.warehouse_code   = warehouse_code
     result.warehouse_display = next(
         (k for k, v in WAREHOUSES.items() if v == warehouse_code), "AHD"
     )
-    result.is_tester  = is_tester
-    result.hg_sequence = sequences["HG"]   # will be updated below as POs are processed
-    result.tt_sequence = sequences["TT"]
+    result.generate_tester = generate_tester
+    result.hg_sequence     = int(sequences["HG"])
 
-    # Determine which sequence key to use for this run.
-    seq_key = "TT" if is_tester else "HG"
     log.info(
-        f"[Process] Starting. Files: {len(file_paths)}, "
-        f"Warehouse: {warehouse_code}, Tester: {is_tester}"
+        f"[Process] Files={len(file_paths)} | "
+        f"Warehouse={warehouse_code} | "
+        f"Tester={'YES — tester SOs use same sequence as regular' if generate_tester else 'NO — regular only'}"
     )
-    log.info(f"[Process] Using {seq_key} sequence, starting at: {sequences[seq_key]}")
+    log.info(f"[Process] Shared SO seq starting at {sequences['HG']}")
 
-    # ── Phase 1: Read all CSV files into a single flat list ───────────────────
-    all_rows: List[dict] = []
-    seen_po_sku: set = set()   # tracks (po, sku) pairs for duplicate detection
+    # ------------------------------------------------------------------
+    # Phase 1: Read all CSVs into a flat list
+    # ------------------------------------------------------------------
+    all_rows:    List[dict] = []
+    seen_po_sku: set        = set()
 
     for fp in file_paths:
-        log.info(f"[Process] Reading CSV: {os.path.basename(fp)}")
-
+        source_name = os.path.basename(fp)
+        log.info(f"[Process] Reading: {source_name}")
         try:
             df = pd.read_csv(fp)
         except Exception as e:
-            msg = f"Cannot read {os.path.basename(fp)}: {e}"
+            msg = f"Cannot read {source_name}: {e}"
             log.error(f"[Process] {msg}")
             result.warnings.append(("", "", msg))
-            continue   # skip this file; try the next one
+            result.input_audit.append({
+                'source_file': source_name, 'source_row': "",
+                'po': "", 'store': "", 'sku': "", 'input_qty': "",
+                'input_mrp': "", 'disposition': "FILE ERROR",
+                'reason': msg, 'regular_so': "", 'tester_so': "",
+            })
+            result.input_file_events += 1
+            continue
 
-        log.debug(f"[Process] Columns: {list(df.columns)}, Rows: {len(df)}")
-
-        # Validate required columns — all five must be present.
-        required_cols = ['PO_NO', 'STORE_NAME', 'SKU_CODE', 'QUANTITY', 'MRP']
-        missing = [c for c in required_cols if c not in df.columns]
+        log.debug(f"[Process] Cols={list(df.columns)} | Rows={len(df)}")
+        result.input_rows_read += len(df)
+        required = ['PO_NO', 'STORE_NAME', 'SKU_CODE', 'QUANTITY', 'MRP']
+        missing  = [c for c in required if c not in df.columns]
         if missing:
-            msg = (
-                f"File {os.path.basename(fp)} missing required columns: {missing}.\n"
-                f"Available columns: {list(df.columns)}"
-            )
+            msg = f"{source_name}: missing {missing}. Got: {list(df.columns)}"
             log.error(f"[Process] {msg}")
             result.warnings.append(("", "", msg))
-            continue   # skip this file entirely
+            for row_idx, row in df.iterrows():
+                result.input_audit.append({
+                    'source_file': source_name, 'source_row': row_idx + 2,
+                    'po': "" if pd.isna(row.get('PO_NO')) else str(row.get('PO_NO', '')).strip(),
+                    'store': "" if pd.isna(row.get('STORE_NAME')) else str(row.get('STORE_NAME', '')).strip(),
+                    'sku': "" if pd.isna(row.get('SKU_CODE')) else str(row.get('SKU_CODE', '')).strip(),
+                    'input_qty': "" if pd.isna(row.get('QUANTITY')) else row.get('QUANTITY', ''),
+                    'input_mrp': "" if pd.isna(row.get('MRP')) else row.get('MRP', ''),
+                    'disposition': "SKIPPED", 'reason': msg,
+                    'regular_so': "", 'tester_so': "",
+                })
+                result.skipped_rows += 1
+            if df.empty:
+                result.input_audit.append({
+                    'source_file': source_name, 'source_row': "",
+                    'po': "", 'store': "", 'sku': "", 'input_qty': "",
+                    'input_mrp': "", 'disposition': "FILE ERROR",
+                    'reason': msg, 'regular_so': "", 'tester_so': "",
+                })
+                result.input_file_events += 1
+            continue
 
-        # Iterate each row and collect valid data.
-        for _, row in df.iterrows():
+        for row_idx, row in df.iterrows():
             po    = str(row['PO_NO']).strip()
             store = str(row['STORE_NAME']).strip()
             sku   = str(row['SKU_CODE']).strip()
-
-            # Parse QUANTITY — convert "2.0" floats to int, treat NaN as 0.
+            audit = {
+                'source_file': source_name, 'source_row': row_idx + 2,
+                'po': "" if po == 'nan' else po,
+                'store': "" if store == 'nan' else store,
+                'sku': "" if sku == 'nan' else sku,
+                'input_qty': "" if pd.isna(row['QUANTITY']) else row['QUANTITY'],
+                'input_mrp': "" if pd.isna(row['MRP']) else row['MRP'],
+                'disposition': "", 'reason': "",
+                'regular_so': "", 'tester_so': "",
+            }
             try:
                 qty = int(float(row['QUANTITY'])) if pd.notna(row['QUANTITY']) else 0
             except (ValueError, TypeError):
                 qty = 0
 
-            # Parse MRP — float, default 0.0 if missing.
-            mrp_raw = row.get('MRP')
-            mrp = float(mrp_raw) if pd.notna(mrp_raw) else 0.0
-
-            # Skip rows with missing key fields or zero/negative quantity.
-            if po == 'nan' or store == 'nan' or sku == 'nan' or qty <= 0:
-                log.debug(
-                    f"[Process] Skipping invalid row: PO={po}, STORE={store}, "
-                    f"SKU={sku}, QTY={qty}"
-                )
-                continue
-
-            # Detect duplicate (PO, SKU) pairs — will be merged by summing qty.
-            key = (po, sku)
-            if key in seen_po_sku:
+            if (not po or po == 'nan' or not store or store == 'nan'
+                    or not sku or sku == 'nan' or qty <= 0):
                 msg = (
-                    f"Duplicate (PO={po}, SKU={sku}) found — "
-                    f"quantities will be merged (summed)"
+                    f"{source_name} row {row_idx + 2}: invalid required input "
+                    f"(PO={po}, Store={store}, SKU={sku}, Qty={qty}); row skipped"
                 )
                 log.warning(f"[Process] {msg}")
+                result.warnings.append((po if po != 'nan' else "", sku if sku != 'nan' else "", msg))
+                result.skipped_rows += 1
+                audit['disposition'] = "SKIPPED"
+                audit['reason'] = msg
+                result.input_audit.append(audit)
+                continue
+
+            try:
+                mrp = float(row['MRP']) if pd.notna(row.get('MRP')) else 0.0
+            except (ValueError, TypeError):
+                mrp = 0.0
+                msg = f"{source_name} row {row_idx + 2}: invalid input MRP; processing continues using mapped item data"
+                log.warning(f"[Process] {msg}")
                 result.warnings.append((po, sku, msg))
+                audit['reason'] = msg
+
+            key = (po, sku)
+            if key in seen_po_sku:
+                msg = f"Duplicate (PO={po}, SKU={sku}) — qtys will be summed"
+                log.warning(f"[Process] {msg}")
+                result.warnings.append((po, sku, msg))
+                audit['disposition'] = "CONSOLIDATED"
+                audit['reason'] = f"{audit['reason']}; {msg}".strip("; ")
+            else:
+                audit['disposition'] = "PROCESSED"
             seen_po_sku.add(key)
+            result.input_audit.append(audit)
+            all_rows.append({
+                'po': po, 'store': store, 'sku': sku, 'qty': qty, 'mrp': mrp,
+                'source': source_name,
+            })
 
-            all_rows.append({'po': po, 'store': store, 'sku': sku,
-                             'qty': qty, 'mrp': mrp})
-
-    log.info(f"[Process] Total valid CSV rows collected: {len(all_rows)}")
-
+    audit_counts: Dict[str, int] = {}
+    for audit in result.input_audit:
+        disposition = str(audit.get('disposition', 'UNLABELLED'))
+        audit_counts[disposition] = audit_counts.get(disposition, 0) + 1
+    log.info(f"[Process] Input Audit dispositions: {audit_counts}")
+    log.info(f"[Process] Valid CSV rows: {len(all_rows)}")
     if not all_rows:
-        msg = "No valid rows found in any of the selected CSV files"
-        log.error(f"[Process] {msg}")
-        result.warnings.append(("", "", msg))
-        return result   # return early — writer will handle empty result
+        result.warnings.append(("", "", "No valid rows found in any selected CSV"))
+        return result
 
-    # ── Phase 2: Group by PO → SKU, summing quantities ────────────────────────
-    # po_groups structure:
-    #   { po_number: { sku_code: {"qty": int, "store": str, "mrp": float} } }
+    # ------------------------------------------------------------------
+    # Phase 2: Group by PO → SKU, summing quantities
+    # ------------------------------------------------------------------
     po_groups: Dict[str, Dict[str, dict]] = {}
+    po_stores: Dict[str, set] = {}
     for r in all_rows:
         po, sku = r['po'], r['sku']
+        po_stores.setdefault(po, set()).add(r['store'])
         if po not in po_groups:
             po_groups[po] = {}
         if sku not in po_groups[po]:
-            po_groups[po][sku] = {'qty': 0, 'store': r['store'], 'mrp': r['mrp']}
-        po_groups[po][sku]['qty'] += r['qty']   # sum duplicates
+            po_groups[po][sku] = {
+                'qty': 0, 'store': r['store'], 'mrp': r['mrp'],
+                'sources': set(), 'mrps': set(),
+            }
+        po_groups[po][sku]['qty'] += r['qty']
+        po_groups[po][sku]['sources'].add(r['source'])
+        po_groups[po][sku]['mrps'].add(r['mrp'])
 
     log.info(f"[Process] Unique POs: {len(po_groups)}")
+    result.input_po_count = len(po_groups)
+    result.input_line_count = sum(len(sku_dict) for sku_dict in po_groups.values())
+    result.input_qty_total = sum(
+        details['qty']
+        for sku_dict in po_groups.values()
+        for details in sku_dict.values()
+    )
+    log.info(
+        f"[Process] Will generate: "
+        f"{len(po_groups)} regular SOs"
+        + (f" + {len(po_groups)} tester SOs = {len(po_groups)*2} total" if generate_tester else "")
+    )
 
-    # ── Phase 3: Assign SO numbers and resolve all lookups ───────────────────
-    # current_seq starts from the persisted counter for this run's type (HG/TT).
-    current_seq = sequences[seq_key]
-    result.so_map     = {}
-    result.po_summary = {}
+    # ------------------------------------------------------------------
+    # Phase 3: Assign SOs and resolve all lookups
+    # ------------------------------------------------------------------
+    hg_seq = int(sequences["HG"])
+
+    result.regular_so_map = {}
+    result.tester_so_map  = {}
+    result.po_summary     = {}
 
     for po, sku_dict in po_groups.items():
-        # Increment sequence BEFORE generating the SO number so the first SO
-        # uses (stored_value + 1), not the stored_value itself.
-        current_seq += 1
-        so_number = generate_so_number(current_seq, is_tester)
-        result.so_map[po] = so_number
+        po_data_warn_count = 0
+        if len(po_stores.get(po, set())) > 1:
+            msg = f"PO '{po}' contains multiple store names: {sorted(po_stores[po])}; first mapped store used"
+            log.warning(f"[Process] {msg}")
+            result.warnings.append((po, "", msg))
+            po_data_warn_count += 1
 
-        # Update the appropriate counter on the result object.
-        if is_tester:
-            result.tt_sequence = current_seq
-        else:
-            result.hg_sequence = current_seq
+        # Assign regular SO (always).
+        hg_seq += 1
+        regular_so = generate_so_number(hg_seq, is_tester=False)
+        result.regular_so_map[po] = regular_so
+        result.hg_sequence = hg_seq
 
-        log.debug(f"[Process] Assigned: PO={po} → SO={so_number}")
+        # Assign the paired tester SO, using the same number as the regular SO.
+        tester_so = ""
+        if generate_tester:
+            tester_so = generate_so_number(hg_seq, is_tester=True)
+            result.tester_so_map[po] = tester_so
+        for audit in result.input_audit:
+            if audit['disposition'] in ("PROCESSED", "CONSOLIDATED") and audit['po'] == po:
+                audit['regular_so'] = regular_so
+                audit['tester_so'] = tester_so
 
-        # ── Resolve store → ship-to / cust-no ────────────────────────────────
-        # All SKUs within a PO share the same store, so we read from the first SKU.
+        log.debug(
+            f"[Process] PO={po} -> Regular={regular_so}"
+            + (f" | Tester={tester_so}" if generate_tester else "")
+        )
+
+        # Resolve store → ship-to.
         store_name = next(iter(sku_dict.values()))['store']
         addr_info  = address_master.store_to_ship.get(store_name)
-
         if not addr_info:
-            msg = (
-                f"Store '{store_name}' not found in Address Master — "
-                f"Ship-to and Cust No will be blank in output"
-            )
+            msg = f"Store '{store_name}' not in Address Master — Ship-to/Cust blank"
             log.warning(f"[Process] PO={po}: {msg}")
             result.warnings.append((po, "", msg))
-            ship_to = cust_no = ""   # blank but don't crash — output still useful
+            ship_to = cust_no = ""
         else:
             ship_to = addr_info['ship_to']
             cust_no = addr_info['cust_no']
 
-        # Counters for this PO's summary row.
-        po_total_qty = 0
-        po_items     = 0
-        po_has_warn  = (ship_to == "")   # already warned if store not found
+        po_has_warn   = (ship_to == "" or po_data_warn_count > 0)
+        regular_qty   = 0
+        tester_qty    = 0
+        po_items      = 0
+        po_warn_count = (1 if ship_to == "" else 0) + po_data_warn_count
 
-        # ── Resolve SKU → EAN → Item No for each line ────────────────────────
         for sku, details in sku_dict.items():
-            row_status = "OK"   # assume clean; flip to WARN if any lookup fails
-
-            # Lookup 1: SKU → EAN via HG Master
-            ean = hg_master.sku_to_ean.get(sku)
-            if not ean:
-                msg = f"SKU '{sku}' not found in HG Master (no EAN mapping)"
+            if len(details['mrps']) > 1:
+                msg = f"PO '{po}', SKU '{sku}' contains multiple input MRP values: {sorted(details['mrps'])}; first value used for comparison"
+                log.warning(f"[Process] {msg}")
+                result.warnings.append((po, sku, msg))
+                po_has_warn = True
+                po_warn_count += 1
+            ean, item_no, description, item_mrp, status = _resolve_sku(
+                sku, po, hg_master, items_master, result.warnings
+            )
+            if (status == "OK" and details['mrp'] and item_mrp
+                    and abs(details['mrp'] - item_mrp) > 0.001):
+                msg = (
+                    f"Input MRP {details['mrp']} does not match Items Master MRP "
+                    f"{item_mrp} for SKU '{sku}'"
+                )
                 log.warning(f"[Process] PO={po}: {msg}")
                 result.warnings.append((po, sku, msg))
-                item_no = "?MISSING_SKU"
-                description = ""
-                item_mrp    = 0.0
-                gst_code    = ""
-                row_status  = "WARN"
+                status = "WARN"
+            if status == "WARN":
                 po_has_warn = True
-            else:
-                # Lookup 2: EAN → D365 Item via Items Master
-                item_info = items_master.ean_to_item.get(ean)
-                if not item_info:
-                    msg = f"EAN '{ean}' (from SKU '{sku}') not found in Items Master"
-                    log.warning(f"[Process] PO={po}: {msg}")
-                    result.warnings.append((po, sku, msg))
-                    item_no     = "?MISSING_EAN"
-                    description = ""
-                    item_mrp    = 0.0
-                    gst_code    = ""
-                    row_status  = "WARN"
-                    po_has_warn = True
-                else:
-                    item_no     = item_info['item_no']
-                    description = item_info.get('description', '')
-                    item_mrp    = item_info.get('mrp', 0.0)
-                    gst_code    = item_info.get('gst_code', '')
-                    log.debug(
-                        f"[Process] Resolved: SKU={sku} → EAN={ean} → "
-                        f"Item={item_no} | MRP={item_mrp} | GST={gst_code}"
-                    )
+                po_warn_count += 1
 
-            # ── Apply tester overrides ────────────────────────────────────────
-            if is_tester:
-                final_qty  = 1          # always 1 unit per SKU in tester orders
-                unit_price = TESTER_CP  # fixed cost price for all tester lines
-            else:
-                final_qty  = details['qty']
-                unit_price = 0.0        # regular orders: price comes from D365
+            po_items    += 1
+            regular_qty += details['qty']
 
-            po_total_qty += final_qty
-            po_items     += 1
-
-            # Build and append the SORow for this line.
+            # Regular SORow.
             result.rows.append(SORow(
                 po_number   = po,
-                so_number   = so_number,
-                sku_code    = sku,          # preserved for Raw Data audit sheet
+                so_number   = regular_so,
+                row_type    = "REGULAR",
+                sku_code    = sku,
                 item_no     = item_no,
-                qty         = final_qty,
+                qty         = details['qty'],
                 store_name  = store_name,
                 ship_to     = ship_to,
                 cust_no     = cust_no,
-                ean         = ean if ean else "",
+                ean         = ean,
                 description = description,
                 mrp         = item_mrp,
-                unit_price  = unit_price,
-                is_tester   = is_tester,
-                status      = row_status,
+                input_mrp   = details['mrp'],
+                source_files = ", ".join(sorted(details['sources'])),
+                unit_price  = 0.0,
+                is_tester   = False,
+                status      = status,
             ))
 
-        # ── Build summary row for this PO ─────────────────────────────────────
+            # Tester SORow (only when requested).
+            if generate_tester:
+                tester_qty += 1
+                result.rows.append(SORow(
+                    po_number   = po,
+                    so_number   = tester_so,
+                    row_type    = "TESTER",
+                    sku_code    = sku,
+                    item_no     = item_no,
+                    qty         = 1,            # always 1 per SKU for testers
+                    store_name  = store_name,
+                    ship_to     = ship_to,
+                    cust_no     = cust_no,
+                    ean         = ean,
+                    description = description,
+                    mrp         = item_mrp,
+                    input_mrp   = details['mrp'],
+                    source_files = ", ".join(sorted(details['sources'])),
+                    unit_price  = TESTER_CP,    # always 0.54 for testers
+                    is_tester   = True,
+                    status      = status,
+                ))
+
+        # Build Summary row for this PO.
         result.po_summary[po] = {
-            'so_number': so_number,
-            'store':     store_name,
-            'ship_to':   ship_to,
-            'cust_no':   cust_no,
-            'items':     po_items,
-            'total_qty': po_total_qty,
-            'status':    "WARN" if po_has_warn else "OK",
+            'regular_so':    regular_so,
+            'tester_so':     tester_so if generate_tester else "N/A",
+            'store':         store_name,
+            'ship_to':       ship_to,
+            'cust_no':       cust_no,
+            'items':         po_items,
+            'regular_qty':   regular_qty,
+            'tester_qty':    tester_qty if generate_tester else 0,
+            'status':        "WARN" if po_has_warn else "OK",
+            'warnings_count': po_warn_count,
         }
 
     log.info(
-        f"[Process] Done. SO lines: {len(result.rows)} | "
-        f"SOs: {len(result.so_map)} | Warnings: {len(result.warnings)}"
+        f"[Process] Complete: "
+        f"total_rows={len(result.rows)} | "
+        f"regular_SOs={len(result.regular_so_map)} | "
+        f"tester_SOs={len(result.tester_so_map)} | "
+        f"warnings={len(result.warnings)}"
     )
     return result
 
@@ -1218,36 +1321,25 @@ def process_csv_files(
 # ==============================================================================
 # SECTION 9 — EXCEL OUTPUT WRITER
 # ==============================================================================
-# Produces a 6-sheet workbook matching the Online PO Management system format.
-# Styling uses openpyxl directly (not pandas to_excel) to get full control
-# over header colours, column widths, freeze panes, and status fill colours.
 
-# ── Shared style objects (created once, reused across all sheets) ─────────────
-HDR_FILL    = PatternFill("solid", fgColor="1A237E")   # dark navy header background
-HDR_FONT    = Font(bold=True, color="FFFFFF", size=10) # white bold header text
-WARN_FILL   = PatternFill("solid", fgColor="FFF3E0")   # light amber for WARN rows
-OK_FILL     = PatternFill("solid", fgColor="E8F5E9")   # light green for OK rows
-BOLD_FONT   = Font(bold=True)
+# Shared style objects — created once, reused across all sheets.
+HDR_FILL     = PatternFill("solid", fgColor="1A237E")   # dark navy header
+HDR_FONT     = Font(bold=True, color="FFFFFF", size=10)
+WARN_FILL    = PatternFill("solid", fgColor="FFF3E0")   # amber for warnings
+OK_FILL      = PatternFill("solid", fgColor="E8F5E9")   # green for OK
+TESTER_FILL  = PatternFill("solid", fgColor="E3F2FD")   # light blue for tester rows
+REGULAR_FILL = PatternFill("solid", fgColor="FFFFFF")   # white for regular rows
+BOLD_FONT    = Font(bold=True)
 CENTER_ALIGN = Alignment(horizontal='center', vertical='center')
-THIN_BORDER = Border(
-    left   = Side(style='thin'),
-    right  = Side(style='thin'),
-    top    = Side(style='thin'),
-    bottom = Side(style='thin'),
+LEFT_ALIGN   = Alignment(horizontal='left',   vertical='center')
+THIN_BORDER  = Border(
+    left=Side(style='thin'), right=Side(style='thin'),
+    top=Side(style='thin'),  bottom=Side(style='thin'),
 )
 
 
-def _apply_header(cell, value: str):
-    """
-    Apply standard header styling to a single cell.
-
-    Used for every header row across all 6 sheets so they share a consistent
-    look and any future style change only needs to be made in one place.
-
-    Args:
-        cell:   openpyxl Cell object.
-        value:  Column header label string.
-    """
+def _hdr(cell, value: str):
+    """Apply standard header styling (dark navy, white bold, centred, bordered)."""
     cell.value     = value
     cell.font      = HDR_FONT
     cell.fill      = HDR_FILL
@@ -1255,357 +1347,677 @@ def _apply_header(cell, value: str):
     cell.border    = THIN_BORDER
 
 
-def _autofit_columns(ws, max_width: int = 40):
-    """
-    Set each column's width to the length of its longest cell value.
-
-    Caps at max_width to prevent unwieldy wide columns from long description
-    strings.  Adds 3 characters of padding for readability.
-
-    Args:
-        ws:         openpyxl Worksheet object.
-        max_width:  Maximum column width in character units (default 40).
-    """
+def _autofit(ws, max_w: int = 45):
+    """Auto-fit column widths, capped at max_w characters."""
     for col in ws.columns:
-        letter   = col[0].column_letter
-        max_len  = max((len(str(c.value)) for c in col if c.value), default=8)
-        ws.column_dimensions[letter].width = min(max_len + 3, max_width)
+        letter  = col[0].column_letter
+        max_len = max((len(str(c.value)) for c in col if c.value), default=8)
+        ws.column_dimensions[letter].width = min(max_len + 3, max_w)
+
+
+def _so_sequence_value(so_number: str) -> Optional[int]:
+    """Return the trailing numeric SO sequence, or None for an invalid format."""
+    try:
+        return int(so_number.rsplit("/", 1)[-1])
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def _build_control_checks(result: ProcessingResult, header_sos: set) -> None:
+    """
+    Build non-blocking reconciliation checks for review before D365 upload.
+
+    Failed checks are added to the Warnings sheet and log, but they never stop
+    workbook creation or replace uncertain mapped values with invented data.
+    """
+    result.warnings = [
+        warning for warning in result.warnings
+        if warning[1] != "CONTROL CHECK"
+    ]
+    processing_warning_count = len(result.warnings)
+    checks: List[Tuple[str, str, str, str, str]] = []
+
+    def add_check(name: str, expected: str, actual: str,
+                  passed: bool, note: str = "") -> None:
+        status = "PASS" if passed else "WARN"
+        checks.append((name, expected, actual, status, note))
+        if not passed:
+            msg = f"{name}: expected {expected}; actual {actual}"
+            if note:
+                msg += f". {note}"
+            result.warnings.append(("", "CONTROL CHECK", msg))
+            log.warning(f"[Control Check] {msg}")
+
+    regular_rows = [row for row in result.rows if not row.is_tester]
+    tester_rows = [row for row in result.rows if row.is_tester]
+    regular_sos = set(result.regular_so_map.values())
+    tester_sos = set(result.tester_so_map.values())
+    line_sos = {row.so_number for row in result.rows}
+    month = datetime.now().strftime("%m")
+
+    add_check(
+        "Invalid input rows skipped",
+        "0",
+        str(result.skipped_rows),
+        result.skipped_rows == 0,
+        "Skipped rows remain listed in Warnings and are not written as SO lines."
+    )
+    disposition_counts: Dict[str, int] = {}
+    for audit in result.input_audit:
+        disposition = str(audit.get('disposition', '')).strip()
+        disposition_counts[disposition] = disposition_counts.get(disposition, 0) + 1
+    blank_dispositions = disposition_counts.get("", 0)
+    disposition_summary = ", ".join(
+        f"{key}={value}" for key, value in sorted(disposition_counts.items()) if key
+    ) or "No input rows captured"
+    add_check(
+        "Input audit disposition completeness",
+        "Every captured input row/file error labelled",
+        disposition_summary,
+        blank_dispositions == 0,
+        "Review Input Audit for the outcome of each original CSV row."
+    )
+    expected_audit_rows = result.input_rows_read + result.input_file_events
+    add_check(
+        "Input source rows vs audit rows",
+        str(expected_audit_rows),
+        str(len(result.input_audit)),
+        expected_audit_rows == len(result.input_audit),
+        "All readable CSV data rows must have one Input Audit record."
+    )
+    add_check(
+        "Input unique POs vs regular SOs",
+        str(result.input_po_count),
+        str(len(regular_sos)),
+        result.input_po_count == len(regular_sos)
+    )
+    add_check(
+        "Input PO/SKU lines vs regular lines",
+        str(result.input_line_count),
+        str(len(regular_rows)),
+        result.input_line_count == len(regular_rows),
+        "Duplicate PO/SKU input rows are expected to consolidate to one sales line."
+    )
+    regular_qty = sum(row.qty for row in regular_rows)
+    add_check(
+        "Input quantity vs regular output quantity",
+        str(result.input_qty_total),
+        str(regular_qty),
+        result.input_qty_total == regular_qty
+    )
+    add_check(
+        "Regular SO numbers unique",
+        str(len(result.regular_so_map)),
+        str(len(regular_sos)),
+        len(result.regular_so_map) == len(regular_sos)
+    )
+    add_check(
+        "Every sales line has a header",
+        "No orphan lines",
+        "No orphan lines" if line_sos <= header_sos else str(sorted(line_sos - header_sos)),
+        line_sos <= header_sos
+    )
+    add_check(
+        "Every header has sales lines",
+        "No empty headers",
+        "No empty headers" if header_sos <= line_sos else str(sorted(header_sos - line_sos)),
+        header_sos <= line_sos
+    )
+
+    regular_numbers = [_so_sequence_value(so) for so in result.regular_so_map.values()]
+    format_ok = all(
+        so.startswith(f"SO/HG/{month}/") and number is not None
+        for so, number in zip(result.regular_so_map.values(), regular_numbers)
+    )
+    add_check(
+        "Regular SO format",
+        f"SO/HG/{month}/<sequence>",
+        "Valid" if format_ok else "Invalid format found",
+        format_ok
+    )
+    continuous = all(
+        current == previous + 1
+        for previous, current in zip(regular_numbers, regular_numbers[1:])
+        if previous is not None and current is not None
+    ) and all(number is not None for number in regular_numbers)
+    add_check(
+        "Regular SO sequence within run",
+        "Increment by 1 per PO",
+        ", ".join(str(number) for number in regular_numbers) if regular_numbers else "No SO rows",
+        continuous,
+        "The first number may continue from an earlier run on the same date."
+    )
+
+    if result.generate_tester:
+        expected_pairs = {
+            po: generate_so_number(_so_sequence_value(regular_so), is_tester=True)
+            for po, regular_so in result.regular_so_map.items()
+            if _so_sequence_value(regular_so) is not None
+        }
+        add_check(
+            "Tester SO count vs regular SO count",
+            str(len(regular_sos)),
+            str(len(tester_sos)),
+            len(regular_sos) == len(tester_sos)
+        )
+        add_check(
+            "Tester SO paired sequence",
+            "Same trailing number as regular SO",
+            "Valid" if expected_pairs == result.tester_so_map else "Mismatch found",
+            expected_pairs == result.tester_so_map
+        )
+        add_check(
+            "Tester line count vs regular line count",
+            str(len(regular_rows)),
+            str(len(tester_rows)),
+            len(regular_rows) == len(tester_rows)
+        )
+        add_check(
+            "Tester quantity",
+            "1 on every tester line",
+            "Valid" if all(row.qty == 1 for row in tester_rows) else "Invalid quantity found",
+            all(row.qty == 1 for row in tester_rows)
+        )
+        add_check(
+            "Tester unit price",
+            str(TESTER_CP),
+            "Valid" if all(row.unit_price == TESTER_CP for row in tester_rows) else "Invalid price found",
+            all(row.unit_price == TESTER_CP for row in tester_rows)
+        )
+    else:
+        add_check(
+            "Tester lines when tester mode is off",
+            "0",
+            str(len(tester_rows)),
+            len(tester_rows) == 0
+        )
+
+    unmapped_lines = sum(
+        1 for row in result.rows
+        if not row.ean or not row.item_no or not row.ship_to or not row.cust_no
+    )
+    add_check(
+        "Required mapping fields populated",
+        "No blank EAN/Item/Ship-to/Cust fields",
+        f"{unmapped_lines} incomplete output line(s)",
+        unmapped_lines == 0,
+        "Unresolved fields are intentionally left blank; review Warnings before upload."
+    )
+    mrp_mismatches = sum(
+        1 for row in regular_rows
+        if row.input_mrp and row.mrp and abs(row.input_mrp - row.mrp) > 0.001
+    )
+    add_check(
+        "Input MRP vs Items Master MRP",
+        "No mismatches",
+        f"{mrp_mismatches} mismatch(es)",
+        mrp_mismatches == 0,
+        "Input and mapped master MRP are shown separately in Validation and Raw Data."
+    )
+
+    bad_line_sequences = []
+    for so_number in sorted(line_sos):
+        actual = [row.line_no for row in result.rows if row.so_number == so_number]
+        expected = list(range(1000, (len(actual) + 1) * 1000, 1000))
+        if actual != expected:
+            bad_line_sequences.append(so_number)
+    add_check(
+        "Line numbering per SO",
+        "1000, 2000, ... reset for each SO",
+        "Valid" if not bad_line_sequences else ", ".join(bad_line_sequences),
+        not bad_line_sequences
+    )
+    add_check(
+        "Processing warnings present",
+        "0 warnings",
+        str(processing_warning_count),
+        processing_warning_count == 0,
+        "Warnings may be informational, but should be reviewed before upload."
+    )
+
+    result.control_checks = checks
+    failed = sum(1 for check in checks if check[3] == "WARN")
+    log.info(f"[Control Check] Completed: {len(checks) - failed} PASS | {failed} WARN")
 
 
 def write_output_workbook(result: ProcessingResult, output_path: Path) -> None:
     """
-    Write the full 6-sheet D365-ready Excel workbook to output_path.
+    Write the full 9-sheet D365-ready workbook with non-blocking control checks.
 
-    Sheet structure (matching Online PO Management system):
-    ┌─────────────────┬──────────────────────────────────────────────────────┐
-    │ Sheet           │ Contents                                             │
-    ├─────────────────┼──────────────────────────────────────────────────────┤
-    │ Headers (SO)    │ One row per unique PO/SO — 18 columns for D365      │
-    │ Lines (SO)      │ One row per SKU line — line numbers reset per PO    │
-    │ Summary         │ One row per PO with item count, qty totals, status  │
-    │ Validation      │ Full line detail: EAN, MRP, tester flag, status     │
-    │ Warnings        │ All mapping failures (or "No warnings" if clean)    │
-    │ Raw Data        │ Complete audit trail of every processed line        │
-    └─────────────────┴──────────────────────────────────────────────────────┘
+    Sheet 1 — Headers (SO):
+        One row per unique SO number (both regular and tester).
+        Tester rows highlighted in light blue for easy visual distinction.
+
+    Sheet 2 — Lines (SO):
+        One row per SKU line. Line numbers reset per SO (not per PO), so
+        the regular and tester versions of the same PO each have independent
+        1000/2000/... numbering.
+        Tester rows highlighted in light blue.
+
+    Sheet 3 — Summary:
+        One row per PO showing BOTH the regular SO and tester SO (or N/A).
+        Columns: PO | Regular SO | Tester SO | Store | Ship-to | Cust No |
+                 Items | Regular Qty | Tester Qty | Status | Warnings Count
+        Full colour-coded status so problems are immediately visible.
+
+    Sheet 4 — SKU Pivot:
+        One row per unique SKU code (not per line). Groups quantities by type.
+        Columns: SKU Code | EAN | Item No | Description | MRP |
+                 Regular Qty | Tester Qty | Total Qty
+        For verification that quantities sum correctly across all POs.
+
+    Sheet 5 — Validation:
+        Every SORow with all resolved fields.
+        TYPE column clearly shows REGULAR vs TESTER.
+        Shows input CSV MRP beside Items Master MRP for comparison.
+        STATUS column: OK (green) or WARN (amber).
+        Allows complete pre-upload inspection line by line.
+
+    Sheet 6 — Warnings:
+        All non-fatal issues: missing SKUs/EANs/stores, duplicates, bad files.
+        Green "No warnings" row if everything mapped successfully.
+
+    Sheet 7 — Raw Data:
+        Generated-line audit trail with source file, original SKU, EAN, final
+        quantity and type. Used for post-upload debugging.
+
+    Sheet 8 — Control Check:
+        Reconciles input totals, SO/header/line structures, mapping completeness,
+        sequence pairing, and tester rules. WARN results never block output.
+
+    Sheet 9 — Input Audit:
+        Lists each source CSV row exactly once with its processing disposition
+        and reason, including rows skipped before SO generation.
 
     Args:
-        result:      Populated ProcessingResult from process_csv_files().
-        output_path: Absolute Path where the .xlsx file will be saved.
+        result:      Populated ProcessingResult.
+        output_path: Where to save the .xlsx file.
     """
-    log.info(f"[Writer] Writing workbook to: {output_path}")
-
-    today_str = datetime.now().strftime("%d-%m-%Y")   # date string for all date columns
+    log.info(f"[Writer] Writing: {output_path.name}")
+    today = datetime.now().strftime("%d-%m-%Y")
 
     wb = Workbook()
-    wb.remove(wb.active)   # remove the default empty sheet that openpyxl creates
+    wb.remove(wb.active)   # remove default empty sheet
 
-    # ──────────────────────────────────────────────────────────────────────────
+    # -----------------------------------------------------------------------
     # SHEET 1: Headers (SO)
-    # ──────────────────────────────────────────────────────────────────────────
-    # One row per unique Sales Order (= one row per unique PO).
-    # Column layout matches the D365 Sales Order Header import template exactly.
-    # Columns 14-18 (dimensions) are left blank for H&G but must be present for
-    # the D365 importer to accept the file without template errors.
-
+    # -----------------------------------------------------------------------
     ws_hdr = wb.create_sheet("Headers (SO)")
-
-    header_cols = [
-        "Document Type",           # col 1  — always "Order"
-        "No.",                     # col 2  — SO number (e.g. SO/HG/05/23526)
-        "Sell-to Customer No.",    # col 3  — customer number from Address Master
-        "Ship-to Code",            # col 4  — ship-to code from Address Master
-        "Posting Date",            # col 5  — today's date
-        "Order Date",              # col 6  — today's date
-        "Document Date",           # col 7  — today's date
-        "Invoice From Date",       # col 8  — today's date
-        "Invoice To Date",         # col 9  — today's date
-        "External Document No.",   # col 10 — repeated SO number (D365 ext ref field)
-        "Location Code",           # col 11 — warehouse D365 code (e.g. "PICK")
-        "Dimension Set ID",        # col 12 — blank for H&G
-        "Supply Type",             # col 13 — always "B2B"
-        "Voucher Narration",       # col 14 — blank (dimension field)
-        "Brand Code (Dimension)",  # col 15 — blank (dimension field)
-        "Channel Code (Dimension)",# col 16 — blank (dimension field)
-        "Catagory (Dimension)",    # col 17 — blank (note: original typo preserved)
-        "Geography Code (Dimension)", # col 18 — blank (dimension field)
+    hcols = [
+        "Document Type",            # always "Order"
+        "Document No.",             # SO number
+        "Sell-to Customer No.",     # from Address Master
+        "Ship-to Code",             # from Address Master
+        "Posting Date",             # today
+        "Order Date",               # today
+        "Document Date",            # today
+        "Invoice From Date",        # today
+        "Invoice To Date",          # today
+        "External Document No.",    # original PO number (for traceability)
+        "Location Code",            # warehouse D365 code
+        "Dimension Set ID",         # blank (D365 required column)
+        "Supply Type",              # always "B2B"
+        "Voucher Narration",        # blank
+        "Brand Code (Dimension)",   # blank
+        "Channel Code (Dimension)", # blank
+        "Catagory (Dimension)",     # blank (typo preserved from D365 template)
+        "Geography Code (Dimension)", # blank
     ]
-    for c, h in enumerate(header_cols, 1):
-        _apply_header(ws_hdr.cell(1, c), h)
+    for c, h in enumerate(hcols, 1):
+        _hdr(ws_hdr.cell(1, c), h)
 
-    # Track which SO numbers have been written to avoid duplicates
-    # (multiple SKU rows share the same SO but should produce only one Header row).
     seen_so: set = set()
-    r = 2   # data starts at row 2 (row 1 is the header)
-
+    r = 2
     for sorow in result.rows:
         if sorow.so_number in seen_so:
-            continue   # only write the header once per SO
+            continue
         seen_so.add(sorow.so_number)
 
-        ws_hdr.cell(r, 1,  "Order")             # Document Type — always Order
-        ws_hdr.cell(r, 2,  sorow.so_number)     # SO number
-        ws_hdr.cell(r, 3,  sorow.cust_no)       # Sell-to Customer No.
-        ws_hdr.cell(r, 4,  sorow.ship_to)       # Ship-to Code
-        ws_hdr.cell(r, 5,  today_str)           # Posting Date
-        ws_hdr.cell(r, 6,  today_str)           # Order Date
-        ws_hdr.cell(r, 7,  today_str)           # Document Date
-        ws_hdr.cell(r, 8,  today_str)           # Invoice From Date
-        ws_hdr.cell(r, 9,  today_str)           # Invoice To Date
-        ws_hdr.cell(r, 10, sorow.so_number)     # External Document No. = SO number
-        ws_hdr.cell(r, 11, result.warehouse_code) # Location Code
-        ws_hdr.cell(r, 12, "")                  # Dimension Set ID — blank
-        ws_hdr.cell(r, 13, "B2B")               # Supply Type — always B2B for H&G
-        for c in range(14, 19):
-            ws_hdr.cell(r, c, "")              # Dimension columns — all blank
+        # External Document No: original PO for regular, "TESTERS" for tester SOs
+        ext_doc_no = "TESTERS" if sorow.is_tester else sorow.po_number
+
+        vals = [
+            "Order", sorow.so_number, sorow.cust_no, sorow.ship_to,
+            today, today, today, today, today,
+            ext_doc_no,               # External Doc No = PO for regular, "TESTERS" for tester
+            result.warehouse_code, "",
+            "B2B",
+            "", "", "", "", "",
+        ]
+        row_fill = TESTER_FILL if sorow.is_tester else REGULAR_FILL
+        for c, v in enumerate(vals, 1):
+            cell = ws_hdr.cell(r, c, v)
+            cell.fill = row_fill
+
         r += 1
 
-    ws_hdr.freeze_panes = "A2"   # freeze header row so it stays visible when scrolling
-    _autofit_columns(ws_hdr)
+    ws_hdr.freeze_panes = "A2"
+    _autofit(ws_hdr)
 
-    # ──────────────────────────────────────────────────────────────────────────
+    # -----------------------------------------------------------------------
     # SHEET 2: Lines (SO)
-    # ──────────────────────────────────────────────────────────────────────────
-    # One row per SKU per PO.
-    # Line numbers are 10000, 20000, 30000, … and RESET for each new PO.
-    # This matches D365 import expectations and is required by the business.
-
+    # -----------------------------------------------------------------------
     ws_line = wb.create_sheet("Lines (SO)")
-
-    line_cols = [
-        "Document Type",   # col 1 — always "Order"
-        "Document No.",    # col 2 — SO number (links to Header sheet)
-        "Line No.",        # col 3 — 10000, 20000, … (resets per PO)
-        "Type",            # col 4 — always "Item"
-        "No.",             # col 5 — D365 Item Number from Items Master
-        "Location Code",   # col 6 — warehouse code (same as Header)
-        "Quantity",        # col 7 — final qty (1 for tester, actual for regular)
-        "Unit Price",      # col 8 — 0.54 for tester, blank for regular
+    lcols = [
+        "Document Type",   # always "Order"
+        "Document No.",    # SO number
+        "Line No.",        # 1000, 2000,... resets per SO
+        "Type",            # always "Item"
+        "No.",             # D365 Item Number
+        "Location Code",   # warehouse code
+        "Quantity",        # final qty (1 for tester; actual for regular)
+        "Unit Price",      # 0.54 for tester; blank for regular
     ]
-    for c, h in enumerate(line_cols, 1):
-        _apply_header(ws_line.cell(1, c), h)
+    for c, h in enumerate(lcols, 1):
+        _hdr(ws_line.cell(1, c), h)
 
-    r          = 2
-    current_po = None   # tracks current PO to detect when we move to the next one
-    line_no    = 0      # resets to 0 each time current_po changes
+    r             = 2
+    line_no_by_so: Dict[str, int] = {}
 
     for sorow in result.rows:
-        if sorow.po_number != current_po:
-            # New PO encountered — reset line number counter.
-            current_po = sorow.po_number
-            line_no    = 0
+        # Regular and tester rows can be interleaved, so track each SO
+        # independently rather than resetting based on the previous row.
+        line_no = line_no_by_so.get(sorow.so_number, 0) + 1000
+        line_no_by_so[sorow.so_number] = line_no
+        sorow.line_no = line_no
 
-        line_no += 10000   # increment by 10000 (D365 convention for SO lines)
+        row_fill = TESTER_FILL if sorow.is_tester else REGULAR_FILL
+        vals = [
+            "Order", sorow.so_number, line_no, "Item",
+            sorow.item_no, result.warehouse_code, sorow.qty,
+            sorow.unit_price if sorow.is_tester else "",
+        ]
+        for c, v in enumerate(vals, 1):
+            cell = ws_line.cell(r, c, v)
+            cell.fill = row_fill
 
-        ws_line.cell(r, 1, "Order")                 # Document Type
-        ws_line.cell(r, 2, sorow.so_number)         # Document No.
-        ws_line.cell(r, 3, line_no)                 # Line No.
-        ws_line.cell(r, 4, "Item")                  # Type
-        ws_line.cell(r, 5, sorow.item_no)           # No. (D365 Item Number)
-        ws_line.cell(r, 6, result.warehouse_code)   # Location Code
-        ws_line.cell(r, 7, sorow.qty)               # Quantity
-        # Unit Price: 0.54 for tester lines, blank string for regular
-        # (blank is correct for D365 regular import — price comes from the item card)
-        ws_line.cell(r, 8, sorow.unit_price if sorow.is_tester else "")
         r += 1
 
     ws_line.freeze_panes = "A2"
-    _autofit_columns(ws_line)
+    _autofit(ws_line)
 
-    # ──────────────────────────────────────────────────────────────────────────
+    # Checks depend on written header membership and assigned line numbers.
+    _build_control_checks(result, seen_so)
+
+    # -----------------------------------------------------------------------
     # SHEET 3: Summary
-    # ──────────────────────────────────────────────────────────────────────────
-    # One row per PO — provides a quick overview for order validation.
-    # Status cell is colour-coded: green = OK, amber = WARN (mapping issues).
+    # -----------------------------------------------------------------------
+    # One row per PO with BOTH regular and tester SOs visible side by side.
+    # This is the primary inspection sheet for the user before D365 upload.
 
     ws_sum = wb.create_sheet("Summary")
-
-    sum_cols = [
-        "PO",           # original PO number
-        "SO Number",    # generated SO number
-        "Store (Raw)",  # store name from CSV
-        "Ship-to Code", # resolved from Address Master
-        "Cust No",      # same as Ship-to for H&G
-        "Items",        # count of unique SKUs in this PO
-        "Total Qty",    # sum of all quantities in this PO
-        "Status",       # OK or WARN
+    scols = [
+        "PO Number",      # original PO
+        "Regular SO",     # e.g. SO/HG/05/24526
+        "Tester SO",      # e.g. SO/HG/TT/24526 (or N/A)
+        "Store",          # raw store name from CSV
+        "Ship-to Code",   # from Address Master
+        "Cust No",        # from Address Master
+        "Items (SKUs)",   # unique SKU count in this PO
+        "Regular Qty",    # sum of all quantities (regular)
+        "Tester Qty",     # number of tester lines (= items count, each qty=1)
+        "Status",         # OK / WARN
+        "Warnings",       # count of warnings for this PO
     ]
-    for c, h in enumerate(sum_cols, 1):
-        _apply_header(ws_sum.cell(1, c), h)
+    for c, h in enumerate(scols, 1):
+        _hdr(ws_sum.cell(1, c), h)
 
     r = 2
     for po, info in result.po_summary.items():
-        ws_sum.cell(r, 1, po)
-        ws_sum.cell(r, 2, info['so_number'])
-        ws_sum.cell(r, 3, info['store'])
-        ws_sum.cell(r, 4, info['ship_to'])
-        ws_sum.cell(r, 5, info['cust_no'])
-        ws_sum.cell(r, 6, info['items'])
-        ws_sum.cell(r, 7, info['total_qty'])
-        status_cell      = ws_sum.cell(r, 8, info['status'])
+        ws_sum.cell(r, 1,  po)
+        ws_sum.cell(r, 2,  info['regular_so'])
+        ws_sum.cell(r, 3,  info['tester_so'])     # "N/A" if tester not requested
+        ws_sum.cell(r, 4,  info['store'])
+        ws_sum.cell(r, 5,  info['ship_to'])
+        ws_sum.cell(r, 6,  info['cust_no'])
+        ws_sum.cell(r, 7,  info['items'])
+        ws_sum.cell(r, 8,  info['regular_qty'])
+        ws_sum.cell(r, 9,  info['tester_qty'])
+
+        status_cell      = ws_sum.cell(r, 10, info['status'])
         status_cell.fill = OK_FILL if info['status'] == "OK" else WARN_FILL
         status_cell.font = BOLD_FONT
+
+        warn_cell      = ws_sum.cell(r, 11, info['warnings_count'])
+        warn_cell.fill = OK_FILL if info['warnings_count'] == 0 else WARN_FILL
+
         r += 1
 
     ws_sum.freeze_panes = "A2"
-    _autofit_columns(ws_sum)
+    _autofit(ws_sum)
 
-    # ──────────────────────────────────────────────────────────────────────────
-    # SHEET 4: Validation
-    # ──────────────────────────────────────────────────────────────────────────
-    # Full line-level detail for inspection before uploading to D365.
-    # Each row corresponds to one SORow — the user can cross-check EAN, MRP,
-    # description, and quantity here before committing the import.
+    # -----------------------------------------------------------------------
+    # SHEET 4: SKU Pivot Summary
+    # -----------------------------------------------------------------------
+    # Group by SKU code and sum quantities by type (regular vs tester).
+    # Shows EAN, Item No, Description, and totals for verification.
+
+    ws_sku = wb.create_sheet("SKU Pivot")
+    pcols = [
+        "SKU Code",       # original SKU from CSV
+        "EAN",            # resolved EAN code
+        "Item No",        # D365 Item Number
+        "Description",    # from Items Master
+        "MRP",            # from Items Master
+        "Regular Qty",    # sum of regular quantities
+        "Tester Qty",     # sum of tester quantities
+        "Total Qty",      # regular + tester
+    ]
+    for c, h in enumerate(pcols, 1):
+        _hdr(ws_sku.cell(1, c), h)
+
+    # Build SKU pivot: {sku_code → {ean, item_no, description, mrp, regular_qty, tester_qty}}
+    sku_pivot: Dict[str, Dict] = {}
+    for sorow in result.rows:
+        if sorow.sku_code not in sku_pivot:
+            sku_pivot[sorow.sku_code] = {
+                'ean': sorow.ean,
+                'item_no': sorow.item_no,
+                'description': sorow.description,
+                'mrp': sorow.mrp if sorow.mrp else "",
+                'regular_qty': 0,
+                'tester_qty': 0,
+            }
+        if sorow.is_tester:
+            sku_pivot[sorow.sku_code]['tester_qty'] += sorow.qty
+        else:
+            sku_pivot[sorow.sku_code]['regular_qty'] += sorow.qty
+
+    r = 2
+    for sku_code in sorted(sku_pivot.keys()):
+        data = sku_pivot[sku_code]
+        regular_qty = data['regular_qty']
+        tester_qty = data['tester_qty']
+        total_qty = regular_qty + tester_qty
+
+        ws_sku.cell(r, 1, sku_code)
+        ws_sku.cell(r, 2, data['ean'])
+        ws_sku.cell(r, 3, data['item_no'])
+        ws_sku.cell(r, 4, data['description'])
+        ws_sku.cell(r, 5, data['mrp'])
+        ws_sku.cell(r, 6, regular_qty)
+        ws_sku.cell(r, 7, tester_qty)
+        ws_sku.cell(r, 8, total_qty)
+
+        r += 1
+
+    ws_sku.freeze_panes = "A2"
+    _autofit(ws_sku)
+
+    # -----------------------------------------------------------------------
+    # SHEET 5: Validation
+    # -----------------------------------------------------------------------
+    # Complete line-level inspection — every SORow in full detail.
+    # TYPE column clearly separates REGULAR from TESTER rows.
+    # Tester rows highlighted in blue so they're instantly recognisable.
 
     ws_val = wb.create_sheet("Validation")
-
-    val_cols = [
-        "PO",          # PO number
-        "SO Number",   # assigned SO number
-        "Item No",     # D365 Item Number (or ?MISSING_SKU / ?MISSING_EAN)
-        "EAN",         # resolved EAN barcode
-        "Description", # product name from Items Master
-        "MRP",         # Maximum Retail Price from Items Master
-        "Qty",         # final processed quantity
-        "Unit Price",  # cost price (only shown for tester; blank for regular)
-        "Tester",      # YES / NO tester flag
+    vcols = [
+        "PO",          # original PO number
+        "SO Number",   # assigned SO
+        "TYPE",        # REGULAR or TESTER — critical for inspection
+        "Item No",     # D365 Item Number
+        "SKU Code",    # original SKU from CSV
+        "EAN",         # resolved EAN
+        "Description", # from Items Master
+        "Input MRP",   # supplied in source CSV
+        "Master MRP",  # from Items Master
+        "Qty",         # final quantity
+        "Unit Price",  # 0.54 for tester; blank for regular
+        "Store",       # raw store name
+        "Ship-to",     # resolved from Address Master
+        "Cust No",     # resolved from Address Master
         "Status",      # OK / WARN
     ]
-    for c, h in enumerate(val_cols, 1):
-        _apply_header(ws_val.cell(1, c), h)
+    for c, h in enumerate(vcols, 1):
+        _hdr(ws_val.cell(1, c), h)
 
     r = 2
     for sorow in result.rows:
-        ws_val.cell(r, 1, sorow.po_number)
-        ws_val.cell(r, 2, sorow.so_number)
-        ws_val.cell(r, 3, sorow.item_no)
-        ws_val.cell(r, 4, sorow.ean)
-        ws_val.cell(r, 5, sorow.description)
-        ws_val.cell(r, 6, sorow.mrp if sorow.mrp else "")
-        ws_val.cell(r, 7, sorow.qty)
-        ws_val.cell(r, 8, sorow.unit_price if sorow.is_tester else "")
-        ws_val.cell(r, 9, "YES" if sorow.is_tester else "NO")
-        status_cell      = ws_val.cell(r, 10, sorow.status)
-        status_cell.fill = OK_FILL if sorow.status == "OK" else WARN_FILL
-        status_cell.font = BOLD_FONT
+        row_fill = TESTER_FILL if sorow.is_tester else REGULAR_FILL
+        vals = [
+            sorow.po_number, sorow.so_number, sorow.row_type,
+            sorow.item_no, sorow.sku_code, sorow.ean, sorow.description,
+            sorow.input_mrp if sorow.input_mrp else "",
+            sorow.mrp if sorow.mrp else "",
+            sorow.qty,
+            sorow.unit_price if sorow.is_tester else "",
+            sorow.store_name, sorow.ship_to, sorow.cust_no,
+            sorow.status,
+        ]
+        for c, v in enumerate(vals, 1):
+            cell = ws_val.cell(r, c, v)
+            cell.fill = row_fill
+
+        # Status cell overrides row fill.
+        ws_val.cell(r, 15).fill = OK_FILL if sorow.status == "OK" else WARN_FILL
+        ws_val.cell(r, 15).font = BOLD_FONT
+
         r += 1
 
     ws_val.freeze_panes = "A2"
-    _autofit_columns(ws_val)
+    _autofit(ws_val)
 
-    # ──────────────────────────────────────────────────────────────────────────
-    # SHEET 5: Warnings
-    # ──────────────────────────────────────────────────────────────────────────
-    # Collects all non-fatal issues: missing SKUs, missing EANs, unknown stores,
-    # duplicate rows, unreadable files, etc.
-    # If there are no warnings, a single green "all OK" row is shown so the
-    # user can confirm the sheet was checked rather than just being empty.
-
+    # -----------------------------------------------------------------------
+    # SHEET 6: Warnings
+    # -----------------------------------------------------------------------
     ws_warn = wb.create_sheet("Warnings")
-
-    warn_cols = ["PO", "SKU / Item", "Warning Message"]
-    for c, h in enumerate(warn_cols, 1):
-        _apply_header(ws_warn.cell(1, c), h)
+    for c, h in enumerate(["PO", "SKU / Item", "Warning Message"], 1):
+        _hdr(ws_warn.cell(1, c), h)
 
     if result.warnings:
-        # Write one row per warning, all amber-highlighted.
         for r_idx, (po, sku, msg) in enumerate(result.warnings, 2):
             ws_warn.cell(r_idx, 1, po)
             ws_warn.cell(r_idx, 2, sku)
             ws_warn.cell(r_idx, 3, msg)
             for c in range(1, 4):
-                ws_warn.cell(r_idx, c).fill = WARN_FILL   # amber row
+                ws_warn.cell(r_idx, c).fill = WARN_FILL
     else:
-        # No warnings — write a single green confirmation row.
-        ws_warn.cell(2, 1, "")
-        ws_warn.cell(2, 2, "")
         ws_warn.cell(2, 3, "No warnings — all SKUs, EANs, and stores mapped successfully ✓")
         ws_warn.cell(2, 3).fill = OK_FILL
 
-    _autofit_columns(ws_warn)
+    _autofit(ws_warn)
 
-    # ──────────────────────────────────────────────────────────────────────────
-    # SHEET 6: Raw Data
-    # ──────────────────────────────────────────────────────────────────────────
-    # Complete audit trail — one row per processed SORow with all fields
-    # including the original SKU code, EAN, resolved Item No, final qty,
-    # source file name, and warehouse.  Used for reconciliation and debugging.
-
+    # -----------------------------------------------------------------------
+    # SHEET 7: Raw Data
+    # -----------------------------------------------------------------------
     ws_raw = wb.create_sheet("Raw Data")
-
-    raw_cols = [
-        "Source File",  # name of the CSV file this line came from
-        "PO",           # original PO number
-        "Store",        # store name from CSV
-        "SKU Code",     # original SKU from CSV (before EAN/Item lookup)
-        "EAN",          # resolved EAN from HG Master
-        "Description",  # product description from Items Master
-        "Final Qty",    # qty after tester override (if applicable)
-        "MRP",          # MRP from Items Master
-        "Unit Price",   # 0.54 for tester; blank for regular
-        "SO Number",    # assigned SO number
-        "Item No",      # D365 Item Number from Items Master
-        "Warehouse",    # D365 Location Code
-        "Tester",       # YES / NO
-        "Status",       # OK / WARN
+    rcols = [
+        "Source File(s)", "PO", "Store", "SKU Code", "EAN",
+        "Description", "Final Qty", "Input MRP", "Master MRP", "Unit Price",
+        "SO Number", "Item No", "Warehouse", "TYPE", "Tester", "Status",
     ]
-    for c, h in enumerate(raw_cols, 1):
-        _apply_header(ws_raw.cell(1, c), h)
+    for c, h in enumerate(rcols, 1):
+        _hdr(ws_raw.cell(1, c), h)
 
     r = 2
     for sorow in result.rows:
-        # Source file: derive from the first input file for all rows.
-        # In a multi-file run every row is tagged to the first file as a
-        # simplification — a more precise per-row attribution would require
-        # storing the file name on SORow (future enhancement).
-        src_file = os.path.basename(result.input_files[0]) if result.input_files else ""
-
-        ws_raw.cell(r, 1,  src_file)
-        ws_raw.cell(r, 2,  sorow.po_number)
-        ws_raw.cell(r, 3,  sorow.store_name)
-        ws_raw.cell(r, 4,  sorow.sku_code)         # original SKU preserved on SORow
-        ws_raw.cell(r, 5,  sorow.ean)
-        ws_raw.cell(r, 6,  sorow.description)
-        ws_raw.cell(r, 7,  sorow.qty)
-        ws_raw.cell(r, 8,  sorow.mrp if sorow.mrp else "")
-        ws_raw.cell(r, 9,  sorow.unit_price if sorow.is_tester else "")
-        ws_raw.cell(r, 10, sorow.so_number)
-        ws_raw.cell(r, 11, sorow.item_no)
-        ws_raw.cell(r, 12, result.warehouse_code)
-        ws_raw.cell(r, 13, "YES" if sorow.is_tester else "NO")
-        status_cell      = ws_raw.cell(r, 14, sorow.status)
-        status_cell.fill = OK_FILL if sorow.status == "OK" else WARN_FILL
+        row_fill = TESTER_FILL if sorow.is_tester else REGULAR_FILL
+        vals = [
+            sorow.source_files, sorow.po_number, sorow.store_name, sorow.sku_code, sorow.ean,
+            sorow.description, sorow.qty,
+            sorow.input_mrp if sorow.input_mrp else "",
+            sorow.mrp if sorow.mrp else "",
+            sorow.unit_price if sorow.is_tester else "",
+            sorow.so_number, sorow.item_no, result.warehouse_code,
+            sorow.row_type,
+            "YES" if sorow.is_tester else "NO",
+            sorow.status,
+        ]
+        for c, v in enumerate(vals, 1):
+            cell = ws_raw.cell(r, c, v)
+            cell.fill = row_fill
+        ws_raw.cell(r, 16).fill = OK_FILL if sorow.status == "OK" else WARN_FILL
         r += 1
 
     ws_raw.freeze_panes = "A2"
-    _autofit_columns(ws_raw)
+    _autofit(ws_raw)
 
-    # ── Save ──────────────────────────────────────────────────────────────────
+    # -----------------------------------------------------------------------
+    # SHEET 8: Control Check
+    # -----------------------------------------------------------------------
+    ws_control = wb.create_sheet("Control Check")
+    control_cols = ["Check", "Expected", "Actual", "Result", "Review Note"]
+    for c, h in enumerate(control_cols, 1):
+        _hdr(ws_control.cell(1, c), h)
+
+    for r, (name, expected, actual, status, note) in enumerate(result.control_checks, 2):
+        values = [name, expected, actual, status, note]
+        for c, value in enumerate(values, 1):
+            ws_control.cell(r, c, value)
+        status_cell = ws_control.cell(r, 4)
+        status_cell.fill = OK_FILL if status == "PASS" else WARN_FILL
+        status_cell.font = BOLD_FONT
+
+    ws_control.freeze_panes = "A2"
+    _autofit(ws_control, max_w=75)
+
+    # -----------------------------------------------------------------------
+    # SHEET 9: Input Audit
+    # -----------------------------------------------------------------------
+    ws_input = wb.create_sheet("Input Audit")
+    input_cols = [
+        "Source File", "Source Row", "PO", "Store", "SKU Code",
+        "Input Qty", "Input MRP", "Disposition", "Reason",
+        "Regular SO", "Tester SO",
+    ]
+    for c, h in enumerate(input_cols, 1):
+        _hdr(ws_input.cell(1, c), h)
+
+    for r, audit in enumerate(result.input_audit, 2):
+        vals = [
+            audit.get('source_file', ''), audit.get('source_row', ''),
+            audit.get('po', ''), audit.get('store', ''), audit.get('sku', ''),
+            audit.get('input_qty', ''), audit.get('input_mrp', ''),
+            audit.get('disposition', ''), audit.get('reason', ''),
+            audit.get('regular_so', ''), audit.get('tester_so', ''),
+        ]
+        for c, value in enumerate(vals, 1):
+            ws_input.cell(r, c, value)
+        disposition = audit.get('disposition', '')
+        ws_input.cell(r, 8).fill = OK_FILL if disposition in ("PROCESSED", "CONSOLIDATED") else WARN_FILL
+        ws_input.cell(r, 8).font = BOLD_FONT
+
+    ws_input.freeze_panes = "A2"
+    _autofit(ws_input, max_w=80)
+
     wb.save(output_path)
     log.info(
-        f"[Writer] Workbook saved — "
-        f"{len(seen_so)} SOs | {len(result.rows)} lines | 6 sheets | {output_path.name}"
+        f"[Writer] Saved: {len(seen_so)} SOs | "
+        f"{len(result.rows)} lines | 9 sheets | {output_path.name}"
     )
 
 
 # ==============================================================================
-# SECTION 10 — GUI: LOG HANDLER
+# SECTION 10 — GUI LOG HANDLER
 # ==============================================================================
 
 class GuiLogHandler(logging.Handler):
     """
-    Custom logging.Handler that appends log records to a Tkinter Text widget.
+    Appends log records to a Tkinter Text widget in real time.
 
-    This is attached to the root 'mt_select' logger after the Text widget is
-    created in MTSelectApp.__init__().  All subsequent log calls from any
-    module therefore appear in both the GUI log panel and the log file.
-
-    Thread safety:
-        The Text widget can only be safely written from the main Tkinter thread.
-        We use widget.after(0, fn) to schedule the append on the main thread
-        even when the log call originates from the watcher background thread.
-
-    Args:
-        text_widget:  The tk.Text widget to write log lines into.
+    Thread-safe: uses widget.after(0, fn) so GUI mutations always happen
+    on the main Tkinter thread, even when called from the watcher thread.
     """
 
     def __init__(self, text_widget: tk.Text):
@@ -1613,20 +2025,16 @@ class GuiLogHandler(logging.Handler):
         self.text_widget = text_widget
 
     def emit(self, record: logging.LogRecord):
-        """Format the record and schedule appending it to the Text widget."""
         msg = self.format(record)
-
         def _append():
-            """Runs on the main Tkinter thread via after(0, …)."""
             self.text_widget.config(state='normal')
             self.text_widget.insert('end', msg + '\n')
-            self.text_widget.see('end')          # auto-scroll to bottom
+            self.text_widget.see('end')
             self.text_widget.config(state='disabled')
-
         try:
-            self.text_widget.after(0, _append)   # thread-safe GUI update
+            self.text_widget.after(0, _append)
         except Exception:
-            pass   # widget may be destroyed on exit — swallow silently
+            pass
 
 
 # ==============================================================================
@@ -1635,71 +2043,53 @@ class GuiLogHandler(logging.Handler):
 
 class MTSelectApp:
     """
-    Main Tkinter application window for the MT Select H&G Processor.
+    Main Tkinter GUI for MT Select H&G Processor v4.0.
 
-    Responsibilities:
-    - Build and lay out the entire GUI.
-    - Auto-load master files from data_mt/ on startup.
-    - Start the MasterWatcher background thread for auto-reload.
-    - Provide Browse buttons for manual master file selection.
-    - Accept CSV file selection.
-    - Trigger the processing engine and write output on ▶ Generate SO click.
-    - Display a live sequence counter showing the next SO number.
-    - Show the run summary and open the output file / log folder.
+    Layout (top to bottom):
+      1.  Title + subtitle
+      2.  Sequence info banner (live — shows next SO numbers)
+      3.  Warehouse dropdown + Tester checkbox
+      4.  Master Files section (auto-loaded; Browse for override)
+      5.  CSV Files section
+      6.  Buttons: Generate | Open Output | Open Logs | Reload Masters
+      7.  Status label (colour-coded)
+      8.  Processing Log (scrollable, read-only, mirrors log file)
 
-    Attributes:
-        root              : Tkinter root window.
-        csv_paths         : List of selected CSV file paths.
-        warehouse_var     : StringVar for the warehouse dropdown.
-        tester_var        : BooleanVar for the Tester mode checkbox.
-        status_var        : StringVar for the bottom status label.
-        last_output       : Path of the last generated Excel file.
-        last_result       : ProcessingResult from the last run (for re-export).
-        hg_master         : HGMasterLoader instance (shared with watcher).
-        items_master      : ItemsMasterLoader instance (shared with watcher).
-        address_master    : AddressMasterLoader instance (shared with watcher).
-        hg_path_var       : StringVar showing HG Master status in the UI.
-        items_path_var    : StringVar showing Items Master status in the UI.
-        address_path_var  : StringVar showing Address Master status in the UI.
-        master_status_var : StringVar for the combined master-ready banner.
-        seq_var           : StringVar for the sequence info banner.
-        watcher           : MasterWatcher thread instance.
+    Key behaviours:
+    - Masters auto-loaded from data_mt/ on startup.
+    - Browse copies the selected file into data_mt/ so future restarts
+      auto-load it without needing to Browse again.
+    - Background MasterWatcher reloads changed files every 30 s.
+    - Sequence banner updates live on Tester checkbox toggle and after each run.
+    - Output goes to <csv_folder>/output_mt/ next to the source CSVs.
     """
 
     def __init__(self):
-        # ── Root window ───────────────────────────────────────────────────────
         self.root = tk.Tk()
-        self.root.title("MT Select (Health & Glow) Processor  v3.0")
-        self.root.geometry("740x860")
-        self.root.resizable(False, False)
+        self.root.title("MT Select (Health & Glow) Processor  v4.0")
+        self.root.geometry("1000x1100")
+        self.root.resizable(True, True)
 
-        # ── Application state ─────────────────────────────────────────────────
-        self.csv_paths:   List[str]            = []    # CSV files selected by user
-        self.last_output: Optional[Path]       = None  # last generated Excel path
-        self.last_result: Optional[ProcessingResult] = None  # last run result
+        self.csv_paths:   List[str]            = []
+        self.last_output: Optional[Path]       = None
+        self.last_result: Optional[ProcessingResult] = None
 
-        # ── Tkinter variables (bound to GUI widgets) ──────────────────────────
-        self.warehouse_var    = tk.StringVar(value=DEFAULT_WAREHOUSE)
-        self.tester_var       = tk.BooleanVar(value=False)
-        self.status_var       = tk.StringVar(value="Initialising…")
-        self.hg_path_var      = tk.StringVar(value="Not selected")
-        self.items_path_var   = tk.StringVar(value="Not selected")
-        self.address_path_var = tk.StringVar(value="Not selected")
+        self.warehouse_var     = tk.StringVar(value=DEFAULT_WAREHOUSE)
+        self.tester_var        = tk.BooleanVar(value=False)
+        self.status_var        = tk.StringVar(value="Initialising…")
+        self.hg_path_var       = tk.StringVar(value="Not selected")
+        self.items_path_var    = tk.StringVar(value="Not selected")
+        self.address_path_var  = tk.StringVar(value="Not selected")
         self.master_status_var = tk.StringVar(value="Masters: Loading…")
-        self.seq_var          = tk.StringVar(value="Loading sequence…")
-        self.csv_var          = tk.StringVar(value="No files selected")
+        self.seq_var           = tk.StringVar(value="Loading sequence…")
+        self.csv_var           = tk.StringVar(value="No files selected")
 
-        # ── Master loader instances ───────────────────────────────────────────
-        # Created here so both the GUI and the MasterWatcher share the same objects.
         self.hg_master      = HGMasterLoader()
         self.items_master   = ItemsMasterLoader()
         self.address_master = AddressMasterLoader()
 
-        # ── Build all widgets ─────────────────────────────────────────────────
         self._build_ui()
 
-        # ── Attach GUI log handler AFTER Text widget exists ───────────────────
-        # Must be done after _build_ui() because the Text widget is created there.
         gui_handler = GuiLogHandler(self.log_text)
         gui_handler.setLevel(logging.DEBUG)
         gui_handler.setFormatter(
@@ -1707,411 +2097,241 @@ class MTSelectApp:
         )
         log.addHandler(gui_handler)
 
-        # ── Startup log messages ──────────────────────────────────────────────
         log.info("=" * 60)
-        log.info("MT Select (Health & Glow) Processor  v3.0  started")
-        log.info(f"Script folder  : {SCRIPT_DIR}")
-        log.info(f"data_mt folder : {DATA_MT_DIR}")
-        log.info(f"Log file       : {LOG_FILE}")
+        log.info("MT Select (Health & Glow) Processor  v4.0  started")
+        log.info(f"Script  : {SCRIPT_DIR}")
+        log.info(f"data_mt : {DATA_MT_DIR}")
+        log.info(f"Log     : {LOG_FILE}")
+        log.info(f"Today's base sequence: {_todays_base_sequence()}")
         log.info("=" * 60)
 
-        # ── Initial master auto-load ──────────────────────────────────────────
         self._auto_load_masters()
 
-        # ── Start background watcher thread ───────────────────────────────────
-        # The watcher will silently reload masters if their files change on disk.
         self.watcher = MasterWatcher(self)
         self.watcher.start()
-        log.info(
-            f"[Watcher] Auto-reload watcher started "
-            f"(interval: {MASTER_WATCH_INTERVAL_SEC}s)"
-        )
+        log.info(f"[Watcher] Started (interval={MASTER_WATCH_INTERVAL_SEC}s)")
 
-    # ──────────────────────────────────────────────────────────────────────────
-    # GUI BUILDER
-    # ──────────────────────────────────────────────────────────────────────────
+    # --------------------------------------------------------------------------
+    # UI BUILDER
+    # --------------------------------------------------------------------------
 
     def _build_ui(self):
-        """
-        Construct and lay out all Tkinter widgets.
+        tk.Label(self.root, text="MT Select  (Health & Glow)",
+                 font=("Arial", 15, "bold")).pack(pady=(12, 2))
+        tk.Label(self.root, text="CSV  →  D365 Sales Order Import  |  v4.0",
+                 font=("Arial", 9), fg="gray").pack(pady=(0, 6))
 
-        Layout (top to bottom):
-          1. Title label
-          2. Subtitle label
-          3. Sequence info banner (blue box showing next SO number)
-          4. Warehouse selector + Tester checkbox
-          5. Master Files section (3 rows with path labels + Browse buttons)
-          6. Input CSV Files section (path label + Browse button)
-          7. Action buttons row 1: Generate SO | Open Last Output
-          8. Action buttons row 2: Open Log Folder | Reload Masters
-          9. Status label (changes colour: orange/blue/green/red)
-         10. Processing Log text area (scrollable, read-only)
-        """
-
-        # ── 1. Title ─────────────────────────────────────────────────────────
-        tk.Label(
-            self.root,
-            text="MT Select (Health & Glow)",
-            font=("Arial", 15, "bold")
-        ).pack(pady=(12, 2))
-
-        # ── 2. Subtitle ──────────────────────────────────────────────────────
-        tk.Label(
-            self.root,
-            text="CSV  →  D365 Sales Order Import  |  v3.0",
-            font=("Arial", 9),
-            fg="gray"
-        ).pack(pady=(0, 6))
-
-        # ── 3. Sequence info banner ──────────────────────────────────────────
-        # Light-blue box showing the current HG/TT sequence and the next SO
-        # that will be generated.  Updates live when Tester checkbox is toggled
-        # and after each successful Generate run.
+        # Sequence banner
         seq_frame = tk.Frame(self.root, bg="#E3F2FD", relief='groove', bd=1)
         seq_frame.pack(fill='x', padx=20, pady=(0, 6))
-        tk.Label(
-            seq_frame,
-            textvariable=self.seq_var,
-            font=("Consolas", 9),
-            bg="#E3F2FD",
-            fg="#0D47A1"
-        ).pack(pady=5, padx=8)
+        tk.Label(seq_frame, textvariable=self.seq_var,
+                 font=("Consolas", 8), bg="#E3F2FD", fg="#0D47A1").pack(pady=5, padx=8)
 
-        # ── 4. Warehouse + Tester row ─────────────────────────────────────────
-        top_frame = tk.Frame(self.root)
-        top_frame.pack(fill='x', padx=20, pady=4)
-
-        tk.Label(top_frame, text="Warehouse:", font=("Arial", 10, "bold")).pack(side='left')
-
-        # Warehouse dropdown — values come from the WAREHOUSES dict keys.
-        wh_combo = ttk.Combobox(
-            top_frame,
-            textvariable=self.warehouse_var,
-            values=list(WAREHOUSES.keys()),
-            state='readonly',
-            width=8
-        )
-        wh_combo.pack(side='left', padx=8)
-
-        # Dynamic label showing the D365 Location Code for the selected warehouse.
-        wh_code_label = tk.Label(
-            top_frame,
-            text=f"→ {WAREHOUSES[self.warehouse_var.get()]}",
-            font=("Arial", 9),
-            fg="gray"
-        )
-        wh_code_label.pack(side='left', padx=4)
-
-        # Update the D365 code label whenever the dropdown selection changes.
-        wh_combo.bind(
-            '<<ComboboxSelected>>',
-            lambda e: wh_code_label.config(
-                text=f"→ {WAREHOUSES[self.warehouse_var.get()]}"
-            )
-        )
-
-        # Tester mode checkbox — on toggle, refresh the sequence banner.
+        # Warehouse + Tester
+        top = tk.Frame(self.root)
+        top.pack(fill='x', padx=20, pady=4)
+        tk.Label(top, text="Warehouse:", font=("Arial", 10, "bold")).pack(side='left')
+        wh = ttk.Combobox(top, textvariable=self.warehouse_var,
+                          values=list(WAREHOUSES.keys()), state='readonly', width=8)
+        wh.pack(side='left', padx=8)
+        wh_lbl = tk.Label(top, text=f"→ {WAREHOUSES[self.warehouse_var.get()]}",
+                          font=("Arial", 9), fg="gray")
+        wh_lbl.pack(side='left', padx=4)
+        wh.bind('<<ComboboxSelected>>',
+                lambda e: wh_lbl.config(text=f"→ {WAREHOUSES[self.warehouse_var.get()]}"))
         tk.Checkbutton(
-            top_frame,
-            text="Tester Orders  (SO/TT, qty=1, CP=₹0.54)",
-            variable=self.tester_var,
-            font=("Arial", 9),
-            command=self._refresh_seq_display   # update banner immediately on toggle
+            top,
+            text="Tester Orders  (generates BOTH regular + tester SOs per PO)",
+            variable=self.tester_var, font=("Arial", 9),
+            command=self._refresh_seq_display
         ).pack(side='right')
 
-        # ── 5. Master Files section ───────────────────────────────────────────
-        master_frame = tk.LabelFrame(
-            self.root,
-            text="Master Files  (auto-loaded from data_mt/ — no manual upload needed)",
-            font=("Arial", 10, "bold"),
-            padx=10,
-            pady=8
-        )
-        master_frame.pack(fill='x', padx=20, pady=6)
-
-        # One row per master file: label | path display | Browse button.
-        self._master_row(master_frame, "HG Master (SKU→EAN):",
+        # Master Files
+        mf = tk.LabelFrame(self.root,
+                            text="Master Files  (auto-loaded from data_mt/  ·  Browse copies file to data_mt/)",
+                            font=("Arial", 10, "bold"), padx=10, pady=8)
+        mf.pack(fill='x', padx=20, pady=6)
+        self._master_row(mf, "HG Master (SKU→EAN):",
                          self.hg_path_var, self._select_hg_master)
-        self._master_row(master_frame, "Items Master (EAN→Item):",
+        self._master_row(mf, "Items Master (EAN→Item):",
                          self.items_path_var, self._select_items_master)
-        self._master_row(master_frame, "Address Master (Store→ShipTo):",
+        self._master_row(mf, "Address Master (Store→ShipTo):",
                          self.address_path_var, self._select_address_master)
+        tk.Label(mf, textvariable=self.master_status_var,
+                 font=("Arial", 9), fg="blue").pack(anchor='w', pady=(4, 0))
 
-        # Combined status banner — green when all three masters are loaded.
-        tk.Label(
-            master_frame,
-            textvariable=self.master_status_var,
-            font=("Arial", 9),
-            fg="blue"
-        ).pack(anchor='w', pady=(4, 0))
+        # CSV Files
+        cf = tk.LabelFrame(self.root, text="Input CSV Files",
+                           font=("Arial", 10, "bold"), padx=10, pady=8)
+        cf.pack(fill='x', padx=20, pady=6)
+        crow = tk.Frame(cf)
+        crow.pack(fill='x')
+        tk.Label(crow, text="CSV Files:", font=("Arial", 9)).pack(side='left')
+        tk.Label(crow, textvariable=self.csv_var, font=("Arial", 9),
+                 fg="blue", width=46, anchor='w').pack(side='left', padx=8)
+        tk.Button(crow, text="Browse", command=self._select_csv_files).pack(side='right')
 
-        # ── 6. Input CSV Files section ────────────────────────────────────────
-        csv_frame = tk.LabelFrame(
-            self.root,
-            text="Input CSV Files",
-            font=("Arial", 10, "bold"),
-            padx=10,
-            pady=8
-        )
-        csv_frame.pack(fill='x', padx=20, pady=6)
-
-        csv_row = tk.Frame(csv_frame)
-        csv_row.pack(fill='x')
-        tk.Label(csv_row, text="CSV Files:", font=("Arial", 9)).pack(side='left')
-        tk.Label(
-            csv_row,
-            textvariable=self.csv_var,
-            font=("Arial", 9),
-            fg="blue",
-            width=44,
-            anchor='w'
-        ).pack(side='left', padx=8)
-        tk.Button(
-            csv_row,
-            text="Browse",
-            command=self._select_csv_files
-        ).pack(side='right')
-
-        # ── 7. Action buttons row 1 ───────────────────────────────────────────
-        btn_frame = tk.Frame(self.root)
-        btn_frame.pack(pady=8)
-
-        tk.Button(
-            btn_frame,
-            text="▶  Generate SO",
-            width=24,
-            font=("Arial", 10, "bold"),
-            bg="#00C853",       # green — primary action
-            fg="white",
-            command=self.generate
-        ).pack(side='left', padx=6)
-
-        # Open Last Output — disabled until the first successful generation.
-        self.open_btn = tk.Button(
-            btn_frame,
-            text="📂  Open Last Output",
-            width=24,
-            state=tk.DISABLED,   # enabled after first successful Generate
-            command=self.open_last
-        )
+        # Buttons row 1
+        bf1 = tk.Frame(self.root)
+        bf1.pack(pady=8)
+        tk.Button(bf1, text="▶  Generate SO", width=26,
+                  font=("Arial", 10, "bold"), bg="#00C853", fg="white",
+                  command=self.generate).pack(side='left', padx=6)
+        self.open_btn = tk.Button(bf1, text="📂  Open Last Output", width=26,
+                                  state=tk.DISABLED, command=self.open_last)
         self.open_btn.pack(side='left', padx=6)
 
-        # ── 8. Action buttons row 2 ───────────────────────────────────────────
-        btn_frame2 = tk.Frame(self.root)
-        btn_frame2.pack(pady=2)
+        # Buttons row 2
+        bf2 = tk.Frame(self.root)
+        bf2.pack(pady=2)
+        tk.Button(bf2, text="📂  Open Log Folder", width=26,
+                  command=self.open_log_folder).pack(side='left', padx=6)
+        tk.Button(bf2, text="🔄  Reload Masters", width=26,
+                  command=self._auto_load_masters).pack(side='left', padx=6)
 
-        tk.Button(
-            btn_frame2,
-            text="📂  Open Log Folder",
-            width=24,
-            command=self.open_log_folder
-        ).pack(side='left', padx=6)
-
-        tk.Button(
-            btn_frame2,
-            text="🔄  Reload Masters",
-            width=24,
-            command=self._auto_load_masters   # manual reload trigger
-        ).pack(side='left', padx=6)
-
-        # ── 9. Status label ───────────────────────────────────────────────────
-        # Colour meanings:
-        #   gray       — initial/idle
-        #   orange     — masters not ready
-        #   blue       — processing in progress
-        #   darkgreen  — success
-        #   red        — error / no output produced
-        self.status_label = tk.Label(
-            self.root,
-            textvariable=self.status_var,
-            font=("Arial", 10),
-            fg="gray",
-            wraplength=700
-        )
+        # Status
+        self.status_label = tk.Label(self.root, textvariable=self.status_var,
+                                     font=("Arial", 10), fg="gray", wraplength=720)
         self.status_label.pack(pady=4)
 
-        # ── 10. Processing Log ────────────────────────────────────────────────
-        log_frame = tk.LabelFrame(
-            self.root,
-            text="Processing Log  ·  also saved to Logs/ folder",
-            font=("Arial", 9)
-        )
-        log_frame.pack(fill='both', expand=True, padx=20, pady=(0, 12))
-
-        scroll = ttk.Scrollbar(log_frame, orient='vertical')
-        scroll.pack(side='right', fill='y')
-
-        # Read-only Text widget — state toggled to 'normal' only when appending.
-        self.log_text = tk.Text(
-            log_frame,
-            height=14,
-            font=("Consolas", 8),
-            state='disabled',
-            wrap='word',
-            yscrollcommand=scroll.set
-        )
+        # Log panel
+        lf = tk.LabelFrame(self.root,
+                            text="Processing Log  ·  also saved to Logs/ folder",
+                            font=("Arial", 9))
+        lf.pack(fill='both', expand=True, padx=20, pady=(0, 12))
+        sc = ttk.Scrollbar(lf, orient='vertical')
+        sc.pack(side='right', fill='y')
+        self.log_text = tk.Text(lf, height=14, font=("Consolas", 8),
+                                state='disabled', wrap='word', yscrollcommand=sc.set)
         self.log_text.pack(fill='both', expand=True)
-        scroll.config(command=self.log_text.yview)
+        sc.config(command=self.log_text.yview)
 
-    def _master_row(self, parent, label_text: str, path_var, command):
-        """
-        Helper to build one master-file row inside the Master Files section.
+    def _master_row(self, parent, label, path_var, cmd):
+        f = tk.Frame(parent)
+        f.pack(fill='x', pady=3)
+        tk.Label(f, text=label, font=("Arial", 9), width=30, anchor='w').pack(side='left')
+        tk.Label(f, textvariable=path_var, font=("Arial", 9), fg="blue",
+                 width=30, anchor='w').pack(side='left', padx=4)
+        tk.Button(f, text="Browse", command=cmd).pack(side='right')
 
-        Each row contains:
-            [Label: 28 chars]  [Path display: 28 chars]  [Browse button]
-
-        Args:
-            parent:     Parent tk.Frame (the LabelFrame for master files).
-            label_text: Descriptive label (e.g. "HG Master (SKU→EAN):").
-            path_var:   StringVar that displays the current file name / status.
-            command:    Callback for the Browse button.
-        """
-        frame = tk.Frame(parent)
-        frame.pack(fill='x', pady=3)
-        tk.Label(frame, text=label_text, font=("Arial", 9), width=30, anchor='w').pack(side='left')
-        tk.Label(frame, textvariable=path_var, font=("Arial", 9), fg="blue",
-                 width=28, anchor='w').pack(side='left', padx=4)
-        tk.Button(frame, text="Browse", command=command).pack(side='right')
-
-    # ──────────────────────────────────────────────────────────────────────────
+    # --------------------------------------------------------------------------
     # SEQUENCE DISPLAY
-    # ──────────────────────────────────────────────────────────────────────────
+    # --------------------------------------------------------------------------
 
     def _refresh_seq_display(self):
         """
-        Update the sequence info banner to reflect the current mode and
-        the next SO number that will be generated.
-
-        Called:
-        - After _auto_load_masters() completes (startup).
-        - When the Tester checkbox is toggled.
-        - After each successful Generate run.
-
-        Reads the current sequences fresh from SEQ_FILE each time so the
-        display is accurate even if the file was edited externally.
+        Update the banner with the shared next SO number and optional tester pair.
+        Reads SEQ_FILE fresh each time to reflect external edits.
+        Called on: startup, Tester toggle, after each Generate run.
         """
         seqs  = load_sequences()
-        month = datetime.now().strftime("%m")   # current month for display
+        month = datetime.now().strftime("%m")
+        base  = _todays_base_sequence()
+        shared = int(seqs["HG"])
+
+        next_hg = f"SO/HG/{month}/{shared+1}"
+        next_tt = f"SO/HG/TT/{shared+1}"
 
         if self.tester_var.get():
-            # Tester mode: TT sequence active, HG paused.
-            next_so = f"SO/TT/{month}/{seqs['TT'] + 1}"
             self.seq_var.set(
-                f"TESTER MODE  ·  Next SO: {next_so}  ·  "
-                f"TT sequence: {seqs['TT']}  ·  HG sequence: {seqs['HG']} (paused)"
+                f"REGULAR + TESTER MODE  ·  "
+                f"Next Regular: {next_hg}  ·  "
+                f"Next Tester: {next_tt}  ·  "
+                f"Shared seq={shared}  ·  "
+                f"Today base={base}"
             )
         else:
-            # Regular mode: HG sequence active, TT paused.
-            next_so = f"SO/HG/{month}/{seqs['HG'] + 1}"
             self.seq_var.set(
-                f"REGULAR MODE  ·  Next SO: {next_so}  ·  "
-                f"HG sequence: {seqs['HG']}  ·  TT sequence: {seqs['TT']} (paused)"
+                f"REGULAR ONLY MODE  ·  "
+                f"Next SO: {next_hg} (shared seq={shared})  ·  "
+                f"Today base={base}"
             )
 
-    # ──────────────────────────────────────────────────────────────────────────
+    # --------------------------------------------------------------------------
     # MASTER STATUS
-    # ──────────────────────────────────────────────────────────────────────────
+    # --------------------------------------------------------------------------
 
-    def _update_master_status(self):
+    def _update_master_status(self) -> bool:
         """
-        Check whether all three masters are loaded and update the status banner.
-
-        Returns:
-            True if all masters have at least one record loaded.
-            False if any master is empty (showing which ones are missing).
-
-        This is called:
-        - After each individual master load (auto or manual Browse).
-        - By the watcher thread (via root.after) after a background reload.
-        - At the start of generate() to gate the run.
+        Update the master status banner. Returns True if all 3 masters ready.
+        Called after each load and by the watcher thread (via root.after).
         """
         if (self.hg_master.sku_to_ean
                 and self.items_master.ean_to_item
                 and self.address_master.store_to_ship):
-            # All three loaded — show counts and ready indicator.
             self.master_status_var.set(
                 f"Masters: Ready ✓  ·  "
-                f"HG = {len(self.hg_master.sku_to_ean)} SKUs  ·  "
-                f"Items = {len(self.items_master.ean_to_item)} EANs  ·  "
-                f"Addresses = {len(self.address_master.store_to_ship)} stores"
+                f"HG={len(self.hg_master.sku_to_ean)} SKUs  ·  "
+                f"Items={len(self.items_master.ean_to_item)} EANs  ·  "
+                f"Addresses={len(self.address_master.store_to_ship)} stores"
             )
             self.status_var.set("Ready — select CSV files and click ▶ Generate SO")
             self.status_label.config(fg="darkgreen")
             return True
 
-        # One or more masters missing — list which ones.
         missing = []
-        if not self.hg_master.sku_to_ean:      missing.append("HG Master")
-        if not self.items_master.ean_to_item:  missing.append("Items Master")
+        if not self.hg_master.sku_to_ean:         missing.append("HG Master")
+        if not self.items_master.ean_to_item:     missing.append("Items Master")
         if not self.address_master.store_to_ship: missing.append("Address Master")
-
         self.master_status_var.set(f"Masters: Missing → {', '.join(missing)}")
-        self.status_var.set(
-            "Place master files in data_mt/ folder (or use Browse to select manually)"
-        )
+        self.status_var.set("Place master files in data_mt/ or use Browse")
         self.status_label.config(fg="orange")
         return False
 
-    # ──────────────────────────────────────────────────────────────────────────
+    def _fmt_mtime(self, path: Path) -> str:
+        """Return formatted last-modified time string for a file."""
+        try:
+            t = datetime.fromtimestamp(os.path.getmtime(path))
+            return f"  [updated {t.strftime('%Y-%m-%d %H:%M')}]"
+        except Exception:
+            return ""
+
+    # --------------------------------------------------------------------------
     # AUTO-LOAD MASTERS
-    # ──────────────────────────────────────────────────────────────────────────
+    # --------------------------------------------------------------------------
 
     def _auto_load_masters(self):
         """
-        Scan DATA_MT_DIR for master files and load them automatically.
+        Scan DATA_MT_DIR for master files and load them.
 
-        File matching rules (sorted reverse-alphabetically so latest version wins):
-            HG Master:      matches  HG Master*.xlsx
-            Items Master:   matches  Items*.xlsx
-            Address Master: matches  H&G Addresses*.xlsx
+        File matching (alphabetically last wins = most recent by name convention):
+          HG Master:      HG Master*.xlsx
+          Items Master:   Items*.xlsx
+          Address Master: H&G Addresses*.xlsx
 
-        If DATA_MT_DIR doesn't exist yet (created at import but could be on a
-        different drive), a clear warning is logged and the user is prompted to
-        use Browse or add files to data_mt/.
-
-        This method is also bound to the "Reload Masters" button so the user
-        can trigger a fresh scan after dropping new files into data_mt/.
+        Also bound to the Reload Masters button for manual refresh after
+        dropping new files into data_mt/.
         """
-        log.info(f"[Auto-load] Scanning data_mt/: {DATA_MT_DIR}")
-
+        log.info(f"[Auto-load] Scanning: {DATA_MT_DIR}")
         if not DATA_MT_DIR.exists():
-            log.warning(
-                f"[Auto-load] data_mt/ folder not found at {DATA_MT_DIR}.\n"
-                f"Create the folder and place master files inside it, "
-                f"or use Browse to select them manually."
-            )
+            log.warning(f"[Auto-load] data_mt/ not found at {DATA_MT_DIR}")
             self._update_master_status()
             self._refresh_seq_display()
             return
 
-        # ── HG Master (SKU → EAN) ─────────────────────────────────────────────
-        # sorted(..., reverse=True) picks the alphabetically last file, which by
-        # naming convention (e.g. "HG Master Dec 25.xlsx") is the most recent.
         for f in sorted(DATA_MT_DIR.glob("HG Master*.xlsx"), reverse=True):
             try:
                 cnt = self.hg_master.load(f)
-                self.hg_path_var.set(f"{f.name}  ({cnt} SKUs) ✓")
-                log.info(f"[Auto-load] HG Master loaded: {f.name}  ({cnt} SKUs)")
-                break   # stop after the first successful load
+                self.hg_path_var.set(f"{f.name}  ({cnt} SKUs) ✓{self._fmt_mtime(f)}")
+                log.info(f"[Auto-load] HG Master: {f.name} ({cnt} SKUs)")
+                break
             except Exception as e:
                 log.error(f"[Auto-load] HG Master failed ({f.name}): {e}")
 
-        # ── Items Master (EAN → D365 Item) ────────────────────────────────────
         for f in sorted(DATA_MT_DIR.glob("Items*.xlsx"), reverse=True):
             try:
                 cnt = self.items_master.load(f)
-                self.items_path_var.set(f"{f.name}  ({cnt} EANs) ✓")
-                log.info(f"[Auto-load] Items Master loaded: {f.name}  ({cnt} EANs)")
+                self.items_path_var.set(f"{f.name}  ({cnt} EANs) ✓{self._fmt_mtime(f)}")
+                log.info(f"[Auto-load] Items Master: {f.name} ({cnt} EANs)")
                 break
             except Exception as e:
                 log.error(f"[Auto-load] Items Master failed ({f.name}): {e}")
 
-        # ── Address Master (Store → Ship-to) ──────────────────────────────────
         for f in sorted(DATA_MT_DIR.glob("H&G Addresses*.xlsx"), reverse=True):
             try:
                 cnt = self.address_master.load(f)
-                self.address_path_var.set(f"{f.name}  ({cnt} stores) ✓")
-                log.info(f"[Auto-load] Address Master loaded: {f.name}  ({cnt} stores)")
+                self.address_path_var.set(f"{f.name}  ({cnt} stores) ✓{self._fmt_mtime(f)}")
+                log.info(f"[Auto-load] Address Master: {f.name} ({cnt} stores)")
                 break
             except Exception as e:
                 log.error(f"[Auto-load] Address Master failed ({f.name}): {e}")
@@ -2119,243 +2339,211 @@ class MTSelectApp:
         self._update_master_status()
         self._refresh_seq_display()
 
-    # ──────────────────────────────────────────────────────────────────────────
-    # MANUAL BROWSE HANDLERS
-    # ──────────────────────────────────────────────────────────────────────────
-    # These are used when the user wants to override the auto-loaded file with
-    # a specific version, or when the file is stored outside data_mt/.
+    # --------------------------------------------------------------------------
+    # BROWSE HANDLERS (copy to data_mt/ for persistence)
+    # --------------------------------------------------------------------------
+
+    def _copy_and_load(self, src_path: str, dest_prefix: str,
+                       loader, path_var, label_suffix: str):
+        """
+        Copy a manually selected file into data_mt/ (so future restarts
+        auto-load it), then load it immediately.
+
+        Args:
+            src_path:     Source file path chosen by user.
+            dest_prefix:  Prefix for the filename stored in data_mt/.
+            loader:       The master loader instance to use.
+            path_var:     StringVar to update with result.
+            label_suffix: e.g. "SKUs", "EANs", "stores".
+        """
+        src   = Path(src_path)
+        stamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        dest  = DATA_MT_DIR / f"{dest_prefix} {stamp}.xlsx"
+        shutil.copy2(src, dest)
+        log.info(f"[Browse] Copied {src.name} -> {dest.name}")
+        cnt = loader.load(dest)
+        path_var.set(f"{dest.name}  ({cnt} {label_suffix}) ✓{self._fmt_mtime(dest)}")
+        self._update_master_status()
+        messagebox.showinfo(
+            "Loaded",
+            f"Loaded {cnt} {label_suffix}.\nPersisted to: {dest.name}"
+        )
 
     def _select_hg_master(self):
-        """Open a file dialog for manual HG Master selection and load it."""
-        path = filedialog.askopenfilename(
+        p = filedialog.askopenfilename(
             title="Select HG Master (SKU→EAN)",
-            initialdir=str(DATA_MT_DIR),   # open dialog in data_mt/ by default
+            initialdir=str(DATA_MT_DIR),
             filetypes=[("Excel files", "*.xlsx")]
         )
-        if path:   # user pressed Cancel → path is empty string
+        if p:
             try:
-                cnt = self.hg_master.load(Path(path))
-                self.hg_path_var.set(f"{os.path.basename(path)}  ({cnt} SKUs) ✓")
-                self._update_master_status()
+                self._copy_and_load(p, "HG Master", self.hg_master,
+                                    self.hg_path_var, "SKUs")
             except Exception as e:
-                log.error(f"[HG Master] Manual load error: {e}")
-                messagebox.showerror("Load Error", str(e))
+                log.error(f"[Browse] HG Master: {e}")
+                messagebox.showerror("Error", str(e))
 
     def _select_items_master(self):
-        """Open a file dialog for manual Items Master selection and load it."""
-        path = filedialog.askopenfilename(
+        p = filedialog.askopenfilename(
             title="Select Items Master (EAN→Item)",
             initialdir=str(DATA_MT_DIR),
             filetypes=[("Excel files", "*.xlsx")]
         )
-        if path:
+        if p:
             try:
-                cnt = self.items_master.load(Path(path))
-                self.items_path_var.set(f"{os.path.basename(path)}  ({cnt} EANs) ✓")
-                self._update_master_status()
+                self._copy_and_load(p, "Items", self.items_master,
+                                    self.items_path_var, "EANs")
             except Exception as e:
-                log.error(f"[Items Master] Manual load error: {e}")
-                messagebox.showerror("Load Error", str(e))
+                log.error(f"[Browse] Items Master: {e}")
+                messagebox.showerror("Error", str(e))
 
     def _select_address_master(self):
-        """Open a file dialog for manual Address Master selection and load it."""
-        path = filedialog.askopenfilename(
+        p = filedialog.askopenfilename(
             title="Select Address Master (Store→ShipTo)",
             initialdir=str(DATA_MT_DIR),
             filetypes=[("Excel files", "*.xlsx")]
         )
-        if path:
+        if p:
             try:
-                cnt = self.address_master.load(Path(path))
-                self.address_path_var.set(f"{os.path.basename(path)}  ({cnt} stores) ✓")
-                self._update_master_status()
+                self._copy_and_load(p, "H&G Addresses", self.address_master,
+                                    self.address_path_var, "stores")
             except Exception as e:
-                log.error(f"[Address Master] Manual load error: {e}")
-                messagebox.showerror("Load Error", str(e))
+                log.error(f"[Browse] Address Master: {e}")
+                messagebox.showerror("Error", str(e))
 
     def _select_csv_files(self):
-        """
-        Open a multi-file dialog for selecting H&G PO CSV files.
-
-        Multiple files can be selected at once (e.g. one CSV per warehouse
-        location in a batch) — they will all be merged and processed together.
-        """
         paths = filedialog.askopenfilenames(
             title="Select H&G PO CSV files",
             filetypes=[("CSV files", "*.csv")]
         )
-        if paths:   # user pressed Cancel → paths is empty tuple
+        if paths:
             self.csv_paths = list(paths)
             self.csv_var.set(f"{len(self.csv_paths)} file(s) selected")
-            log.info(
-                f"[CSV] {len(self.csv_paths)} file(s) selected: "
-                f"{[os.path.basename(p) for p in self.csv_paths]}"
-            )
+            log.info(f"[CSV] Selected: {[os.path.basename(p) for p in self.csv_paths]}")
 
-    # ──────────────────────────────────────────────────────────────────────────
-    # GENERATE SO  (main action)
-    # ──────────────────────────────────────────────────────────────────────────
+    # --------------------------------------------------------------------------
+    # GENERATE SO — main action
+    # --------------------------------------------------------------------------
 
     def generate(self):
         """
-        Main Generate action — called when the user clicks ▶ Generate SO.
+        Generate Sales Orders from selected CSV files.
 
-        Execution flow:
-        1.  Validate that all masters are loaded and at least one CSV is selected.
-        2.  Load current sequence counters from SEQ_FILE.
-        3.  Call process_csv_files() to build the ProcessingResult.
-        4.  If no rows were produced, show an error and abort.
-        5.  Save updated sequence counters back to SEQ_FILE.
-        6.  Determine output path: <csv_folder>/output_mt/<prefix>_<timestamp>.xlsx
-        7.  Call write_output_workbook() to produce the Excel file.
-        8.  Update the sequence banner and enable the Open Last Output button.
-        9.  Show a completion popup with file path and warning count.
+        Steps:
+        1. Validate masters and CSV selection.
+        2. Load current sequences (with daily base reset applied).
+        3. Call process_csv_files() — produces regular + optional tester rows.
+        4. Save updated sequences immediately when SO rows were produced.
+        5. Write 9-sheet Excel to <csv_folder>/output_mt/, including Control Check
+           and row-by-row Input Audit.
+        6. Update UI and show completion popup.
+
+        If generate_tester is True (checkbox ticked):
+          - 5 POs produce 5 regular/tester SO pairs (10 SOs total).
+          - A tester SO uses the same number as its regular SO, with prefix
+            ``SO/HG/TT/`` instead of ``SO/HG/MM/``.
+          - Both appear in the output, with TESTER rows highlighted blue.
+          - Failed control checks are warnings only; output is still generated.
         """
-        # ── Guard: masters must be loaded ────────────────────────────────────
         if not self._update_master_status():
             messagebox.showerror(
                 "Masters Not Ready",
-                "Please ensure all three master files are loaded.\n\n"
-                "If files are in data_mt/ but not loading, click 🔄 Reload Masters."
+                "All three master files must be loaded.\n"
+                "Check data_mt/ folder or click 🔄 Reload Masters."
             )
             return
-
-        # ── Guard: at least one CSV must be selected ──────────────────────────
         if not self.csv_paths:
-            messagebox.showwarning(
-                "No CSV Selected",
-                "Please click Browse and select at least one H&G PO CSV file."
-            )
+            messagebox.showwarning("No CSV", "Select at least one H&G PO CSV file.")
             return
 
-        # ── UI: show "Processing…" state ─────────────────────────────────────
         self.status_var.set("Processing — please wait…")
         self.status_label.config(fg="blue")
-        self.root.update()   # force GUI repaint so the status is visible immediately
+        self.root.update()
+        t0 = time.time()
 
-        start_time = time.time()
-
-        # ── Load current sequences ────────────────────────────────────────────
-        sequences = load_sequences()
+        seqs = load_sequences()
         log.info(
-            f"[Generate] Run started. "
-            f"Mode: {'TESTER' if self.tester_var.get() else 'REGULAR'}  ·  "
-            f"HG seq: {sequences['HG']}  ·  TT seq: {sequences['TT']}"
+            f"[Generate] Mode={'REGULAR+TESTER' if self.tester_var.get() else 'REGULAR ONLY'} | "
+            f"Shared sequence={seqs['HG']} | "
+            f"Today base={_todays_base_sequence()}"
         )
 
-        # ── Core processing ───────────────────────────────────────────────────
         result = process_csv_files(
             file_paths      = self.csv_paths,
             hg_master       = self.hg_master,
             items_master    = self.items_master,
             address_master  = self.address_master,
             warehouse_code  = WAREHOUSES[self.warehouse_var.get()],
-            is_tester       = self.tester_var.get(),
-            sequences       = sequences
+            generate_tester = self.tester_var.get(),
+            sequences       = seqs
         )
 
-        # ── Guard: abort if nothing was produced ──────────────────────────────
-        if not result.rows:
-            self.status_var.set("No valid rows extracted — check log for details")
-            self.status_label.config(fg="red")
-            log.error(
-                "[Generate] Processing produced 0 rows. "
-                "Check warnings above for missing columns or empty CSV files."
+        if result.rows:
+            # Save sequences immediately after successful SO creation.
+            seqs["HG"] = result.hg_sequence
+            seqs["TT"] = result.hg_sequence
+            save_sequences(seqs)
+            self._refresh_seq_display()
+        else:
+            log.warning(
+                "[Generate] No valid SO rows created. "
+                "Writing warning/control workbook without consuming a sequence."
             )
-            return
-
-        # ── Persist updated sequences ─────────────────────────────────────────
-        # Update the dict with whichever counter this run incremented,
-        # then write both to disk atomically (json.dump is atomic on most OSes).
-        sequences["HG"] = result.hg_sequence
-        sequences["TT"] = result.tt_sequence
-        save_sequences(sequences)
-        self._refresh_seq_display()   # update the banner with new next-SO value
-
         self.last_result = result
 
-        # ── Determine output path ─────────────────────────────────────────────
-        # Output goes into output_mt/ inside the same folder as the first CSV.
-        # This keeps the Excel file physically next to its source data.
+        # Output path: next to the first CSV file.
         out_dir = Path(self.csv_paths[0]).parent / "output_mt"
         out_dir.mkdir(parents=True, exist_ok=True)
-        log.info(f"[Generate] Output folder: {out_dir}")
+        ts   = datetime.now().strftime("%d-%m-%Y_%H%M%S")
+        mode = "HG_TT" if self.tester_var.get() else "HG"
+        outf = out_dir / f"MT_Select_{mode}_{ts}.xlsx"
 
-        # File name includes prefix (HG or TT) and timestamp for traceability.
-        timestamp    = datetime.now().strftime("%d-%m-%Y_%H%M%S")
-        mode_prefix  = "TT" if self.tester_var.get() else "HG"
-        preview_file = out_dir / f"MT_Select_{mode_prefix}_{timestamp}.xlsx"
+        write_output_workbook(result, outf)
+        self.last_output = outf
+        self.open_btn.config(state=tk.NORMAL)
 
-        # ── Write Excel workbook ──────────────────────────────────────────────
-        write_output_workbook(result, preview_file)
-        self.last_output = preview_file
-        self.open_btn.config(state=tk.NORMAL)   # enable Open Last Output button
-
-        # ── Update status and log summary ─────────────────────────────────────
-        elapsed = time.time() - start_time
-        summary = (
-            f"Done — {len(result.rows)} lines  ·  "
-            f"{len(result.so_map)} POs  ·  "
-            f"{len(result.warnings)} warnings  ·  "
-            f"{elapsed:.2f}s"
+        elapsed  = time.time() - t0
+        reg_sos  = len(result.regular_so_map)
+        test_sos = len(result.tester_so_map)
+        summary  = (
+            f"Done: {len(result.rows)} lines | "
+            f"{reg_sos} regular SOs"
+            + (f" + {test_sos} tester SOs = {reg_sos+test_sos} total" if test_sos else "")
+            + f" | {len(result.warnings)} warnings | {elapsed:.2f}s"
         )
         self.status_var.set(summary)
-        self.status_label.config(fg="darkgreen")
+        self.status_label.config(fg="darkgreen" if not result.warnings else "darkorange")
         log.info(f"[Generate] {summary}")
-        log.info(f"[Generate] Output file: {preview_file}")
+        log.info(f"[Generate] Output: {outf}")
 
-        # ── Completion popup ──────────────────────────────────────────────────
         messagebox.showinfo(
-            "Processing Complete",
-            f"Generated {len(result.rows)} sales lines across {len(result.so_map)} POs.\n"
-            f"Warnings: {len(result.warnings)}"
-            + (" — check Warnings sheet" if result.warnings else " ✓") + "\n\n"
-            f"Output saved to:\n{preview_file}\n\n"
-            f"Full log saved to:\n{LOG_FILE}"
+            "Complete",
+            f"{summary}\n\n"
+            f"Output: {outf}\n"
+            f"Log:    {LOG_FILE}"
         )
 
-    # ──────────────────────────────────────────────────────────────────────────
-    # UTILITY ACTIONS
-    # ──────────────────────────────────────────────────────────────────────────
+    # --------------------------------------------------------------------------
+    # UTILITY
+    # --------------------------------------------------------------------------
 
     def open_last(self):
-        """
-        Open the last generated Excel file using the default OS application
-        (typically Excel on Windows).  Uses os.startfile which is Windows-only;
-        on macOS/Linux this would need subprocess.run(['open', …]).
-        """
         if self.last_output and self.last_output.exists():
             try:
                 os.startfile(str(self.last_output))
             except Exception as e:
-                log.error(f"[Open] Could not open file: {e}")
-                messagebox.showerror("Open Failed", f"Cannot open file:\n{self.last_output}")
+                messagebox.showerror("Error", f"Cannot open:\n{self.last_output}\n{e}")
         else:
-            messagebox.showwarning(
-                "File Not Found",
-                "No output file found.\nPlease run ▶ Generate SO first."
-            )
+            messagebox.showwarning("Not Found", "No output yet. Run Generate first.")
 
     def open_log_folder(self):
-        """
-        Open the Logs/ folder in Windows Explorer (or Finder on macOS).
-        Shows the folder even if os.startfile fails by falling back to a
-        messagebox showing the path.
-        """
         try:
             os.startfile(str(LOG_DIR))
         except Exception:
-            # Fallback: show the path so the user can navigate manually.
-            messagebox.showinfo("Log Folder Path", str(LOG_DIR))
+            messagebox.showinfo("Log Folder", str(LOG_DIR))
 
     def run(self):
-        """
-        Start the Tkinter main event loop.
-
-        This is a blocking call — it returns only when the window is closed.
-        The watcher thread is a daemon and will be killed automatically when
-        the main loop exits.
-        """
+        """Start Tkinter main loop (blocking until window closed)."""
         self.root.mainloop()
 
 
@@ -2366,35 +2554,23 @@ class MTSelectApp:
 def main():
     """
     Application entry point.
-
-    Steps:
-    1.  Check the hard expiry date — refuse to run if past it.
-    2.  Instantiate MTSelectApp (builds GUI, starts watcher, auto-loads masters).
-    3.  Call app.run() which blocks in the Tkinter main loop until window closes.
+    1. Check expiry date.
+    2. Launch MTSelectApp.
     """
-    # ── Expiry check ──────────────────────────────────────────────────────────
-    # This is a lightweight licence gate — update EXPIRY_DATE before each build
-    # to control how long the tool can be used without an update.
     expiry = datetime.strptime(EXPIRY_DATE, "%d-%m-%Y").date()
     if datetime.now().date() > expiry:
-        # Show a brief Tk window with an error then exit immediately.
         root = tk.Tk()
-        root.withdraw()   # hide the blank root window before showing the dialog
+        root.withdraw()
         messagebox.showerror(
             "Tool Expired",
-            f"This tool expired on {EXPIRY_DATE}.\n"
-            f"Please contact the Order Management Automation Team for an updated build."
+            f"Expired on {EXPIRY_DATE}.\nContact Order Management Automation Team."
         )
         sys.exit(0)
 
-    # ── Launch app ────────────────────────────────────────────────────────────
     app = MTSelectApp()
     app.run()
-    # Execution returns here only after the window is closed.
-    log.info("MT Select application closed normally.")
+    log.info("Application closed.")
 
 
-# Standard Python idiom: only run main() when this file is executed directly,
-# not when it is imported as a module by another script or test suite.
 if __name__ == "__main__":
     main()
