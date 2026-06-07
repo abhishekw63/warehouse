@@ -10,6 +10,7 @@ from online_po_processor.exporter.sheets import (
     lines_sheet,
     raw_data_sheet,
     summary_sheet,
+    tracker_sheet,
     validation_sheet,
     warnings_sheet,
 )
@@ -18,6 +19,7 @@ __all__ = [
     'headers_sheet',
     'lines_sheet',
     'summary_sheet',
+    'tracker_sheet',
     'validation_sheet',
     'warnings_sheet',
     'raw_data_sheet',

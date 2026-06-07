@@ -45,7 +45,7 @@ from openpyxl import Workbook
 from online_po_processor.data.models import ProcessingResult
 from online_po_processor.exporter.sheets import (
     headers_sheet, lines_sheet, raw_data_sheet,
-    summary_sheet, validation_sheet, warnings_sheet,
+    summary_sheet, tracker_sheet, validation_sheet, warnings_sheet,
 )
 
 
@@ -124,12 +124,15 @@ class SOExporter:
         #   Headers (SO)  → ERP import (top tab = what you act on)
         #   Lines (SO)    → ERP import
         #   Summary       → human verification, per-PO
+        #   Tracker       → paste-ready per-PO pivot for the ops master
+        #                   tracker (Zepto only today — no-op otherwise)
         #   Validation    → human verification, per-item price check
         #   Warnings      → only present if there are issues to fix
         #   Raw Data      → audit trail at the bottom
         headers_sheet.write(wb, result)
         lines_sheet.write(wb, result)
         summary_sheet.write(wb, result)
+        tracker_sheet.write(wb, result)
         validation_sheet.write(wb, result)
         warnings_sheet.write(wb, result)
         raw_data_sheet.write(wb, result)
