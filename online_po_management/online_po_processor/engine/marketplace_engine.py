@@ -28,13 +28,29 @@ when EAN-resolution requires it, etc.
 from __future__ import annotations
 import logging
 import os
-from typing import Any, Dict, Optional, Set, Tuple
+from typing import Any, Callable, Dict, Optional, Set, Tuple
 
 import pandas as pd
 
 from online_po_processor.data.models import SORow, ProcessingResult
 from online_po_processor.data.master_loader import MasterLoader
 from online_po_processor.data.mapping_loader import MappingLoader
+# v2.2.0: PDF parser dispatch. Each callable takes a filepath and
+# returns a ``pandas.DataFrame`` shaped the same way the engine would
+# expect from an Excel read — i.e. with the column names referenced by
+# the marketplace's config (``po_col``, ``ean_col``, ``qty_col``, etc.).
+# New PDF marketplaces add an entry to ``PDF_PARSERS`` and set
+# ``source_format='pdf'`` + ``pdf_parser='<key>'`` in their config.
+from online_po_processor.engine.avenue_pdf_parser import (
+    load_avenue_pdf_as_dataframe,
+)
+
+
+# Registry of PDF parsers — keyed by the ``pdf_parser`` config value.
+# Each parser is a callable: ``(filepath: str) -> pd.DataFrame``.
+PDF_PARSERS: Dict[str, Callable[[str], pd.DataFrame]] = {
+    'avenue': load_avenue_pdf_as_dataframe,
+}
 
 
 # Set of GST codes we know how to handle. Anything outside this set
@@ -247,89 +263,154 @@ class MarketplaceEngine:
         )
 
         # ── Read file ───────────────────────────────────────────────────
-        # v1.4.2: Most marketplace punch files carry data on 'Sheet1'.
-        # v1.6.0: Reliance is the exception — its file is the raw PO
-        # attachment that has 6 sheets, with clean flat data on a
-        # sheet literally called 'PO' (the other sheets are messy
-        # auto-generated renderings of the same data). So the config
-        # can now override the sheet name via ``source_sheet``.
-        #
-        # Other sheets in the workbook are user-side pivots / manual
-        # calc / sidecars that must NOT be read by the script.
-        # Previously we defaulted to pandas' "first sheet" behavior
-        # which silently latched onto Sheet2/Sheet4 when a pivot sheet
-        # came first — that's now fixed across the board.
-        #
-        # If the target sheet doesn't exist, we fall back to the first
-        # sheet and log a warning so the user can spot the issue
-        # rather than getting a cryptic KeyError downstream.
-        try:
-            available_sheets = pd.ExcelFile(filepath).sheet_names
-        except Exception as e:  # noqa: BLE001
-            result.warnings.append((
-                '', '', f"Cannot open file: {e}"
-            ))
-            return result
+        # v2.2.0: Marketplace files arrive in two formats — Excel (the
+        # original and most common: Blink, Myntra, RK, Reliance, Zepto,
+        # BlinkMP) and PDF (Avenue/DMart Ready, added v2.2.0). The
+        # config's ``source_format`` key selects the load path. Default
+        # ``'excel'`` preserves all pre-existing behaviour exactly.
+        source_format = config.get('source_format', 'excel')
 
-        # Per-marketplace sheet override. Values:
-        #   * Omitted / ``'Sheet1'`` — most marketplaces
-        #   * ``'PO'`` — Reliance (exact sheet name)
-        #   * ``'PO_*'`` — Zepto (prefix match) (v1.8.0)
-        #
-        # Zepto's dumps put the data on a sheet whose name varies per
-        # export — literally ``PO_<random-hex>`` like
-        # ``PO_64863340b23e6c90`` or ``PO_c881cfb0a4fa2ebc``. The
-        # wildcard lets us match any of them without reconfiguring
-        # per file. If multiple matching sheets exist we take the
-        # first; duplicates aren't expected and would indicate a
-        # malformed dump.
-        target_sheet = config.get('source_sheet', 'Sheet1')
-
-        sheet_to_read = self._resolve_source_sheet(
-            target_sheet, available_sheets, result,
-        )
-        if sheet_to_read is None:
-            # _resolve_source_sheet has appended an abort warning.
-            return result
-
-        # Header row is configurable too — Reliance's 'PO' sheet has
-        # its header on row 1 (the title merged-cell occupies row 0),
-        # while everyone else is 0-indexed.
-        header_row = config.get('header_row', 0)
-
-        try:
-            df = pd.read_excel(
-                filepath, sheet_name=sheet_to_read, header=header_row,
-            )
-        except Exception as e:  # noqa: BLE001 — we want to surface ANY read error
-            result.warnings.append((
-                '', '',
-                f"Cannot read sheet {sheet_to_read!r}: {e}"
-            ))
-            return result
-
-        logging.info("Read %d rows from %s",
-                     len(df), os.path.basename(filepath))
-
-        # ── Marketplace-specific pre-processor ──────────────────────────
-        # Some marketplaces carry the PO number and/or Location in a
-        # header/title position rather than per-data-row. For those, a
-        # pre-processor hook parses the out-of-band values and injects
-        # synthetic columns so the rest of the pipeline sees a normal
-        # wide-format DataFrame.
-        #
-        # Currently used by Reliance (parses row 0's merged title
-        # like "5000466441  BHIWANDI (Reliance)" into per-row
-        # ``__po__`` and ``__loc__`` columns).
-        pre_process = config.get('pre_process')
-        if pre_process == 'reliance_po_sheet':
-            df = self._preprocess_reliance(
-                filepath, sheet_to_read, df, config, result,
-            )
+        if source_format == 'pdf':
+            df = self._load_pdf(filepath, config, result)
             if df is None:
-                return result  # warning already appended
+                # _load_pdf has already appended an abort warning.
+                return result
+            # PDF parsers produce a DataFrame with the same columns
+            # the engine's downstream logic expects (po_col / loc_col /
+            # qty_col / ean_col / etc.). No sheet or header_row dance
+            # needed — PDFs aren't paginated by sheets.
+            result.raw_df = df
+            logging.info("Read %d rows from PDF %s",
+                         len(df), os.path.basename(filepath))
+            # Skip the Excel-specific sheet resolution + pre_process
+            # hook chain; jump straight to column alias resolution.
+            # This is done by falling through to the existing
+            # ``_resolve_column_aliases`` call below (which is shared).
 
-        result.raw_df = df
+        else:
+            # v2.3.0: CSV early-return — some marketplaces (Blink) now
+            # export their dump in CSV format alongside the historical
+            # xlsx. We auto-detect by file extension and read CSV
+            # directly without going through the Excel sheet-selection
+            # / pre_process machinery (which is meaningless for CSVs).
+            #
+            # The downstream column-resolution + mapping + validation
+            # pipeline is shape-agnostic — it operates on a DataFrame
+            # regardless of whether it came from CSV, Excel, or PDF.
+            # So a Blink CSV with the same column names as the Blink
+            # xlsx (`po_number`, `units_ordered`, `cost_price`,
+            # `total_amount`, `mrp`, `upc`, `facility_name`, ...) plugs
+            # in without any config change. Column-name *changes*
+            # between the CSV and xlsx exports would still need
+            # ``case_insensitive_cols`` / column aliases.
+            ext = os.path.splitext(filepath)[1].lower()
+            if ext == '.csv':
+                try:
+                    # ``header`` follows the same config key Excel uses,
+                    # so a marketplace can opt into header_row=1 (etc.)
+                    # for both formats consistently.
+                    df = pd.read_csv(
+                        filepath, header=config.get('header_row', 0),
+                    )
+                except Exception as e:  # noqa: BLE001 — surface ANY CSV-read error
+                    result.warnings.append((
+                        '', '',
+                        f"Cannot read CSV: {e}"
+                    ))
+                    return result
+                logging.info("Read %d rows from CSV %s",
+                             len(df), os.path.basename(filepath))
+                result.raw_df = df
+                # No sheet selection. No pre_process hook. CSVs are
+                # always flat — any per-marketplace pre-processing
+                # that exists today (Reliance's merged-cell title parse)
+                # is specific to Excel-only marketplaces.
+                # Fall through to the shared column-resolution code.
+
+            else:
+                # v1.4.2: Most marketplace punch files carry data on 'Sheet1'.
+                # v1.6.0: Reliance is the exception — its file is the raw PO
+                # attachment that has 6 sheets, with clean flat data on a
+                # sheet literally called 'PO' (the other sheets are messy
+                # auto-generated renderings of the same data). So the config
+                # can now override the sheet name via ``source_sheet``.
+                #
+                # Other sheets in the workbook are user-side pivots / manual
+                # calc / sidecars that must NOT be read by the script.
+                # Previously we defaulted to pandas' "first sheet" behavior
+                # which silently latched onto Sheet2/Sheet4 when a pivot sheet
+                # came first — that's now fixed across the board.
+                #
+                # If the target sheet doesn't exist, we fall back to the first
+                # sheet and log a warning so the user can spot the issue
+                # rather than getting a cryptic KeyError downstream.
+                try:
+                    available_sheets = pd.ExcelFile(filepath).sheet_names
+                except Exception as e:  # noqa: BLE001
+                    result.warnings.append((
+                        '', '', f"Cannot open file: {e}"
+                    ))
+                    return result
+
+                # Per-marketplace sheet override. Values:
+                #   * Omitted / ``'Sheet1'`` — most marketplaces
+                #   * ``'PO'`` — Reliance (exact sheet name)
+                #   * ``'PO_*'`` — Zepto (prefix match) (v1.8.0)
+                #
+                # Zepto's dumps put the data on a sheet whose name varies per
+                # export — literally ``PO_<random-hex>`` like
+                # ``PO_64863340b23e6c90`` or ``PO_c881cfb0a4fa2ebc``. The
+                # wildcard lets us match any of them without reconfiguring
+                # per file. If multiple matching sheets exist we take the
+                # first; duplicates aren't expected and would indicate a
+                # malformed dump.
+                target_sheet = config.get('source_sheet', 'Sheet1')
+
+                sheet_to_read = self._resolve_source_sheet(
+                    target_sheet, available_sheets, result,
+                )
+                if sheet_to_read is None:
+                    # _resolve_source_sheet has appended an abort warning.
+                    return result
+
+                # Header row is configurable too — Reliance's 'PO' sheet has
+                # its header on row 1 (the title merged-cell occupies row 0),
+                # while everyone else is 0-indexed.
+                header_row = config.get('header_row', 0)
+
+                try:
+                    df = pd.read_excel(
+                        filepath, sheet_name=sheet_to_read, header=header_row,
+                    )
+                except Exception as e:  # noqa: BLE001 — we want to surface ANY read error
+                    result.warnings.append((
+                        '', '',
+                        f"Cannot read sheet {sheet_to_read!r}: {e}"
+                    ))
+                    return result
+
+                logging.info("Read %d rows from %s",
+                             len(df), os.path.basename(filepath))
+
+                # ── Marketplace-specific pre-processor ──────────────────────────
+                # Some marketplaces carry the PO number and/or Location in a
+                # header/title position rather than per-data-row. For those, a
+                # pre-processor hook parses the out-of-band values and injects
+                # synthetic columns so the rest of the pipeline sees a normal
+                # wide-format DataFrame.
+                #
+                # Currently used by Reliance (parses row 0's merged title
+                # like "5000466441  BHIWANDI (Reliance)" into per-row
+                # ``__po__`` and ``__loc__`` columns).
+                pre_process = config.get('pre_process')
+                if pre_process == 'reliance_po_sheet':
+                    df = self._preprocess_reliance(
+                        filepath, sheet_to_read, df, config, result,
+                    )
+                    if df is None:
+                        return result  # warning already appended
+
+                result.raw_df = df
 
         # ── v1.5.5: Resolve column aliases against actual headers ──────
         # Marketplace configs may declare a column key as a LIST of
@@ -570,6 +651,74 @@ class MarketplaceEngine:
                 # _validate_required_columns for those with it.
 
         return resolved
+
+    def _load_pdf(
+        self,
+        filepath: str,
+        config: Dict[str, Any],
+        result: ProcessingResult,
+    ) -> Optional[pd.DataFrame]:
+        """
+        Load a PDF marketplace file via the configured PDF parser.
+
+        Dispatches on the config's ``pdf_parser`` key (e.g. ``'avenue'``)
+        to look up a callable in ``PDF_PARSERS``. Each parser is
+        responsible for returning a DataFrame with the same column
+        shape an Excel read would produce — so the engine's downstream
+        column-resolution / mapping / validation code runs without
+        knowing whether the source was Excel or PDF.
+
+        Args:
+            filepath:   Path to the marketplace PDF file.
+            config:     Entry from ``MARKETPLACE_CONFIGS`` (the active
+                        marketplace's config dict).
+            result:     ProcessingResult being built — warnings are
+                        appended to ``result.warnings`` on failure.
+
+        Returns:
+            The parsed DataFrame on success, or ``None`` on any failure
+            (file read error, no parser registered, parser raised). The
+            caller treats ``None`` as a signal to abort and surface the
+            warnings.
+        """
+        parser_key = config.get('pdf_parser')
+        if not parser_key:
+            result.warnings.append((
+                '', '',
+                f"Marketplace config sets source_format='pdf' but no "
+                f"'pdf_parser' key was provided — cannot load {os.path.basename(filepath)}."
+            ))
+            return None
+
+        parser = PDF_PARSERS.get(parser_key)
+        if parser is None:
+            result.warnings.append((
+                '', '',
+                f"No PDF parser registered under {parser_key!r} — "
+                f"available parsers: {sorted(PDF_PARSERS.keys())}"
+            ))
+            return None
+
+        try:
+            df = parser(filepath)
+        except Exception as e:  # noqa: BLE001 — any parser failure → warning
+            logging.exception("PDF parser %r failed on %s", parser_key, filepath)
+            result.warnings.append((
+                '', '',
+                f"PDF parse failed ({parser_key} parser): {e}"
+            ))
+            return None
+
+        if df is None or df.empty:
+            result.warnings.append((
+                '', '',
+                f"PDF parser {parser_key!r} returned no rows from "
+                f"{os.path.basename(filepath)} — file may be empty, "
+                f"corrupted, or in an unexpected format."
+            ))
+            return None
+
+        return df
 
     def _resolve_source_sheet(
         self,

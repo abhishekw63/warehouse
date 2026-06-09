@@ -126,6 +126,61 @@ Optional but recommended:
       implies a specific marketplace's expected sheet shape, so
       silently reading a different sheet would produce garbage.
 
+    Only consulted when ``source_format`` is ``'excel'`` (the default).
+    Ignored for PDF marketplaces.
+
+``source_format`` (str, ``'excel'`` | ``'pdf'``, default ``'excel'``, v2.2.0)
+    Selects the file-loading path for this marketplace:
+
+    * ``'excel'`` — the original path. Engine calls ``pd.read_excel``
+      on the configured ``source_sheet`` with the configured
+      ``header_row``. Used by Myntra, RK, Blink, Reliance, Zepto,
+      BlinkMP.
+    * ``'pdf'``   — engine calls the PDF parser registered under
+      ``pdf_parser`` (see below). Used by Avenue/DMart Ready.
+
+    PDF parsers MUST return a ``pandas.DataFrame`` shaped the same
+    way the marketplace's other config keys reference (``po_col``,
+    ``ean_col``, etc.) — the engine's downstream logic is
+    format-agnostic.
+
+``pdf_parser`` (str, required when ``source_format='pdf'``, v2.2.0)
+    Key into the engine's ``PDF_PARSERS`` registry. Each registered
+    parser is a callable ``(filepath: str) -> pd.DataFrame``. To add
+    a new PDF marketplace:
+
+    1. Write a parser module (e.g. ``engine/avenue_pdf_parser.py``)
+       exposing a ``load_<name>_pdf_as_dataframe(filepath)`` function.
+    2. Register it in ``PDF_PARSERS`` in ``marketplace_engine.py``.
+    3. Set ``source_format='pdf'`` and ``pdf_parser='<name>'`` on the
+       marketplace's config.
+
+    Current parsers:
+
+    * ``'avenue'`` — Avenue E-Commerce Ltd / DMart Ready PO PDFs.
+      Two-page layout, 2-row-per-item table, header block with PO
+      number / GST / ship-to / vendor code.
+
+``accepted_extensions`` (list[str], optional, v2.3.0)
+    Explicit list of file extensions the marketplace's PO uploads can
+    use, in display priority order. The list affects ONLY the GUI file
+    dialog filter — the engine itself always auto-detects file type
+    by extension at load time (``.csv`` → ``pd.read_csv``,
+    ``.xlsx``/``.xls``/``.xlsm`` → ``pd.read_excel``, ``.pdf`` →
+    registered PDF parser).
+
+    Use when a marketplace's dashboard exports POs in MORE than one
+    format. Blink is the canonical case: the new dashboard exports
+    CSV, but older xlsx exports are still in circulation on operators'
+    disks. Setting ``accepted_extensions: ['.csv', '.xlsx', '.xls']``
+    advertises all three in the file dialog so the operator can pick
+    whichever they have.
+
+    When unset (the common case), the dialog filter falls back to
+    ``source_format``:
+    * ``'pdf'``   → ``*.pdf`` only
+    * anything else → ``*.xlsx`` only (the historical default)
+
 ``header_row`` (int, default ``0``)
     0-indexed row that pandas treats as column headers. Reliance's
     PO sheet has a merged title on row 0 so its real headers are on
@@ -335,6 +390,17 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
     # ────────────────────────────────────────────────────────────────────
     'Blink': {
         'party_name': 'Blink',               # Must match 'Party' in mapping sheet
+        # v2.3.0: Blink now exports POs in TWO formats from its vendor
+        # dashboard — a CSV (newer, default download) and the historical
+        # xlsx. Both share IDENTICAL column names (po_number,
+        # units_ordered, cost_price, total_amount, mrp, upc,
+        # facility_name, ...), so the same config drives both. The
+        # engine auto-detects file type by extension at load time:
+        # .csv → pandas.read_csv, .xlsx/.xls → pandas.read_excel.
+        # No code path branches on this config key — it only affects
+        # the GUI file picker filter, advertising what the operator
+        # can upload.
+        'accepted_extensions': ['.csv', '.xlsx', '.xls'],
         'po_col': 'po_number',               # [REQUIRED] int64 (e.g. 1723710027417)
         'loc_col': 'facility_name',          # [REQUIRED] e.g. 'Pune P2 - Feeder Warehouse'
         'qty_col': 'units_ordered',          # [REQUIRED]
@@ -848,6 +914,111 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
     # │     'template_headers': [...],                                  │
     # │ },                                                              │
     # └─────────────────────────────────────────────────────────────────┘
+
+    # ────────────────────────────────────────────────────────────────────
+    # Dmart (Avenue E-Commerce Ltd, brand 'DMart Ready', CIN
+    # U74120MH2014PLC259234). The FIRST PDF-source marketplace in this
+    # registry (v2.2.0).
+    #
+    # NAMING — this marketplace is referenced by THREE different names
+    # depending on context, and operators need to know which is which:
+    #
+    #   * 'Avenue E-Commerce Ltd' — the legal entity printed on the PO
+    #     header. The vendor relationship and GST registrations all
+    #     reference this name.
+    #   * 'DMart Ready' / 'DMart' — the consumer-facing brand. Avenue
+    #     operates the DMart Ready quick-commerce service.
+    #   * 'Dmart' — what the operator's Ship-To B2B sheet uses as the
+    #     'Party' column value. This is what the engine matches against
+    #     and what the GUI dropdown displays.
+    #
+    # So the dict key here MUST be 'Dmart' (matches Ship-To B2B), but the
+    # PDF parser inspects 'Avenue E-Commerce' in the header text since
+    # that's what's actually printed on the PO.
+    #
+    # PDF format — NOT Excel. Avenue emails the PO as a 2-page PDF
+    # attachment with this layout:
+    #   * Page 1: Header block (PO number, GST, dates, vendor, ship-to)
+    #     then a table header then ~12 line items.
+    #   * Page 2: ~4 more line items, then 'Total <qty> <value>' footer
+    #     row, then Amount-in-Words, then Terms.
+    #
+    # Each line item occupies TWO consecutive text rows after PDF text
+    # extraction (description spans 2 visible rows because the table has
+    # a 2-row header — '%' values on row 1, '<tax> V' values on row 2 —
+    # and the description text wraps). The PDF parser
+    # (engine/avenue_pdf_parser.py) handles this — see its module docstring.
+    #
+    # The parser exposes the data via synthetic columns ``__po__`` /
+    # ``__loc__`` (same pattern Reliance's pre_process hook uses) so
+    # this config plugs into the existing engine logic without
+    # awareness that the source was a PDF.
+    #
+    # Multiplier verification (Renee_AE00.pdf, 16 items):
+    #   For every row, Landed Price == MRP × 0.45 to the paisa,
+    #   regardless of whether the GST rate is 5% or 18%. So the
+    #   engine's existing ``compare_basis='landing'`` formula
+    #   (``MRP × margin%``) matches Avenue's Landed Price directly
+    #   when ``default_margin=45``.
+    #
+    # Ship-to: Dmart has 33 FC locations across India in the operator's
+    # Ship-To B2B sheet (Andheri E FC, Belapur FC, ... IFC- Kukse
+    # Bhiwandi, ... Yelahanka FC). The Renee_AE00.pdf sample ships to
+    # 'IFC- Kukse Bhiwandi' (Cust No 20001, Ship-to 20001_34). The PDF
+    # parser canonicalizes the extracted text to that EXACT string
+    # (including the space after 'IFC-' AND between 'Kukse' and
+    # 'Bhiwandi') so the mapping lookup matches without fuzzy logic.
+    #
+    # HSN cross-check is enabled (like Reliance) — the PDF carries an
+    # 8-digit HSN per item (split across two halves in the PDF, joined
+    # by the parser) and Avenue's PO contractually requires HSN to
+    # match Items_March master, or the ERP posts wrong GST.
+    # ────────────────────────────────────────────────────────────────────
+    'Dmart': {
+        'party_name': 'Dmart',               # Must match 'Party' in Ship-To B2B
+        # v2.2.0: PDF source — engine calls PDF_PARSERS['avenue']
+        # (parser key matches the PDF format's origin: Avenue
+        # E-Commerce Ltd, the parent company that issues the PO).
+        # See module docstring at top of marketplaces.py for the full
+        # PDF-parser registration mechanism.
+        'source_format': 'pdf',
+        'pdf_parser':    'avenue',
+        # Synthetic columns set by the Avenue PDF parser. Same pattern
+        # Reliance uses for its merged-cell title. ``__po__`` and
+        # ``__loc__`` are populated identically on every line item row.
+        'po_col':  '__po__',                  # [REQUIRED] synthetic
+        'loc_col': '__loc__',                 # [REQUIRED] synthetic
+        'qty_col': 'PO Qty',                  # [REQUIRED]
+        'item_resolution': 'from_ean',
+        'ean_col': 'EAN',                     # [REQUIRED in this mode]
+        'price_col': None,                    # WMS computes
+        # Dmart's 'Landed Price' column == MRP × 45% (post-GST,
+        # verified across rows at both 5% and 18% GST rates). Matches
+        # the engine's ``'landing'`` formula exactly when margin=45.
+        'fob_col': 'Landed Price',            # [VALIDATION]
+        'default_margin': 45,                 # Dmart's operating margin
+        'compare_basis': 'landing',           # MRP × margin% (no GST division)
+        'compare_label': 'Landed Price',
+        # Total Value is pre-calculated by Avenue (Landed × Qty, with
+        # paise-level rounding). Matched within ₹0.5 against the PDF's
+        # footer 'Total <qty> <value>' line on the Renee_AE00.pdf
+        # sample (143,846.98 to the paisa).
+        'amount_col': 'Total Value',
+        # Dmart prints an 8-digit HSN per line (4-digit prefix on
+        # row 1 + 4-digit suffix on row 2, joined by parser). Worth
+        # cross-checking against the master because Dmart's POs
+        # contractually require correct HSN — wrong HSN → ERP posts
+        # wrong GST → tax authority dispute risk. Same enforcement
+        # rationale as Reliance.
+        'hsn_col': 'HSN Code',
+        'template_headers': [
+            'Sr No', 'EAN', 'Article No', 'HSN Code', 'Description', 'UOM',
+            'PO Qty', 'MRP', 'Basic Price', 'Landed Price', 'Total Value',
+            'CGST %', 'SGST %', 'CESS %', 'IGST %', 'UGST %',
+            'CGST V', 'SGST V', 'CESS V', 'IGST V', 'UGST V',
+            'GST Rate',
+        ],
+    },
 }
 
 

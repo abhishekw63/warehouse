@@ -86,6 +86,99 @@ from online_po_processor.gui._update_dialog import UpdateDialog
 from online_po_processor.utils.platform_open import open_file
 
 
+def _po_filetypes_for(marketplace: str) -> list:
+    """
+    Build a tkinter ``filetypes`` list for the PO file picker, based
+    on the marketplace's ``source_format`` config (v2.2.0) and its
+    optional ``accepted_extensions`` config (v2.3.0).
+
+    Resolution order:
+
+    1. If the marketplace's config has an explicit
+       ``accepted_extensions: ['.csv', '.xlsx', '.xls']`` list, those
+       are advertised in the dialog (in that order). This lets a
+       marketplace opt into multi-format input — Blink uses this
+       because its dashboard exports CSV now but the historical
+       xlsx exports are still floating around on operators' disks.
+    2. Otherwise, fall back to ``source_format``:
+       * ``'pdf'``   → ``*.pdf`` filter (Dmart and future PDF
+         marketplaces).
+       * ``'excel'`` or unset → ``*.xlsx`` filter (the historical
+         default that all other marketplaces still use).
+
+    ``All files`` is always offered as a secondary option so the user
+    can override if they have an oddly-named file. The engine
+    auto-detects file type by extension regardless of what the user
+    picked — so this filter is purely a UX convenience, never a
+    correctness guarantee.
+    """
+    cfg = MARKETPLACE_CONFIGS.get(marketplace, {})
+
+    # Path 1: explicit accepted_extensions list (most flexible)
+    accepted = cfg.get('accepted_extensions')
+    if accepted:
+        # Build a single combined filter that accepts all listed
+        # extensions, plus per-format filters so the user can narrow
+        # down if they prefer. Tk needs the patterns space-separated
+        # within ONE string for the combined filter.
+        patterns = ' '.join(f'*{ext}' for ext in accepted)
+        filters = [(f"{marketplace} PO files", patterns)]
+        # Per-format filters for quick narrowing
+        per_ext = {
+            '.csv':  ('CSV files',   '*.csv'),
+            '.xlsx': ('Excel 2007+', '*.xlsx'),
+            '.xls':  ('Excel 97-03', '*.xls'),
+            '.xlsm': ('Excel macro', '*.xlsm'),
+            '.pdf':  ('PDF files',   '*.pdf'),
+        }
+        for ext in accepted:
+            if ext in per_ext:
+                filters.append(per_ext[ext])
+        filters.append(('All files', '*.*'))
+        return filters
+
+    # Path 2: fall back to source_format
+    source_format = cfg.get('source_format', 'excel')
+    if source_format == 'pdf':
+        return [
+            (f"{marketplace} PO files", "*.pdf"),
+            ("All files", "*.*"),
+        ]
+    # Default / 'excel'
+    return [
+        ("Excel files", "*.xlsx"),
+        ("All files", "*.*"),
+    ]
+
+
+def _supports_multi_file(marketplace: str) -> bool:
+    """
+    True if this marketplace's GUI should offer a multi-file picker
+    and its engine call should go through ``process_multi``.
+
+    Marketplaces qualify as "multi-file" under two conditions:
+
+    1. **Reliance-style (Excel + ``pre_process``)** — one PO per file,
+       the operator typically receives 3-5 PO attachments and wants
+       them combined into a single SO batch. Marker: the config has
+       a ``pre_process`` key (currently only Reliance).
+    2. **PDF marketplaces** (v2.2.0) — every PDF marketplace is
+       inherently one-PO-per-file (a PO PDF is never a multi-PO
+       container the way Blink's xlsx is). So PDFs are always
+       multi-file by nature. Marker: ``source_format == 'pdf'``.
+
+    Excel marketplaces that consolidate POs inside a single file
+    (Blink, Myntra, RK, Zepto, BlinkMP, Flipkart, Flipkart-TO) stay
+    single-file — they don't need multi-select because each upload
+    already contains all the POs for that batch.
+    """
+    cfg = MARKETPLACE_CONFIGS.get(marketplace, {})
+    return bool(
+        cfg.get('pre_process')                       # Reliance-style
+        or cfg.get('source_format') == 'pdf'         # PDF-style (Dmart, ...)
+    )
+
+
 class OnlinePOApp:
     """GUI for Online Marketplace PO → SO generation."""
 
@@ -681,18 +774,17 @@ class OnlinePOApp:
               for "this marketplace supports multi-file upload".
         """
         marketplace = self.marketplace_var.get()
-        supports_multi = bool(
-            marketplace in MARKETPLACE_CONFIGS
-            and MARKETPLACE_CONFIGS[marketplace].get('pre_process')
-        )
+        # v2.2.0: Centralized multi-file detection — covers both
+        # Reliance-style (pre_process) and PDF marketplaces (source_format=pdf).
+        # See _supports_multi_file docstring for the full rationale.
+        supports_multi = _supports_multi_file(marketplace)
 
         if supports_multi:
             # Multi-select — returns a tuple (possibly empty).
             paths = filedialog.askopenfilenames(
                 title=f"Select {marketplace} PO File(s) — "
                       f"pick one or many",
-                filetypes=[("Excel files", "*.xlsx"),
-                           ("All files", "*.*")],
+                filetypes=_po_filetypes_for(marketplace),
             )
             if not paths:
                 return  # user cancelled
@@ -711,8 +803,7 @@ class OnlinePOApp:
             # Single-select — existing behavior.
             path = filedialog.askopenfilename(
                 title="Select Marketplace PO File",
-                filetypes=[("Excel files", "*.xlsx"),
-                           ("All files", "*.*")],
+                filetypes=_po_filetypes_for(marketplace),
             )
             if path:
                 self.po_path = path
@@ -794,13 +885,17 @@ class OnlinePOApp:
 
         # ── Engine run ──────────────────────────────────────────────────
         # v1.7.0: route to process_multi when the marketplace supports
-        # batch upload (currently Reliance only, signalled by the
-        # ``pre_process`` config key). For single-file marketplaces
-        # we continue to call process() directly so there's no
-        # behavioural change for Blink/Myntra/RK.
+        # batch upload (Reliance — one PO per Excel file, multiple files
+        # combined into one SO batch).
+        # v2.2.0: also route PDF marketplaces (Dmart) through
+        # process_multi — each PO PDF is inherently a separate file, so
+        # operators picking multiple Dmart PDFs in one batch expect them
+        # to be combined the same way Reliance Excel files are.
+        # The unified marker is ``_supports_multi_file(marketplace)``
+        # which checks both ``pre_process`` and ``source_format='pdf'``.
         engine = MarketplaceEngine(self.mapping_loader, master=master_loader)
 
-        supports_multi = bool(config.get('pre_process'))
+        supports_multi = _supports_multi_file(marketplace)
         if supports_multi and len(self.po_paths) > 1:
             self._log(
                 f"Batch processing {len(self.po_paths)} "
