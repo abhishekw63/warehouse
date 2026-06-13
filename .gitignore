@@ -17,3 +17,17 @@ db.sqlite3
 online_po_management\Calculation Data\.update_history.json
 online_po_management\output_online\*.json
 calculation*
+
+# Claude Code — local config/session data (not shared)
+.claude/
+
+# Standalone (GT Mass) — runtime state, local config, data & outputs
+mt_select_seq.json
+standalone_files/mt_select_seq.json
+standalone_files/mt_select_config.json
+standalone_files/data_mt/
+standalone_files/Output_HG/
+
+# Auto mode — history DB lives under Dump/Tracker (local/OneDrive, not source)
+Dump/
+*.db
