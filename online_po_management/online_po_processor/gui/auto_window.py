@@ -138,6 +138,9 @@ class AutoWindow:
             command=self._open_trk,
         )
         self.open_trk_btn.pack(side='left', padx=2)
+        tk.Button(
+            crow, text="📜  View History", command=self._view_history,
+        ).pack(side='left', padx=2)
         self.status_var = tk.StringVar(value="Idle")
         tk.Label(crow, textvariable=self.status_var, fg='blue').pack(
             side='left', padx=10)
@@ -175,6 +178,30 @@ class AutoWindow:
         if self.last_tracker and os.path.exists(self.last_tracker):
             from online_po_processor.utils import open_file
             open_file(self.last_tracker)
+
+    def _view_history(self) -> None:
+        """Export the full order history to a readable .xlsx and open it."""
+        from online_po_processor.auto.history_db import (
+            HistoryDB, history_db_path,
+        )
+        from online_po_processor.utils import open_file
+        root = self.root_var.get().strip()
+        if not root or not os.path.isdir(root):
+            self._log("✗ Pick the Dump/Online folder first (so I can find "
+                      "the history DB).")
+            return
+        db_path = history_db_path(root)
+        if not os.path.exists(db_path):
+            self._log("· No history yet — run Auto at least once.")
+            return
+        out = os.path.join(os.path.dirname(str(db_path)), 'Order_History.xlsx')
+        db = HistoryDB(db_path)
+        try:
+            db.export_to_xlsx(out)
+        finally:
+            db.close()
+        self._log(f"📜 History exported: {out}")
+        open_file(out)
 
     def _log(self, msg: str) -> None:
         self.log_text.insert('end', msg + "\n")
@@ -239,6 +266,32 @@ class AutoWindow:
                     self._log_threadsafe(
                         f"⚠ tracker file failed: "
                         f"{type(te).__name__}: {te}")
+
+                # Append to the upload history (SQLite) + flag duplicates.
+                try:
+                    from online_po_processor.auto.history_db import (
+                        record_history,
+                    )
+                    info = record_history(
+                        runs, root,
+                        consolidated_path=str(cons_path or ''),
+                        tracker_path=str(trk_path or ''))
+                    self._log_threadsafe(
+                        f"📒 History: recorded {info['total_orders']} order(s) "
+                        f"(run #{info['run_id']}) — {info['new_orders']} new, "
+                        f"{len(info['duplicates'])} already-uploaded")
+                    for label, po, ts in info['duplicates'][:15]:
+                        when = (ts or '')[:10]
+                        self._log_threadsafe(
+                            f"   ⚠ {label} PO {po} already uploaded on {when}")
+                    if len(info['duplicates']) > 15:
+                        self._log_threadsafe(
+                            f"   … and {len(info['duplicates']) - 15} more "
+                            f"already-uploaded POs")
+                except Exception as he:  # noqa: BLE001
+                    self._log_threadsafe(
+                        f"⚠ history record failed: "
+                        f"{type(he).__name__}: {he}")
 
             self.win.after(0, lambda: self._done(runs, cons_path, trk_path))
         except Exception as e:  # noqa: BLE001 — surface, don't crash the UI thread
