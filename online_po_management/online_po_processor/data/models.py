@@ -272,3 +272,11 @@ class ProcessingResult:
     # file is read; stays ``None`` if processing aborted before that
     # point (e.g. file couldn't be opened).
     resolved_config: Optional[dict] = None
+
+    # v2.4.0: dedup-skip. When DEDUP_SKIP_ENABLED, ``apply_dedup`` removes
+    # already-uploaded POs from ``rows`` (so they don't reach Headers/Lines)
+    # and records a summary of each removed PO here. Consumed by the
+    # "Skipped" output sheet and logged to the ``dedup_skips`` table.
+    # Each entry: {segment, marketplace, marketplace_label, po, location,
+    # qty, order_value, first_seen}. Empty when nothing was skipped.
+    skipped_orders: List[dict] = field(default_factory=list)

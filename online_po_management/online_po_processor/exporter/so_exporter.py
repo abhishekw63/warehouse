@@ -44,7 +44,7 @@ from openpyxl import Workbook
 
 from online_po_processor.data.models import ProcessingResult
 from online_po_processor.exporter.sheets import (
-    headers_sheet, lines_sheet, raw_data_sheet,
+    headers_sheet, lines_sheet, raw_data_sheet, skipped_sheet,
     summary_sheet, tracker_sheet, validation_sheet, warnings_sheet,
 )
 
@@ -95,14 +95,17 @@ class SOExporter:
             were no rows to write (a user-facing warning dialog is
             shown in that case).
         """
-        if not result.rows:
-            # No rows == nothing to import. Better to tell the user
-            # than to silently produce an empty workbook.
+        if not result.rows and not getattr(result, 'skipped_orders', None):
+            # No rows AND nothing skipped == nothing to import. Better to
+            # tell the user than to silently produce an empty workbook.
             messagebox.showwarning(
                 "No Data",
                 "No valid rows found.\nNothing to export.",
             )
             return None
+        # If rows is empty but POs were skipped (all already uploaded), we
+        # still write the workbook so the Skipped sheet records what was
+        # removed — the import sheets just come out header-only.
 
         # v2.1.0: compute elapsed BEFORE the sheet writers run so the
         # Summary footer can see the value. The few hundred ms spent
@@ -133,6 +136,7 @@ class SOExporter:
         lines_sheet.write(wb, result)
         summary_sheet.write(wb, result)
         tracker_sheet.write(wb, result)
+        skipped_sheet.write(wb, result)        # v2.4.0 — only if dups removed
         validation_sheet.write(wb, result)
         warnings_sheet.write(wb, result)
         raw_data_sheet.write(wb, result)

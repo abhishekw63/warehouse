@@ -43,6 +43,7 @@ from typing import Dict, Optional
 
 import pandas as pd
 
+from online_po_processor.config.constants import ORDER_SEGMENT
 from online_po_processor.data.master_loader import MasterLoader
 from online_po_processor.data.models import ProcessingResult
 from online_po_processor.exporter._styles import (
@@ -50,25 +51,27 @@ from online_po_processor.exporter._styles import (
 )
 
 
-# v2.4.0: columns match the master "New PO format" tracker (Feb-June'26
-# sheet) exactly — 8 columns, NO 'State Name' (the master has none). PO
-# Aging For Exp is present but emitted blank (operator preference; the
-# master fills it downstream).
+# v2.4.0: based on the master "New PO format" tracker (Feb-June'26) — no
+# 'State Name'; PO Aging blank (operator preference). A leading 'Segment'
+# column ('OnlineB2B') groups these against future offline (GT) orders that
+# will share the same tracker / history DB.
 _HEADERS = [
+    'Segment',
     'Market Place', 'PO', 'Location',
     'PO Date', 'Exp Date', 'PO Aging For Exp',
     'Order Value', 'Order Qty',
 ]
 
 # 1-based column indices.
-_COL_MARKETPLACE = 1
-_COL_PO = 2
-_COL_LOCATION = 3
-_COL_PO_DATE = 4
-_COL_EXP_DATE = 5
-_COL_AGING = 6          # intentionally blank
-_COL_ORDER_VALUE = 7
-_COL_ORDER_QTY = 8
+_COL_SEGMENT = 1
+_COL_MARKETPLACE = 2
+_COL_PO = 3
+_COL_LOCATION = 4
+_COL_PO_DATE = 5
+_COL_EXP_DATE = 6
+_COL_AGING = 7          # intentionally blank
+_COL_ORDER_VALUE = 8
+_COL_ORDER_QTY = 9
 
 # Marketplaces the per-marketplace Tracker sheet is wired up for. (The
 # Auto consolidated/standalone tracker is NOT gated by this — it tracks
@@ -109,7 +112,9 @@ _INR_FORMAT = ('[>=10000000]"₹ "##\\,##\\,##\\,##0.00;'
 #   * 'PO Date' / 'PO Expiry Date'     — Zepto punch
 #   * 'Order date' / 'Cancellation deadline' — RK punch (RK's expiry is
 #     its cancellation deadline; PO date is the order date)
-_PO_DATE_CANDIDATES = ['__po_date__', 'PO Date', 'Order date']
+#   * 'order_date' / 'expiry_date'     — Blink (underscores; matched via _norm_col)
+#   * 'Date'                           — Flipkart (LAST, so specific names win)
+_PO_DATE_CANDIDATES = ['__po_date__', 'PO Date', 'Order date', 'Date']
 _EXP_DATE_CANDIDATES = ['__exp_date__', 'PO Expiry Date', 'PO Expiry',
                         'Expiry Date', 'Cancellation deadline']
 _STATE_CANDIDATES = ['__state__', 'State Name', 'State']
@@ -182,6 +187,7 @@ def build_tracker_rows(result: ProcessingResult) -> list:
         dates = po_dates.get(po, {})
         exp_str = dates.get('exp_date', '')
         rows.append({
+            'segment': ORDER_SEGMENT,
             'market_place': market_place,
             'po': po,
             'location': info['location'],
@@ -195,15 +201,57 @@ def build_tracker_rows(result: ProcessingResult) -> list:
     return rows
 
 
+# Excel number format for the date columns. Real DATE values are written
+# (not text) so the cell is reformattable / sortable AND pastes into the
+# master tracker as a date.
+_DATE_FMT = 'DD-MM-YYYY'
+
+
+def _coerce_date(v):
+    """Return a ``date`` for date-like input (date / datetime / dd-mm-yyyy
+    or ISO string), else ``None``. Lets the tracker write a real Excel
+    date regardless of whether the source gave us an object or a string."""
+    if v is None or v == '':
+        return None
+    if isinstance(v, datetime):
+        return v.date()
+    if isinstance(v, date):
+        return v
+    s = str(v).strip()
+    for fmt in ('%d-%m-%Y', '%d.%m.%Y', '%d/%m/%Y', '%Y-%m-%d'):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    try:
+        ts = pd.to_datetime(s, errors='raise')
+        if pd.notna(ts):
+            return ts.date()
+    except Exception:        # noqa: BLE001 — not a date
+        pass
+    return None
+
+
+def _write_date_cell(ws, r: int, col: int, v) -> None:
+    d = _coerce_date(v)
+    if d is not None:
+        data_cell(ws, r, col, d, number_format=_DATE_FMT, align='center')
+    else:
+        data_cell(ws, r, col, v or '', align='center')
+
+
 def write_tracker_row(ws, r: int, row: dict) -> None:
     """Write one tracker row dict (from :func:`build_tracker_rows`) at
     sheet row ``r``. Shared so the per-marketplace and consolidated
-    trackers render identically."""
+    trackers render identically. PO Date / Exp Date are written as real
+    Excel dates (``DD-MM-YYYY``)."""
+    data_cell(ws, r, _COL_SEGMENT,
+              row.get('segment', ORDER_SEGMENT), align='center')
     data_cell(ws, r, _COL_MARKETPLACE, row['market_place'], align='center')
     data_cell(ws, r, _COL_PO, row['po'], align='center')
     data_cell(ws, r, _COL_LOCATION, row['location'], align='left')
-    data_cell(ws, r, _COL_PO_DATE, row['po_date'], align='center')
-    data_cell(ws, r, _COL_EXP_DATE, row['exp_date'], align='center')
+    _write_date_cell(ws, r, _COL_PO_DATE, row['po_date'])
+    _write_date_cell(ws, r, _COL_EXP_DATE, row['exp_date'])
     data_cell(ws, r, _COL_AGING, row['aging'], align='center')
     data_cell(ws, r, _COL_ORDER_VALUE, row['order_value'],
               number_format=_INR_FORMAT, align='right')
@@ -273,15 +321,25 @@ def _aging_days(exp_str: str):
     return (exp - date.today()).days
 
 
+def _norm_col(c) -> str:
+    """Normalise a column name for matching: underscores → spaces, runs of
+    whitespace collapsed, lower-cased. So ``order_date`` / ``Order Date`` /
+    ``ORDER  DATE`` all compare equal — this is what lets Blink's
+    ``order_date`` / ``expiry_date`` match the ``Order date`` / ``Expiry
+    Date`` candidates."""
+    return ' '.join(str(c).replace('_', ' ').split()).lower()
+
+
 def _find_col(df: pd.DataFrame, candidates) -> Optional[str]:
     """
     Return the actual DataFrame column name matching the first candidate
-    found, comparing case-insensitively with internal whitespace runs
-    collapsed. ``None`` when no candidate is present.
+    found, comparing case-insensitively with underscores treated as
+    spaces and whitespace runs collapsed. ``None`` when no candidate is
+    present.
     """
-    norm = {' '.join(str(c).split()).lower(): c for c in df.columns}
+    norm = {_norm_col(c): c for c in df.columns}
     for cand in candidates:
-        key = ' '.join(str(cand).split()).lower()
+        key = _norm_col(cand)
         if key in norm:
             return norm[key]
     return None
@@ -303,18 +361,45 @@ def _coerce_po(po_raw) -> str:
 
 def _fmt_date(val) -> str:
     """
-    Format a raw date cell as ``dd-mm-yyyy``. Pandas Timestamps and
-    datetime-likes are formatted; blank/NaN becomes ''; anything else is
-    passed through as a stripped string (already-formatted text dates).
+    Format a raw date cell as ``dd-mm-yyyy``.
+
+    Handles every shape a marketplace throws at us:
+      * pandas Timestamp / datetime  → strftime
+      * day-first text ('09-06-2026', '09.06.2026') → kept day-first
+      * ISO datetime strings with time/timezone ('2026-06-01 08:45:17+00:00',
+        '2026-06-16T18:29:59Z' — Blink) → parsed and reduced to the date
+    Blank / NaN / unparseable → '' (or the original string if it had
+    content but no recognisable date).
+
+    Returning a clean ``dd-mm-yyyy`` here matters twice: the tracker shows
+    it, AND the history DB's DATE parser receives it (so Blink's dates land
+    as real DATEs instead of NULL).
     """
-    if pd.isna(val):
+    if val is None or (not isinstance(val, str) and pd.isna(val)):
         return ''
     if isinstance(val, pd.Timestamp):
         return val.strftime('%d-%m-%Y')
-    # datetime.datetime / date also expose strftime.
-    if hasattr(val, 'strftime'):
+    if hasattr(val, 'strftime') and not isinstance(val, str):
         try:
             return val.strftime('%d-%m-%Y')
         except (ValueError, TypeError):
             pass
-    return str(val).strip()
+
+    s = str(val).strip()
+    if not s:
+        return ''
+    # Day-first text formats FIRST (so '09-06-2026' isn't misread as
+    # month-first by the generic parser below).
+    for fmt in ('%d-%m-%Y', '%d.%m.%Y', '%d/%m/%Y'):
+        try:
+            return datetime.strptime(s, fmt).strftime('%d-%m-%Y')
+        except ValueError:
+            continue
+    # ISO-ish (year-first, optional time/zone) — let pandas parse it.
+    try:
+        ts = pd.to_datetime(s, errors='raise')
+        if pd.notna(ts):
+            return ts.strftime('%d-%m-%Y')
+    except Exception:        # noqa: BLE001 — not a date we recognise
+        pass
+    return s

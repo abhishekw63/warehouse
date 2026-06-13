@@ -27,6 +27,24 @@ BUNDLED_MASTER_NAME: str = "Items March.xlsx"
 BUNDLED_MAPPING_NAME: str = "Ship to B2B.xlsx"
 
 
+# ── Order segment ───────────────────────────────────────────────────────────
+# Every order this tool produces belongs to the "OnlineB2B" segment. Stored on
+# each history row + shown on the tracker so that, when offline (GT/general
+# trade) orders are added to the SAME history DB / tracker later, the two
+# streams are distinguishable by this field.
+ORDER_SEGMENT: str = "OnlineB2B"
+
+
+# ── Deduplication ───────────────────────────────────────────────────────────
+# When True, POs already present in the history DB are REMOVED from the
+# generated Headers/Lines (so an already-uploaded PO is never sent to D365
+# again) and logged in the ``dedup_skips`` table + a "Skipped" output sheet.
+# Applies to ALL marketplaces. Flip to False to disable globally (revert to
+# "record + flag, but still output" behaviour). Trust model: a PO counts as
+# uploaded the moment it is generated.
+DEDUP_SKIP_ENABLED: bool = True
+
+
 # ── In-app update history (JSON sidecar) ────────────────────────────────────
 # Tracks WHEN the user last clicked "Update Bundled Files" for each tracked
 # file. Lives inside Calculation Data/ as a hidden file. Used by the GUI to

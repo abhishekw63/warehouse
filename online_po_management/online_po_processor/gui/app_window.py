@@ -204,8 +204,13 @@ class OnlinePOApp:
         self.root.title("Online PO Processor — Marketplace SO Generator")
         # v2.3.1: +60px taller to fit the Flipkart-TO input-mode selector
         # without clipping the log/status area at the bottom.
-        self.root.geometry("520x780")
-        self.root.resizable(False, False)
+        # v2.4.0: wider + shorter — the action buttons now sit in a
+        # 2-column grid, so the old tall 520-wide window no longer fits the
+        # content well. Allow resizing + a sensible minimum so nothing
+        # clips on smaller displays.
+        self.root.geometry("780x680")
+        self.root.minsize(720, 600)
+        self.root.resizable(True, True)
 
         # ── File paths (None until picked or auto-loaded) ───────────────
         self.master_path: Optional[str] = None
@@ -478,57 +483,67 @@ class OnlinePOApp:
         )
 
         # ── Action buttons ──────────────────────────────────────────────
+        # v2.4.0: laid out in a 2-column grid (instead of one tall column)
+        # so the window is wider/shorter and every control is visible
+        # without scrolling. The two primary actions (Generate SO / Auto
+        # Mode) span the full width on top; secondary actions pair up below.
         btn_frame = tk.Frame(self.root)
         btn_frame.pack(pady=8)
+        btn_frame.columnconfigure(0, weight=1, uniform='btn')
+        btn_frame.columnconfigure(1, weight=1, uniform='btn')
 
+        _BTN_W = 24
+
+        # Row 0 — primary actions, side by side.
         tk.Button(
-            btn_frame, text="▶  Generate SO", width=20,
+            btn_frame, text="▶  Generate SO", width=_BTN_W,
             font=("Arial", 10, "bold"),
             bg="#00C853", fg='white', command=self.generate,
-        ).pack(pady=4)
+        ).grid(row=0, column=0, padx=4, pady=4, sticky='ew')
 
-        # ── v2.4.0: Auto mode ───────────────────────────────────────────
-        # Opens the headless batch window (process every Dump/Online/<mp>
-        # folder unattended). This is the ONLY addition to the Manual UI —
-        # the single-file Generate flow above is unchanged.
+        # Auto mode — headless batch window (process every Dump/Online/<mp>
+        # folder). The single-file Generate flow above is unchanged.
         tk.Button(
-            btn_frame, text="⚙  Auto Mode (all folders)", width=20,
+            btn_frame, text="⚙  Auto Mode (all folders)", width=_BTN_W,
             font=("Arial", 10, "bold"),
             bg="#3949AB", fg='white', command=self._open_auto,
-        ).pack(pady=4)
+        ).grid(row=0, column=1, padx=4, pady=4, sticky='ew')
 
+        # Rows 1-3 — secondary actions, two per row.
         self.open_btn = tk.Button(
-            btn_frame, text="📂  Open Last Output", width=20,
+            btn_frame, text="📂  Open Last Output", width=_BTN_W,
             state=tk.DISABLED, command=self.open_last,
         )
-        self.open_btn.pack(pady=4)
+        self.open_btn.grid(row=1, column=0, padx=4, pady=4, sticky='ew')
 
         tk.Button(
-            btn_frame, text="📋  Download PO Template", width=20,
+            btn_frame, text="📜  View Order History", width=_BTN_W,
+            command=self._view_history,
+        ).grid(row=1, column=1, padx=4, pady=4, sticky='ew')
+
+        tk.Button(
+            btn_frame, text="📋  Download PO Template", width=_BTN_W,
             command=self._download_template,
-        ).pack(pady=4)
+        ).grid(row=2, column=0, padx=4, pady=4, sticky='ew')
 
         tk.Button(
-            btn_frame, text="📁  Update Bundled Files", width=20,
+            btn_frame, text="📁  Update Bundled Files", width=_BTN_W,
             command=self._update_bundled_files,
-        ).pack(pady=4)
+        ).grid(row=2, column=1, padx=4, pady=4, sticky='ew')
 
-        # ── v1.5.0: D365 Package Export ─────────────────────────────────
-        # Starts disabled — becomes active only after a successful
-        # Generate SO run (because both need ``self.last_result``).
+        # D365 + Email — disabled until a successful Generate (both need
+        # ``self.last_result``).
         self.d365_btn = tk.Button(
-            btn_frame, text="📤  Export D365 Package", width=20,
+            btn_frame, text="📤  Export D365 Package", width=_BTN_W,
             state=tk.DISABLED, command=self._export_d365,
         )
-        self.d365_btn.pack(pady=4)
+        self.d365_btn.grid(row=3, column=0, padx=4, pady=4, sticky='ew')
 
-        # ── v1.5.0: Email Report ────────────────────────────────────────
-        # Same gating rule as the D365 button.
         self.email_btn = tk.Button(
-            btn_frame, text="📧  Send Email Report", width=20,
+            btn_frame, text="📧  Send Email Report", width=_BTN_W,
             state=tk.DISABLED, command=self._send_email,
         )
-        self.email_btn.pack(pady=4)
+        self.email_btn.grid(row=3, column=1, padx=4, pady=4, sticky='ew')
 
         # ── Status line ─────────────────────────────────────────────────
         self.status_var = tk.StringVar(
@@ -1199,6 +1214,22 @@ class OnlinePOApp:
             self.status_label.config(fg='red')
             return
 
+        # ── v2.4.0: dedup-skip — drop already-uploaded POs from output ──
+        try:
+            from online_po_processor.auto.history_db import apply_dedup
+            _skipped = apply_dedup(result)
+            if _skipped:
+                self._log(
+                    f"Dedup: {len(_skipped)} PO(s) already uploaded — removed "
+                    f"from Headers/Lines (see 'Skipped POs' sheet)")
+        except Exception as de:  # noqa: BLE001 — never block a generate
+            self._log(f"WARNING: dedup check skipped ({type(de).__name__}: {de})")
+
+        if not result.rows:
+            # Every PO in this file was already uploaded — nothing new, but
+            # still write the workbook so the Skipped sheet is the record.
+            self._log("All POs already uploaded — nothing new to generate.")
+
         # ── Log summary ─────────────────────────────────────────────────
         unique_pos = {r.po_number for r in result.rows}
         total_qty = sum(r.qty for r in result.rows)
@@ -1249,6 +1280,41 @@ class OnlinePOApp:
             self.status_var.set(status_msg)
             self._log(f"Saved: {output_path}")
 
+            # v2.4.0: Manual mode now records to the SAME shared history
+            # DB Auto uses (Dump/Tracker/history.db), so dedup spans both.
+            # Best-effort — a history hiccup must never fail a generate.
+            hist_line = ""
+            try:
+                from online_po_processor.auto.history_db import (
+                    default_dump_root, record_manual,
+                )
+                from online_po_processor.auto.consolidated_exporter import (
+                    export_tracker_from_db,
+                )
+                hinfo = record_manual(result, str(output_path))
+                n_skip = hinfo['skipped']
+                self._log(
+                    f"History: {hinfo['new_orders']} new PO-line(s) recorded "
+                    + (f"(run #{hinfo['run_id']})" if hinfo['run_id']
+                       else "(no new — nothing recorded)")
+                    + (f" — {n_skip} already-uploaded removed" if n_skip else ""))
+                # Tracker built FROM the DB for this run (new POs only).
+                if hinfo['run_id']:
+                    try:
+                        tpath = export_tracker_from_db(
+                            hinfo['run_id'], default_dump_root())
+                        self._log(f"Tracker (new POs): {tpath}")
+                    except Exception as te:  # noqa: BLE001
+                        self._log(f"WARNING: tracker build failed: "
+                                  f"{type(te).__name__}: {te}")
+                hist_line = (
+                    f"\nHistory     : ✓ {hinfo['new_orders']} new recorded"
+                    + (f", {n_skip} already-uploaded removed" if n_skip else ""))
+            except Exception as he:  # noqa: BLE001
+                self._log(f"WARNING: history record failed: "
+                          f"{type(he).__name__}: {he}")
+                hist_line = f"\nHistory     : ⚠ not recorded ({type(he).__name__})"
+
             answer = messagebox.askyesno(
                 "SO Generated",
                 f"Sales Order generated successfully!\n\n"
@@ -1257,7 +1323,8 @@ class OnlinePOApp:
                 f"Items       : {len(result.rows)}\n"
                 f"Total Qty   : {total_qty}\n"
                 f"Warnings    : {len(result.warnings)}\n"
-                f"Time        : {elapsed:.2f}s\n\n"
+                f"Time        : {elapsed:.2f}s"
+                f"{hist_line}\n\n"
                 f"Do you want to open the output file?",
             )
             if answer:
@@ -1276,6 +1343,32 @@ class OnlinePOApp:
         """
         from online_po_processor.gui.auto_window import AutoWindow
         AutoWindow(self.root, self.master_path, self.mapping_path)
+
+    def _view_history(self) -> None:
+        """
+        v2.4.0: open the shared order history (the same DB Manual + Auto
+        write to) as a readable Excel grid. Gives Manual mode direct
+        visibility into what's been recorded / uploaded.
+        """
+        from online_po_processor.auto.history_db import (
+            default_history_db_path, get_history_store,
+        )
+        db_path = default_history_db_path()
+        if not os.path.exists(db_path):
+            messagebox.showinfo(
+                "No History Yet",
+                "Nothing recorded yet.\n\nGenerate at least one SO (or run "
+                "Auto mode) and the order history will start filling in here.",
+            )
+            return
+        out = os.path.join(os.path.dirname(str(db_path)), 'Order_History.xlsx')
+        store = get_history_store(db_path)
+        try:
+            store.export_to_xlsx(out)
+        finally:
+            store.close()
+        self._log(f"Order history exported: {out}")
+        open_file(out)
 
     def open_last(self) -> None:
         """Open the last generated output file in the default app."""

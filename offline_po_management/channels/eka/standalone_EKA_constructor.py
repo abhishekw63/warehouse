@@ -77,6 +77,7 @@ Run:
 #  IMPORTS
 # ═══════════════════════════════════════════════════════════════════════════════
 
+import io
 import os
 import re
 import shutil
@@ -121,6 +122,14 @@ BUNDLED_DATA_FOLDER = "Calculation_Data_EKA"
 BUNDLED_MASTER_NAME = "Items_March.xlsx"
 BUNDLED_EKA_NAME = "EKA_DATA.xlsx"
 
+# Shared Item Master source — the OneDrive "Online_B2B_Dump_Compilation"
+# workbook (its 'Item Master' sheet), so EKA uses the SAME master as the
+# Online PO tool instead of a separate Items_March copy. Tried in order;
+# falls back to the bundled Items_March.xlsx when none are present.
+ONLINEB2B_MASTER_PATHS = [
+    r"D:\OneDrive - RENEE COSMETICS PRIVATE LIMITED\Online_B2B_Dump_Compilation.xlsx",
+]
+
 
 def get_script_dir() -> Path:
     """
@@ -135,7 +144,14 @@ def get_script_dir() -> Path:
 
 
 def get_bundled_master_path() -> Optional[Path]:
-    """Return the path to the bundled Items Master, or None if absent."""
+    """
+    Return the Item Master path. Prefers the shared OnlineB2B dump
+    compilation (its 'Item Master' sheet — read by ``load_master``); falls
+    back to the bundled ``Items_March.xlsx`` when that file isn't present.
+    """
+    for src in ONLINEB2B_MASTER_PATHS:
+        if os.path.exists(src):
+            return Path(src)
     p = get_script_dir() / BUNDLED_DATA_FOLDER / BUNDLED_MASTER_NAME
     return p if p.exists() else None
 
@@ -152,6 +168,60 @@ def get_bundled_folder(create: bool = False) -> Path:
     if create:
         p.mkdir(parents=True, exist_ok=True)
     return p
+
+
+def read_file_bytes_shared(path: str) -> bytes:
+    """
+    Read a file's bytes into memory even when it is **open in Excel** (or
+    mid-sync on OneDrive).
+
+    The shared Online_B2B_Dump_Compilation workbook is normally kept open
+    in Excel. A plain ``open(path, 'rb')`` then fails with PermissionError
+    because Excel holds a write lock. This first tries the normal read; on
+    PermissionError it re-opens with Windows **shared** mode
+    (FILE_SHARE_READ | WRITE | DELETE) so the live, open file can still be
+    copied into memory without clashing — EKA then works on this private
+    in-memory snapshot (the last-saved on-disk version).
+    """
+    try:
+        with open(path, 'rb') as f:
+            return f.read()
+    except PermissionError:
+        if os.name != 'nt':
+            raise
+        import ctypes
+        from ctypes import wintypes
+        GENERIC_READ = 0x80000000
+        SHARE_ALL = 0x1 | 0x2 | 0x4          # READ | WRITE | DELETE
+        OPEN_EXISTING = 3
+        FILE_ATTRIBUTE_NORMAL = 0x80
+        INVALID = ctypes.c_void_p(-1).value
+        k = ctypes.windll.kernel32
+        k.CreateFileW.restype = wintypes.HANDLE
+        k.CreateFileW.argtypes = [
+            wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+            wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+        k.ReadFile.argtypes = [
+            wintypes.HANDLE, wintypes.LPVOID, wintypes.DWORD,
+            ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID]
+        h = k.CreateFileW(str(path), GENERIC_READ, SHARE_ALL, None,
+                          OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, None)
+        if not h or h == INVALID:
+            raise PermissionError(
+                f"Could not open '{path}' even in shared mode "
+                f"(it may be exclusively locked).")
+        try:
+            chunks, size = [], 1 << 20       # 1 MiB chunks
+            buf = ctypes.create_string_buffer(size)
+            nread = wintypes.DWORD(0)
+            while True:
+                ok = k.ReadFile(h, buf, size, ctypes.byref(nread), None)
+                if not ok or nread.value == 0:
+                    break
+                chunks.append(buf.raw[:nread.value])
+            return b''.join(chunks)
+        finally:
+            k.CloseHandle(h)
 
 
 
@@ -300,14 +370,27 @@ class POEngine:
 
     def load_master(self, path: str) -> int:
         """
-        Load Items_March.xlsx and build lookup dictionary.
+        Load the Item Master and build the lookup dictionary.
 
         Indexed by BOTH GTIN (EAN) and No. (item code) so PO items
         can be looked up by EAN, and non-stock items by internal code.
 
+        Source: the shared "Online_B2B_Dump_Compilation" workbook — read
+        from its **'Item Master'** sheet (the workbook has many sheets).
+        Falls back to the first sheet for a plain single-sheet master file,
+        so existing Items_March.xlsx files still load unchanged.
+
+        Read via ``read_file_bytes_shared`` so it works even when the
+        workbook is **open in Excel** (the operator keeps the compilation
+        open) — EKA loads a private in-memory snapshot, no file clash.
+
         Returns: number of rows loaded.
         """
-        df = pd.read_excel(path, header=0)
+        buf = io.BytesIO(read_file_bytes_shared(path))
+        xl = pd.ExcelFile(buf)
+        sheet = next((s for s in xl.sheet_names
+                      if str(s).strip().lower() == 'item master'), 0)
+        df = pd.read_excel(xl, sheet_name=sheet, header=0)
         df['GTIN_str'] = df['GTIN'].astype(str).str.strip()
         self.master = {}
 

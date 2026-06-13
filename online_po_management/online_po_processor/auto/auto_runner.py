@@ -101,6 +101,7 @@ class MarketplaceRun:
     rows: int = 0
     pos: int = 0
     qty: int = 0
+    skipped: int = 0          # already-uploaded POs removed from output
     warnings: int = 0
     error: str = ''
     result: Optional[ProcessingResult] = None
@@ -298,6 +299,15 @@ class AutoRunner:
             result.override_unit_price = bool(
                 config.get('override_unit_price', False)
             )
+
+            # v2.4.0: dedup-skip — remove already-uploaded POs from this
+            # result BEFORE export, so Headers/Lines never re-send them.
+            from online_po_processor.auto.history_db import apply_dedup
+            skipped = apply_dedup(result)
+            run.skipped = len(skipped)
+            if skipped:
+                self.log(f"[{marketplace}] {len(skipped)} already-uploaded "
+                         f"PO(s) removed (Skipped POs sheet)")
 
             out = SOExporter().export(result, start_time=time.time())
             run.output_path = str(out) if out else None

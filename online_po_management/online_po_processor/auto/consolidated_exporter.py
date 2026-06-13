@@ -60,7 +60,7 @@ from online_po_processor.exporter.sheets.lines_sheet import (
     _HEADERS as _SO_LINE_COLS, _LINE_NO_STEP, _TO_HEADERS as _TO_LINE_COLS,
 )
 from online_po_processor.exporter.sheets.tracker_sheet import (
-    _HEADERS as _TRACKER_COLS, build_tracker_rows, write_tracker_row,
+    _HEADERS as _TRACKER_COLS, write_tracker_row,
 )
 
 _MONEY = '#,##0.00'
@@ -126,12 +126,11 @@ def export_consolidated(runs: List, online_root: str) -> Path:
     # SO and TO are kept STRICTLY separate end to end — they are different
     # D365 imports and must never share a sheet. TO sheets are emitted
     # only when TO data is present, so an SO-only run stays uncluttered.
+    # v2.4.0: the Tracker is no longer duplicated here — it's generated
+    # once from the history DB (the single source of truth) via
+    # ``export_tracker_from_db``. The consolidated workbook keeps the D365
+    # import + review sheets only.
     _overall_summary(wb.create_sheet('Overall Summary'), runs)
-    # Consolidated Tracker — one paste-ready list across ALL processed
-    # marketplaces, in the master tracker's column format. Placed right
-    # after the overview so it's easy to select-and-copy.
-    if ok:
-        _tracker(wb.create_sheet('Tracker'), ok)
     if so_runs:
         _headers(wb.create_sheet('Headers (SO)'), so_runs, _SO_HDR_COLS, 'so')
         _lines(wb.create_sheet('Lines (SO)'), so_runs, _SO_LINE_COLS, 'so')
@@ -147,27 +146,52 @@ def export_consolidated(runs: List, online_root: str) -> Path:
     return out_path
 
 
-def export_tracker(runs: List, online_root: str) -> Path:
+def export_tracker_from_db(run_id: int, dump_root) -> Path:
     """
-    Write the standalone **internal Tracker** for an Auto run and return
-    its path.
+    Write the standalone **internal Tracker** for one run **from the
+    history DB** — the single source of truth (v2.4.0). No recomputation
+    from the engine result; the tracker is a view of what was recorded.
 
-    Saved (timestamped, so history is preserved as versioned files) to
-    ``<Dump>/Tracker/Online/Online_Tracker_<DD-MM-YYYY_HHMMSS>.xlsx`` —
-    a sibling ``Tracker/`` tree next to the ``Online/`` input tree
-    (``online_root`` is ``<Dump>/Online``). One sheet, every processed
-    marketplace, in the master "New PO format" tracker layout so it can be
-    pasted straight in (or used as the team's own rolling tracker).
+    Saved (timestamped, versioned) to
+    ``<Dump>/Tracker/Online/Online_Tracker_<DD-MM-YYYY_HHMMSS>.xlsx``. The DB
+    holds only new POs, so the tracker naturally lists only newly-uploaded
+    POs (already-uploaded ones were removed from output + DB by dedup).
     """
-    ok = [r for r in runs if r.status == 'ok' and r.result is not None]
-    tracker_dir = Path(online_root).parent / 'Tracker' / 'Online'
+    from online_po_processor.auto.history_db import get_history_store
+
+    dump = Path(dump_root)
+    store = get_history_store(dump / 'Tracker' / 'history.db')
+    try:
+        orders = store.fetch_orders(run_id=run_id)
+    finally:
+        store.close()
+
+    tracker_dir = dump / 'Tracker' / 'Online'
     tracker_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime('%d-%m-%Y_%H%M%S')
     out_path = tracker_dir / f'Online_Tracker_{stamp}.xlsx'
 
     wb = Workbook()
-    wb.remove(wb.active)
-    _tracker(wb.create_sheet('Tracker'), ok)
+    ws = wb.active
+    ws.title = 'Tracker'
+    for c, h in enumerate(_TRACKER_COLS, 1):
+        hdr_cell(ws, 1, c, h)
+    for i, o in enumerate(orders, start=2):
+        write_tracker_row(ws, i, {
+            'segment': o.get('segment') or 'OnlineB2B',
+            'market_place': o['marketplace_label'],
+            'po': o['po'],
+            'location': o['location'] or '',
+            # Pass the raw DB date (a date object on MySQL) straight through —
+            # write_tracker_row writes it as a real Excel DD-MM-YYYY date.
+            'po_date': o['po_date'],
+            'exp_date': o['exp_date'],
+            'aging': '',
+            'order_value': o['order_value'],
+            'order_qty': o['qty'],
+        })
+    auto_width(ws)
+    ws.freeze_panes = 'A2'
     wb.save(str(out_path))
     return out_path
 
@@ -342,20 +366,6 @@ def _lines(ws, runs: List, cols: List[str], kind: str) -> None:
                           so.calc_price if so.calc_price is not None else '',
                           number_format='#,##0.0000', align='right')
     auto_width(ws)
-
-
-# ── Consolidated Tracker (paste-ready, all marketplaces) ────────────────
-
-def _tracker(ws, runs: List) -> None:
-    for c, h in enumerate(_TRACKER_COLS, 1):
-        hdr_cell(ws, 1, c, h)
-    r = 2
-    for run in runs:
-        for row in build_tracker_rows(run.result):
-            write_tracker_row(ws, r, row)
-            r += 1
-    auto_width(ws)
-    ws.freeze_panes = 'A2'
 
 
 # ── 4. Consolidated Summary (per PO, all marketplaces) ──────────────────
