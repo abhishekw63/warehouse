@@ -14,3 +14,6 @@ staticfiles
 *output_online
 db.sqlite3
 *.log
+online_po_management\Calculation Data\.update_history.json
+online_po_management\output_online\*.json
+calculation*

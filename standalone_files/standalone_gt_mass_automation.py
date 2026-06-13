@@ -299,8 +299,11 @@ EMAIL_CONFIG = {
         # 'milan.nayak@reneecosmetics.in',
         'aashutosh.joshi@reneecosmetics.in',
         'anupam.sharma@reneecosmetics.in',
-        'ketan.jain@reneecosmetics.in',
-        'pankaj.semwal@reneecosmetics.in'
+        # 'ketan.jain@reneecosmetics.in',
+        'pankaj.semwal@reneecosmetics.in',
+        # 'ashish.dewan@reneecosmetics.in',
+        
+        'yogesh.parekh@reneecosmetics.in'
     ],
 }
 

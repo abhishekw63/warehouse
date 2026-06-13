@@ -1024,15 +1024,23 @@ class ExcelWriter:
         cell = ws.cell(row=row, column=col, value=value)
         cell.font = cls.HEADER_FONT
         cell.fill = cls.HEADER_FILL
-        cell.alignment = Alignment(horizontal='center', vertical='center')
+        # wrap_text lets multi-word labels (e.g. 'Gen. Bus. Posting
+        # Group') stack neatly instead of forcing a very wide column.
+        cell.alignment = Alignment(
+            horizontal='center', vertical='center', wrap_text=True)
         cell.border = cls.BORDER
         return cell
 
     @classmethod
-    def _data_cell(cls, ws, row, col, value, fmt=None):
+    def _data_cell(cls, ws, row, col, value, fmt=None, align='center'):
+        # Cosmetic-only: data cells are centre-aligned by default for a
+        # clean ID-strip look. Callers pass align='right' for money or
+        # align='left' for long prose (product names). No value/logic
+        # change — purely presentation.
         cell = ws.cell(row=row, column=col, value=value)
         cell.font = Font(name='Aptos Display', size=11)
         cell.border = cls.BORDER
+        cell.alignment = Alignment(horizontal=align, vertical='center')
         if fmt:
             cell.number_format = fmt
         return cell
@@ -1042,7 +1050,12 @@ class ExcelWriter:
         for col in ws.columns:
             letter = col[0].column_letter
             w = max((len(str(c.value or '')) for c in col), default=8)
-            ws.column_dimensions[letter].width = min(w + 3, max_w)
+            # min 9 so centred short values (Qty, codes) aren't cramped.
+            ws.column_dimensions[letter].width = max(min(w + 3, max_w), 9)
+        # Keep the header row visible while scrolling, and give it height
+        # for the wrapped labels.
+        ws.freeze_panes = 'A2'
+        ws.row_dimensions[1].height = 30
 
     @classmethod
     def _write_headers_to(cls, wb, results, loc_lookup):
@@ -1160,7 +1173,7 @@ class ExcelWriter:
                 cls._data_cell(ws, r, 8, '')
                 cls._data_cell(ws, r, 9,
                     round(item.unit_price, 10) if item.unit_price else 0,
-                    '#,##0.0000000000')
+                    '#,##0.0000000000', align='right')
                 r += 1
 
         cls._auto_width(ws)
@@ -1199,7 +1212,7 @@ class ExcelWriter:
                 cls._data_cell(ws, r, 7, item.qty)
                 cls._data_cell(ws, r, 8,
                     round(item.unit_price, 10) if item.unit_price else 0,
-                    '#,##0.0000000000')
+                    '#,##0.0000000000', align='right')
                 r += 1
 
         cls._auto_width(ws)
@@ -1225,7 +1238,7 @@ class ExcelWriter:
                 cls._data_cell(ws, row_num, 3, item.qty)
                 cls._data_cell(ws, row_num, 4,
                     round(item.unit_price, 10) if item.unit_price else 0,
-                    '#,##0.0000000000')
+                    '#,##0.0000000000', align='right')
                 cls._data_cell(ws, row_num, 5, item.transfer_to)
                 cls._data_cell(ws, row_num, 6, item.posting_group)
 
@@ -1235,9 +1248,9 @@ class ExcelWriter:
                 src_cell.font = Font(name='Aptos Display', size=11, bold=True, color=sc[1])
                 src_cell.alignment = Alignment(horizontal='center')
 
-                cls._data_cell(ws, row_num, 8, loc)
+                cls._data_cell(ws, row_num, 8, loc, align='left')
                 cls._data_cell(ws, row_num, 9, item.ean)
-                cls._data_cell(ws, row_num, 10, item.product_name)
+                cls._data_cell(ws, row_num, 10, item.product_name, align='left')
 
                 st_cell = cls._data_cell(ws, row_num, 11, item.lookup_status)
                 stc = cls.STATUS_COLORS.get(item.lookup_status, ('666666', 'FFFFFF'))
@@ -1275,14 +1288,17 @@ class ExcelWriter:
         for i, res in enumerate(results, 2):
             loc = res.filename.replace('.xlsx', '').replace('_NEW_PO', '').replace('_New_PO', '')
 
+            # Regular doc = FG only (regular_orders). Tester doc carries
+            # every ₹0.54 line — testers, PWP, GWP, Non-Stock — so PWP now
+            # falls back into the Tester TO/SO column, not the regular one.
             to_regular = ''
             to_tester = ''
             if res.regular_orders and res.regular_orders[0].to:
                 to_regular = res.regular_orders[0].to
-            elif res.pwp_orders and res.pwp_orders[0].to:
-                to_regular = res.pwp_orders[0].to
             if res.tester_orders and res.tester_orders[0].to:
                 to_tester = res.tester_orders[0].to
+            elif res.pwp_orders and res.pwp_orders[0].to:
+                to_tester = res.pwp_orders[0].to
             elif res.gwp_orders and res.gwp_orders[0].to:
                 to_tester = res.gwp_orders[0].to
             elif res.nonstock_orders and res.nonstock_orders[0].to:
@@ -1314,7 +1330,7 @@ class ExcelWriter:
             ns_q = sum(r.qty for r in res.nonstock_orders)
             total = po_q + tt_q + pw_q + gw_q + ns_q
 
-            cls._data_cell(ws, i, 1, loc)
+            cls._data_cell(ws, i, 1, loc, align='left')
             cls._data_cell(ws, i, 2, to_regular)
             cls._data_cell(ws, i, 3, to_tester)
             cls._data_cell(ws, i, 4, transfer_dest)
@@ -1337,15 +1353,20 @@ class ExcelWriter:
                     bold=True, color='FFFFFF')
 
         tr = len(results) + 2
-        cls._data_cell(ws, tr, 1, 'TOTAL')
-        ws.cell(row=tr, column=1).font = Font(
-            name='Aptos Display', size=11, bold=True)
+        cls._data_cell(ws, tr, 1, 'TOTAL', align='left')
         for c in range(6, 15):
             total = sum(ws.cell(row=r, column=c).value or 0
                         for r in range(2, tr))
             cls._data_cell(ws, tr, c, total)
-            ws.cell(row=tr, column=c).font = Font(
-                name='Aptos Display', size=11, bold=True)
+        # Band the whole TOTAL row (incl. the empty 2-5) light-grey + bold
+        # so it reads as a clear footer strip.
+        total_fill = PatternFill('solid', fgColor='EEEEEE')
+        total_font = Font(name='Aptos Display', size=11, bold=True)
+        for c in range(1, 15):
+            cell = ws.cell(row=tr, column=c)
+            cell.fill = total_fill
+            cell.font = total_font
+            cell.border = cls.BORDER
 
         cls._auto_width(ws)
         ws.freeze_panes = 'A2'
@@ -3195,9 +3216,18 @@ class ReneePOApp:
 
                 eka_loc, suffix_idx = self._lookup_location_from_filename(po_path)
                 if eka_loc:
-                    has_regular = bool(res.regular_orders or res.pwp_orders)
-                    has_tester = bool(res.tester_orders or res.gwp_orders
-                                       or res.nonstock_orders)
+                    # Document split (per ops requirement):
+                    #   Regular doc (month segment, e.g. /06/) = ONLY real
+                    #     finished-goods PO items (regular_orders), priced
+                    #     at calculated cost.
+                    #   Tester doc (/TT/ segment) = every flat ₹0.54 line —
+                    #     testers, PWP, GWP and Non-Stock.
+                    # PWP used to ride on the regular doc; it now belongs on
+                    # the TT doc so the regular order stays purely FG. See the
+                    # matching item.to assignment + Summary fallbacks below.
+                    has_regular = bool(res.regular_orders)
+                    has_tester = bool(res.tester_orders or res.pwp_orders
+                                       or res.gwp_orders or res.nonstock_orders)
 
                     short_code = eka_loc['short_code']
                     if suffix_idx > 0:
@@ -3226,8 +3256,10 @@ class ReneePOApp:
                         item.to = to_regular
                         item.transfer_to = tc
                         item.posting_group = pg
+                    # PWP is a ₹0.54 line → goes on the TT (tester) doc,
+                    # not the regular doc (ops requirement: regular = FG only).
                     for item in res.pwp_orders:
-                        item.to = to_regular
+                        item.to = to_tester
                         item.transfer_to = tc
                         item.posting_group = pg
                     for item in res.tester_orders:
