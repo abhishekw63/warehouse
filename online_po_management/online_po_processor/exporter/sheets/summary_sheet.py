@@ -50,6 +50,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Dict, Optional
 
+from online_po_processor.data.master_loader import MasterLoader
 from online_po_processor.data.models import ProcessingResult
 from online_po_processor.exporter._styles import (
     BOLD_DATA_FONT, INFO_ITALIC_FONT, LEGEND_ITALIC_FONT,
@@ -124,8 +125,24 @@ def write(wb, result: ProcessingResult) -> None:
 
     ws = wb.create_sheet('Summary')
 
+    # v2.3.1: marketplaces whose ``amount_col`` is PRE-GST (RK) get an
+    # extra 'Total Amount (Inc GST)' column inserted right after
+    # 'Total Amount', so the summary shows the GST-inclusive order value
+    # next to the pre-GST figure the punch carries. Driven by config
+    # ``amount_is_pre_gst``; absent for every other marketplace, so their
+    # 9-column layout is unchanged. Inc-GST is summed per line as
+    # amount × (1 + line GST) via ``MasterLoader.gst_divisor``.
+    incl_gst = bool((result.resolved_config or {}).get('amount_is_pre_gst'))
+    col_incgst = _COL_AMOUNT + 1 if incl_gst else None
+    col_status = _COL_STATUS + 1 if incl_gst else _COL_STATUS
+
+    headers = list(_HEADERS)
+    if incl_gst:
+        # Insert before 'Status' (the last base header).
+        headers.insert(len(headers) - 1, 'Total Amount (Inc GST)')
+
     # ── Header row ──────────────────────────────────────────────────────
-    for col_idx, header in enumerate(_HEADERS, start=1):
+    for col_idx, header in enumerate(headers, start=1):
         hdr_cell(ws, 1, col_idx, header)
 
     # ── Group by PO ─────────────────────────────────────────────────────
@@ -145,11 +162,18 @@ def write(wb, result: ProcessingResult) -> None:
                 'items': 0,
                 'qty': 0,
                 'amount': 0.0,
+                'amount_incgst': 0.0,
             }
         po_groups[so_row.po_number]['items'] += 1
         po_groups[so_row.po_number]['qty'] += so_row.qty
         # v1.5.3: sum amount; None (Myntra) contributes 0 silently.
-        po_groups[so_row.po_number]['amount'] += float(so_row.amount or 0.0)
+        amt = float(so_row.amount or 0.0)
+        po_groups[so_row.po_number]['amount'] += amt
+        # v2.3.1: GST-inclusive amount (per-line GST so a mixed-GST PO
+        # totals correctly). Only consumed when incl_gst, but cheap to
+        # always accumulate.
+        po_groups[so_row.po_number]['amount_incgst'] += (
+            amt * MasterLoader.gst_divisor(so_row.gst_code))
 
     # ── Data rows ───────────────────────────────────────────────────────
     # v2.1.0 alignment overrides per column (everything not listed
@@ -183,7 +207,13 @@ def write(wb, result: ProcessingResult) -> None:
             number_format=_INR_INDIAN_FORMAT,
             align='right',
         )
-        data_cell(ws, r, _COL_STATUS, status, align='center')
+        if incl_gst:
+            data_cell(
+                ws, r, col_incgst, info['amount_incgst'],
+                number_format=_INR_INDIAN_FORMAT,
+                align='right',
+            )
+        data_cell(ws, r, col_status, status, align='center')
 
         # Yellow highlight when raw ≠ mapped (case-insensitive).
         # Indicates a fuzzy match — worth a human glance.
@@ -194,7 +224,7 @@ def write(wb, result: ProcessingResult) -> None:
             ws.cell(row=r, column=_COL_MAPPED_LOC).fill = LOC_MISMATCH_FILL
 
         # Status pill
-        status_cell = ws.cell(row=r, column=_COL_STATUS)
+        status_cell = ws.cell(row=r, column=col_status)
         if status == 'OK':
             status_cell.fill = STATUS_OK_FILL
             status_cell.font = STATUS_OK_FONT
@@ -212,6 +242,7 @@ def write(wb, result: ProcessingResult) -> None:
     total_items = sum(g['items'] for g in po_groups.values())
     total_qty = sum(g['qty'] for g in po_groups.values())
     total_amount = sum(g['amount'] for g in po_groups.values())
+    total_amount_incgst = sum(g['amount_incgst'] for g in po_groups.values())
 
     # Per-cell values for the TOTAL row. None means "blank visual cell"
     # but we still write/style it so the row looks continuous.
@@ -224,13 +255,17 @@ def write(wb, result: ProcessingResult) -> None:
         (_COL_ITEMS,      total_items,   'center'),
         (_COL_QTY,        total_qty,     'center'),
         (_COL_AMOUNT,     total_amount,  'right'),
-        (_COL_STATUS,     None,          'center'),
     ]
+    if incl_gst:
+        total_row_cells.append((col_incgst, total_amount_incgst, 'right'))
+    total_row_cells.append((col_status, None, 'center'))
+
     for col, value, align in total_row_cells:
         # Use the standard data_cell so border + alignment apply, then
         # overlay the TOTAL-row treatment (fill + bold font + thick
         # top border) on top.
-        nf = _INR_INDIAN_FORMAT if col == _COL_AMOUNT and value is not None else None
+        is_money = col in (_COL_AMOUNT, col_incgst) if incl_gst else col == _COL_AMOUNT
+        nf = _INR_INDIAN_FORMAT if is_money and value is not None else None
         cell = data_cell(ws, r, col, value if value is not None else '',
                           number_format=nf, align=align)
         cell.fill = TOTAL_ROW_FILL

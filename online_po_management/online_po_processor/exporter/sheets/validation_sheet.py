@@ -5,36 +5,50 @@ exporter.sheets.validation_sheet
 Writes the **Validation** sheet — per-item price check with clear
 PASS/FAIL status for each line.
 
-Column layout (11 columns, or 14 when HSN check is enabled)::
+Column layout (13 columns, or 16 when HSN check is enabled)::
 
     1.  PO
     2.  Item No                    — resolved from master
     3.  EAN
     4.  Description                — from Items_March (readable product name)
-    5.  MRP                        ─┐
-    6.  Landing (m%)                ├ GREEN headers — our calculated values
-    7.  GST Code                    │
-    8.  Our Cost Price             ─┘
-    9.  Marketplace <Label>         — fob_col value from the punch
-    10. Difference with <Label>     — fob_price − calc_price
-    11. Status                      — OK / MISMATCH / NOT_IN_MASTER / NO_PRICE
+    5.  GST Code
+    6.  Vendor MRP                  — file's MRP (config ``mrp_col``; blank
+                                      when the file has no MRP column)
+    7.  Our MRP                     ─┐
+    8.  Vendor Landing              │ "Our" cols (7/9/11) get GREEN headers
+    9.  Our Landing (m%)            ├ — our master-calculated values, paired
+    10. Vendor CP                   │   beside the vendor's stated value so
+    11. Our CP                     ─┘   a mismatch in any single metric is
+                                        obvious at a glance.
+    12. Difference (<Label>)        — primary diff: vendor − our for the
+                                      active compare_basis (fob − calc).
+    13. Status                      — OK / MISMATCH / NOT_IN_MASTER / NO_PRICE
 
     — HSN cross-check columns (v1.6.0, conditional) —
-    12. HSN (Marketplace)           — hsn_col value from the punch
-    13. HSN (Master)                — HSN/SAC Code from Items_March
-    14. HSN Check                   — OK / MISMATCH / NOT_IN_MASTER
+    14. HSN (Marketplace)           — hsn_col value from the punch
+    15. HSN (Master)                — HSN/SAC Code from Items_March
+    16. HSN Check                   — OK / MISMATCH (amber alert)
 
 ``<Label>`` is the marketplace's ``compare_label`` from config (e.g.
 "Landing Rate" for Myntra, "Cost" for RK).
 
-Column meaning depends on ``compare_basis``
--------------------------------------------
-* ``basis='landing'`` (Myntra, Reliance): Marketplace value is compared
-  against "Landing (m%)" (= MRP × m%, pre-GST). Diff is clean (no GST
-  rounding).
-* ``basis='cost'`` (RK, Blink): Marketplace value is compared against
-  "Our Cost Price" (= MRP × m% ÷ GST, post-GST). Diff may have tiny
-  rounding noise — we treat ≤ 1 rupee as OK.
+Side-by-side Vendor vs Our (v2.3.1)
+-----------------------------------
+Each metric is a pair: the value the marketplace stated in its file
+(Vendor) next to the value we computed from the Items_March master
+(Our). When a vendor value is present and differs from ours by more
+than a paisa, that vendor cell is amber-tinted — so MRP / Landing / CP
+mismatches can be read straight off the columns. Vendor columns are
+blank for metrics the file doesn't carry (e.g. Flipkart has no MRP or
+CP column; only its landing rate is present).
+
+Where vendor Landing / CP come from depends on ``compare_basis``:
+* ``basis='landing'`` (Myntra, FirstCry, Flipkart): ``fob_col`` is the
+  vendor LANDING; an optional ``ref_fob_col`` (FirstCry 'Base Cost') is
+  the vendor COST PRICE.
+* ``basis='cost'`` (RK, Blink): ``fob_col`` is the vendor COST PRICE;
+  ``ref_fob_col`` (if set) is the vendor landing.
+Our Landing = MRP × m% (pre-GST); Our CP = MRP × m% ÷ GST (post-GST).
 
 HSN cross-check (v1.6.0)
 ------------------------
@@ -42,7 +56,7 @@ When the marketplace has ``hsn_col`` set in its config (currently
 Reliance only), the engine compares the punch's HSN against the
 master's HSN per row. The three trailing columns appear only when at
 least one row has a non-empty ``hsn_check_status`` — otherwise this
-sheet keeps its familiar 11-column layout.
+sheet keeps its base 13-column layout.
 
 Visual cues
 -----------
@@ -52,9 +66,12 @@ Visual cues
   so we keep row fill neutral to reduce visual fatigue).
 * **NOT_IN_MASTER rows** get a pale-orange fill so these are easy to
   spot and fix by adding the item to Items_March.
-* **HSN mismatches** get a red status pill (same bold-red font as
-  price mismatches) but don't repaint the full row — the price-diff
-  styling stays the primary signal, HSN is a secondary audit flag.
+* **HSN mismatches** are an ALERT, not an error: the HSN Check cell
+  gets an amber "verify" highlight (the same caution colour as fuzzy
+  location matches), NOT the red price-mismatch pill. HSN never blocks
+  the SO — the row's price validation_status is untouched and the
+  mismatch is logged as a warning on the Warnings sheet. (v2.3.1 —
+  downgraded from red so it doesn't read as a failure.)
 
 The trailing info row records ``basis=... | Margin: m%`` so someone
 reviewing the output three months later can tell at a glance what the
@@ -67,7 +84,8 @@ import pandas as pd
 
 from online_po_processor.data.models import ProcessingResult
 from online_po_processor.exporter._styles import (
-    CALC_FILL, HEADER_FILL, INFO_ITALIC_FONT, MISMATCH_FILL,
+    BOLD_DATA_FONT, CALC_FILL, HEADER_FILL, INFO_ITALIC_FONT,
+    LOC_MISMATCH_FILL, MISMATCH_FILL,
     MISMATCH_TEXT_FONT, NO_MASTER_FILL, NOT_IN_MASTER_TEXT_FONT,
     STATUS_OK_FILL, STATUS_OK_FONT,
     auto_width, data_cell, hdr_cell,
@@ -76,7 +94,9 @@ from online_po_processor.exporter._styles import (
 
 # Calculated column indices (1-based). These get a green header instead
 # of the default blue to visually separate "our math" from "their data".
-_CALC_COL_INDICES = {5, 6, 7, 8}  # MRP, Landing, GST Code, Our Cost Price
+# v2.3.1: the "our" half of each side-by-side pair (Our MRP / Our Landing
+# / Our CP).
+_CALC_COL_INDICES = {7, 9, 11}
 
 
 def write(wb, result: ProcessingResult) -> None:
@@ -121,12 +141,17 @@ def write(wb, result: ProcessingResult) -> None:
         so_row.hsn_check_status for so_row in result.rows
     )
 
+    # v2.3.1: side-by-side Vendor vs Our pairs for MRP / Landing / CP so a
+    # mismatch in any single metric is obvious at a glance. "Vendor" = the
+    # value stated in the marketplace's file; "Our" = computed from the
+    # Items_March master. Vendor columns are blank when the file doesn't
+    # carry that metric (e.g. Flipkart has no MRP or CP column).
     headers = [
-        'PO', 'Item No', 'EAN', 'Description', 'MRP',
-        f'Landing ({margin_pct_int}%)', 'GST Code',
-        'Our Cost Price',
-        f'Marketplace {label}',
-        f'Difference with {label}',
+        'PO', 'Item No', 'EAN', 'Description', 'GST Code',
+        'Vendor MRP', 'Our MRP',
+        'Vendor Landing', f'Our Landing ({margin_pct_int}%)',
+        'Vendor CP', 'Our CP',
+        f'Difference ({label})',
         'Status',
     ]
     if has_hsn_check:
@@ -169,56 +194,72 @@ def write(wb, result: ProcessingResult) -> None:
         hdr_cell(ws, header_row_idx, col_idx, header, fill=fill)
 
     n_cols = len(headers)
-    status_col = 11   # Price-validation status column index (fixed)
-    # HSN columns, when present, occupy 12/13/14.
-    hsn_punch_col = 12
-    hsn_master_col = 13
-    hsn_status_col = 14
+    status_col = 13   # Price-validation status column index (fixed)
+    # HSN columns, when present, occupy 14/15/16.
+    hsn_punch_col = 14
+    hsn_master_col = 15
+    hsn_status_col = 16
 
     # ── Data rows ───────────────────────────────────────────────────────
-    # v2.1.0 alignment policy:
+    # Alignment policy:
     #   PO, Item No, EAN, GST Code, Status, HSN cols → center (identifiers/badges)
     #   Description                                  → left   (long prose)
-    #   MRP, Landing, Cost, Marketplace, Difference  → right  (monetary)
+    #   Vendor/Our MRP·Landing·CP, Difference        → right  (monetary)
     # v2.1.4: data starts at row 3 when reference-only banner is present
     # (banner=row 1, headers=row 2, data=row 3); otherwise row 2 as before.
     r = header_row_idx + 1
     mismatches = 0
     hsn_mismatches = 0
+    basis = result.compare_basis or 'landing'
+
+    def _money(v):
+        """Round a price for display, '' when absent."""
+        return (round(v, 2)
+                if (v is not None and not pd.isna(v)) else '')
+
     for so_row in result.rows:
+        # ── Vendor (file) vs Our (computed) values per metric ───────────
+        # Vendor landing/cp come from the file's fob/ref-fob; which is
+        # which depends on compare_basis:
+        #   landing-basis → fob_price IS the vendor landing; ref_fob (when
+        #                   configured, e.g. FirstCry 'Base Cost') is the
+        #                   vendor cost price.
+        #   cost-basis    → fob_price IS the vendor cost price; ref_fob is
+        #                   the vendor landing.
+        # Vendor MRP comes from the optional mrp_col (None when the file
+        # has no MRP). Our values are computed from the master.
+        v_mrp = so_row.vendor_mrp
+        v_landing = (so_row.fob_price if basis == 'landing'
+                     else so_row.ref_fob_price)
+        v_cp = (so_row.fob_price if basis == 'cost'
+                else so_row.ref_fob_price)
+        o_mrp = so_row.mrp
+        # v2.3.1: use the margin actually applied to THIS row (per-line
+        # margin_rules can override the run margin, e.g. Nykaa perfumes),
+        # falling back to the run margin for normal marketplaces.
+        row_margin = (so_row.applied_margin_pct
+                      if so_row.applied_margin_pct is not None
+                      else result.margin_pct)
+        o_landing = (float(so_row.mrp) * row_margin
+                     if so_row.mrp and not pd.isna(so_row.mrp) else None)
+        o_cp = so_row.cost_price_ref
+
         data_cell(ws, r, 1, so_row.po_number, align='center')
         data_cell(ws, r, 2, so_row.item_no, align='center')
         data_cell(ws, r, 3, so_row.ean, align='center')
         data_cell(ws, r, 4, so_row.description, align='left')
-        data_cell(ws, r, 5, so_row.mrp,
-                   '#,##0.00' if so_row.mrp else None,
-                   align='right')
+        data_cell(ws, r, 5, so_row.gst_code, align='center')
 
-        # Landing cost (MRP × margin%) — computed fresh for display so the
-        # sheet stays self-consistent even if calc_price was derived
-        # differently (e.g. RK uses cost basis, but we still want to show
-        # Landing here for reference).
-        landing = (float(so_row.mrp) * result.margin_pct
-                   if so_row.mrp and not pd.isna(so_row.mrp) else None)
-        data_cell(ws, r, 6,
-                   round(landing, 2) if landing else '',
-                   '#,##0.00', align='right')
+        # MRP pair | Landing pair | CP pair (Vendor then Our, side by side)
+        data_cell(ws, r, 6,  _money(v_mrp),     '#,##0.00', align='right')
+        data_cell(ws, r, 7,  _money(o_mrp),     '#,##0.00', align='right')
+        data_cell(ws, r, 8,  _money(v_landing), '#,##0.00', align='right')
+        data_cell(ws, r, 9,  _money(o_landing), '#,##0.00', align='right')
+        data_cell(ws, r, 10, _money(v_cp),      '#,##0.00', align='right')
+        data_cell(ws, r, 11, _money(o_cp),      '#,##0.00', align='right')
 
-        data_cell(ws, r, 7, so_row.gst_code, align='center')
-
-        # Our Cost Price (naked CP) — always shown regardless of basis.
-        data_cell(ws, r, 8,
-                   round(so_row.cost_price_ref, 2)
-                   if so_row.cost_price_ref else '',
-                   '#,##0.00', align='right')
-
-        # Marketplace value (fob_col)
-        data_cell(ws, r, 9,
-                   round(so_row.fob_price, 2) if so_row.fob_price else '',
-                   '#,##0.00', align='right')
-
-        # Difference (rounded to 2dp — finer is floating-point dust)
-        data_cell(ws, r, 10,
+        # Primary difference (active basis): vendor − our for that basis.
+        data_cell(ws, r, 12,
                    round(so_row.diffn, 2) if so_row.diffn is not None else '',
                    '#,##0.00', align='right')
 
@@ -240,6 +281,20 @@ def write(wb, result: ProcessingResult) -> None:
                 ws.cell(row=r, column=c).fill = NO_MASTER_FILL
             ws.cell(row=r, column=status_col).font = NOT_IN_MASTER_TEXT_FONT
 
+        # ── v2.3.1: per-metric mismatch flag ────────────────────────────
+        # Amber-tint the VENDOR cell of any pair whose vendor value differs
+        # from ours by more than a paisa, so an MRP / Landing / CP mismatch
+        # is spotted directly from the side-by-side columns. Applied AFTER
+        # the row fill so it wins on that specific cell.
+        for vcol, vval, oval in ((6, v_mrp, o_mrp),
+                                  (8, v_landing, o_landing),
+                                  (10, v_cp, o_cp)):
+            if (vval is not None and oval is not None
+                    and not pd.isna(vval) and not pd.isna(oval)
+                    and abs(float(vval) - float(oval)) > 0.01):
+                ws.cell(row=r, column=vcol).fill = LOC_MISMATCH_FILL
+                ws.cell(row=r, column=vcol).font = BOLD_DATA_FONT
+
         # ── HSN columns (v1.6.0, only when marketplace opts in) ─────────
         if has_hsn_check:
             data_cell(ws, r, hsn_punch_col, so_row.hsn_punch, align='center')
@@ -255,7 +310,15 @@ def write(wb, result: ProcessingResult) -> None:
                 hsn_cell.font = STATUS_OK_FONT
             elif so_row.hsn_check_status == 'MISMATCH':
                 hsn_mismatches += 1
-                hsn_cell.font = MISMATCH_TEXT_FONT
+                # v2.3.1: HSN mismatch is an ALERT, not an error. It never
+                # blocks the SO (the row's price validation_status is
+                # unaffected), so render it as an amber "verify" highlight
+                # — the same caution colour used for fuzzy location
+                # matches — rather than the red error pill. The mismatch
+                # is still logged as a warning on the Warnings sheet. If
+                # it ever needs to hard-fail, escalate the styling then.
+                hsn_cell.fill = LOC_MISMATCH_FILL
+                hsn_cell.font = BOLD_DATA_FONT
             elif so_row.hsn_check_status == 'NOT_IN_MASTER':
                 hsn_cell.font = NOT_IN_MASTER_TEXT_FONT
 

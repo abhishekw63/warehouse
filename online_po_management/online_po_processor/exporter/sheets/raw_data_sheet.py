@@ -349,11 +349,19 @@ def _write_raw_row(
     id_cols = id_cols or set()
     for col_offset, col_name in enumerate(display_cols):
         val = raw_row[col_name]
+        is_id = col_name in id_cols
         if isinstance(val, pd.Timestamp):
             val = val.strftime('%d-%m-%Y')
         elif pd.isna(val):
             val = ''
-        align = 'center' if col_name in id_cols else None
+        elif is_id and isinstance(val, float) and val.is_integer():
+            # v2.3.1: identifier columns (EAN / SKU / HSN / Item Code /
+            # UPC / GTIN …) read as float64 otherwise render as
+            # '8906121649703.0'. Drop the spurious .0 so IDs stay whole
+            # numbers. Money columns (MRP / Cost) are NOT in id_cols, so
+            # they keep their 2-decimal display untouched.
+            val = str(int(val))
+        align = 'center' if is_id else None
         data_cell(ws, r, start_col + col_offset, val, align=align)
 
 

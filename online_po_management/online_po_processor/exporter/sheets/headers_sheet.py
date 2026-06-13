@@ -17,7 +17,9 @@ Column layout (18 columns)::
     8.  Invoice From Date         = today
     9.  Invoice To Date           = today
     10. External Document No.     = the PO number (same as col 2)
-    11. Location Code             = 'PICK'  (always)
+    11. Location Code             = the selected dispatch warehouse's
+                                    resolved D365 code (v2.3.1); 'PICK'
+                                    when no warehouse was chosen
     12. Dimension Set ID          = ''
     13. Supply Type               = 'B2B'   (always)
     14. Voucher Narration         = ''
@@ -105,6 +107,14 @@ def write(wb, result: ProcessingResult) -> None:
 
     today_str = datetime.now().strftime("%d-%m-%Y")
 
+    # v2.3.1: Location Code now follows the dispatch warehouse the
+    # operator picked in the GUI (AHD/BLR/...), resolved to its D365
+    # code on ``result.warehouse_code`` — the SAME value the Summary
+    # footer reports. Falls back to the legacy 'PICK' constant when no
+    # warehouse was selected (empty/None) or for legacy runs predating
+    # the AHD/BLR selector, preserving prior behaviour.
+    location_code = getattr(result, 'warehouse_code', '') or 'PICK'
+
     # Collect unique POs preserving the order they were processed in.
     # We use a set for O(1) membership check and a parallel list for order.
     seen: set = set()
@@ -133,7 +143,7 @@ def write(wb, result: ProcessingResult) -> None:
         data_cell(ws, r, 8, today_str, align='center')            # Invoice From Date
         data_cell(ws, r, 9, today_str, align='center')            # Invoice To Date
         data_cell(ws, r, 10, so_row.po_number, align='center')    # External Document No.
-        data_cell(ws, r, 11, 'PICK', align='center')              # Location Code
+        data_cell(ws, r, 11, location_code, align='center')       # Location Code (v2.3.1)
         data_cell(ws, r, 12, '', align='center')                  # Dimension Set ID
         data_cell(ws, r, 13, 'B2B', align='center')               # Supply Type
         # Columns 14–18 left blank (Voucher Narration + 4 dimension cols).

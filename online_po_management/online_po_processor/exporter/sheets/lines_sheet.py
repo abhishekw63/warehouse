@@ -12,7 +12,8 @@ Column layout (8 columns)::
     3. Line No.        = 10000, 20000, 30000, ... (resets on new PO)
     4. Type            = 'Item'  (always — no service/charge lines here)
     5. No.             = the resolved Item No
-    6. Location Code   = 'PICK'  (always)
+    6. Location Code   = the selected dispatch warehouse's resolved D365
+                         code (v2.3.1); 'PICK' when no warehouse chosen
     7. Quantity        = order qty
     8. Unit Price      = ''      (left blank — WMS computes downstream)
 
@@ -95,6 +96,14 @@ def write(wb, result: ProcessingResult) -> None:
     # run where col 8 is blank for downstream WMS computation).
     override = bool(getattr(result, 'override_unit_price', False))
 
+    # v2.3.1: Location Code now follows the dispatch warehouse the
+    # operator picked in the GUI (AHD/BLR/...), resolved to its D365
+    # code on ``result.warehouse_code`` — the SAME value the Summary
+    # footer reports. Falls back to the legacy 'PICK' constant when no
+    # warehouse was selected (empty/None) or for legacy runs predating
+    # the AHD/BLR selector, preserving prior behaviour.
+    location_code = getattr(result, 'warehouse_code', '') or 'PICK'
+
     for col_idx, header in enumerate(_HEADERS, start=1):
         cell = hdr_cell(ws, 1, col_idx, header)
         # v2.1.3: amber tint on the Unit Price header when override is
@@ -131,7 +140,7 @@ def write(wb, result: ProcessingResult) -> None:
         data_cell(ws, r, 3, line_no, align='center')          # Line No.
         data_cell(ws, r, 4, 'Item', align='center')           # Type
         data_cell(ws, r, 5, so_row.item_no, align='center')   # No. (Item No)
-        data_cell(ws, r, 6, 'PICK', align='center')           # Location Code
+        data_cell(ws, r, 6, location_code, align='center')    # Location Code (v2.3.1)
         data_cell(ws, r, 7, so_row.qty, align='center')       # Quantity
 
         # v2.1.5: Unit Price override must ALWAYS use post-GST Cost

@@ -28,7 +28,8 @@ when EAN-resolution requires it, etc.
 from __future__ import annotations
 import logging
 import os
-from typing import Any, Callable, Dict, Optional, Set, Tuple
+import re
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 import pandas as pd
 
@@ -44,12 +45,20 @@ from online_po_processor.data.mapping_loader import MappingLoader
 from online_po_processor.engine.avenue_pdf_parser import (
     load_avenue_pdf_as_dataframe,
 )
+from online_po_processor.engine.firstcry_pdf_parser import (
+    load_firstcry_pdf_as_dataframe,
+)
+from online_po_processor.engine.reliance_pdf_parser import (
+    load_reliance_pdf_as_dataframe,
+)
 
 
 # Registry of PDF parsers — keyed by the ``pdf_parser`` config value.
 # Each parser is a callable: ``(filepath: str) -> pd.DataFrame``.
 PDF_PARSERS: Dict[str, Callable[[str], pd.DataFrame]] = {
     'avenue': load_avenue_pdf_as_dataframe,
+    'firstcry': load_firstcry_pdf_as_dataframe,
+    'reliance': load_reliance_pdf_as_dataframe,
 }
 
 
@@ -393,25 +402,52 @@ class MarketplaceEngine:
                              len(df), os.path.basename(filepath))
 
                 # ── Marketplace-specific pre-processor ──────────────────────────
-                # Some marketplaces carry the PO number and/or Location in a
-                # header/title position rather than per-data-row. For those, a
-                # pre-processor hook parses the out-of-band values and injects
-                # synthetic columns so the rest of the pipeline sees a normal
-                # wide-format DataFrame.
-                #
-                # Currently used by Reliance (parses row 0's merged title
-                # like "5000466441  BHIWANDI (Reliance)" into per-row
-                # ``__po__`` and ``__loc__`` columns).
-                pre_process = config.get('pre_process')
-                if pre_process == 'reliance_po_sheet':
-                    df = self._preprocess_reliance(
-                        filepath, sheet_to_read, df, config, result,
-                    )
-                    if df is None:
-                        return result  # warning already appended
-
                 result.raw_df = df
 
+        # v2.3.1: hand off to the shared post-load pipeline. Everything
+        # from column-alias resolution onward is identical regardless of
+        # whether the DataFrame came from a single Excel/CSV/PDF file
+        # (this method) or from the in-memory consolidated dump that
+        # ``process_consignments`` builds from many Flipkart consignment
+        # CSVs. Factoring it out keeps the two entry points in lock-step.
+        return self._process_loaded_dataframe(df, config, margin_pct, result)
+
+    def _process_loaded_dataframe(
+        self,
+        df: 'pd.DataFrame',
+        config: Dict[str, Any],
+        margin_pct: float,
+        result: ProcessingResult,
+    ) -> ProcessingResult:
+        """
+        Shared post-load pipeline: column-alias resolution → required-
+        column validation → SO/TO branch.
+
+        v2.3.1: extracted verbatim from the back half of :meth:`process`
+        so it can be reused by :meth:`process_consignments`, which feeds
+        an in-memory consolidated DataFrame (built from many Flipkart
+        consignment CSVs) through exactly the same logic. The behaviour
+        is unchanged for every existing caller — :meth:`process` simply
+        calls this instead of inlining the steps.
+
+        Pre-conditions (the caller must have already done these):
+          * ``result.raw_df`` is set to ``df`` (so the Raw Data sheet has
+            the source frame even if validation fails early here).
+          * ``result`` carries the marketplace metadata
+            (``marketplace`` / ``input_file`` / ``compare_*`` / margin).
+
+        Args:
+            df:         The loaded (or assembled) source DataFrame.
+            config:     Marketplace config — column keys may still be in
+                        list-alias form; this method resolves them.
+            margin_pct: Decimal margin for the run.
+            result:     ProcessingResult to populate in place.
+
+        Returns:
+            The same ``result`` with ``rows`` populated (and any
+            warnings appended). Returns early — with whatever rows exist
+            so far, i.e. none — on a fatal column problem.
+        """
         # ── v1.5.5: Resolve column aliases against actual headers ──────
         # Marketplace configs may declare a column key as a LIST of
         # acceptable names when the marketplace's punch file sometimes
@@ -500,6 +536,330 @@ class MarketplaceEngine:
                      len(result.rows),
                      len({r.po_number for r in result.rows}))
         return result
+
+    # ── Flipkart-TO bulk consignment mode (v2.3.1) ──────────────────────
+
+    @staticmethod
+    def _extract_po_from_filename(
+        filepath: str,
+        regex: str = r'Consignment_Details_([^_]+)_',
+    ) -> str:
+        """
+        Pull the PO number out of a Flipkart consignment filename.
+
+        Flipkart exports one consignment CSV per PO, named
+        ``Consignment_Details_<PO>_<DD-MM-YYYY>.csv`` — e.g.
+        ``Consignment_Details_204535220_09-06-2026.csv`` → ``204535220``.
+        The PO is NOT a column inside the file, so the bulk-consignment
+        flow recovers it from the filename instead.
+
+        Args:
+            filepath: Full path or bare filename of the consignment CSV.
+            regex:    Capture-group-1 pattern applied to the basename.
+                      Overridable via the marketplace config's
+                      ``consignment_mode['filename_po_regex']`` so the
+                      naming convention can change without code edits.
+
+        Returns:
+            The extracted PO string (stripped), or ``''`` when neither
+            the configured pattern nor the digit-run fallback matches —
+            the caller treats an empty return as "skip this file with a
+            warning".
+        """
+        name = os.path.basename(filepath)
+        m = re.search(regex, name)
+        if m:
+            return m.group(1).strip()
+        # Defensive fallback: if the strict pattern drifts (renamed
+        # export, extra prefix), take the longest run of digits in the
+        # stem — Flipkart PO numbers are long integers, so the longest
+        # digit run is overwhelmingly likely to be the PO rather than a
+        # date fragment (which is split by '-' into <=4-digit pieces).
+        stem = os.path.splitext(name)[0]
+        digit_runs = re.findall(r'\d+', stem)
+        return max(digit_runs, key=len) if digit_runs else ''
+
+    def _load_consignment_location_lookup(
+        self,
+        path: str,
+        config: Dict[str, Any],
+        result: ProcessingResult,
+    ) -> Dict[str, str]:
+        """
+        Build a ``{PO -> Warehouse Id}`` lookup from Flipkart's
+        Consignment Visibility Report (v2.3.1).
+
+        The raw consignment CSVs carry no Location, so when the operator
+        supplies the visibility report we recover each PO's destination
+        warehouse from it. The report has one row per (PO, Super
+        Category) but the Warehouse Id is identical across a PO's rows,
+        so we collapse to one entry per PO.
+
+        The returned value is the RAW ``Warehouse Id`` machine code
+        (e.g. ``malur_bts``). That string becomes the row's Location and
+        is resolved to a Transfer-to Code by the normal Ship-To B2B
+        mapping lookup — which is why the operator must add these machine
+        codes as alias rows in Ship-To B2B (the chosen bridge). A PO that
+        maps here but whose Warehouse Id isn't in Ship-To B2B still gets
+        the usual "location not found" warning, pointing them at the
+        missing alias.
+
+        Failures are soft: an unreadable report or missing columns logs a
+        warning and returns ``{}`` (every Location falls back to empty),
+        never aborting the run.
+
+        Args:
+            path:   Path to the visibility report CSV.
+            config: Flipkart-TO config (column names read from
+                    ``consignment_mode``).
+            result: ProcessingResult for warning accumulation.
+
+        Returns:
+            ``{po_str: warehouse_id_str}`` — possibly empty.
+        """
+        cmode = config.get('consignment_mode', {})
+        po_col = cmode.get('visibility_po_col', 'Consignment Id')
+        wh_col = cmode.get('visibility_loc_col', 'Warehouse Id')
+
+        try:
+            df = pd.read_csv(path)
+        except Exception as e:  # noqa: BLE001
+            result.warnings.append((
+                '', '',
+                f"Could not read the location report "
+                f"({os.path.basename(path)}): {e}. Locations left empty."
+            ))
+            return {}
+
+        missing = [c for c in (po_col, wh_col) if c not in df.columns]
+        if missing:
+            result.warnings.append((
+                '', '',
+                f"Location report is missing column(s) {missing} "
+                f"(expected '{po_col}' and '{wh_col}'). Locations left "
+                f"empty."
+            ))
+            return {}
+
+        lookup: Dict[str, str] = {}
+        conflicts: Set[str] = set()
+        for _, row in df.iterrows():
+            po = self._coerce_po_to_str(row[po_col])
+            wh_raw = row[wh_col]
+            if pd.isna(wh_raw):
+                continue
+            wh = str(wh_raw).strip()
+            # Skip blanks and Flipkart's literal 'N/A' placeholders.
+            if not po or wh == '' or wh.upper() == 'N/A':
+                continue
+            if po in lookup and lookup[po] != wh and po not in conflicts:
+                conflicts.add(po)
+                result.warnings.append((
+                    po, '',
+                    f"Location report lists PO {po} under multiple "
+                    f"Warehouse Ids ('{lookup[po]}' and '{wh}'). Using "
+                    f"the first ('{lookup[po]}')."
+                ))
+                continue
+            lookup.setdefault(po, wh)
+
+        logging.info(
+            "consignment location report: %d PO->Warehouse mappings from %s",
+            len(lookup), os.path.basename(path),
+        )
+        return lookup
+
+    def process_consignments(
+        self,
+        filepaths: List[str],
+        config: Dict[str, Any],
+        margin_pct: float = 0.70,
+        visibility_report_path: Optional[str] = None,
+    ) -> ProcessingResult:
+        """
+        Flipkart-TO BULK CONSIGNMENT mode — build the consolidated dump
+        from many raw consignment CSVs, then run the standard TO pipeline.
+
+        Background
+        ----------
+        Historically the operator hand-consolidated Flipkart's per-PO
+        consignment exports into ONE 7-column dump (``Po Number |
+        Location | FSN | SKU Id | Product Name | Cost Price | Quantity
+        Sent``) and fed that single file in via :meth:`process`. That
+        path still exists unchanged — see the GUI's "Consolidated dump"
+        mode.
+
+        This method automates the manual consolidation. The operator
+        instead hands us the raw exports directly
+        (``Consignment_Details_<PO>_<date>.csv``, one per PO) and we
+        assemble the dump in memory:
+
+          * **PO number** comes from each file's NAME (the CSV has no PO
+            column) via :meth:`_extract_po_from_filename`.
+          * **Location** comes from the optional Consignment Visibility
+            Report (``visibility_report_path``) — a Flipkart export that
+            lists ``Consignment Id`` (= PO) and ``Warehouse Id`` (the
+            destination warehouse machine code, e.g. ``malur_bts``). We
+            join on PO and write the RAW Warehouse Id as the row's
+            Location, so the Summary's 'Location (Raw)' shows exactly what
+            came in. The machine-code → friendly-name aliasing and
+            Transfer-to Code resolution happen later in :meth:`_process_to`
+            (via the PROVISIONAL ``warehouse_aliases`` config map), which
+            records the deciphered friendly name as 'Location (Mapped)'
+            and flags it as a fuzzy/provisional match. When no report is
+            supplied or a PO isn't in it, Location is EMPTY (blank
+            Transfer-to Code + a warning).
+          * Every other column the dump needs (``SKU Id`` = EAN,
+            ``Quantity Sent``, ``Cost Price``, ``Product Name``, ``FSN``)
+            is ALREADY present in the consignment CSV, so it passes
+            straight through — no per-column mapping required.
+
+        The assembled DataFrame is the exact shape the consolidated dump
+        has, so it flows through :meth:`_process_loaded_dataframe` →
+        :meth:`_process_to` identically: rows aggregate by (PO, Item No),
+        Item No / MRP / GST come from Items_March via the EAN, and the
+        engine computes Transfer Price itself.
+
+        Per-file failures are isolated (mirrors :meth:`process_multi`):
+        an unreadable CSV or a filename with no recoverable PO is skipped
+        with a ``[<filename>]``-prefixed warning; the rest of the batch
+        still produces rows.
+
+        Args:
+            filepaths:  Consignment CSV paths. Must not be empty.
+            config:     The Flipkart-TO config (``output_type='to'``).
+            margin_pct: Decimal margin (0.60 for Flipkart-TO).
+
+        Returns:
+            A combined ``ProcessingResult`` whose ``raw_df`` is the
+            assembled dump and whose ``rows`` are the aggregated
+            Transfer Lines across every consignment file.
+        """
+        if not filepaths:
+            empty = ProcessingResult(marketplace=config['party_name'])
+            empty.warnings.append((
+                '', '',
+                "process_consignments called with empty file list — "
+                "nothing to process."
+            ))
+            return empty
+
+        cmode = config.get('consignment_mode', {})
+        po_col = config['po_col']     # 'Po Number' — we synthesize it
+        loc_col = config['loc_col']   # 'Location'  — we leave it blank
+        po_regex = cmode.get(
+            'filename_po_regex', r'Consignment_Details_([^_]+)_',
+        )
+
+        result = ProcessingResult(
+            marketplace=config['party_name'],
+            input_file=os.path.basename(filepaths[0]),
+            input_file_path=filepaths[0],
+            margin_pct=margin_pct,
+            compare_basis=config.get('compare_basis', 'cost'),
+            compare_label=config.get('compare_label', 'Price'),
+            input_files_count=len(filepaths),
+        )
+
+        # v2.3.1: build the PO -> Warehouse Id lookup from the optional
+        # visibility report. Empty dict when no report is supplied, in
+        # which case every Location stays blank (original behaviour).
+        loc_lookup: Dict[str, str] = {}
+        if visibility_report_path:
+            loc_lookup = self._load_consignment_location_lookup(
+                visibility_report_path, config, result,
+            )
+
+        logging.info("process_consignments: assembling dump from %d files",
+                     len(filepaths))
+
+        per_file_dfs: List[pd.DataFrame] = []
+        for fp in filepaths:
+            basename = os.path.basename(fp)
+
+            po = self._extract_po_from_filename(fp, po_regex)
+            if not po:
+                result.warnings.append((
+                    '', '',
+                    f"[{basename}] Could not extract a PO number from the "
+                    f"filename (expected 'Consignment_Details_<PO>_<date>"
+                    f".csv'). File skipped."
+                ))
+                continue
+
+            try:
+                df = pd.read_csv(fp, header=config.get('header_row', 0))
+            except Exception as e:  # noqa: BLE001 — surface ANY CSV-read error
+                result.warnings.append((
+                    po, '', f"[{basename}] Cannot read CSV: {e}"
+                ))
+                continue
+
+            if df.empty:
+                result.warnings.append((
+                    po, '', f"[{basename}] No data rows — skipped."
+                ))
+                continue
+
+            # Inject the two columns the consolidated dump carries but the
+            # raw consignment CSV lacks. Everything else (SKU Id /
+            # Quantity Sent / Cost Price / Product Name / FSN) is already
+            # in the file under the names the Flipkart-TO config expects.
+            #
+            # Location = the PO's RAW Warehouse Id from the visibility
+            # report (machine code, e.g. 'malur_bts'). Kept RAW on purpose
+            # so the Summary's 'Location (Raw)' shows exactly what came in;
+            # the machine-code → friendly-name aliasing + Transfer-to Code
+            # resolution happens in _process_to, which records the
+            # deciphered friendly name as 'Location (Mapped)'. Blank when
+            # no report was supplied or the PO is absent from it (warn so
+            # the operator knows that PO's Transfer-to Code will be empty).
+            wh_id = loc_lookup.get(po, '')
+            if loc_lookup and not wh_id:
+                result.warnings.append((
+                    po, '',
+                    f"[{basename}] PO {po} not found in the location "
+                    f"report — Location left empty (Transfer-to Code will "
+                    f"be blank)."
+                ))
+
+            df[po_col] = po          # PO recovered from the filename
+            df[loc_col] = wh_id      # RAW Warehouse Id (or '' if unknown)
+            # Tag the source file so Raw Data can distinguish rows.
+            df['__source_file__'] = basename
+            per_file_dfs.append(df)
+            logging.info("process_consignments: %s -> PO %s, loc %r (%d rows)",
+                         basename, po, wh_id, len(df))
+
+        if not per_file_dfs:
+            result.warnings.append((
+                '', '',
+                "No readable consignment files produced any rows — check "
+                "the filenames match 'Consignment_Details_<PO>_<date>.csv' "
+                "and that the CSVs aren't empty."
+            ))
+            result.raw_df = pd.DataFrame()
+            return result
+
+        # Concatenate into the in-memory "manual dump". ``sort=False``
+        # preserves the first file's column order; differing columns in
+        # later files just become NaN (harmless — the pipeline only reads
+        # the configured columns).
+        combined_df = pd.concat(
+            per_file_dfs, ignore_index=True, sort=False,
+        )
+        result.raw_df = combined_df
+        logging.info(
+            "process_consignments: dump assembled — %d rows from %d/%d "
+            "files",
+            len(combined_df), len(per_file_dfs), len(filepaths),
+        )
+
+        # Run the assembled dump through the same pipeline a single
+        # consolidated file would take.
+        return self._process_loaded_dataframe(
+            combined_df, config, margin_pct, result,
+        )
 
     # ── Column validation helpers ──────────────────────────────────────
 
@@ -802,136 +1162,6 @@ class MarketplaceEngine:
                          target, sheet_to_read)
         return sheet_to_read
 
-    def _preprocess_reliance(
-        self,
-        filepath: str,
-        sheet_name: str,
-        df: pd.DataFrame,
-        config: Dict[str, Any],
-        result: ProcessingResult,
-    ) -> Optional[pd.DataFrame]:
-        """
-        Inject synthetic ``__po__`` and ``__loc__`` columns for Reliance.
-
-        Reliance's raw PO attachment doesn't carry the PO number or
-        delivery location in a data column — they appear as a merged
-        "title" cell on row 0 of the PO sheet, formatted like::
-
-            5000466441  BHIWANDI (Reliance)
-
-        (The first token is the 10-digit PO number; everything after
-        the first whitespace gap is the delivery location label which
-        must match an entry in the Ship-To B2B mapping sheet.)
-
-        To fit the rest of the pipeline without special-casing
-        downstream, we:
-
-        1. Re-read row 0 raw (the header=1 read we already did
-           skipped it).
-        2. Scan that row's cells for the first non-empty string.
-        3. Regex-split into PO number + location.
-        4. Inject ``__po__`` and ``__loc__`` on every data row so the
-           engine can point ``po_col='__po__'`` / ``loc_col='__loc__'``
-           and otherwise run normally.
-
-        A single-PO assumption is hard-coded. Reliance's B2B ordering
-        system always emits one PO per attachment file; if a future
-        format change merges multiple POs, the regex will match the
-        first title and silently mislabel the rest — so we also warn
-        if there's any sign of a second title row.
-
-        Args:
-            filepath:    The Reliance file on disk.
-            sheet_name:  Name of the sheet the data was read from
-                         (typically 'PO').
-            df:          Data already loaded with header=1 (i.e.
-                         title row skipped, proper headers used).
-            config:      Marketplace config (for future extension).
-            result:      For appending abort warnings.
-
-        Returns:
-            DataFrame with ``__po__`` and ``__loc__`` injected, or
-            ``None`` if the title cannot be parsed (caller should
-            ``return result`` immediately).
-        """
-        # Re-read row 0 as raw (header=None), taking only the first row.
-        try:
-            title_df = pd.read_excel(
-                filepath, sheet_name=sheet_name, header=None, nrows=1,
-            )
-        except Exception as e:  # noqa: BLE001
-            result.warnings.append((
-                '', '',
-                f"Reliance pre-process: cannot read title row of "
-                f"sheet {sheet_name!r}: {e}",
-            ))
-            return None
-
-        # Find the first non-empty string cell in row 0. The title is
-        # typically in a merged cell somewhere around columns D-E but
-        # we scan the whole row rather than hard-code a position.
-        title_text = None
-        for cell in title_df.iloc[0].tolist():
-            if cell is not None and pd.notna(cell):
-                text = str(cell).strip()
-                if text:
-                    title_text = text
-                    break
-
-        if not title_text:
-            result.warnings.append((
-                '', '',
-                f"Reliance pre-process: title row of sheet "
-                f"{sheet_name!r} is empty. Expected a cell like "
-                f"'5000466441  BHIWANDI (Reliance)' with the PO "
-                f"number and location. Cannot identify this PO.",
-            ))
-            return None
-
-        # Parse: first whitespace-delimited token = PO number, rest
-        # = location. We use split(maxsplit=1) so locations with
-        # multiple words + parentheses ("BHIWANDI (Reliance)") stay
-        # intact.
-        parts = title_text.split(maxsplit=1)
-        if len(parts) < 2:
-            result.warnings.append((
-                '', '',
-                f"Reliance pre-process: title cell {title_text!r} "
-                f"doesn't contain both a PO number and a location. "
-                f"Expected something like '5000466441  BHIWANDI "
-                f"(Reliance)'.",
-            ))
-            return None
-
-        po_number, location = parts[0].strip(), parts[1].strip()
-        logging.info(
-            "Reliance pre-process: parsed title %r → PO=%r loc=%r",
-            title_text, po_number, location,
-        )
-
-        # Inject synthetic columns. Every data row inherits the same
-        # PO and location — correct because Reliance sends one PO
-        # per file.
-        df = df.copy()
-        df['__po__'] = po_number
-        df['__loc__'] = location
-
-        # Drop rows where Qty is blank — those are separator/total
-        # rows in Reliance's layout (unlikely on the clean PO sheet
-        # but be defensive; also drops any trailing blank rows pandas
-        # might have loaded).
-        qty_col_name = config.get('qty_col', 'Qty')
-        if qty_col_name in df.columns:
-            before = len(df)
-            df = df[df[qty_col_name].notna()].reset_index(drop=True)
-            if len(df) < before:
-                logging.info(
-                    "Reliance pre-process: dropped %d blank-Qty rows",
-                    before - len(df),
-                )
-
-        return df
-
     def _validate_required_columns(self, df: pd.DataFrame,
                                     config: Dict[str, Any],
                                     result: ProcessingResult) -> bool:
@@ -1075,6 +1305,25 @@ class MarketplaceEngine:
         compare_mode = config.get('compare_mode')  # e.g. 'reference_only'
         party_name = config['party_name']
 
+        # v2.3.1: optional Warehouse-Id → friendly-name alias map (e.g.
+        # Flipkart-TO consignments, where the visibility report's Location
+        # is a machine code like 'malur_bts'). When a row's Location
+        # matches an alias key we look the mapping up under the friendly
+        # name so the Transfer-to Code resolves, BUT keep the raw machine
+        # code as the row's Location — so the Summary shows both 'what
+        # came in' (Raw) and 'what we deciphered' (Mapped). Keys are
+        # lowercased so report casing doesn't matter. Aliased rows are
+        # flagged PROVISIONAL (deduped) — a temporary fuzzy bridge until
+        # exact ship-to codes are wired in. Empty for marketplaces with no
+        # alias map (Meesho-TO) or the consolidated dump (friendly names
+        # already), so this is a no-op there.
+        loc_aliases = {
+            str(k).strip().lower(): v
+            for k, v in config.get('consignment_mode', {})
+                              .get('warehouse_aliases', {}).items()
+        }
+        provisional_aliases: Dict[str, str] = {}
+
         # v2.1.4: master is required now. Pre-v2.1.4 TO mode bypassed
         # master entirely; we now need it to resolve item_no / mrp /
         # gst_code via the EAN. Fail loudly if it isn't loaded so the
@@ -1118,7 +1367,13 @@ class MarketplaceEngine:
 
             # ── EAN — required ──────────────────────────────
             if pd.isna(ean_raw) or str(ean_raw).strip() == '':
+                # v2.3.1 thumb rule: log every dropped line with identity,
+                # not just the roll-up count below.
                 skipped_no_ean += 1
+                result.warnings.append((
+                    po_str, loc_str,
+                    f"Row {row.name}: missing {ean_col} (EAN) — NOT written "
+                    f"to the Transfer Order (PO {po_str})."))
                 continue
             # EANs come in as int64 from openpyxl. str(int(...)) handles
             # the common case; fall back to bare str() for non-numeric
@@ -1135,6 +1390,11 @@ class MarketplaceEngine:
                 qty = 0
             if qty <= 0:
                 skipped_no_qty += 1
+                result.warnings.append((
+                    po_str, loc_str,
+                    f"Row {row.name}: qty is {qty} (raw={qty_raw!r}) — NOT "
+                    f"written to the Transfer Order (PO {po_str}, EAN "
+                    f"{ean})."))
                 continue
 
             # ── Master lookup via EAN ──────────────────────────
@@ -1213,9 +1473,27 @@ class MarketplaceEngine:
                             f"in Transfer Price."))
 
             # ── Mapping lookup (Ship-To B2B) ────────────────────────
+            # v2.3.1: when the Location is a known machine-code alias,
+            # resolve the mapping under its friendly name but KEEP the raw
+            # machine code as ``loc_str`` (the row's Location). The matched
+            # friendly name comes back as ``mapped_loc`` so Raw and Mapped
+            # differ on the Summary (auto-highlighted as a fuzzy match).
+            lookup_loc = loc_str
+            if loc_aliases and loc_str:
+                alias = loc_aliases.get(loc_str.strip().lower())
+                if alias:
+                    lookup_loc = alias
             cust_no, ship_to, mapped, mapped_loc = self._resolve_mapping(
-                loc_str, po_str, party_name, warned_locations, result,
+                lookup_loc, po_str, party_name, warned_locations, result,
             )
+            # Flag the provisional alias (deduped) once it actually maps.
+            if lookup_loc != loc_str and mapped and loc_str not in provisional_aliases:
+                provisional_aliases[loc_str] = mapped_loc or lookup_loc
+                result.warnings.append((po_str, loc_str,
+                    f"PROVISIONAL location alias (verify): '{loc_str}' "
+                    f"deciphered to Ship-To B2B location "
+                    f"'{mapped_loc or lookup_loc}' → Transfer-to {ship_to}. "
+                    f"Fuzzy bridge until exact ship-to codes are wired."))
             if mapped and not ship_to:
                 key = ('blank_transfer_to', loc_str)
                 if key not in warned_locations:
@@ -1286,6 +1564,16 @@ class MarketplaceEngine:
             result.rows.append(so_row)
 
         # Roll-up warnings.
+        if provisional_aliases:
+            pairs = ', '.join(
+                f"{k}→{v}" for k, v in sorted(provisional_aliases.items())
+            )
+            result.warnings.append(('', '',
+                f"{len(provisional_aliases)} location(s) resolved via "
+                f"PROVISIONAL aliases (fuzzy bridge, not yet confirmed "
+                f"exact codes): {pairs}. Raw vs Mapped are highlighted on "
+                f"the Summary — verify the Transfer-to Codes before "
+                f"D365 import."))
         if skipped_no_ean:
             result.warnings.append(('', '',
                 f"Skipped {skipped_no_ean} row(s) with missing/blank "
@@ -1340,6 +1628,131 @@ class MarketplaceEngine:
 
     # ── Per-row processing (SO mode) ────────────────────────────────────
 
+    def _resolve_row_margin(
+        self,
+        row: pd.Series,
+        config: Dict[str, Any],
+        run_margin_pct: float,
+        item_no: Any,
+        po: str,
+        result: ProcessingResult,
+        warned_keys: Set[Tuple],
+    ) -> Tuple[float, Optional[str]]:
+        """
+        Resolve the per-LINE margin (keep%) for this row from the
+        marketplace's optional ``margin_rules`` config, and LOG the
+        exception when a non-default rule matched.
+
+        v2.3.1 — built for Nykaa, whose landing/cost differs by product
+        category: Perfume/Fragrance keeps 69% of MRP (31% off) while
+        Cosmetics keep 66% (34% off). The mechanism is generic so other
+        marketplaces can add their own per-line splits purely via config.
+
+        ``config['margin_rules']`` shape::
+
+            {
+              'rules': [
+                {'label': 'Perfume/Fragrance',
+                 'keep_pct': 69,                 # engine margin = 0.69
+                 'contains': ['perfume','fragra'],     # substring test...
+                 'contains_column': 'SKU Name',        # ...on this column
+                 'hsn_prefix': ['3303']},              # HSN cross-check only
+              ],
+              'default_keep_pct': 66,            # used when no rule matches
+              'default_label': 'Cosmetics',
+              'flag_hsn_conflicts': True,        # highlight name-vs-HSN clashes
+            }
+
+        DECISION — the per-line margin is decided ONLY by ``contains``
+        (the description keywords), mirroring the operator's manual
+        search. ``hsn_prefix`` does NOT decide the margin; it's a
+        cross-check signal.
+
+        CONFLICT HIGHLIGHT — when ``flag_hsn_conflicts`` is set, the row's
+        HSN is compared against the rules' ``hsn_prefix`` lists. If the
+        category the HSN points to differs from the one the NAME chose
+        (e.g. a Body Mist whose name lacks 'perfume'/'fragra' but whose
+        HSN is 3303), a ``⚠ AMBIGUOUS`` warning is logged so the operator
+        can review it while the exact perfume lookup is being finalised.
+        The NAME decision still governs the margin.
+
+        Returns ``(margin_pct_decimal, label)``. With no ``margin_rules``
+        the run margin is returned unchanged (other marketplaces are
+        unaffected). Each applied non-default rule and each conflict is
+        logged once per item on the Warnings sheet (audit trail).
+        """
+        rules_cfg = config.get('margin_rules')
+        if not rules_cfg:
+            return run_margin_pct, None
+        rules = rules_cfg.get('rules', [])
+
+        # Row HSN (for the cross-check) — same coercion as _check_hsn.
+        hsn_col = config.get('hsn_col')
+        hsn_val = ''
+        if hsn_col and hsn_col in row.index and pd.notna(row[hsn_col]):
+            try:
+                hsn_val = str(int(float(row[hsn_col])))
+            except (ValueError, TypeError):
+                hsn_val = str(row[hsn_col]).strip()
+
+        # ── DECISION: description keywords only ─────────────────────────
+        chosen_rule = None
+        for rule in rules:
+            col = rule.get('contains_column')
+            needles = rule.get('contains') or []
+            if col and needles and col in row.index and pd.notna(row[col]):
+                text = str(row[col]).lower()
+                if any(str(nd).lower() in text for nd in needles):
+                    chosen_rule = rule
+                    break
+
+        if chosen_rule is not None:
+            keep = float(chosen_rule['keep_pct']) / 100.0
+            label = chosen_rule.get('label', 'rule')
+            key = ('margin_rule', label, str(item_no))
+            if key not in warned_keys:
+                warned_keys.add(key)
+                default_keep = rules_cfg.get('default_keep_pct')
+                result.warnings.append((
+                    po, '',
+                    f"ℹ Margin rule '{label}' applied to Item "
+                    f"{item_no} (matched by name): keep "
+                    f"{chosen_rule['keep_pct']}% of MRP"
+                    + (f" (vs default {default_keep}%)"
+                       if default_keep is not None else "")
+                    + "."
+                ))
+        else:
+            default_keep = rules_cfg.get('default_keep_pct')
+            keep = (float(default_keep) / 100.0
+                    if default_keep is not None else run_margin_pct)
+            label = rules_cfg.get('default_label')
+
+        # ── CONFLICT HIGHLIGHT: HSN signal vs the name decision ─────────
+        if rules_cfg.get('flag_hsn_conflicts') and hsn_val:
+            hsn_rule = None
+            for rule in rules:
+                if any(hsn_val.startswith(str(p))
+                       for p in (rule.get('hsn_prefix') or [])):
+                    hsn_rule = rule
+                    break
+            hsn_label = (hsn_rule.get('label') if hsn_rule
+                         else rules_cfg.get('default_label'))
+            if hsn_label != label:
+                ckey = ('margin_conflict', str(item_no))
+                if ckey not in warned_keys:
+                    warned_keys.add(ckey)
+                    result.warnings.append((
+                        po, '',
+                        f"⚠ AMBIGUOUS margin (name vs HSN): Item {item_no} "
+                        f"— name → '{label}' ({int(round(keep * 100))}%), "
+                        f"but HSN {hsn_val} → '{hsn_label}'. Applied the "
+                        f"NAME decision; REVIEW (perfume lookup not yet "
+                        f"finalised)."
+                    ))
+
+        return keep, label
+
     def _process_row(
         self,
         row: pd.Series,
@@ -1368,17 +1781,43 @@ class MarketplaceEngine:
                     if pd.notna(row[config['loc_col']]) else '')
         qty_raw = row[config['qty_col']]
 
-        # Skip rows with no PO number
-        if po.lower() == 'nan':
-            return None
-
-        # Parse quantity early — a zero-qty row contributes nothing,
-        # avoid running master/mapping lookups for it.
+        # Parse quantity early — used both for the skip-logging below and
+        # the master/mapping work further down.
         try:
             qty = int(float(qty_raw)) if pd.notna(qty_raw) else 0
         except (ValueError, TypeError):
             qty = 0
+
+        # Thumb rule (v2.3.1): never SILENTLY drop a line that carries
+        # real content. A row with no PO but with an EAN or a quantity is
+        # a data problem, not a spacer — log it (with EAN/qty/row identity)
+        # so it can't vanish unseen. Truly-blank rows (no PO, no EAN, no
+        # qty — pandas trailing rows) are skipped quietly.
+        if po.lower() == 'nan' or po == '':
+            ean_dbg = self._extract_ean(row, df, config)
+            if ean_dbg or qty > 0:
+                key = ('NO_PO', str(row.name), ean_dbg)
+                if key not in warned_keys:
+                    warned_keys.add(key)
+                    result.warnings.append((
+                        '', '',
+                        f"Row {row.name}: NO PO number — NOT written to the "
+                        f"SO (EAN={ean_dbg or 'n/a'}, qty={qty}). Fix the PO "
+                        f"cell in the source and re-run."))
+            return None
+
+        # Zero / invalid quantity — log (don't silently drop) so a real
+        # item line never disappears without explanation.
         if qty <= 0:
+            ean_dbg = self._extract_ean(row, df, config)
+            key = ('ZERO_QTY', po, ean_dbg, str(row.name))
+            if key not in warned_keys:
+                warned_keys.add(key)
+                result.warnings.append((
+                    po, '',
+                    f"Row {row.name}: quantity is {qty} (raw={qty_raw!r}) "
+                    f"for PO {po}, EAN {ean_dbg or 'n/a'} — NOT written to "
+                    f"the SO. Verify the qty in the source."))
             return None
 
         # ── Extract EAN (needed before item resolution for from_ean) ────
@@ -1392,6 +1831,18 @@ class MarketplaceEngine:
         )
         if item_no is None:
             return None  # already warned inside the helper
+
+        # ── v2.3.1: per-line margin (keep%) ─────────────────────────────
+        # Marketplaces with ``margin_rules`` (Nykaa) compute landing/cost
+        # per product category (Perfume/Fragrance vs Cosmetics). For every
+        # other marketplace this returns the run margin unchanged. The
+        # resolved rate drives BOTH the amount math and the master
+        # validation below, and is stamped on the SORow for the
+        # Validation sheet.
+        row_margin, _margin_label = self._resolve_row_margin(
+            row=row, config=config, run_margin_pct=margin_pct,
+            item_no=item_no, po=po, result=result, warned_keys=warned_keys,
+        )
 
         # ── Pull pass-through unit price (rare, both current MPs leave
         # this None so the WMS computes it downstream) ──────────────────
@@ -1415,7 +1866,7 @@ class MarketplaceEngine:
         #        Reliance: ``['MRP', 'Qty'] + apply_margin=True`` →
         #        MRP × Qty × margin% = Landing × Qty.
         amount = self._extract_amount(
-            row, config.get('amount_col'), df, margin_pct,
+            row, config.get('amount_col'), df, row_margin,
         )
 
         # ── Marketplace prices: active (validation) + optional reference ─
@@ -1423,14 +1874,21 @@ class MarketplaceEngine:
                                          only_if_in_df=df)
         ref_fob_price = self._extract_float(row, config.get('ref_fob_col'),
                                              only_if_in_df=df)
+        # v2.3.1: the marketplace's stated MRP, when the file carries one
+        # (config ``mrp_col``). Used for the Validation sheet's Vendor MRP
+        # vs Our MRP pair. None for marketplaces whose file has no MRP.
+        vendor_mrp = self._extract_float(row, config.get('mrp_col'),
+                                          only_if_in_df=df)
 
         # ── Master lookup + price validation ────────────────────────────
         (mrp, gst_code, description, cost_price_ref, calc_price,
-         diffn, ref_diffn, validation_status) = self._validate_against_master(
+         diffn, ref_diffn, validation_status,
+         row_margin) = self._validate_against_master(
             ean=ean,
             item_no=item_no,
             po=po,
-            margin_pct=margin_pct,
+            margin_pct=row_margin,
+            gst_margin_discount=config.get('gst_margin_discount'),
             compare_basis=compare_basis,
             compare_label=compare_label,
             fob_price=fob_price,
@@ -1461,22 +1919,12 @@ class MarketplaceEngine:
             warned_keys=warned_keys, result=result,
         )
 
-        # ── v1.7.0: Source tagging for batch/multi-file traceability ────
-        # When the marketplace went through a ``pre_process`` hook
-        # (currently Reliance), the engine parsed the PO number and
-        # location from the file's title row rather than from
-        # per-row columns. Stamp those onto the SORow so the Raw
-        # Data sheet can show a "Source" column with values like
-        # '5000466441 BHIWANDI (Reliance)' — crucial when the user
-        # uploads 5 Reliance PO files at once and wants to see
-        # which row came from which file. Stays blank for
-        # Blink/Myntra/RK, whose Raw Data sheet doesn't need it.
-        if config.get('pre_process'):
-            source_po = po
-            source_location = location
-        else:
-            source_po = ''
-            source_location = ''
+        # Source-tagging fields (Raw Data "Source" column). No marketplace
+        # populates these today — multi-file batches are traced via the
+        # combined raw_df's ``__source_file__`` column instead — but the
+        # SORow fields are kept for forward compatibility.
+        source_po = ''
+        source_location = ''
 
         return SORow(
             po_number=po,
@@ -1493,6 +1941,8 @@ class MarketplaceEngine:
             description=description,
             fob_price=fob_price,
             ref_fob_price=ref_fob_price,
+            vendor_mrp=vendor_mrp,
+            applied_margin_pct=row_margin,
             calc_price=calc_price,
             cost_price_ref=cost_price_ref,
             diffn=diffn,
@@ -1647,6 +2097,18 @@ class MarketplaceEngine:
         try:
             return float(v)
         except (ValueError, TypeError):
+            # v2.3.1: tolerate currency-suffixed / thousands-separated
+            # numeric strings. Flipkart's dump started shipping its cost
+            # column as '114.73 INR' (string + ' INR' suffix) instead of
+            # a plain number; '1,606.22' and '₹114.73' are also handled.
+            # Pull the first numeric token out of the string and parse it.
+            if isinstance(v, str):
+                m = re.search(r'-?\d[\d,]*(?:\.\d+)?', v)
+                if m:
+                    try:
+                        return float(m.group(0).replace(',', ''))
+                    except ValueError:
+                        return None
             return None
 
     @classmethod
@@ -1786,6 +2248,17 @@ class MarketplaceEngine:
         # 'from_column' (default)
         item_raw = row[config['item_col']]
         if pd.isna(item_raw):
+            # v2.3.1: log (don't silently skip) — mirrors the from_ean
+            # empty-EAN warning so no item line is dropped unexplained.
+            key = ('NO_ITEM', po)
+            if key not in warned_keys:
+                warned_keys.add(key)
+                result.warnings.append((
+                    po, '',
+                    f"Row skipped: item_col '{config.get('item_col')}' is "
+                    f"empty for PO {po}. item_resolution='from_column' "
+                    f"requires a non-empty Item No."
+                ))
             return None
         try:
             return int(item_raw)
@@ -1797,17 +2270,25 @@ class MarketplaceEngine:
         compare_basis: str, compare_label: str,
         fob_price: Optional[float], ref_fob_price: Optional[float],
         warned_keys: Set[Tuple], result: ProcessingResult,
+        gst_margin_discount: Optional[float] = None,
     ) -> Tuple[Optional[float], str, str,
                Optional[float], Optional[float],
-               Optional[float], Optional[float], str]:
+               Optional[float], Optional[float], str, float]:
         """
         Run the master lookup and compute calc/cost/diffs/status.
+
+        v2.3.1: when ``gst_margin_discount`` is set (Reliance), the per-
+        item margin becomes GST-DEPENDENT: ``1 − discount × (1+GST)``,
+        using the master's GST. This reproduces Reliance's pricing table
+        (31% off pre-GST → keep 69%/67.45%/63.42% at 0/5/18% GST). The
+        passed ``margin_pct`` is then ignored for this row.
 
         Returns (in order)::
 
             mrp, gst_code, description,
             cost_price_ref, calc_price,
-            diffn, ref_diffn, validation_status
+            diffn, ref_diffn, validation_status,
+            applied_margin       # the margin actually used (for the row)
         """
         mrp: Optional[float] = None
         gst_code: str = ''
@@ -1817,10 +2298,12 @@ class MarketplaceEngine:
         diffn: Optional[float] = None
         ref_diffn: Optional[float] = None
         validation_status: str = ''
+        applied_margin: float = margin_pct
 
         if not self.master:
             return (mrp, gst_code, description, cost_price_ref,
-                    calc_price, diffn, ref_diffn, validation_status)
+                    calc_price, diffn, ref_diffn, validation_status,
+                    applied_margin)
 
         # Try EAN first, then fall back to Item No.
         master_info = self.master.lookup(ean) if ean else None
@@ -1828,12 +2311,36 @@ class MarketplaceEngine:
             master_info = self.master.lookup(str(item_no))
 
         if not master_info:
+            # v2.3.1: the row IS still written (item_no = the EAN
+            # placeholder, status NOT_IN_MASTER, highlighted orange on the
+            # Validation/Summary sheets). Also log it on the Warnings sheet
+            # — "not in our dump/master" should never be silent. Deduped
+            # per EAN so one missing SKU across many POs = one line.
+            key = ('NOT_IN_MASTER', str(ean or item_no))
+            if key not in warned_keys:
+                warned_keys.add(key)
+                result.warnings.append((
+                    po, '',
+                    f"NOT IN MASTER: EAN {ean or 'n/a'} (Item {item_no}) is "
+                    f"not in Items_March — the row IS written with the EAN "
+                    f"as a placeholder and no MRP/GST/price. Add it to the "
+                    f"master for full validation."))
             return (mrp, gst_code, description, cost_price_ref,
-                    calc_price, diffn, ref_diffn, 'NOT_IN_MASTER')
+                    calc_price, diffn, ref_diffn, 'NOT_IN_MASTER',
+                    applied_margin)
 
         mrp = master_info['mrp']
         gst_code = master_info['gst_code']
         description = master_info.get('description', '')
+
+        # v2.3.1: GST-dependent margin (Reliance). The keep% depends on
+        # the item's GST: keep = 1 − discount × (1+GST). Replaces the run
+        # margin for this row. For everyone else applied_margin stays the
+        # passed margin_pct (Nykaa's per-line value or the run margin).
+        if gst_margin_discount is not None:
+            applied_margin = 1.0 - gst_margin_discount * \
+                MasterLoader.gst_divisor(gst_code)
+        margin_pct = applied_margin
 
         # Warn on unknown GST code (still computes, defaulting to 18%)
         gst_upper = str(gst_code).strip().upper()
@@ -1886,7 +2393,8 @@ class MarketplaceEngine:
             validation_status = 'NO_PRICE'
 
         return (mrp, gst_code, description, cost_price_ref,
-                calc_price, diffn, ref_diffn, validation_status)
+                calc_price, diffn, ref_diffn, validation_status,
+                applied_margin)
 
     def _resolve_mapping(self, location: str, po: str, party_name: str,
                           warned_keys: Set[Tuple],

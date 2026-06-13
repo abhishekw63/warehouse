@@ -95,6 +95,19 @@ class SORow:
     # Marketplace prices
     fob_price: Optional[float] = None
     ref_fob_price: Optional[float] = None  # purely for reference Diffn
+    # v2.3.1: the MRP the marketplace stated in its file (when the file
+    # carries an MRP column, via config ``mrp_col``). Distinct from
+    # ``mrp`` below, which is OUR master MRP. Lets the Validation sheet
+    # show Vendor MRP vs Our MRP side by side. None when the file has no
+    # MRP column.
+    vendor_mrp: Optional[float] = None
+
+    # v2.3.1: the margin (keep%) actually used to compute THIS row's
+    # landing/cost. Normally the run margin, but per-line ``margin_rules``
+    # (e.g. Nykaa's Perfume/Fragrance vs Cosmetics split) can override it.
+    # The Validation sheet uses this for the row's Our Landing so the
+    # display matches what was computed. None ⇒ the run margin was used.
+    applied_margin_pct: Optional[float] = None
 
     # Our calculations
     calc_price: Optional[float] = None      # value used for the active diff

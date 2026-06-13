@@ -59,13 +59,26 @@ class MasterLoader:
             Number of rows loaded (also the row count of the input).
 
         Required columns: ``No.``, ``GTIN``, ``Description``,
-        ``GST Group Code``, ``Mrp``.
-        """
-        df = pd.read_excel(filepath, header=0)
+        ``GST Group Code``, ``Mrp`` — all on the **'Item Master'** sheet.
 
-        # Pre-stringify GTIN for use as a dict key. Done once on the whole
-        # column so the per-row loop stays cheap.
-        df['GTIN_str'] = df['GTIN'].astype(str).str.strip()
+        v2.3.1: the master workbook now bundles many sheets (Offline
+        Tracker, Zepto, Flipkart, …) and the first sheet is no longer the
+        item master. The EAN→item mapping lives on the 'Item Master'
+        sheet, so it's selected by name (case/space-insensitive). Older
+        single-sheet masters that have no such sheet fall back to the
+        first sheet, so existing setups are unaffected.
+        """
+        xl = pd.ExcelFile(filepath)
+        sheet = next((s for s in xl.sheet_names
+                      if str(s).strip().lower() == 'item master'), 0)
+        df = pd.read_excel(xl, sheet_name=sheet, header=0)
+
+        # Pre-stringify GTIN for use as a dict key. v2.3.1: route through
+        # ``_clean_code`` so a GTIN column read as float64 (which happens
+        # when any cell in the column is blank) keys as '8904473104659'
+        # rather than '8904473104659.0' — otherwise EAN lookups (which
+        # use the clean key) would silently miss.
+        df['GTIN_str'] = df['GTIN'].map(self._clean_code)
 
         self.master = {}
 
@@ -75,7 +88,12 @@ class MasterLoader:
             gst = (str(r['GST Group Code'])
                    if pd.notna(r.get('GST Group Code')) else '')
             mrp = r.get('Mrp')
-            item_no = str(r['No.']).strip()
+            # v2.3.1: clean the Item No so a float64 'No.' column (any
+            # blank cell coerces the whole column to float) yields
+            # '200570' rather than '200570.0'. This is the canonical ERP
+            # Item No that flows to every output sheet (Lines, Validation,
+            # Raw Data) and the D365 export — it must be a whole number.
+            item_no = self._clean_code(r['No.'])
 
             # v1.6.0: HSN/SAC Code is optional in the master file —
             # only Reliance (so far) does HSN cross-checking, and the
@@ -117,6 +135,41 @@ class MasterLoader:
                 self.master[item_no] = entry
 
         return len(df)
+
+    # ── Identifier cleaning ────────────────────────────────────────────
+
+    @staticmethod
+    def _clean_code(val) -> str:
+        """
+        Stringify an identifier (Item No / GTIN) WITHOUT the spurious
+        trailing ``.0`` that pandas introduces when a numeric ID column
+        is read as float64 (which happens whenever any cell in the
+        column is blank). Examples::
+
+            300069.0          → '300069'
+            8904473104659.0   → '8904473104659'
+            '200570.0'        → '200570'
+            'ABC-12'          → 'ABC-12'   (non-numeric — passed through)
+            NaN / None        → ''
+
+        Only whole-number values are de-decimalised; a genuine
+        fractional value (unexpected for an ID) is left as-is so nothing
+        is silently corrupted.
+        """
+        if val is None:
+            return ''
+        if isinstance(val, float):
+            if pd.isna(val):
+                return ''
+            return str(int(val)) if val.is_integer() else str(val).strip()
+        if isinstance(val, int):
+            return str(val)
+        s = str(val).strip()
+        # Float-looking string such as '200570.0' / '200570.00'.
+        head, dot, tail = s.partition('.')
+        if dot and head.lstrip('-').isdigit() and tail.strip('0') == '':
+            return head
+        return s
 
     # ── Lookup ─────────────────────────────────────────────────────────
 
@@ -184,25 +237,46 @@ class MasterLoader:
             return None
 
         landing = float(mrp) * margin_pct
-        gst = str(gst_code).strip().upper()
+        return landing / MasterLoader.gst_divisor(gst_code)
 
+    @staticmethod
+    def gst_divisor(gst_code: str) -> float:
+        """
+        GST divisor ``(1 + rate)`` for a master ``GST Group Code``.
+
+        =========  =====  =========
+        Code       GST    Divisor
+        =========  =====  =========
+        0-G / G-0  0%     1.00
+        G-3(-S)    3%     1.03
+        G-5(-S)    5%     1.05
+        G-12(-S)   12%    1.12
+        G-18(-S)   18%    1.18
+        Unknown    -      1.18 (defaults to 18%)
+        =========  =====  =========
+
+        v2.3.1: extracted so callers that need the rate itself (e.g.
+        Reliance's GST-dependent margin = 1 − discount × divisor) share
+        the SAME mapping ``calc_cost_price`` uses — no drift.
+        """
+        gst = str(gst_code).strip().upper()
         # 0% GST — code variants seen in the wild
         if gst in ('0-G', 'G-0', 'G-0-S', '0', '') or gst == 'NAN':
-            return landing
+            return 1.00
         # 3% GST
         if gst in ('G-3', 'G-3-S'):
-            return landing / 1.03
+            return 1.03
         # 5% GST — accept "5" in code as long as it's not 12 or 18
         if '5' in gst and '18' not in gst and '12' not in gst:
-            return landing / 1.05
+            return 1.05
         # 12% GST
         if '12' in gst:
-            return landing / 1.12
+            return 1.12
         # 18% GST
         if '18' in gst:
-            return landing / 1.18
+            return 1.18
         # Unknown code — default to 18% (engine emits a warning separately)
-        return landing / 1.18
+        return 1.18
 
     @staticmethod
     def calc_landing_price(mrp,

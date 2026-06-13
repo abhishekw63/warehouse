@@ -86,6 +86,28 @@ from online_po_processor.gui._update_dialog import UpdateDialog
 from online_po_processor.utils.platform_open import open_file
 
 
+# v2.3.1: bulk-consignment input flow. Originally Flipkart-TO-only;
+# generalized so any marketplace (e.g. Meesho-TO) can opt in purely via
+# config by declaring a ``consignment_mode`` block. The helper below is
+# the single source of truth for "does this marketplace use the
+# per-PO-file consignment flow?", so there are no scattered marketplace
+# string literals in the GUI.
+def _consignment_cfg(marketplace: str) -> Optional[dict]:
+    """
+    Return the marketplace's ``consignment_mode`` config dict when the
+    bulk-consignment flow is enabled for it, else ``None``.
+
+    Marketplaces opt in by setting ``consignment_mode.enabled = True``
+    (Flipkart-TO, Meesho-TO). ``consolidated_option`` within that block
+    further distinguishes:
+      * True  → also offers the single consolidated-dump mode, so the GUI
+                shows the two-way radio selector (Flipkart-TO).
+      * False → bulk-consignment-only, no toggle needed (Meesho-TO).
+    """
+    cfg = MARKETPLACE_CONFIGS.get(marketplace, {}).get('consignment_mode')
+    return cfg if cfg and cfg.get('enabled') else None
+
+
 def _po_filetypes_for(marketplace: str) -> list:
     """
     Build a tkinter ``filetypes`` list for the PO file picker, based
@@ -156,27 +178,20 @@ def _supports_multi_file(marketplace: str) -> bool:
     True if this marketplace's GUI should offer a multi-file picker
     and its engine call should go through ``process_multi``.
 
-    Marketplaces qualify as "multi-file" under two conditions:
+    **PDF marketplaces** (Dmart, FirstCry, Reliance) qualify: every PDF
+    PO is inherently one-PO-per-file (never a multi-PO container the way
+    Blink's xlsx is), so the operator typically receives several PO PDFs
+    and wants them combined into one SO batch. Marker:
+    ``source_format == 'pdf'``.
 
-    1. **Reliance-style (Excel + ``pre_process``)** — one PO per file,
-       the operator typically receives 3-5 PO attachments and wants
-       them combined into a single SO batch. Marker: the config has
-       a ``pre_process`` key (currently only Reliance).
-    2. **PDF marketplaces** (v2.2.0) — every PDF marketplace is
-       inherently one-PO-per-file (a PO PDF is never a multi-PO
-       container the way Blink's xlsx is). So PDFs are always
-       multi-file by nature. Marker: ``source_format == 'pdf'``.
-
-    Excel marketplaces that consolidate POs inside a single file
+    Excel/CSV marketplaces that consolidate POs inside a single file
     (Blink, Myntra, RK, Zepto, BlinkMP, Flipkart, Flipkart-TO) stay
-    single-file — they don't need multi-select because each upload
-    already contains all the POs for that batch.
+    single-file — each upload already contains all the POs for that
+    batch. (Flipkart-TO / Meesho-TO bulk-consignment mode is handled
+    separately by ``_is_consignment_mode``.)
     """
     cfg = MARKETPLACE_CONFIGS.get(marketplace, {})
-    return bool(
-        cfg.get('pre_process')                       # Reliance-style
-        or cfg.get('source_format') == 'pdf'         # PDF-style (Dmart, ...)
-    )
+    return cfg.get('source_format') == 'pdf'
 
 
 class OnlinePOApp:
@@ -187,19 +202,26 @@ class OnlinePOApp:
     def __init__(self) -> None:
         self.root = tk.Tk()
         self.root.title("Online PO Processor — Marketplace SO Generator")
-        self.root.geometry("520x720")
+        # v2.3.1: +60px taller to fit the Flipkart-TO input-mode selector
+        # without clipping the log/status area at the bottom.
+        self.root.geometry("520x780")
         self.root.resizable(False, False)
 
         # ── File paths (None until picked or auto-loaded) ───────────────
         self.master_path: Optional[str] = None
         self.mapping_path: Optional[str] = None
         self.po_path: Optional[str] = None
-        # v1.7.0: multi-file upload support (currently Reliance only).
-        # Always contains a list — empty until user picks files, then
-        # one-element list for single-select marketplaces, or N-element
-        # list for batch-capable ones (i.e. those whose config has
-        # ``pre_process`` set).
+        # Multi-file upload support. Always a list — empty until the user
+        # picks files, then one element for single-select marketplaces, or
+        # N elements for batch-capable ones (PDF marketplaces, and the
+        # Flipkart-TO / Meesho-TO bulk-consignment mode).
         self.po_paths: List[str] = []
+
+        # v2.3.1: optional Consignment Visibility Report path — supplies
+        # the PO → Warehouse Id (Location) lookup for Flipkart-TO bulk
+        # consignment runs. None unless the operator picks one in that
+        # mode; ignored by every other path.
+        self.visibility_report_path: Optional[str] = None
 
         # ── Output tracking ─────────────────────────────────────────────
         self.last_output: Optional[Path] = None
@@ -238,6 +260,10 @@ class OnlinePOApp:
         self.mapping_var: tk.StringVar
         self.mapping_ts_var: tk.StringVar
         self.po_var: tk.StringVar
+        # v2.3.1: Flipkart-TO input-mode selector ('consolidated' or
+        # 'consignments'). Only meaningful when Flipkart-TO is the
+        # selected marketplace; disabled/ignored for all others.
+        self.flipkart_to_mode_var: tk.StringVar
         self.open_btn: tk.Button
         # v1.5.0: D365 + email buttons start disabled; enabled after a
         # successful Generate SO run (same UX as open_btn).
@@ -371,6 +397,57 @@ class OnlinePOApp:
             font=("Arial", 8), fg='gray',
         ).pack(side='left', padx=4)
 
+        # ── v2.3.1: Transfer-Order input-mode selector ──────────────────
+        # Shown for every marketplace but only LIVE for ones that declare
+        # a ``consignment_mode`` (Flipkart-TO, Meesho-TO); greyed out
+        # otherwise. Two shapes:
+        #   * 'consolidated' — a single pre-merged dump → engine.process().
+        #   * 'consignments' — raw per-PO files; the engine assembles the
+        #     dump itself (PO from each filename) → process_consignments().
+        # Marketplaces that ONLY support consignments (consolidated_option
+        # = False, e.g. Meesho-TO) lock the selector to 'consignments' and
+        # disable the consolidated radio. State is driven entirely by
+        # config via _refresh_to_mode_widgets / _consignment_cfg.
+        fkto_frame = tk.LabelFrame(
+            self.root, text="Transfer Order Input Mode",
+            font=("Arial", 9, "bold"), padx=10, pady=4,
+        )
+        fkto_frame.pack(fill='x', padx=20, pady=(0, 8))
+        self._fkto_mode_frame = fkto_frame
+        self.flipkart_to_mode_var = tk.StringVar(value='consolidated')
+        self._fkto_radio_consolidated = tk.Radiobutton(
+            fkto_frame, text="Consolidated dump (single file)",
+            variable=self.flipkart_to_mode_var, value='consolidated',
+            font=("Arial", 9), command=self._on_fkto_mode_change,
+        )
+        self._fkto_radio_consolidated.pack(anchor='w')
+        self._fkto_radio_consignments = tk.Radiobutton(
+            fkto_frame, text="Bulk consignment files (multi-file)",
+            variable=self.flipkart_to_mode_var, value='consignments',
+            font=("Arial", 9), command=self._on_fkto_mode_change,
+        )
+        self._fkto_radio_consignments.pack(anchor='w')
+
+        # v2.3.1: optional location-report picker — only meaningful in
+        # 'consignments' mode for marketplaces that define a location
+        # report (Flipkart-TO's visibility report supplies each PO's
+        # Warehouse Id). Hidden for marketplaces without one (Meesho-TO).
+        # Shown/hidden by _refresh_fkto_report_row.
+        self._fkto_report_row = tk.Frame(fkto_frame)
+        tk.Button(
+            self._fkto_report_row, text="Location Report (optional)…",
+            font=("Arial", 8), command=self._select_visibility_report,
+        ).pack(side='left')
+        self.visibility_report_var = tk.StringVar(value="Not selected")
+        tk.Label(
+            self._fkto_report_row, textvariable=self.visibility_report_var,
+            font=("Arial", 8), fg='gray',
+        ).pack(side='left', padx=6)
+
+        # Start in the correct state for whatever marketplace the dropdown
+        # defaults to.
+        self._refresh_to_mode_widgets()
+
         # ── File selectors ──────────────────────────────────────────────
         files_frame = tk.LabelFrame(
             self.root, text="Input Files", font=("Arial", 10, "bold"),
@@ -408,6 +485,16 @@ class OnlinePOApp:
             btn_frame, text="▶  Generate SO", width=20,
             font=("Arial", 10, "bold"),
             bg="#00C853", fg='white', command=self.generate,
+        ).pack(pady=4)
+
+        # ── v2.4.0: Auto mode ───────────────────────────────────────────
+        # Opens the headless batch window (process every Dump/Online/<mp>
+        # folder unattended). This is the ONLY addition to the Manual UI —
+        # the single-file Generate flow above is unchanged.
+        tk.Button(
+            btn_frame, text="⚙  Auto Mode (all folders)", width=20,
+            font=("Arial", 10, "bold"),
+            bg="#3949AB", fg='white', command=self._open_auto,
         ).pack(pady=4)
 
         self.open_btn = tk.Button(
@@ -526,6 +613,10 @@ class OnlinePOApp:
         if hasattr(self, 'override_var'):
             self.override_var.set(override_default)
 
+        # v2.3.1: sync the Transfer-Order input-mode widgets (radios +
+        # optional report picker) to the newly-selected marketplace.
+        self._refresh_to_mode_widgets()
+
         ovr_str = ' (Override Unit Price ON)' if override_default else ''
         self._log(f"Marketplace changed to {self.marketplace_var.get()}, "
                   f"margin set to {margin}%{ovr_str}")
@@ -545,6 +636,139 @@ class OnlinePOApp:
         code = WAREHOUSE_CODES.get(wh, wh)
         self._warehouse_hint_var.set(f'→ {code}')
         self._log(f"Warehouse changed to {wh} (ERP code: {code})")
+
+    # ── v2.3.1: Transfer-Order input-mode helpers (config-driven) ───────
+
+    def _refresh_to_mode_widgets(self) -> None:
+        """
+        Sync the Transfer-Order input-mode radios + report row to the
+        selected marketplace, entirely from config.
+
+        Three cases, decided by :func:`_consignment_cfg`:
+          * No consignment_mode → both radios greyed (the selector is
+            inert; generate() ignores it for these marketplaces).
+          * ``consolidated_option`` True (Flipkart-TO) → both radios live.
+          * ``consolidated_option`` False (Meesho-TO) → bulk-consignment
+            only: force 'consignments' and disable the consolidated radio.
+        Then refresh the optional location-report row.
+        """
+        cfg = _consignment_cfg(self.marketplace_var.get())
+        has_consignment = cfg is not None
+        has_both = bool(cfg and cfg.get('consolidated_option', False))
+        # Guard with hasattr so an early call during construction (before
+        # the radios exist) is a harmless no-op.
+        if hasattr(self, '_fkto_radio_consolidated'):
+            if has_both:
+                self._fkto_radio_consolidated.config(state=tk.NORMAL)
+                self._fkto_radio_consignments.config(state=tk.NORMAL)
+            elif has_consignment:
+                # Consignment-only marketplace — lock to 'consignments'.
+                self.flipkart_to_mode_var.set('consignments')
+                self._fkto_radio_consolidated.config(state=tk.DISABLED)
+                self._fkto_radio_consignments.config(state=tk.NORMAL)
+            else:
+                self._fkto_radio_consolidated.config(state=tk.DISABLED)
+                self._fkto_radio_consignments.config(state=tk.DISABLED)
+        self._refresh_fkto_report_row()
+
+    def _refresh_fkto_report_row(self) -> None:
+        """
+        Show the optional location-report picker only when the run is in
+        consignment mode AND the marketplace defines a location report.
+
+        Flipkart-TO supplies a visibility report (``visibility_loc_col``
+        in its consignment_mode); Meesho-TO has none yet, so the picker
+        stays hidden for it. The report is also meaningless for the
+        consolidated dump (which already carries a Location column).
+        """
+        if not hasattr(self, '_fkto_report_row'):
+            return
+        cfg = _consignment_cfg(self.marketplace_var.get())
+        show = bool(
+            self._is_consignment_mode()
+            and cfg and cfg.get('visibility_loc_col')
+        )
+        if show:
+            self._fkto_report_row.pack(anchor='w', pady=(2, 0))
+        else:
+            self._fkto_report_row.pack_forget()
+
+    def _is_consignment_mode(self) -> bool:
+        """
+        True when the current run should use the bulk-consignment path.
+
+        Driven by config:
+          * Marketplace has no consignment_mode → False (unchanged
+            single-file path).
+          * consignment-only (``consolidated_option`` False, e.g.
+            Meesho-TO) → always True.
+          * offers both (Flipkart-TO) → True only when the radio is set
+            to 'consignments'.
+
+        Used by :meth:`_select_po` (multi-select CSV picker) and
+        :meth:`generate` (routes to ``engine.process_consignments``).
+        """
+        cfg = _consignment_cfg(self.marketplace_var.get())
+        if not cfg:
+            return False
+        if not cfg.get('consolidated_option', False):
+            return True
+        return (
+            hasattr(self, 'flipkart_to_mode_var')
+            and self.flipkart_to_mode_var.get() == 'consignments'
+        )
+
+    def _on_fkto_mode_change(self) -> None:
+        """
+        React to the operator flipping the Transfer-Order input-mode radios.
+
+        The two modes use different pickers (single-file vs multi-file
+        CSV), so a file picked under the old mode would be misleading
+        under the new one — clear the current PO selection and prompt a
+        fresh pick. Logged so the action is visible in the run log.
+        """
+        mode = self.flipkart_to_mode_var.get()
+        # Reset any prior PO selection — the picker shape differs per mode.
+        self.po_path = None
+        self.po_paths = []
+        if hasattr(self, 'po_var'):
+            self.po_var.set("Not selected")
+        # Show/hide the optional location-report picker for this mode.
+        self._refresh_fkto_report_row()
+        if mode == 'consignments':
+            self._log(
+                "Flipkart-TO mode: BULK CONSIGNMENTS — select the raw "
+                "Consignment_Details_<PO>_<date>.csv files (multi-select). "
+                "PO is read from each filename. Optionally add the "
+                "Consignment Visibility Report so each PO's Warehouse Id "
+                "fills the Location; without it, Location stays empty."
+            )
+        else:
+            self._log(
+                "Flipkart-TO mode: CONSOLIDATED — select the single "
+                "pre-consolidated dump file."
+            )
+
+    def _select_visibility_report(self) -> None:
+        """
+        Pick the optional Consignment Visibility Report (CSV) for a
+        Flipkart-TO bulk-consignment run.
+
+        The report supplies each PO's Warehouse Id, which the engine
+        writes as the row's Location (then resolved to a Transfer-to Code
+        via the Ship-To B2B alias rows). Picking is optional — without it
+        the run still works, just with empty Locations. A second pick
+        replaces the first; there's no explicit "clear", which matches
+        the other pickers' behaviour.
+        """
+        path = filedialog.askopenfilename(
+            title="Select Flipkart Consignment Visibility Report (optional)",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if path:
+            self.visibility_report_path = path
+            self.visibility_report_var.set(os.path.basename(path))
+            self._log(f"Location report: {os.path.basename(path)}")
 
     def _get_margin(self) -> float:
         """
@@ -769,22 +993,35 @@ class OnlinePOApp:
             * ``self.po_path``  — first (or only) file path. Used by
               all the single-file display/log paths.
             * ``self.po_paths`` — list of all selected files.
-              ``generate()`` uses this list when the marketplace
-              config has ``pre_process`` set, which is the marker
-              for "this marketplace supports multi-file upload".
+              ``generate()`` uses this list for multi-file marketplaces
+              (PDF-source: Dmart / FirstCry / Reliance).
         """
         marketplace = self.marketplace_var.get()
-        # v2.2.0: Centralized multi-file detection — covers both
-        # Reliance-style (pre_process) and PDF marketplaces (source_format=pdf).
-        # See _supports_multi_file docstring for the full rationale.
-        supports_multi = _supports_multi_file(marketplace)
+        # Centralized multi-file detection — PDF marketplaces
+        # (source_format=pdf). See _supports_multi_file for the rationale.
+        # v2.3.1: Flipkart-TO in 'consignments' mode is ALSO multi-file —
+        # the operator picks many raw Consignment_Details CSVs at once.
+        consignment = self._is_consignment_mode()
+        supports_multi = _supports_multi_file(marketplace) or consignment
 
         if supports_multi:
+            # v2.3.1: consignment mode is CSV-only (the raw exports are
+            # always .csv); other multi-file marketplaces keep their
+            # config-derived filters.
+            filetypes = (
+                [("Consignment CSV files", "*.csv"), ("All files", "*.*")]
+                if consignment else _po_filetypes_for(marketplace)
+            )
+            title = (
+                f"Select {marketplace} Consignment CSV files — "
+                f"one per PO, pick many"
+                if consignment else
+                f"Select {marketplace} PO File(s) — pick one or many"
+            )
             # Multi-select — returns a tuple (possibly empty).
             paths = filedialog.askopenfilenames(
-                title=f"Select {marketplace} PO File(s) — "
-                      f"pick one or many",
-                filetypes=_po_filetypes_for(marketplace),
+                title=title,
+                filetypes=filetypes,
             )
             if not paths:
                 return  # user cancelled
@@ -884,31 +1121,46 @@ class OnlinePOApp:
                 master_loader = None
 
         # ── Engine run ──────────────────────────────────────────────────
-        # v1.7.0: route to process_multi when the marketplace supports
-        # batch upload (Reliance — one PO per Excel file, multiple files
-        # combined into one SO batch).
-        # v2.2.0: also route PDF marketplaces (Dmart) through
-        # process_multi — each PO PDF is inherently a separate file, so
-        # operators picking multiple Dmart PDFs in one batch expect them
-        # to be combined the same way Reliance Excel files are.
-        # The unified marker is ``_supports_multi_file(marketplace)``
-        # which checks both ``pre_process`` and ``source_format='pdf'``.
+        # Route PDF marketplaces (Dmart / FirstCry / Reliance) through
+        # process_multi — each PO PDF is a separate file, so operators
+        # picking several in one batch expect them combined into one SO
+        # batch. Marker: ``_supports_multi_file(marketplace)``
+        # (``source_format == 'pdf'``).
         engine = MarketplaceEngine(self.mapping_loader, master=master_loader)
 
-        supports_multi = _supports_multi_file(marketplace)
-        if supports_multi and len(self.po_paths) > 1:
+        # v2.3.1: Flipkart-TO 'consignments' mode takes precedence — the
+        # engine assembles the consolidated dump from the raw per-PO CSVs
+        # (PO from each filename, Location left empty) then runs the
+        # standard TO pipeline. All other paths are unchanged.
+        if self._is_consignment_mode():
+            rpt = self.visibility_report_path
             self._log(
-                f"Batch processing {len(self.po_paths)} "
-                f"{marketplace} files..."
+                f"{marketplace} BULK CONSIGNMENTS — assembling dump from "
+                f"{len(self.po_paths)} consignment file(s)"
+                + (f"; location report: {os.path.basename(rpt)}"
+                   if rpt else "; no location report (Locations will be "
+                   "empty)")
+                + "..."
             )
-            result = engine.process_multi(
+            result = engine.process_consignments(
                 self.po_paths, config, margin_pct=margin_pct,
+                visibility_report_path=rpt,
             )
         else:
-            self._log(f"Processing {os.path.basename(self.po_path)}...")
-            result = engine.process(
-                self.po_path, config, margin_pct=margin_pct,
-            )
+            supports_multi = _supports_multi_file(marketplace)
+            if supports_multi and len(self.po_paths) > 1:
+                self._log(
+                    f"Batch processing {len(self.po_paths)} "
+                    f"{marketplace} files..."
+                )
+                result = engine.process_multi(
+                    self.po_paths, config, margin_pct=margin_pct,
+                )
+            else:
+                self._log(f"Processing {os.path.basename(self.po_path)}...")
+                result = engine.process(
+                    self.po_path, config, margin_pct=margin_pct,
+                )
         result.margin_pct = margin_pct  # redundant but explicit
 
         # v1.9.0: stamp the GUI's warehouse selection onto the result
@@ -1013,6 +1265,17 @@ class OnlinePOApp:
         else:
             self.status_var.set("Failed — no output generated")
             self.status_label.config(fg='red')
+
+    def _open_auto(self) -> None:
+        """
+        Open the Auto-mode batch window (v2.4.0).
+
+        Imported lazily so app startup and the Manual flow carry no
+        dependency on the Auto UI. Passes the master/mapping files the
+        main window already loaded so Auto reuses them.
+        """
+        from online_po_processor.gui.auto_window import AutoWindow
+        AutoWindow(self.root, self.master_path, self.mapping_path)
 
     def open_last(self) -> None:
         """Open the last generated output file in the default app."""

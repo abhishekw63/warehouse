@@ -186,14 +186,6 @@ Optional but recommended:
     PO sheet has a merged title on row 0 so its real headers are on
     row 1. Most marketplaces leave this at 0.
 
-``pre_process`` (str, optional)
-    Name of a marketplace-specific hook the engine runs after
-    loading the sheet but before column validation. Values:
-    ``'reliance_po_sheet'`` parses row 0's title
-    (``"5000466441  BHIWANDI (Reliance)"``) into synthetic
-    ``__po__`` and ``__loc__`` columns so Reliance's out-of-band
-    PO number and location reach the engine in canonical form.
-    Omit when the marketplace's data is already wide-format.
 
 ``default_margin`` (int | float, default 70)
     Default margin % pre-filled in the GUI when this marketplace is
@@ -349,6 +341,16 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'compare_basis': 'cost',                              # MRP × m% ÷ GST
         'compare_label': 'Cost',
         'amount_col': 'Total accepted cost',                  # qty × cost — for email Amount stat
+        # v2.3.1: RK's 'Total accepted cost' is the PRE-GST order value
+        # (qty × pre-GST Cost). Flagging it tells the Summary sheet to
+        # add a 'Total Amount (Inc GST)' column and the Tracker sheet to
+        # report Order Value GST-inclusive — matching how every other
+        # marketplace's amount already includes tax. Inc-GST is computed
+        # per line as amount × (1 + line GST) via MasterLoader.gst_divisor.
+        'amount_is_pre_gst': True,
+        # Tracker sheet (paste-ready ops view). Exp Date maps to RK's
+        # 'Cancellation deadline' (the PO's effective expiry); PO Date to
+        # 'Order date'. See exporter/sheets/tracker_sheet.py.
         'template_headers': [
             'PO', 'Vendor code', 'Order date', 'Product name',
             'External ID', 'Accepted quantity', 'Ship-to location',
@@ -425,67 +427,66 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
     },
 
     # ────────────────────────────────────────────────────────────────────
-    # Reliance (v1.6.0)
-    # Reliance's raw PO attachment is a 6-sheet workbook with clean data
-    # on a sheet literally named 'PO'. The PO number and delivery
-    # location don't appear in data columns — they're in a merged-cell
-    # title on row 0, formatted like:
+    # Reliance (v2.3.1 — REWRITTEN as PDF-based; replaces the old Excel/
+    # pre_process flow entirely)
     #
-    #     5000466441  BHIWANDI (Reliance)
+    # Reliance Retail now sends its Seller Purchase Order as a multi-page
+    # PDF ("PO. INTM_ <no> .PDF Reliance Retail Limited.PDF"). Parsed by
+    # engine/reliance_pdf_parser.py (``pdf_parser='reliance'``), which
+    # reads the line-item table via pdfplumber.extract_tables() and
+    # exposes synthetic ``__po__`` / ``__loc__`` columns. Standard SO.
     #
-    # The ``pre_process: 'reliance_po_sheet'`` hook parses this title
-    # and injects synthetic ``__po__`` / ``__loc__`` columns on every
-    # data row so the rest of the engine runs normally.
+    # PDF shape: page-1 header (PO NO., Site, PO Date, Delivery Address),
+    # page-2+ line-item table (Sr.No | Article No./HSN | EAN/Vendor
+    # Article | Material Description | Qty | UOM | MRP | Base Cost |
+    # IGST(%) … | Total Base Value).
     #
-    # HSN cross-check is enabled (``hsn_col: 'HSN'``) — mismatches
-    # between Reliance's HSN and our master's HSN/SAC Code surface on
-    # the Validation sheet and in the Warnings sheet. This is critical
-    # for tax compliance because a wrong HSN → wrong GST rate → the ERP
-    # posts an incorrect tax amount.
+    # Ship-to: the delivery city (e.g. 'BHIWANDI') is parsed from the
+    # Delivery Address; the mapping's fuzzy/substring tier resolves it to
+    # the Ship-To B2B key ('BHIWANDI (Reliance)', '…-Indore', etc., all
+    # Cust 20015).
     #
-    # Margin: Reliance's effective landing% is 63.42 (reverse-engineered
-    # from sample data: Cost Price / MRP × 1.18 ≈ 0.6342 consistently).
-    # User can override in the GUI on a per-run basis.
+    # ── GST-DEPENDENT PRICING (the key change) ──────────────────────────
+    # Reliance's margin is 31% off the PRE-GST value, so the effective
+    # "multiplier on MRP" varies with the item's GST rate:
+    #     keep% = 1 − 0.31 × (1 + GST)   → 69.00% @0%, 67.45% @5%, 63.42% @18%
+    # ``gst_margin_discount: 0.31`` tells the engine to compute this
+    # per-item margin from the master's GST (instead of a fixed margin),
+    # then ``compare_basis='cost'`` gives the post-GST cost
+    #     MRP × keep% ÷ (1+GST)
+    # which equals Reliance's pre-GST 'Base Cost' (the fob_col). Verified:
+    # MRP 250 @18% → 250 × 0.6342 ÷ 1.18 = 134.36.
+    #
+    # HSN cross-check enabled (tax-compliance critical). Item No / MRP /
+    # GST come from Items_March via the EAN.
     # ────────────────────────────────────────────────────────────────────
     'Reliance': {
-        'party_name': 'Reliance',            # Must match 'Party' in mapping sheet
-        # v1.8.1: Reliance's dumps have shipped with both 'HSN' and
-        # 'Hsn' as the HSN column header across batches (we observed
-        # both within a single week of samples). Enabling
-        # case-insensitive column matching lets the engine find the
-        # right column regardless of casing — the match is done by
-        # ``_resolve_column_aliases`` using a lowercase comparison.
-        'case_insensitive_cols': True,
-        'source_sheet': 'PO',                # NOT 'Sheet1' — special-case for Reliance
-        'header_row': 1,                     # Row 0 is the merged title; real headers are on row 1
-        'pre_process': 'reliance_po_sheet',  # Engine hook that parses title + injects __po__/__loc__
-        'po_col': '__po__',                  # [REQUIRED] synthetic — set by pre_process
-        'loc_col': '__loc__',                # [REQUIRED] synthetic — set by pre_process
-        'qty_col': 'Qty',                    # [REQUIRED]
+        'party_name': 'Reliance',            # Must match 'Party' in Ship-To B2B
+        'source_format': 'pdf',
+        'pdf_parser':    'reliance',
+        'po_col':  '__po__',                  # [REQUIRED] synthetic
+        'loc_col': '__loc__',                 # [REQUIRED] synthetic (delivery city)
+        'qty_col': 'Qty',                     # [REQUIRED]
         'item_resolution': 'from_ean',
-        'ean_col': 'EAN Number',             # [REQUIRED in this mode]
-        'price_col': None,                   # WMS computes
-        'fob_col': 'Cost Price',             # [VALIDATION] Reliance's stated cost → compare against our MRP × margin%
-        'hsn_col': 'HSN',                    # v1.6.0 — enables HSN cross-check against master
-        'default_margin': 63.42,             # 63.42% — Reliance's operating margin
-        # Reliance's 'Cost Price' column is POST-GST (reverse-engineered:
-        # 250 × 0.6342 ÷ 1.18 = 134.36 matches their value exactly), so
-        # we compare against our post-GST cost. Same basis RK uses.
-        # Note: the GUI shows "Landing Rate" labelling because the
-        # ERP/accounts team calls this "Landing Cost" even though
-        # technically it's post-GST — we preserve their terminology.
+        'ean_col': 'EAN',                     # [REQUIRED in this mode]
+        'price_col': None,                    # WMS computes
+        'mrp_col': 'MRP',                     # vendor MRP (Validation pair)
+        # Reliance's PRE-GST taxable cost. Compared against our
+        # GST-dependent computed cost (see gst_margin_discount).
+        'fob_col': 'Base Cost',               # [VALIDATION]
         'compare_basis': 'cost',
         'compare_label': 'Cost',
-        # Amount per row = Landing Cost × Qty = (MRP × margin%) × Qty.
-        # The apply_margin flag tells the engine to multiply the
-        # column-product by the runtime margin_pct, giving us the
-        # correct amount even though Landing Cost isn't a column on
-        # the punch file (it's derived).
-        'amount_col': {'multiply': ['MRP', 'Qty'], 'apply_margin': True},
+        # GST-dependent margin: keep% = 1 − 0.31 × (1+GST). The GUI
+        # default below is just for display (the 18% case).
+        'gst_margin_discount': 0.31,
+        'default_margin': 63.42,              # display only — gst_margin_discount governs
+        'hsn_col': 'HSN Code',                # cross-checked vs master
+        # Per-line amount = Base Cost × Qty (= the PDF's 'Total Base Value').
+        'amount_col': {'multiply': ['Base Cost', 'Qty']},
         'template_headers': [
-            'MRP', 'Cost Price', 'Reliance Article Code', 'HSN',
-            'EAN Number', 'PRODUCT NAME', 'Qty',
-            'Batch Num', 'Mfg Date', 'Exp Date', 'Box No.',
+            'Sr No', 'Article No', 'EAN', 'HSN Code',
+            'Material Description', 'Qty', 'MRP', 'Base Cost',
+            'GST Rate', 'Total Base Value', 'Site',
         ],
     },
 
@@ -759,7 +760,14 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'item_resolution': 'from_ean',       # Same as Blink/RK/Myntra/Reliance/Zepto
         'ean_col': 'EAN',                    # [REQUIRED in this mode] int64 in punch
         'price_col': None,                   # WMS computes Unit Price downstream
-        'fob_col': 'COST PRICE With GST',    # [VALIDATION] file's stated landing — despite name, PRE-GST
+        # [VALIDATION] file's stated landing rate (despite the historical
+        # 'With GST' name, it's the PRE-GST landing = MRP × 77%).
+        # v2.3.1: as of the 10-06-2026 dump the column was RENAMED from
+        # 'COST PRICE With GST' → 'COST PRICE', and its values now carry a
+        # ' INR' suffix ('114.73 INR'). List-alias resolves either header
+        # (new name first); the engine's _extract_float strips the ' INR'
+        # suffix / thousands separators so the value parses.
+        'fob_col': ['COST PRICE', 'COST PRICE With GST'],
         'default_margin': 77,                # 77% landing — Renee × Flipkart Wholesale agreement
         # Compare against MRP × margin% (pre-GST landing). Our own Cost
         # Price column still appears on the Validation sheet for
@@ -768,10 +776,100 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'compare_basis': 'landing',
         'compare_label': 'Landing Rate',
         'amount_col': 'total_amount',        # File's pre-calculated row amount (Cost × Qty)
+        # v2.3.1: template mirrors the current dump shape (COST PRICE, and
+        # an 'Item' column; the old 'Item n'/'MRP'/'GST Rate' columns are
+        # gone — Item No / MRP / GST come from master via EAN anyway).
         'template_headers': [
-            'Date', 'PO', 'FSN Code', 'EAN', 'Qty',
-            'COST PRICE With GST', 'total_amount', 'description',
-            'Address', 'Ship TO', 'Item n', 'MRP', 'GST Rate',
+            'Date', 'PO', 'FSN Code', 'EAN', 'Item', 'Qty',
+            'COST PRICE', 'total_amount', 'description',
+            'Address', 'Ship TO',
+        ],
+    },
+
+    # ────────────────────────────────────────────────────────────────────
+    # Nykaa  (Nykaa E-Retail Ltd — v2.3.1)
+    #
+    # Standard SO marketplace (CSV). Cust No 20012 in Ship-To B2B; each
+    # 'Delivery Location' (Nykaa Warehouse BLR2, Chennai Warehouse, ...)
+    # maps to a 20012_<n> ship-to code.
+    #
+    # File columns:
+    #   PO Number | ... | SKU Code | SKU Name | ... | Unit Cost | MRP |
+    #   PO Qty | ... | Tax Amount | HSN Code | EAN Code | Delivery Location
+    #
+    # Item No / MRP / GST come from Items_March via 'EAN Code'
+    # (item_resolution='from_ean'). 'SKU Code' (RENEE000…) is Nykaa's
+    # internal code, not used.
+    #
+    # PRICE BASIS — 'cost' (post-GST). The file's 'Unit Cost' is the
+    # post-GST cost: Unit Cost == MRP × keep% ÷ (1 + GST). Verified across
+    # the 10-06-2026 dump (e.g. MRP 450 → 251.68 == 450 × 0.66 ÷ 1.18).
+    #
+    # ── Per-line margin split (margin_rules) ────────────────────────────
+    # Nykaa's discount depends on product category (two Ship-To B2B rows,
+    # both Cust 20012):
+    #   * Perfume/Fragrance → 31% off MRP → keep 69%
+    #   * Cosmetics (default) → 34% off MRP → keep 66%
+    # So landing/cost is computed PER LINE.
+    #
+    # DECISION is by NAME only — the same manual lookup the operator does:
+    # a line is Perfume/Fragrance when its 'SKU Name' contains 'perfume'
+    # or 'fragra'. (Drop/extend the ``contains`` list to change this.)
+    #
+    # HSN is a CROSS-CHECK, not a decider (``flag_hsn_conflicts``): when a
+    # row's HSN points to a different category than the name chose — e.g.
+    # a 'Body Mist' (HSN 3303 = perfume) whose name has no 'perfume'/
+    # 'fragra', or an 'Eau De Parfum' carrying cosmetics HSN 3304 — a
+    # '⚠ AMBIGUOUS (name vs HSN)' warning is logged for review. This is a
+    # deliberate stopgap until the exact perfume lookup is finalised; the
+    # NAME still governs the margin so behaviour matches the manual method.
+    #
+    # NOTE: the current dump applies a flat 66% even to perfumes, so
+    # perfume lines show a Cost MISMATCH against our 69% calculation —
+    # exactly the discrepancy this surfaces. Each rule application (and
+    # each name-vs-HSN conflict) is logged on the Warnings sheet.
+    # ────────────────────────────────────────────────────────────────────
+    'Nykaa': {
+        'party_name': 'Nykaa',               # Must match Ship-To B2B 'Party'
+        'po_col': 'PO Number',               # [REQUIRED]
+        'loc_col': 'Delivery Location',      # [REQUIRED] → Ship-To B2B
+        'qty_col': 'PO Qty',                 # [REQUIRED]
+        'item_resolution': 'from_ean',
+        'ean_col': 'EAN Code',               # [REQUIRED in this mode]
+        'price_col': None,                   # WMS computes Unit Price
+        'fob_col': 'Unit Cost',              # [VALIDATION] vendor post-GST cost
+        'compare_basis': 'cost',             # MRP × keep% ÷ (1+GST)
+        'compare_label': 'Cost',
+        'mrp_col': 'MRP',                    # vendor MRP (Validation pair)
+        'default_margin': 66,                # GUI display; margin_rules govern
+        # Per-line keep% by product category (see header note).
+        'margin_rules': {
+            'rules': [
+                {
+                    'label': 'Perfume/Fragrance',
+                    'keep_pct': 69,                       # 31% off MRP
+                    # DECIDER: description keywords (your manual search).
+                    'contains': ['perfume', 'fragra'],
+                    'contains_column': 'SKU Name',
+                    # CROSS-CHECK only (does not decide the margin): flags
+                    # rows whose HSN disagrees with the name decision.
+                    'hsn_prefix': ['3303'],
+                },
+            ],
+            'default_keep_pct': 66,           # Cosmetics — 34% off MRP
+            'default_label': 'Cosmetics',
+            'flag_hsn_conflicts': True,       # ⚠ highlight name-vs-HSN clashes
+        },
+        # Per-line amount = Unit Cost × Qty (file's 'PO Amount' is the
+        # whole-PO total repeated on every line, not per-line).
+        'amount_col': {'multiply': ['Unit Cost', 'PO Qty']},
+        'hsn_col': 'HSN Code',               # 8-digit, cross-checked vs master
+        'template_headers': [
+            'PO Number', 'Vendor Code', 'Vendor Name', 'PO Release Date',
+            'Expected Delivery Date', 'Expiry Date', 'PO Amount',
+            'PO Line No', 'SKU Code', 'SKU Name', 'Vendor SKU Code',
+            'Unit Cost', 'MRP', 'PO Qty', 'Received Qty', 'Tax Amount',
+            'HSN Code', 'EAN Code', 'Delivery Location',
         ],
     },
 
@@ -893,6 +991,199 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'template_headers': [
             'Po Number', 'Location', 'FSN', 'SKU Id', 'Product Name',
             'Cost Price', 'Quantity Sent',
+        ],
+
+        # ── v2.3.1: bulk consignment input mode ─────────────────────────
+        # Flipkart-TO now accepts its punch in TWO shapes; the operator
+        # chooses which in the GUI ("Flipkart-TO Input Mode" radios):
+        #
+        #   1. CONSOLIDATED (historical, default) — the operator manually
+        #      consolidates Flipkart's per-PO consignment exports into a
+        #      single 7-column dump (see ``template_headers`` above) and
+        #      feeds that ONE file through the normal ``engine.process``
+        #      path. The 'Po Number' and 'Location' columns are real
+        #      columns the operator filled in by hand. Nothing about this
+        #      mode changed.
+        #
+        #   2. CONSIGNMENTS (new) — the operator instead hands us the raw
+        #      per-PO exports directly, named
+        #      ``Consignment_Details_<PO>_<date>.csv`` (one file per PO),
+        #      and the engine builds the consolidated dump itself via
+        #      ``engine.process_consignments``. Two values are synthesized
+        #      because the raw CSV doesn't carry them:
+        #        * 'Po Number'  ← parsed from each FILENAME
+        #          (``filename_po_regex`` capture group 1).
+        #        * 'Location'   ← left EMPTY on purpose. Ship-to/bill-to
+        #          resolution for these consignments is still being
+        #          worked out; until then every row maps to a blank
+        #          Transfer-to Code. When the rule is known, populate it
+        #          in ``engine.process_consignments`` — no other change
+        #          needed.
+        #      Every OTHER column the dump needs (``SKU Id`` = EAN,
+        #      ``Quantity Sent``, ``Cost Price``, ``Product Name``,
+        #      ``FSN``) is already present in the raw consignment CSV
+        #      under these exact names, so the assembled dump is
+        #      shape-identical to mode 1 and flows through the same TO
+        #      pipeline (aggregate by (PO, Item No), master lookup by EAN,
+        #      engine-computed Transfer Price).
+        #
+        # The raw consignment CSV carries ~20 columns (Product Name, FSN,
+        # SKU Id, Brand, ..., Quantity Sent, ..., Cost Price, dimensions);
+        # the extra columns are simply ignored by the pipeline.
+        'consignment_mode': {
+            'enabled': True,
+            # v2.3.1: Flipkart-TO historically also accepts a single
+            # pre-consolidated dump, so the GUI offers BOTH the
+            # consolidated and the bulk-consignment input modes (two
+            # radios). Marketplaces without a consolidated format (e.g.
+            # Meesho-TO) set this False and are bulk-consignment-only.
+            'consolidated_option': True,
+            # Capture-group-1 regex applied to each filename's basename.
+            # 'Consignment_Details_204535220_09-06-2026.csv' → '204535220'.
+            'filename_po_regex': r'Consignment_Details_([^_]+)_',
+            # Multi-select CSV picker in the GUI for this mode.
+            'accepted_extensions': ['.csv'],
+
+            # ── Location source: Consignment Visibility Report ──────────
+            # The raw consignment CSVs carry no Location, so the operator
+            # optionally supplies Flipkart's Consignment Visibility Report
+            # (a per-run pick in the GUI). The engine joins it to each
+            # consignment on PO and writes the report's Warehouse Id as
+            # the row's Location.
+            #
+            # Column names in the visibility report:
+            'visibility_po_col': 'Consignment Id',   # = PO number
+            'visibility_loc_col': 'Warehouse Id',    # = destination code
+
+            # ── PROVISIONAL Warehouse-Id → Ship-To B2B bridge ──────────
+            # The report's 'Warehouse Id' is a machine code (e.g.
+            # 'malur_bts') that does NOT match the friendly Ship-To B2B
+            # location names ('Malur BTS Warehouse'), so it can't resolve
+            # to a Transfer-to Code on its own.
+            #
+            # TEMPORARY measure (until exact ship-to codes are wired into
+            # the report or Ship-To B2B): this internal alias map
+            # translates each machine code to its friendly Ship-To B2B
+            # location NAME. In _process_to the engine looks the mapping
+            # up under the friendly name (so the real Transfer-to Code
+            # resolves from the spreadsheet — the code stays single-sourced
+            # there) but KEEPS the raw machine code as the row's Location.
+            # The Summary therefore shows both 'Location (Raw)' (the
+            # machine code that came in) and 'Location (Mapped)' (the
+            # deciphered friendly name), and auto-highlights the pair as a
+            # fuzzy match because they differ.
+            #
+            # Every PO resolved through this map is also FLAGGED as a
+            # PROVISIONAL / fuzzy match on the Warnings sheet so the
+            # operator verifies it before import. Keys are the lowercase
+            # machine codes exactly as they appear in 'Warehouse Id';
+            # values are the EXACT Ship-To B2B location keys.
+            #
+            # Pairings confirmed by the operator (2026-06-09). DELETE this
+            # whole map once the report/Ship-To B2B carries exact codes.
+            'warehouse_aliases': {
+                'hyderabad_medchal_01': 'Hyderabad Medchal 01',  # FK_HYD_MED
+                'chn_tvr_04':           'Chennai 04 Warehouse',   # FK_CHN_04
+                'ulub_bts':             'kolkata uluberia bts',   # FK_ULB_BTS
+                'ahm_khe_wh_nl_01nl':   'Ahmedabad_01',           # FK_AMD_01
+                'jai_san_wh_nl_01nl':   'Jaipur Sanganer NLFC 01',# FK_NLFC01
+                'malur_bts':            'Malur BTS Warehouse',    # FK_MAL_BTS
+                'gur_san_wh_nl_01nl':   'sanpka 01',              # FK_SANPKA1
+                'bhi_vas_wh_nl_01nl':   'Bhiwandi BTS',           # FK_BHW_BTS
+                'nag_wad_wh_nl_02nl':   'Nagpur 3pl 01',          # FK_NAGPUR
+                'dha_kot_wh_nl_01nl':   'Hubli_01',               # FK_DHARWAD
+            },
+        },
+    },
+
+    # ────────────────────────────────────────────────────────────────────
+    # Meesho-TO  (v2.3.1 — second Transfer Order marketplace)
+    #
+    # Same TO pipeline as Flipkart-TO (output_type='to': aggregate by
+    # (PO, Item No), Item No / MRP / GST from Items_March via EAN, engine
+    # computes Transfer Price), but a DIFFERENT source file shape.
+    #
+    # Source files: Meesho exports ONE CSV per order, named
+    # ``order-line-items-<PO>.csv`` (e.g. order-line-items-64415.csv).
+    # There is no consolidated dump, so Meesho-TO is BULK-CONSIGNMENT-ONLY
+    # — it always goes through ``engine.process_consignments`` (the GUI
+    # shows no consolidated/consignment toggle for it).
+    #
+    # File columns (11):
+    #   skuCode            — Meesho's internal listing SKU (e.g.
+    #                        '57nb-498q8d-4n'); display only, NOT the EAN.
+    #   description        — product title.
+    #   styleCode          — THE EAN (e.g. 8906121644654) used for the
+    #                        Items_March master lookup. A few combo SKUs
+    #                        carry a style string instead (e.g.
+    #                        'RENEEFACEBRIGHTCOMBO'); those resolve too
+    #                        when present in master, else NOT_IN_MASTER.
+    #   size / color       — ignored.
+    #   sellingPricePerUnit— Meesho's SELLING price. Deliberately NOT used
+    #                        as a cost reference: comparing a selling price
+    #                        to the engine's computed Transfer Price (a
+    #                        cost) would emit misleading diffs. So no
+    #                        ``fob_col`` — Transfer Price comes purely from
+    #                        master (MRP × margin ÷ (1+GST)).
+    #   orderedQty         — quantity → Transfer Line Qty.
+    #   asnCreatedQty / packedQty / dispatchedQty / pendingQty
+    #                      — fulfillment counters; ignored.
+    #
+    # PO number: parsed from the FILENAME (no PO column), same mechanism
+    # as Flipkart-TO consignment mode.
+    #
+    # Location: LEFT EMPTY for now. Meesho's Transfer-to codes are 'MS_'-
+    # prefixed in Ship-To B2B, but how each order's destination warehouse
+    # is fetched is still TBD. Until then Location is blank → empty
+    # Transfer-to Code + one "unmapped" warning per PO. When the source is
+    # known, add it to ``process_consignments`` (and, if it arrives as a
+    # machine code, a ``warehouse_aliases`` map here) exactly like
+    # Flipkart-TO.
+    #
+    # Margin: 60% is a PLACEHOLDER copied from Flipkart-TO — CONFIRM the
+    # real Meesho TO margin. It's overridable per run in the GUI, but this
+    # default should be corrected once known.
+    # ────────────────────────────────────────────────────────────────────
+    'Meesho-TO': {
+        'party_name': 'Meesho-TO',           # Must match Ship-To B2B 'Party'
+        'output_type': 'to',                  # TO pipeline (Headers/Lines (TO))
+
+        # PO is synthesized from the filename; Location injected blank.
+        'po_col': 'Po Number',
+        'loc_col': 'Location',
+        'qty_col': 'orderedQty',
+
+        # Item No / MRP / GST resolved from master via the EAN in styleCode.
+        'item_resolution': 'from_ean',
+        'ean_col': 'styleCode',
+
+        # No fob_col — see note above (sellingPricePerUnit is a selling
+        # price, not a cost). Transfer Price is engine-computed from master.
+
+        'default_margin': 60,                 # PLACEHOLDER — confirm Meesho margin
+
+        # Tolerate header case/whitespace drift like the other CSV configs.
+        'case_insensitive_cols': True,
+        'header_row': 0,
+
+        'consignment_mode': {
+            'enabled': True,
+            # Bulk-consignment-ONLY: no consolidated single-file format,
+            # so the GUI skips the mode toggle and always uses the
+            # consignment flow for Meesho-TO.
+            'consolidated_option': False,
+            # 'order-line-items-64415.csv' → '64415'.
+            'filename_po_regex': r'order-line-items-(\d+)',
+            'accepted_extensions': ['.csv'],
+            # No visibility report / warehouse_aliases yet — Location stays
+            # empty until the destination-warehouse source is decided.
+        },
+
+        # Used by 'Download PO Template' — mirrors Meesho's export columns.
+        'template_headers': [
+            'skuCode', 'description', 'styleCode', 'size', 'color',
+            'sellingPricePerUnit', 'orderedQty', 'asnCreatedQty',
+            'packedQty', 'dispatchedQty', 'pendingQty',
         ],
     },
 
@@ -1017,6 +1308,79 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
             'CGST %', 'SGST %', 'CESS %', 'IGST %', 'UGST %',
             'CGST V', 'SGST V', 'CESS V', 'IGST V', 'UGST V',
             'GST Rate',
+        ],
+    },
+
+    # ────────────────────────────────────────────────────────────────────
+    # FirstCry  (Siddeshwari Trading / firstcry.com — v2.3.1)
+    #
+    # The SECOND PDF-source marketplace (after Dmart) but a STANDARD Sales
+    # Order, not a Transfer Order — same SO output shape as Blink / Flipkart
+    # / Reliance. Parsed by engine/firstcry_pdf_parser.py
+    # (``pdf_parser='firstcry'``), which reads the bordered line-item table
+    # via pdfplumber.extract_tables() and exposes synthetic ``__po__`` /
+    # ``__loc__`` columns (same convention as the Avenue/Dmart parser), so
+    # the engine's SO logic runs format-agnostic.
+    #
+    # PDF shape (reference PO 'pin212260609ity61c4'):
+    #   Header: PONO, PO Date, Vendor Name (Renee = us), Delivered To
+    #           (the FirstCry hub — ship-to), buyer GST, Currency.
+    #   Table : Sr No | FCID | HSN Code | Manufacturer | Style Code |
+    #           Image | Product Name | Description | Brand | Color |
+    #           MRP | Base Cost | Tax | Landing Rate |
+    #           Billed Qty | Free Qty | Total Qty | Total Amount
+    #
+    # EAN source: the 'Manufacturer' column (NOT 'Style Code'). Verified
+    # against Items_March — Manufacturer holds the GTIN on every row and
+    # always resolves; Style Code is unreliable (FCID / blank / a
+    # different EAN on several rows). Item No / MRP / GST come from master
+    # via this EAN — same ``from_ean`` path as Blink/Flipkart/Dmart.
+    #
+    # Cost basis: 'landing'. Landing Rate == MRP × 0.60 to the paisa
+    # across the sample, so the engine's MRP × margin% formula matches the
+    # file's Landing Rate exactly at default_margin=60.
+    #
+    # Ship-to: 'Delivered To' names the FirstCry hub
+    # ('Siddeshwari Trading-Hoskote'). The operator's Ship-To B2B must
+    # carry a FirstCry party row whose 'Del Location' matches it (exact or
+    # via the mapping's fuzzy/substring tiers). CONFIRM the exact 'Party'
+    # spelling and 'Del Location' key used in Ship-To B2B.
+    #
+    # HSN cross-check enabled (8-digit per line) — same rationale as
+    # Dmart/Reliance.
+    # ────────────────────────────────────────────────────────────────────
+    'Firstcry': {
+        'party_name': 'Firstcry',            # Must match Ship-To B2B 'Party' — CONFIRM
+        'source_format': 'pdf',
+        'pdf_parser':    'firstcry',
+        # Synthetic columns injected by the FirstCry PDF parser.
+        'po_col':  '__po__',                  # [REQUIRED] synthetic
+        'loc_col': '__loc__',                 # [REQUIRED] synthetic (Delivered To)
+        'qty_col': 'Total Qty',               # [REQUIRED] Billed + Free
+        'item_resolution': 'from_ean',
+        'ean_col': 'Manufacturer',            # [REQUIRED] the GTIN column
+        'price_col': None,                    # WMS computes Unit Price
+        # Landing Rate == MRP × 60% (post-GST landed cost). Matches the
+        # engine's 'landing' formula exactly at margin=60.
+        'fob_col': 'Landing Rate',            # [VALIDATION] vendor landing
+        'default_margin': 60,                 # Renee × FirstCry agreement
+        'compare_basis': 'landing',           # MRP × margin% (no GST division)
+        'compare_label': 'Landing Rate',
+        # v2.3.1: FirstCry's PDF also carries the vendor's MRP and a
+        # pre-GST 'Base Cost'. Wire them so the Validation sheet can show
+        # Vendor MRP vs Our MRP and Vendor CP vs Our CP side by side (and
+        # compute a Cost-Price diff, not just the Landing-Rate diff).
+        #   mrp_col     → vendor MRP (Vendor MRP column)
+        #   ref_fob_col → vendor cost price; ref_diffn = Base Cost − our CP
+        'mrp_col': 'MRP',                     # vendor MRP
+        'ref_fob_col': 'Base Cost',           # vendor cost price (pre-GST)
+        'amount_col': 'Total Amount',         # file's pre-calc row amount
+        'hsn_col': 'HSN Code',                # 8-digit, cross-checked vs master
+        'template_headers': [
+            'Sr No', 'FCID', 'HSN Code', 'Manufacturer', 'Style Code',
+            'Product Name', 'Brand Name', 'Color', 'MRP', 'Base Cost',
+            'Tax', 'Landing Rate', 'Billed Qty', 'Free Qty', 'Total Qty',
+            'Total Amount',
         ],
     },
 }
