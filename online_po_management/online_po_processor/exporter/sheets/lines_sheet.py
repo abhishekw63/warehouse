@@ -49,7 +49,7 @@ from __future__ import annotations
 
 from online_po_processor.data.models import ProcessingResult
 from online_po_processor.exporter._styles import (
-    INFO_ITALIC_FONT, WARN_FILL,
+    BOLD_DATA_FONT, INFO_ITALIC_FONT, LOC_MISMATCH_FILL, WARN_FILL,
     auto_width, data_cell, hdr_cell,
 )
 
@@ -152,7 +152,15 @@ def write(wb, result: ProcessingResult) -> None:
         # master lookup failed and no cost can be computed, leave col 8
         # blank for THIS row only, matching the D365 exporter's lenient
         # behaviour.
-        if override and so_row.cost_price_ref is not None:
+        # v2.4.0: a 'Use Vendor CP' exception forces this row's Unit Price to
+        # the vendor cost (e.g. Myntra Goddess) even when the global override
+        # is off — and the cell is amber-tinted so the exception is visible.
+        if so_row.forced_unit_price is not None:
+            cell = data_cell(ws, r, 8, round(so_row.forced_unit_price, 2),
+                             number_format='#,##0.00', align='right')
+            cell.fill = LOC_MISMATCH_FILL
+            cell.font = BOLD_DATA_FONT
+        elif override and so_row.cost_price_ref is not None:
             data_cell(ws, r, 8, round(so_row.cost_price_ref, 2),
                        number_format='#,##0.00', align='right')
         else:

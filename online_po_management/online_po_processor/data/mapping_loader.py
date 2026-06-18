@@ -43,6 +43,11 @@ class MappingLoader:
     def __init__(self) -> None:
         # location string → {cust_no, ship_to}
         self.mappings: Dict[str, Dict[str, str]] = {}
+        # v2.4.0: reverse index — Transfer-to/Ship-to CODE (upper) → entry.
+        # Lets a caller resolve by the short code (e.g. 'MS_BLR') instead of
+        # the long Del Location name. Used by Meesho-TO, whose destination
+        # is supplied as the code itself (parsed from the filename).
+        self.by_shipto: Dict[str, Dict[str, str]] = {}
         self.party_name: str = ''
         self.total_loaded: int = 0
 
@@ -69,6 +74,7 @@ class MappingLoader:
         """
         self.party_name = party_name
         self.mappings = {}
+        self.by_shipto = {}
 
         # Try the canonical sheet first; fall back to the first sheet if
         # someone renamed or split the workbook. Cannot-read errors are
@@ -108,9 +114,17 @@ class MappingLoader:
             return 0
 
         # ── Filter by party + build lookup ──────────────────────────────
+        # v2.7: party match ignores spaces so a sheet that spells the same
+        # party two ways resolves under one config (Big Basket vs
+        # Bigbasket — same Cust No 20007, different Del Locations). Only
+        # identical-but-for-whitespace names merge; distinct parties
+        # (Blink / Blink RO, Flipkart / Flipkart-TO) stay separate.
+        def _norm_party(p: str) -> str:
+            return ''.join(str(p).split()).lower()
+        want_party = _norm_party(party_name)
         for _, row in df.iterrows():
             party = str(row[col_map['party']]).strip()
-            if party.lower() != party_name.lower():
+            if _norm_party(party) != want_party:
                 continue
 
             location = str(row[col_map['location']]).strip()
@@ -127,10 +141,15 @@ class MappingLoader:
 
             # Skip rows where location is empty / "nan" (unmapped entries)
             if location and location.lower() != 'nan':
-                self.mappings[location] = {
+                entry = {
                     'cust_no': cust_no,
                     'ship_to': ship_to,
                 }
+                self.mappings[location] = entry
+                # Reverse index by ship-to code (first wins on collision).
+                if ship_to and ship_to.lower() != 'nan':
+                    self.by_shipto.setdefault(ship_to.strip().upper(), {
+                        **entry, 'matched_key': ship_to.strip()})
 
         # v1.8.1: warn if two entries would collide under the normalized
         # lookup. This can happen if someone typed the same location
@@ -314,5 +333,88 @@ class MappingLoader:
                 logging.info("Mapping: Fuzzy match '%s' → '%s'",
                              loc_clean, key)
                 return {**val, 'matched_key': key}
+
+        # 5. v2.4.0: resolve by the Transfer-to/Ship-to CODE itself (e.g.
+        # 'MS_BLR'). Meesho-TO supplies the destination as the code (from the
+        # filename), not the long Del Location name — so this exact-code
+        # match lets that resolve directly and keeps the displayed Location
+        # short.
+        hit = self.by_shipto.get(loc_clean.upper())
+        if hit:
+            return dict(hit)
+
+        return None
+
+    # ── Address-based lookup (Flipkart) ─────────────────────────────────
+
+    @staticmethod
+    def _pincodes(s: str) -> set:
+        """All 6-digit pincodes in a string."""
+        return set(re.findall(r'\b\d{6}\b', str(s or '')))
+
+    @staticmethod
+    def _addr_tokens(s: str) -> set:
+        """Alphanumeric word tokens (lower-cased) of an address."""
+        return set(re.findall(r'[a-z0-9]+', str(s or '').lower()))
+
+    def lookup_by_address(self, address: str) -> Optional[Dict[str, str]]:
+        """
+        Resolve a messy postal ADDRESS → ship-to, for marketplaces whose
+        ``loc_col`` is a full delivery address (Flipkart) rather than a short
+        location name (config opts in via ``loc_match='address'``).
+
+        Why a dedicated path: Flipkart's new portal emits the Shipped-To
+        address WITHOUT the ``'Flipkart India Pvt. Ltd., '`` prefix that the
+        Ship-To B2B 'Del Location' entries carry (they were captured from the
+        old dump), and with a different city/pincode tail — so the generic
+        substring tier of :meth:`lookup` no longer matches. The warehouse is,
+        however, uniquely identified by its **pincode + survey-no/village
+        body**, both of which survive verbatim.
+
+        Strategy (in order):
+
+          1. Generic :meth:`lookup` — handles any address that still equals a
+             Del Location (legacy FL_DUMP_COMPILATION input, exact reuse).
+          2. **Pincode-gated body overlap** — among mapping entries that share
+             a 6-digit pincode with the address, pick the one with the most
+             shared word tokens. This disambiguates two warehouses at the same
+             pincode (e.g. 501401 → Pudur Village 20020_13 vs Gundlapochampally
+             20020_20) by their distinct survey-no/village body. A minimum
+             overlap (> the shared pincode alone) guards against a bare
+             pincode coincidence.
+
+        Returns ``{cust_no, ship_to, matched_key}`` on hit, ``None`` on miss
+        (→ standard unmapped handling).
+        """
+        if not address:
+            return None
+
+        # 1. Generic tiers first (exact / normalized / substring / code).
+        hit = self.lookup(address)
+        if hit:
+            return hit
+
+        # 2. Pincode-gated word-overlap scoring.
+        addr_pins = self._pincodes(address)
+        if not addr_pins:
+            return None
+        addr_tokens = self._addr_tokens(address)
+
+        best_overlap = -1
+        best_key: Optional[str] = None
+        best_val: Optional[Dict[str, str]] = None
+        for key, val in self.mappings.items():
+            if not (addr_pins & self._pincodes(key)):
+                continue
+            overlap = len(addr_tokens & self._addr_tokens(key))
+            if overlap > best_overlap:
+                best_overlap, best_key, best_val = overlap, key, val
+
+        # Require more than the shared pincode (1 token) + at most a city word
+        # so we never resolve on a bare pincode coincidence.
+        if best_val is not None and best_overlap >= 3:
+            logging.info("Mapping: address pincode+overlap match '%s' → '%s' "
+                         "(overlap=%d)", address[:60], best_key, best_overlap)
+            return {**best_val, 'matched_key': best_key}
 
         return None

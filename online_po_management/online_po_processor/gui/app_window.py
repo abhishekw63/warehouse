@@ -184,14 +184,28 @@ def _supports_multi_file(marketplace: str) -> bool:
     and wants them combined into one SO batch. Marker:
     ``source_format == 'pdf'``.
 
+    **Dual-format marketplaces** (Myntra, v2.4.1) also qualify: each
+    Myntra PO arrives as its own PDF, so the operator picks several at
+    once and wants them combined into one SO batch — exactly like the
+    PDF-only marketplaces. Marker: a registered ``pdf_parser``. (When
+    such a marketplace is instead fed Excel, ``process_multi`` still
+    works — it processes each file via ``process()``, so a single
+    multi-PO xlsx and a folder of one-PO PDFs both flow through.)
+
+    **Flipkart** (v2.7.x) also qualifies: its new portal emits one
+    ``purchase_order_<PO>.xlsx`` per PO, so it sets ``file_parser='flipkart'``
+    and the operator drops all the day's PO files → one SO batch (replacing
+    the old standalone dump generator). Marker: a registered ``file_parser``.
+
     Excel/CSV marketplaces that consolidate POs inside a single file
-    (Blink, Myntra, RK, Zepto, BlinkMP, Flipkart, Flipkart-TO) stay
-    single-file — each upload already contains all the POs for that
-    batch. (Flipkart-TO / Meesho-TO bulk-consignment mode is handled
-    separately by ``_is_consignment_mode``.)
+    (Blink, RK, Zepto, BlinkMP, Flipkart-TO) stay single-file — each upload
+    already contains all the POs for that batch. (Flipkart-TO / Meesho-TO
+    bulk-consignment mode is handled separately by ``_is_consignment_mode``.)
     """
     cfg = MARKETPLACE_CONFIGS.get(marketplace, {})
-    return cfg.get('source_format') == 'pdf'
+    return (cfg.get('source_format') == 'pdf'
+            or bool(cfg.get('pdf_parser'))
+            or bool(cfg.get('file_parser')))   # Big Basket: one .xlsx per PO
 
 
 class OnlinePOApp:
@@ -236,6 +250,10 @@ class OnlinePOApp:
         # re-running the engine. Reset to None on every new generate()
         # attempt; set to a real result only if the engine produced rows.
         self.last_result: Optional[ProcessingResult] = None
+
+        # v2.7: the last generated result awaiting a manual "Push to DB"
+        # (verify-then-confirm). {'result', 'output_path'} or None.
+        self._pending_push: Optional[dict] = None
 
         # Track whether master/mapping came from the bundled folder (vs
         # user-picked). Used so the GUI can show "(auto-loaded)" and the
@@ -544,6 +562,20 @@ class OnlinePOApp:
             state=tk.DISABLED, command=self._send_email,
         )
         self.email_btn.grid(row=3, column=1, padx=4, pady=4, sticky='ew')
+
+        # Push to DB — a SEPARATE, deliberate confirm step. Generate only
+        # writes + verifies the output (price diffs / address mismatches);
+        # the operator records to the shared history DB only after checking.
+        # Enabled after a successful Generate; disabled once pushed.
+        self.push_db_btn = tk.Button(
+            btn_frame, text="⤓  Push to DB (confirm after verifying)",
+            width=_BTN_W, font=("Arial", 10, "bold"),
+            bg="#2563eb", fg='white', activebackground="#1d4ed8",
+            activeforeground='white', state=tk.DISABLED,
+            command=self._push_to_db,
+        )
+        self.push_db_btn.grid(row=4, column=0, columnspan=2,
+                               padx=4, pady=(4, 6), sticky='ew')
 
         # ── Status line ─────────────────────────────────────────────────
         self.status_var = tk.StringVar(
@@ -1121,6 +1153,9 @@ class OnlinePOApp:
         self.last_result = None
         self.d365_btn.config(state=tk.DISABLED)
         self.email_btn.config(state=tk.DISABLED)
+        # A new generate supersedes any un-pushed result.
+        self._pending_push = None
+        self.push_db_btn.config(state=tk.DISABLED)
 
         # ── Load Items_March (master) ───────────────────────────────────
         master_loader: Optional[MasterLoader] = None
@@ -1280,40 +1315,16 @@ class OnlinePOApp:
             self.status_var.set(status_msg)
             self._log(f"Saved: {output_path}")
 
-            # v2.4.0: Manual mode now records to the SAME shared history
-            # DB Auto uses (Dump/Tracker/history.db), so dedup spans both.
-            # Best-effort — a history hiccup must never fail a generate.
-            hist_line = ""
-            try:
-                from online_po_processor.auto.history_db import (
-                    default_dump_root, record_manual,
-                )
-                from online_po_processor.auto.consolidated_exporter import (
-                    export_tracker_from_db,
-                )
-                hinfo = record_manual(result, str(output_path))
-                n_skip = hinfo['skipped']
-                self._log(
-                    f"History: {hinfo['new_orders']} new PO-line(s) recorded "
-                    + (f"(run #{hinfo['run_id']})" if hinfo['run_id']
-                       else "(no new — nothing recorded)")
-                    + (f" — {n_skip} already-uploaded removed" if n_skip else ""))
-                # Tracker built FROM the DB for this run (new POs only).
-                if hinfo['run_id']:
-                    try:
-                        tpath = export_tracker_from_db(
-                            hinfo['run_id'], default_dump_root())
-                        self._log(f"Tracker (new POs): {tpath}")
-                    except Exception as te:  # noqa: BLE001
-                        self._log(f"WARNING: tracker build failed: "
-                                  f"{type(te).__name__}: {te}")
-                hist_line = (
-                    f"\nHistory     : ✓ {hinfo['new_orders']} new recorded"
-                    + (f", {n_skip} already-uploaded removed" if n_skip else ""))
-            except Exception as he:  # noqa: BLE001
-                self._log(f"WARNING: history record failed: "
-                          f"{type(he).__name__}: {he}")
-                hist_line = f"\nHistory     : ⚠ not recorded ({type(he).__name__})"
+            # v2.7: recording to the shared history DB is now a SEPARATE,
+            # deliberate step. The operator VERIFIES the generated output
+            # (price differences, address mismatches, warnings) and only
+            # then clicks "Push to DB" to confirm. We stash the verified-
+            # pending result here; the push happens in _push_to_db().
+            self._pending_push = {'result': result,
+                                   'output_path': str(output_path)}
+            self.push_db_btn.config(state=tk.NORMAL)
+            hist_line = ("\nHistory     : ⏳ NOT recorded yet — verify the "
+                         "output, then click 'Push to DB'")
 
             answer = messagebox.askyesno(
                 "SO Generated",
@@ -1377,26 +1388,116 @@ class OnlinePOApp:
         else:
             messagebox.showwarning("Not Found", "Output file not found.")
 
+    def _push_to_db(self) -> None:
+        """
+        Record the LAST generated result into the shared history DB — a
+        deliberate, separate step the operator runs ONLY after verifying
+        the output (prices, addresses, mismatches). Logs the exact SQL
+        being executed so it's visible in the Log panel.
+        """
+        pend = getattr(self, '_pending_push', None)
+        if not pend:
+            messagebox.showinfo(
+                "Push to DB",
+                "Generate an SO first, verify the output, then push.")
+            return
+        result = pend['result']
+        output_path = pend['output_path']
+        if not result.rows:
+            messagebox.showinfo(
+                "Push to DB",
+                "Nothing new to record (all POs were already uploaded).")
+            self._pending_push = None
+            self.push_db_btn.config(state=tk.DISABLED)
+            return
+
+        n_pos = len({r.po_number for r in result.rows})
+        if not messagebox.askyesno(
+                "Push to DB",
+                f"Record this output to the history DB?\n\n"
+                f"Marketplace : {result.marketplace}\n"
+                f"PO(s)       : {n_pos}\n"
+                f"Items       : {len(result.rows)}\n\n"
+                f"Do this ONLY after verifying prices / addresses."):
+            return
+
+        try:
+            from online_po_processor.auto.history_db import (
+                default_dump_root, record_manual, order_rows_from_result,
+            )
+            from online_po_processor.auto.consolidated_exporter import (
+                export_tracker_from_db,
+            )
+            # Build the rows (same ones record_manual will insert) and log
+            # the SQL so the operator can see exactly what hits the DB.
+            wh = getattr(result, 'warehouse_display', '') or ''
+            rows = order_rows_from_result(
+                result, result.marketplace, wh, os.path.basename(output_path))
+            self._log("─── Push to DB — SQL being executed ───")
+            _cols = ['segment', 'marketplace', 'marketplace_label', 'po',
+                     'location', 'warehouse', 'po_date', 'exp_date',
+                     'order_type', 'items', 'qty', 'order_value', 'output_file']
+            for o in rows:
+                _vals = ', '.join(
+                    (repr(o[c]) if isinstance(o[c], str) else str(o[c]))
+                    for c in _cols)
+                self._log(f"INSERT INTO order_headers "
+                          f"({', '.join(_cols)}) VALUES ({_vals});")
+
+            hinfo = record_manual(result, output_path)
+            n_skip = hinfo['skipped']
+            self._log(
+                f"History: {hinfo['new_orders']} new PO(s) recorded "
+                + (f"(run #{hinfo['run_id']})" if hinfo['run_id']
+                   else "(nothing new)")
+                + (f" — {n_skip} already-uploaded removed" if n_skip else ""))
+            if hinfo['run_id']:
+                try:
+                    tpath = export_tracker_from_db(
+                        hinfo['run_id'], default_dump_root())
+                    self._log(f"Tracker (new POs): {tpath}")
+                except Exception as te:  # noqa: BLE001
+                    self._log(f"WARNING: tracker build failed: "
+                              f"{type(te).__name__}: {te}")
+            messagebox.showinfo(
+                "Push to DB",
+                f"Recorded {hinfo['new_orders']} new PO(s) to the history DB."
+                + (f"\n{n_skip} already-uploaded removed."
+                   if n_skip else ""))
+            self._pending_push = None
+            self.push_db_btn.config(state=tk.DISABLED)
+        except Exception as e:  # noqa: BLE001 — surface, never crash
+            self._log(f"ERROR: Push to DB failed: {type(e).__name__}: {e}")
+            messagebox.showerror(
+                "Push to DB",
+                f"Not recorded:\n{type(e).__name__}: {e}\n\n"
+                f"Fix the issue and try again.")
+
     # ── v1.5.0: D365 Package Export ──────────────────────────────────────
 
     def _export_d365(self) -> None:
         """
-        Fill the D365 sample template with the last generated result.
+        Fill the BUNDLED D365 connector template with the last result.
+
+        v2.4.3: no longer prompts for a template — the bound
+        'Abhishek-Wagh' connector workbook ships with the app
+        (online_po_processor/templates/) and is filled via the
+        binding-preserving ZIP surgery (``d365_package.export_d365_package``),
+        so the XML-map → D365 field binding survives and the file is
+        ready to Publish. The main "Generate SO" flow already produces this
+        automatically; this button just re-runs it for ``self.last_result``.
 
         Flow:
-            1. Guard: ``self.last_result`` must be populated (button is
-               disabled when it isn't, so this is belt-and-suspenders).
-            2. Warn the user about any PO(s) whose Ship-To mapping
-               failed — those rows will be written with empty Location
-               Code in the D365 output, which D365 may or may not
-               accept depending on the company's location defaults.
-            3. Prompt the user to pick the D365 template file.
-            4. Delegate the actual fill to :class:`D365Exporter`.
+            1. Guard: ``self.last_result`` must be populated.
+            2. Warn about any PO(s) whose Ship-To mapping failed (they
+               export with empty Location Code).
+            3. Pick the bundled SO/TO template by ``output_type`` — no
+               file dialog.
+            4. Fill via ``export_d365_package`` (binding preserved).
             5. Offer to open the resulting file.
 
-        The output file is written to the same ``output/`` folder as
-        the main SO export, derived from the original PO file's
-        directory — so both artefacts end up side by side.
+        The output lands in the same ``output/`` folder as the main SO
+        export so both artefacts sit side by side.
         """
         result = self.last_result
         if result is None or not result.rows:
@@ -1433,33 +1534,49 @@ class OnlinePOApp:
                 self._log("D365 export cancelled by user (unmapped POs).")
                 return
 
-        # ── Step 3: pick the D365 template ──────────────────────────────
-        template_path = filedialog.askopenfilename(
-            title="Select D365 Sample Package Template",
-            filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
-        )
-        if not template_path:
-            return  # user cancelled the dialog
+        # ── Step 3: use the BUNDLED connector template (NO manual pick) ──
+        # v2.4.3: the bound 'Abhishek-Wagh' connector template ships with the
+        # app (online_po_processor/templates/), so the operator never selects
+        # a file. SO vs TO is chosen automatically by the result's
+        # output_type. This is the SAME bound template the main "Generate SO"
+        # flow now fills automatically — this button just re-runs it for the
+        # last result on demand.
+        is_to = getattr(result, 'output_type', 'so') == 'to'
+        template_path = (SOExporter._D365_TO_TEMPLATE if is_to
+                         else SOExporter._D365_SO_TEMPLATE)
+        if not Path(template_path).exists():
+            self.status_var.set("D365 template missing")
+            self.status_label.config(fg='red')
+            messagebox.showerror(
+                "D365 Template Missing",
+                f"The bundled D365 template is missing:\n\n{template_path}\n\n"
+                f"Restore it under online_po_processor/templates/.",
+            )
+            return
 
-        # ── Step 4: delegate to exporter ────────────────────────────────
-        # Output directory mirrors where the main SO workbook landed:
-        # ``<punch_dir>/output/``. That keeps every artefact from one
-        # run in a single predictable place.
+        # ── Step 4: fill via the binding-preserving surgery ─────────────
+        # Output mirrors where the main SO workbook landed
+        # (``<punch_dir>/output/``) so every artefact lands together.
+        from online_po_processor.exporter.d365_package import (
+            export_d365_package,
+        )
         punch_dir = Path(result.input_file_path).parent
         output_dir = punch_dir / 'output'
+        output_dir.mkdir(parents=True, exist_ok=True)
+        ts = time.strftime("%d-%m-%Y_%H%M%S")
+        slug = (result.marketplace or 'online').lower().replace(' ', '_')
+        kind = 'to' if is_to else 'so'
+        d365_out = output_dir / f"{slug}_d365_{kind}_{ts}.xlsx"
 
-        self._log(f"D365: filling template {os.path.basename(template_path)}...")
+        self._log("D365: filling bundled connector template "
+                  f"({os.path.basename(str(template_path))})...")
         self.status_var.set("D365 export in progress...")
         self.status_label.config(fg='blue')
         self.root.update()
 
         try:
-            d365_path = self.d365_exporter.export(
-                result, template_path, output_dir,
-            )
+            d365_path = export_d365_package(result, template_path, d365_out)
         except Exception as e:  # noqa: BLE001
-            # Defensive: D365Exporter swallows most errors and returns
-            # None, but a truly unexpected bug shouldn't crash the GUI.
             logging.exception("D365 export crashed unexpectedly")
             self.status_var.set("D365 export failed")
             self.status_label.config(fg='red')

@@ -26,7 +26,7 @@ loader instance.
 """
 
 from __future__ import annotations
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import pandas as pd
 
@@ -43,8 +43,65 @@ class MasterLoader:
 
     def __init__(self) -> None:
         # Map from key (EAN or Item No, both as str) → entry dict
-        # Entry shape: {item_no, mrp, gst_code, description}
+        # Entry shape: {item_no, mrp, gst_code, description, hsn, gtin}
         self.master: Dict[str, Dict] = {}
+
+        # v2.4.0 (Swiggy): secondary index keyed by the marketplace's own
+        # SKU code. Swiggy's PO dump carries only a ``SkuCode`` (e.g.
+        # '138856') — no EAN, no Item No. The Items Master gets an optional
+        # 'Swiggy SKU code' column mapping each SKU to its master row, so
+        # ``item_resolution='from_swiggy_sku'`` looks the dump's SkuCode up
+        # here to recover Item No / MRP / GST / EAN. Empty when the master
+        # has no such column yet (the feature is then simply inactive).
+        self.swiggy_sku: Dict[str, Dict] = {}
+
+        # v2.4.0 (Swiggy): per-EAN deal-price overrides. Swiggy negotiates
+        # special "deal" prices on selected SKUs that don't follow the
+        # default MRP×80% landing math. Loaded from an optional
+        # 'Swiggy Deal SKUs' sheet in the master workbook, keyed by EAN →
+        # {cp, cost_with_gst, mrp, gst}. When a resolved line's EAN is in
+        # here, the Validation sheet expects the sheet's 'Cost after GST'
+        # as our cost price instead of the computed MRP×margin value.
+        self.swiggy_deals: Dict[str, Dict] = {}
+
+        # v2.4.0: central EAN/code exception map — {source_code → master_key}.
+        # Marketplaces sometimes send an identifier that isn't in the master
+        # verbatim but exists under a variant key (e.g. FirstCry sends EAN
+        # '8906121640885' while the master has '8906121640885_1'). Rather than
+        # patch each marketplace or edit the master, all such overrides live in
+        # ONE sibling file ('Master Exceptions.xlsx') next to the Items Master;
+        # lookup() consults this map after a direct miss. Empty when the file
+        # is absent (feature simply inactive).
+        self.exceptions: Dict[str, str] = {}
+        self.exceptions_source: str = ''
+
+        # v2.4.0: central PRICE overrides — {source_code → {mrp, margin_pct,
+        # marketplace}}. Same exceptions file, different columns: when a
+        # marketplace's agreed price doesn't match what MRP×default-margin
+        # computes (e.g. Blinkit's EPISENSE is a 24% discount on a 899 deal
+        # MRP, not the master's 1099 at 70%), the operator records the deal's
+        # MRP + landing% here. Validation then expects that figure for the
+        # row instead of flagging a mismatch. Optional ``marketplace`` scopes
+        # the override to one channel (blank = all).
+        self.price_overrides: Dict[str, Dict] = {}
+
+        # v2.4.0: 'Use Vendor CP' exceptions — {source_code → marketplace}.
+        # For these EANs the vendor's stated cost is authoritative: validation
+        # accepts it (no MISMATCH) and the D365 Lines Unit Price is written
+        # from the vendor cost instead of left blank. e.g. Myntra's RENEE
+        # Goddess perfume. Optional marketplace scopes it (blank = all).
+        self.vendor_cp_overrides: Dict[str, str] = {}
+
+        # v2.4.3: the FULL exception registry — one entry per row of
+        # 'Master Exceptions.xlsx', carrying every column verbatim plus a
+        # derived ``effect`` summary and ``kinds`` list (alias / price /
+        # vendor_cp). Unlike the lookup dicts above (which are keyed and
+        # split by type for the engine), this preserves the whole list so
+        # EVERY marketplace's output can render the complete cross-marketplace
+        # exception list on its Exceptions sheet (highlighting the rows that
+        # belong to the marketplace being processed). Empty when the file is
+        # absent.
+        self.exception_registry: List[Dict] = []
 
     # ── Loading ────────────────────────────────────────────────────────
 
@@ -134,7 +191,289 @@ class MasterLoader:
             if item_no not in self.master:
                 self.master[item_no] = entry
 
+        # v2.4.0: auto-load the central exceptions file if it sits next to
+        # the master. One file, edited by the operator, covers every
+        # marketplace — no per-config or per-master patching.
+        self._auto_load_exceptions(filepath)
+
+        # v2.4.0 (Swiggy): load the 'Swiggy' sheet (SkuCode → EAN) and the
+        # 'Swiggy Deal SKUs' sheet (per-EAN deal price), both optional.
+        self._load_swiggy_sheets(xl)
+
         return len(df)
+
+    # ── Swiggy sheets (SkuCode map + deal prices) ───────────────────────
+
+    def _load_swiggy_sheets(self, xl) -> None:
+        """Build the Swiggy SkuCode→EAN index and per-EAN deal overrides from
+        the master workbook's 'Swiggy' and 'Swiggy Deal SKUs' sheets. Silent
+        no-op when a sheet is absent — Swiggy support is then inactive."""
+        names = {str(s).strip().lower(): s for s in xl.sheet_names}
+
+        # 'Swiggy' sheet: SkuCode → EAN. Swiggy's PO dump carries only a
+        # SkuCode (no EAN/Item No); this recovers the EAN so the standard
+        # master lookup resolves it.
+        sw = names.get('swiggy')
+        if sw is not None:
+            try:
+                df = pd.read_excel(xl, sheet_name=sw, header=0, dtype=str)
+                cols = {''.join(str(c).split()).lower(): c for c in df.columns}
+                sc = cols.get('skucode') or cols.get('sku')
+                ea = cols.get('ean')
+                if sc and ea:
+                    for _, r in df.iterrows():
+                        skc = self._clean_code(r.get(sc))
+                        ean = self._clean_code(r.get(ea))
+                        if (skc and ean and skc.lower() != 'nan'
+                                and ean.lower() != 'nan'):
+                            self.swiggy_sku.setdefault(skc, ean)
+            except Exception:  # noqa: BLE001 — overlay must never break load
+                pass
+
+        # 'Swiggy Deal SKUs' sheet: EAN → deal price (explicit cost, not the
+        # default MRP×80%). Cost after GST = our CP; Cost With GST = inc-GST.
+        deal = names.get('swiggy deal skus')
+        if deal is not None:
+            try:
+                df = pd.read_excel(xl, sheet_name=deal, header=0, dtype=str)
+                cols = {''.join(str(c).split()).lower(): c for c in df.columns}
+                ea = cols.get('ean')
+                if ea:
+                    for _, r in df.iterrows():
+                        ean = self._clean_code(r.get(ea))
+                        if not ean or ean.lower() == 'nan':
+                            continue
+                        cag = self._to_float(r.get(cols.get('costaftergst')))
+                        d_mrp = self._to_float(r.get(cols.get('correctmrp')))
+                        self.swiggy_deals[ean] = {
+                            'mrp': d_mrp,
+                            'gst_pct': self._to_float(r.get(cols.get('correctgst'))),
+                            'cost_after_gst': cag,
+                            'cost_with_gst': self._to_float(
+                                r.get(cols.get('costwithgst'))),
+                        }
+                        # v2.4.3: surface Swiggy deal SKUs on the Exceptions
+                        # sheet too — they're per-SKU price exceptions, just
+                        # stored in this master sheet rather than in
+                        # 'Master Exceptions.xlsx'. Scoped to Swiggy.
+                        name = ''
+                        ncol = cols.get('name')
+                        if ncol and pd.notna(r.get(ncol)):
+                            name = str(r.get(ncol)).strip()
+                        self.exception_registry.append({
+                            'source_code': ean,
+                            'maps_to': '',
+                            'override_mrp': d_mrp,
+                            'override_margin_pct': None,
+                            'use_vendor_cp': False,
+                            'marketplace': 'Swiggy',
+                            'note': name,
+                            'kinds': ['swiggy_deal'],
+                            'effect': ('deal CP after GST '
+                                       + (f'{cag:g}' if cag is not None else '—')
+                                       + (f' (MRP {d_mrp:g})' if d_mrp is not None
+                                          else '')),
+                        })
+            except Exception:  # noqa: BLE001
+                pass
+
+    def resolve_swiggy_sku(self, sku) -> Optional[Dict]:
+        """SkuCode → master entry, via the 'Swiggy' sheet's SkuCode→EAN map.
+        None when the SkuCode is unknown or its EAN isn't in the master."""
+        ean = self.swiggy_sku.get(self._clean_code(sku))
+        return self.lookup(ean) if ean else None
+
+    # ── Exceptions (central EAN/code override file) ─────────────────────
+
+    # Candidate filenames for the sibling exceptions workbook (first hit
+    # wins), matched case-insensitively in the master's folder.
+    _EXCEPTION_FILENAMES = (
+        'Master Exceptions.xlsx', 'Master Exceptions.xls',
+        'EAN Exceptions.xlsx', 'Exceptions.xlsx',
+    )
+
+    def _auto_load_exceptions(self, master_path: str) -> None:
+        """Look for the exceptions workbook beside the Items Master and load
+        it if present. Silent no-op when absent or unreadable — the master is
+        the source of truth; exceptions are an optional overlay."""
+        import os
+        try:
+            folder = os.path.dirname(os.path.abspath(master_path))
+            existing = {f.lower(): f for f in os.listdir(folder)}
+        except OSError:
+            return
+        for cand in self._EXCEPTION_FILENAMES:
+            actual = existing.get(cand.lower())
+            if actual:
+                self.load_exceptions(os.path.join(folder, actual))
+                return
+
+    def load_exceptions(self, path: str) -> int:
+        """
+        Load the central exceptions file → ``{source_code → master_key}``.
+
+        The file's first sheet maps an identifier as a marketplace sends it
+        (``Source Code`` / ``Source EAN``) to the key that DOES exist in the
+        master (``Maps To`` / ``Master Code`` — an EAN or Item No). Optional
+        ``Marketplace`` / ``Note`` columns are for the operator's reference
+        only. Column names are matched case/space-insensitively.
+
+        Returns the number of overrides loaded (0 on any read/format error —
+        the feature then stays inactive rather than breaking the run).
+        """
+        self.exceptions = {}
+        try:
+            df = pd.read_excel(path, sheet_name=0, header=0, dtype=str)
+        except Exception:  # noqa: BLE001 — never let an overlay break loading
+            return 0
+
+        def _find(cands):
+            for col in df.columns:
+                if ''.join(str(col).split()).lower() in cands:
+                    return col
+            return None
+
+        src_col = _find({'sourcecode', 'sourceean', 'source', 'from',
+                         'dumpean', 'marketplaceean', 'sourcegtin'})
+        dst_col = _find({'mapsto', 'mastercode', 'masterean', 'to', 'master',
+                         'correctean', 'mastergtin', 'masterkey', 'itemno'})
+        # Pricing-override columns (all optional).
+        mrp_col = _find({'overridemrp', 'mrp', 'dealmrp', 'correctmrp'})
+        margin_col = _find({'overridemargin%', 'overridemargin', 'margin%',
+                            'margin', 'landing%', 'landingpct'})
+        mp_col = _find({'marketplace', 'channel', 'mp'})
+        # 'Use Vendor CP' flag column (optional).
+        vcp_col = _find({'usevendorcp', 'vendorcp', 'usevendorcost',
+                         'takevendorcp'})
+        # Free-text note column (optional, display-only).
+        note_col = _find({'note', 'notes', 'remark', 'remarks', 'comment',
+                          'comments', 'reason'})
+        if not src_col:
+            return 0
+
+        self.price_overrides = {}
+        self.vendor_cp_overrides = {}
+        self.exception_registry = []
+        for _, r in df.iterrows():
+            src = self._clean_code(r.get(src_col))
+            if not src or src.lower() == 'nan':
+                continue
+            mp = ''
+            if mp_col and pd.notna(r.get(mp_col)):
+                mp = str(r.get(mp_col)).strip()
+            note = ''
+            if note_col and pd.notna(r.get(note_col)):
+                note = str(r.get(note_col)).strip()
+
+            kinds: List[str] = []
+            effects: List[str] = []
+
+            # 'Use Vendor CP' exception (Y/yes/true/1).
+            use_vcp = False
+            if vcp_col and pd.notna(r.get(vcp_col)):
+                if str(r.get(vcp_col)).strip().lower() in (
+                        'y', 'yes', 'true', '1'):
+                    self.vendor_cp_overrides[src] = mp
+                    use_vcp = True
+                    kinds.append('vendor_cp')
+                    effects.append('accept vendor CP → Lines Unit Price')
+            # Item-alias override (Source → Master key).
+            dst = ''
+            if dst_col:
+                d = self._clean_code(r.get(dst_col))
+                if d and d.lower() != 'nan':
+                    self.exceptions[src] = d
+                    dst = d
+                    kinds.append('item_alias')
+                    effects.append(f'EAN remap → {d}')
+            # Price override (deal MRP + landing%).
+            mrp_v = self._to_float(r.get(mrp_col)) if mrp_col else None
+            margin_v = self._to_float(r.get(margin_col)) if margin_col else None
+            margin_pct = None
+            if mrp_v is not None or margin_v is not None:
+                # Margin given as a percent (76) → decimal (0.76).
+                margin_pct = (margin_v / 100.0
+                              if margin_v is not None and margin_v > 1.5
+                              else margin_v)
+                self.price_overrides[src] = {
+                    'mrp': mrp_v,
+                    'margin_pct': margin_pct,
+                    'marketplace': mp,
+                }
+                kinds.append('price_override')
+                effects.append(
+                    'deal '
+                    + (f'MRP {mrp_v:g}' if mrp_v is not None else 'MRP —')
+                    + (f' @ {margin_pct*100:g}%' if margin_pct is not None
+                       else ''))
+
+            # One registry entry per row — the full cross-marketplace list
+            # rendered on every output's Exceptions sheet.
+            self.exception_registry.append({
+                'source_code': src,
+                'maps_to': dst,
+                'override_mrp': mrp_v,
+                'override_margin_pct': margin_pct,
+                'use_vendor_cp': use_vcp,
+                'marketplace': mp,           # '' = applies to all channels
+                'note': note,
+                'kinds': kinds,
+                'effect': '; '.join(effects) if effects else '(no effect)',
+            })
+
+        self.exceptions_source = path
+        return (len(self.exceptions) + len(self.price_overrides)
+                + len(self.vendor_cp_overrides))
+
+    def use_vendor_cp(self, *keys, marketplace: str = '') -> bool:
+        """True when a 'Use Vendor CP' exception applies to any of ``keys``
+        (EAN / Item No) for ``marketplace`` — the vendor's stated cost is then
+        accepted as-is (no MISMATCH) and written into the Lines Unit Price.
+        A blank override marketplace applies everywhere."""
+        if not self.vendor_cp_overrides:
+            return False
+
+        def _norm(s):
+            return ''.join(str(s).split()).lower()
+        want = _norm(marketplace)
+        for k in keys:
+            scope = self.vendor_cp_overrides.get(self._clean_code(k))
+            if scope is not None:
+                s = _norm(scope)
+                if not s or s == want:
+                    return True
+        return False
+
+    @staticmethod
+    def _to_float(val):
+        """Parse a possibly-string numeric cell to float; None on blank/NaN."""
+        if val is None or (isinstance(val, float) and pd.isna(val)):
+            return None
+        try:
+            s = str(val).replace(',', '').strip()
+            return float(s) if s and s.lower() != 'nan' else None
+        except (ValueError, TypeError):
+            return None
+
+    def price_override(self, *keys, marketplace: str = '') -> Optional[Dict]:
+        """Return the price override for any of ``keys`` (EAN / Item No),
+        honouring marketplace scope. A blank override marketplace applies to
+        every channel; otherwise it must match ``marketplace`` (space/case-
+        insensitive). None when no applicable override exists."""
+        if not self.price_overrides:
+            return None
+
+        def _norm(s):
+            return ''.join(str(s).split()).lower()
+        want = _norm(marketplace)
+        for k in keys:
+            ov = self.price_overrides.get(self._clean_code(k))
+            if not ov:
+                continue
+            scope = _norm(ov.get('marketplace', ''))
+            if not scope or scope == want:
+                return ov
+        return None
 
     # ── Identifier cleaning ────────────────────────────────────────────
 
@@ -199,6 +538,19 @@ class MasterLoader:
         if stripped in self.master:
             return self.master[stripped]
 
+        # v2.4.0: central exceptions overlay — the source code isn't in the
+        # master verbatim, but the operator mapped it to a key that is (e.g.
+        # FirstCry's '8906121640885' → master's '8906121640885_1'). Resolve
+        # the alias, then look the mapped key up the normal way.
+        if self.exceptions:
+            mapped = self.exceptions.get(key_clean) or self.exceptions.get(stripped)
+            if mapped:
+                if mapped in self.master:
+                    return self.master[mapped]
+                mapped_stripped = mapped.lstrip('0')
+                if mapped_stripped in self.master:
+                    return self.master[mapped_stripped]
+
         return None
 
     # ── Pricing helpers (static) ───────────────────────────────────────
@@ -238,6 +590,24 @@ class MasterLoader:
 
         landing = float(mrp) * margin_pct
         return landing / MasterLoader.gst_divisor(gst_code)
+
+    @staticmethod
+    def row_gst_divisor(so_row: Any) -> float:
+        """
+        GST divisor ``(1 + rate)`` for an SORow's GST-inclusive amount.
+
+        Prefers the per-line rate the PUNCH/PDF carried
+        (``so_row.gst_rate_pct``, e.g. Reliance's IGST% from the PO) so the
+        inc-GST order value matches the document's own total. Falls back to
+        the master ``gst_code`` mapping when the punch carried no rate.
+        """
+        rate = getattr(so_row, 'gst_rate_pct', None)
+        if rate is not None:
+            try:
+                return 1.0 + float(rate) / 100.0
+            except (TypeError, ValueError):
+                pass
+        return MasterLoader.gst_divisor(getattr(so_row, 'gst_code', ''))
 
     @staticmethod
     def gst_divisor(gst_code: str) -> float:

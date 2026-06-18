@@ -44,8 +44,9 @@ from openpyxl import Workbook
 
 from online_po_processor.data.models import ProcessingResult
 from online_po_processor.exporter.sheets import (
-    headers_sheet, lines_sheet, raw_data_sheet, skipped_sheet,
-    summary_sheet, tracker_sheet, validation_sheet, warnings_sheet,
+    headers_sheet, lines_sheet, raw_data_sheet,
+    rules_sheet, skipped_sheet, summary_sheet, tracker_sheet,
+    validation_sheet, warnings_sheet,
 )
 
 
@@ -138,12 +139,51 @@ class SOExporter:
         tracker_sheet.write(wb, result)
         skipped_sheet.write(wb, result)        # v2.4.0 — only if dups removed
         validation_sheet.write(wb, result)
+        rules_sheet.write(wb, result)            # v2.4.4 — per-marketplace rules+exceptions (single sheet)
         warnings_sheet.write(wb, result)
         raw_data_sheet.write(wb, result)
 
         wb.save(str(file_path))
         logging.info("Output saved: %s", file_path)
+
+        # v2.4.3: auto-emit the ready-to-publish D365 "Edit in Excel" package
+        # alongside the normal workbook, so the operator no longer hand-copies
+        # the Headers/Lines sheets into the bound connector file. Handles both
+        # SO (Sales Order) and TO (Transfer Order — Flipkart-TO). Best-effort:
+        # a failure here must NEVER lose the main output — log and carry on.
+        try:
+            self._emit_d365_package(result, file_path)
+        except Exception as e:  # noqa: BLE001 — never break the main export
+            logging.warning("D365 package generation skipped: %s", e)
+
         return file_path
+
+    # ── D365 connector package (v2.4.3) ────────────────────────────────
+
+    # Bundled bound templates (carry the operator's D365 connection + XML
+    # map). Live under online_po_processor/templates/.
+    _D365_TEMPLATE_DIR = Path(__file__).resolve().parent.parent / 'templates'
+    _D365_SO_TEMPLATE = _D365_TEMPLATE_DIR / 'd365_so_template.xlsx'
+    _D365_TO_TEMPLATE = _D365_TEMPLATE_DIR / 'd365_to_template.xlsx'
+
+    def _emit_d365_package(self, result: ProcessingResult,
+                           main_output: Path) -> Optional[Path]:
+        """Write a sibling ``<stem>_d365.xlsx`` populated into the bound
+        connector template (SO or TO by ``output_type``). Returns its Path,
+        or None if the template is absent (feature simply inactive)."""
+        from online_po_processor.exporter.d365_package import (
+            export_d365_package,
+        )
+        is_to = getattr(result, 'output_type', 'so') == 'to'
+        template = self._D365_TO_TEMPLATE if is_to else self._D365_SO_TEMPLATE
+        if not template.exists():
+            logging.info("D365 template not bundled (%s) — skipping package.",
+                         template)
+            return None
+        out = main_output.with_name(main_output.stem + '_d365.xlsx')
+        export_d365_package(result, template, out)
+        logging.info("D365 package saved: %s", out)
+        return out
 
     # ── Internal helpers ──────────────────────────────────────────────
 

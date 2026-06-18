@@ -264,6 +264,28 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
     # ────────────────────────────────────────────────────────────────────
     'Myntra': {
         'party_name': 'Myntra',
+        # v2.4.0: Myntra is the first DUAL-FORMAT marketplace — the
+        # operator can feed either the dashboard Excel "punch" (the
+        # historical path, unchanged) OR the PO PDF Myntra emails. We
+        # keep ``source_format`` at its 'excel' default and add a
+        # ``pdf_parser`` + ``accepted_extensions``: the engine routes a
+        # ``.pdf`` upload to ``myntra_pdf_parser`` by file extension and
+        # an ``.xlsx`` upload down the existing Excel path. The PDF parser
+        # emits the SAME column names referenced below (GTIN / Quantity /
+        # Landing Price / List price… / Mrp / Location), so this single
+        # config drives both formats. The PDF also injects real PO dates
+        # (__po_date__ / __exp_date__) the Excel punch lacks.
+        #
+        # v2.4.1: PDF is now the operator's PRIMARY Myntra format, so
+        # ``.pdf`` leads ``accepted_extensions`` (the file picker defaults
+        # to PDF; Excel stays selectable). Each Myntra PO is its own PDF,
+        # so Myntra is treated as MULTI-FILE — pick/drop many PDFs → one
+        # combined SO batch (see ``_supports_multi_file`` in the GUI and
+        # the dual-format branch in ``auto_runner._run_one``). The
+        # single-dump Excel path is unchanged (one xlsx already holds all
+        # POs; multiple xlsx are simply concatenated via process_multi).
+        'pdf_parser': 'myntra',
+        'accepted_extensions': ['.pdf', '.xlsx'],
         # v1.8.1: Myntra's dashboard exports have historically varied
         # the case of column headers between dumps. We've seen at
         # least three casings of the PO column header ('PO', 'PO
@@ -310,6 +332,12 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'default_margin': 70,
         'compare_basis': 'landing',                           # MRP × m%
         'compare_label': 'Landing Rate',
+        # v2.4.4: status reflects BOTH the landing pair AND the cost pair —
+        # a row is OK only when vendor Landing matches our landing (MRP×m%)
+        # AND vendor CP (the 'List price' ref column) matches our CP
+        # (MRP×m%÷GST). Either failing → MISMATCH. Deal/vendor-CP exception
+        # rows (e.g. Goddess) are exempt.
+        'also_check_cost': True,
         'template_headers': [
             'PO/PO Number', 'Location', 'SKU Id', 'Style Id', 'SKU Code',
             'HSN Code', 'Brand', 'GTIN', 'Vendor Article Number',
@@ -410,6 +438,7 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'ean_col': 'upc',                    # [REQUIRED in this mode]
         'price_col': None,                   # WMS computes
         'fob_col': 'cost_price',             # [VALIDATION] post-GST
+        'mrp_col': 'mrp',                    # [VALIDATION] file's MRP → "Vendor MRP" vs "Our MRP"
         'default_margin': 70,                # 100 - Blink's margin_percentage(30)
         'compare_basis': 'cost',             # cost_price ≈ MRP × 70% ÷ 1.18
         'compare_label': 'Cost',
@@ -481,8 +510,16 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'gst_margin_discount': 0.31,
         'default_margin': 63.42,              # display only — gst_margin_discount governs
         'hsn_col': 'HSN Code',                # cross-checked vs master
-        # Per-line amount = Base Cost × Qty (= the PDF's 'Total Base Value').
+        # Per-line amount = Base Cost × Qty (= the PDF's 'TOTAL BASIC VALUE',
+        # PRE-GST). v2.7: flag it pre-GST so the tracker/DB Order Value is
+        # grossed up by each line's GST → the PDF's 'Total Order Value'
+        # (inc GST), e.g. 52,533.26 basic → 61,989.29 inc-GST.
         'amount_col': {'multiply': ['Base Cost', 'Qty']},
+        'amount_is_pre_gst': True,
+        # v2.7: gross up the (pre-GST) amount by the PDF's OWN per-line GST
+        # rate ('GST Rate' = IGST%), not the master's gst_code — so the
+        # tracker/DB Order Value matches the PDF's 'Total Order Value'.
+        'gst_pct_col': 'GST Rate',
         'template_headers': [
             'Sr No', 'Article No', 'EAN', 'HSN Code',
             'Material Description', 'Qty', 'MRP', 'Base Cost',
@@ -754,11 +791,34 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
     # ────────────────────────────────────────────────────────────────────
     'Flipkart': {
         'party_name': 'Flipkart',            # Must match 'Party' in mapping sheet
-        'po_col': 'PO',                      # [REQUIRED] alphanumeric (e.g. 'FAGWN08092601')
-        'loc_col': 'Address',                # [REQUIRED] long descriptive — three-tier match handles drift
+        # v2.7.x: Flipkart's new vendor portal ships ONE
+        # 'purchase_order_<PO>.xlsx' per PO (a two-row hierarchical header),
+        # retiring the old standalone "dump generator" tool. ``file_parser``
+        # routes each file through engine/flipkart_dump_parser.py →
+        # compiles the dump columns below in memory; setting it also makes
+        # Flipkart MULTI-FILE (``_supports_multi_file`` / ``process_multi``)
+        # so the operator drops ALL of the day's PO files → one SO batch.
+        # PO number comes from the FILENAME (not a cell). NOTE: with the
+        # parser set, the input is the RAW portal PO files — the old
+        # FL_DUMP_COMPILATION.xlsx (the standalone generator's output) is
+        # retired; that two-step flow is now done in-app.
+        'file_parser': 'flipkart',
+        'accepted_extensions': ['.xlsx'],    # raw portal PO files
+        'po_col': 'PO',                      # [REQUIRED] alphanumeric (e.g. 'FLS05608C31C')
+        'loc_col': 'Address',                # [REQUIRED] full postal address
+        # v2.7.x: resolve ship-to by ADDRESS (pincode + survey-no/village body
+        # overlap) rather than the generic name tiers. The new portal drops
+        # the 'Flipkart India Pvt. Ltd., ' prefix the Del Location entries
+        # carry, so a plain substring match misses — see
+        # MappingLoader.lookup_by_address.
+        'loc_match': 'address',
         'qty_col': 'Qty',                    # [REQUIRED]
         'item_resolution': 'from_ean',       # Same as Blink/RK/Myntra/Reliance/Zepto
         'ean_col': 'EAN',                    # [REQUIRED in this mode] int64 in punch
+        # v2.7.x: the new portal exposes the vendor MRP ('Supplier MRP'), so
+        # we carry it for the Validation 'Vendor MRP' pair (199 × 0.77 =
+        # 153.23 = Supplier Unit Price → the file itself proves the 77% rule).
+        'mrp_col': 'MRP',
         'price_col': None,                   # WMS computes Unit Price downstream
         # [VALIDATION] file's stated landing rate (despite the historical
         # 'With GST' name, it's the PRE-GST landing = MRP × 77%).
@@ -863,6 +923,12 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
         # Per-line amount = Unit Cost × Qty (file's 'PO Amount' is the
         # whole-PO total repeated on every line, not per-line).
         'amount_col': {'multiply': ['Unit Cost', 'PO Qty']},
+        # v2.4.0: the Tracker's Order Value uses this per-PO total verbatim
+        # (GST-inclusive; equals the Nykaa portal's 'PO Amount' to the rupee).
+        'po_total_col': 'PO Amount',
+        # PO Date / Exp Date for the tracker come from these columns.
+        'po_date_col': 'PO Release Date',
+        'exp_date_col': 'Expiry Date',
         'hsn_col': 'HSN Code',               # 8-digit, cross-checked vs master
         'template_headers': [
             'PO Number', 'Vendor Code', 'Vendor Name', 'PO Release Date',
@@ -870,6 +936,90 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
             'PO Line No', 'SKU Code', 'SKU Name', 'Vendor SKU Code',
             'Unit Cost', 'MRP', 'PO Qty', 'Received Qty', 'Tax Amount',
             'HSN Code', 'EAN Code', 'Delivery Location',
+        ],
+    },
+
+    # ────────────────────────────────────────────────────────────────────
+    # PURPLLE  (v2.4.0)
+    # The dump is a SAP/ERP export saved as '.XLS' but actually TAB-
+    # separated text, so it's routed through a custom parser
+    # (``file_parser='purplle'``, engine/purplle_parser.py) that reads the
+    # TSV and cleans the zero-padded/quote-suffixed EAN
+    # ('000008904473100590'' → '8904473100590'). Standard SO pipeline
+    # otherwise. Pricing: STRAIGHT 70% — verified to the paisa, the file's
+    # 'Price' = MRP × 0.70 ÷ (1+GST) (post-GST cost, like Blink's). Single
+    # destination: the Thane address → Cust 20021 / Ship-to 20021_16.
+    # ────────────────────────────────────────────────────────────────────
+    'Purplle': {
+        'party_name': 'Purplle',             # Must match Ship-To B2B 'Party'
+        'file_parser': 'purplle',            # tab-separated '.XLS' reader
+        'accepted_extensions': ['.xls', '.XLS', '.csv', '.txt'],
+        'po_col': 'PO Document Number',      # [REQUIRED]
+        'loc_col': 'Address',                # [REQUIRED] → Ship-To B2B (Thane)
+        'qty_col': 'Qty',                    # [REQUIRED]
+        'item_resolution': 'from_ean',
+        'ean_col': 'EAN Number',             # cleaned by the parser
+        'price_col': None,                   # WMS computes Unit Price
+        'fob_col': 'Price',                  # [VALIDATION] post-GST cost
+        'compare_basis': 'cost',             # Price ≈ MRP × 70% ÷ (1+GST)
+        'compare_label': 'Cost',
+        'mrp_col': 'MRP',                    # vendor MRP (Validation pair)
+        'default_margin': 70,                # STRAIGHT 70% (30% margin)
+        # Order Value (Summary/Tracker/DB): Price × Qty grossed by GST →
+        # MRP × 70% × Qty (landing), i.e. GST-inclusive per the thumb rule.
+        'amount_col': {'multiply': ['Price', 'Qty']},
+        'amount_is_pre_gst': True,
+        # Tracker dates.
+        'po_date_col': 'PO Date',
+        'exp_date_col': 'Expiry Date',
+        'template_headers': [
+            'PO Document Number', 'Item No', 'EAN Number', 'Sku',
+            'Material long text', 'MRP', 'Price', 'Qty', 'Plant', 'Address',
+            'Storage location', 'Purchasing Group', 'PO Date', 'Expiry Date',
+        ],
+    },
+
+    # ────────────────────────────────────────────────────────────────────
+    # SWIGGY  (v2.4.0)
+    # Flat CSV ('PO_<id>.csv'). The dump carries only a Swiggy 'SkuCode'
+    # (no EAN/Item No), so item_resolution='from_swiggy_sku' recovers the EAN
+    # from the master's 'Swiggy' sheet (SkuCode→EAN), then resolves it like
+    # any from_ean marketplace. Pricing: STRAIGHT 80% — verified, the dump's
+    # 'UnitBasedCost' = MRP × 0.80 ÷ (1+GST). Deal SKUs (master's 'Swiggy
+    # Deal SKUs' sheet) carry an explicit negotiated cost that overrides the
+    # 80% calc in validation. Order value = 'PoLineValueWithTax' (the dump's
+    # own GST-inclusive line total, summed — like Blinkit).
+    # ────────────────────────────────────────────────────────────────────
+    'Swiggy': {
+        'party_name': 'Swiggy',              # Must match Ship-To B2B 'Party'
+        'accepted_extensions': ['.csv'],
+        'po_col': 'PoNumber',                # [REQUIRED]
+        'loc_col': 'FacilityName',           # [REQUIRED] → Ship-To B2B
+        'qty_col': 'OrderedQty',             # [REQUIRED]
+        # v2.4.4: Swiggy PO-status REVIEW. The dump's 'Status' column carries
+        # CONFIRMED plus EXPIRED / COMPLETED / CANCELLED (and PENDING on some
+        # exports). Non-CONFIRMED lines are NOT dropped — they're pasted as-is
+        # and FLAGGED (one named warning per PO) so the operator can manually
+        # audit and remove them (a status can be wrongly given). ``status_keep``
+        # = the states that need no review.
+        'status_col': 'Status',
+        'status_keep': ['CONFIRMED'],
+        'item_resolution': 'from_swiggy_sku',
+        'sku_col': 'SkuCode',                # → master 'Swiggy' sheet → EAN
+        'price_col': None,                   # WMS computes Unit Price
+        'fob_col': 'UnitBasedCost',          # [VALIDATION] post-GST cost
+        'compare_basis': 'cost',             # UnitBasedCost ≈ MRP × 80% ÷ (1+GST)
+        'compare_label': 'Cost',
+        'mrp_col': 'Mrp',                    # vendor MRP (Validation pair)
+        'default_margin': 80,                # STRAIGHT 80% (20% margin)
+        'amount_col': 'PoLineValueWithTax',  # GST-inclusive line total (sum)
+        'po_date_col': 'PoCreatedAt',
+        'exp_date_col': 'PoExpiryDate',
+        'template_headers': [
+            'PoNumber', 'FacilityId', 'FacilityName', 'City', 'PoCreatedAt',
+            'SkuCode', 'SkuDescription', 'OrderedQty', 'Tax',
+            'PoLineValueWithoutTax', 'PoLineValueWithTax', 'Mrp',
+            'UnitBasedCost', 'ExpectedDeliveryDate', 'PoExpiryDate',
         ],
     },
 
@@ -1043,6 +1193,14 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
             'filename_po_regex': r'Consignment_Details_([^_]+)_',
             # Multi-select CSV picker in the GUI for this mode.
             'accepted_extensions': ['.csv'],
+            # v2.4.1: Auto mode auto-detects the Consignment Visibility
+            # Report dropped in the folder by this filename pattern
+            # (e.g. 'Consignment_Visibility_Report_f968…_09-06-2026.csv')
+            # and threads it into process_consignments for Location
+            # resolution — so Auto matches the manual GUI (which took the
+            # report as a separate pick). The per-PO 'Consignment_Details_'
+            # files don't match this, so the two never collide.
+            'visibility_filename_regex': r'Consignment_Visibility_Report',
 
             # ── Location source: Consignment Visibility Report ──────────
             # The raw consignment CSVs carry no Location, so the operator
@@ -1175,8 +1333,19 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
             # 'order-line-items-64415.csv' → '64415'.
             'filename_po_regex': r'order-line-items-(\d+)',
             'accepted_extensions': ['.csv'],
-            # No visibility report / warehouse_aliases yet — Location stays
-            # empty until the destination-warehouse source is decided.
+
+            # v2.4.0: Location comes from the FILENAME. The operator renames
+            # each file to include the destination city token (the suffix of
+            # the Meesho Ship-To B2B code: MS_BLR → 'blr', MS_GGN → 'ggn',
+            # MS_KOL → 'kol'), e.g. 'order-line-items-64415-blr.csv'. The
+            # engine scans the filename for any known token and resolves it to
+            # that city's Transfer-to Code via Ship-To B2B — so adding a new
+            # city only needs a new Ship-To B2B row, no code change.
+            'filename_loc_from_shipto': True,
+            # v2.4.0: Meesho files carry no dates → PO Date = today,
+            # Exp Date = today + 7 days (for the tracker).
+            'po_date_today': True,
+            'exp_date_offset_days': 7,
         },
 
         # Used by 'Download PO Template' — mirrors Meesho's export columns.
@@ -1187,24 +1356,44 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
         ],
     },
 
-    # ┌─────────────────────────────────────────────────────────────────┐
-    # │ ADD NEW MARKETPLACES HERE                                       │
-    # │                                                                 │
-    # │ 'Bigbasket': {                                                  │
-    # │     'party_name': 'Bigbasket',                                  │
-    # │     'po_col': 'PO Number',                                      │
-    # │     'loc_col': 'Delivery Location',                             │
-    # │     'qty_col': 'Qty',                                           │
-    # │     'item_resolution': 'from_ean',                              │
-    # │     'ean_col': 'EAN',                                           │
-    # │     'fob_col': 'Unit Price',                                    │
-    # │     'price_col': None,                                          │
-    # │     'default_margin': 60,                                       │
-    # │     'compare_basis': 'cost',                                    │
-    # │     'compare_label': 'Cost',                                    │
-    # │     'template_headers': [...],                                  │
-    # │ },                                                              │
-    # └─────────────────────────────────────────────────────────────────┘
+    # ────────────────────────────────────────────────────────────────────
+    # BIG BASKET (Innovative Retail Concepts Pvt Ltd / Bigbasket)
+    # v2.7: each PO arrives as its OWN '<PO>.xlsx' with a multi-row HEADER
+    # block (warehouse / supplier / GSTINs / PO Number / PO Date / Expiry)
+    # ABOVE the line-item table — so a flat read can't find the columns.
+    # ``file_parser='bigbasket'`` routes it through a custom parser that
+    # pulls the PO/dates/warehouse from the preamble and the lines from the
+    # table, emitting the engine's synthetic __po__/__loc__/__po_date__/
+    # __exp_date__ columns. One file per PO → pick many (multi-file).
+    # Pricing: cost = MRP × 70% ÷ (1+GST) (straight 70% multiplier / 30%
+    # margin), compared to the file's per-unit pre-GST 'Basic Cost'.
+    # ────────────────────────────────────────────────────────────────────
+    'Bigbasket': {
+        'party_name': 'Bigbasket',            # matches Ship-To B2B party (Cust 20007)
+        'file_parser': 'bigbasket',           # custom-layout Excel parser
+        'po_col': '__po__',                   # from the parser (PO Number)
+        'loc_col': '__loc__',                 # warehouse code = exact Del Location
+        'qty_col': 'Quantity',                # [REQUIRED]
+        'item_resolution': 'from_ean',
+        'ean_col': 'EAN/UPC Code',            # [REQUIRED in this mode]
+        'price_col': None,                    # WMS computes
+        'fob_col': 'Basic Cost',              # per-unit PRE-GST cost [VALIDATION]
+        'compare_basis': 'cost',              # CP = MRP × m% ÷ (1+GST)
+        'compare_label': 'Cost',
+        'default_margin': 70,                 # MRP × 70% (30% margin) — straight
+        'hsn_col': 'HSN Code',                # cross-checked vs master
+        # Per-line amount = Basic Cost × Qty (pre-GST 'TOTAL BASIC VALUE');
+        # grossed up by the PO's own GST% → inc-GST order value for the
+        # tracker/DB (same mechanism as Reliance).
+        'amount_col': {'multiply': ['Basic Cost', 'Quantity']},
+        'amount_is_pre_gst': True,
+        'gst_pct_col': 'GST%',
+        'template_headers': [
+            'S.No', 'HSN Code', 'SKU Code', 'Description', 'EAN/UPC Code',
+            'Case Quantity', 'Quantity', 'Basic Cost', 'SGST%', 'SGST',
+            'CGST%', 'CGST', 'IGST%', 'IGST', 'GST%', 'GST Amount',
+        ],
+    },
 
     # ────────────────────────────────────────────────────────────────────
     # Dmart (Avenue E-Commerce Ltd, brand 'DMart Ready', CIN

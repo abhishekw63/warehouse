@@ -51,6 +51,18 @@ from online_po_processor.engine.firstcry_pdf_parser import (
 from online_po_processor.engine.reliance_pdf_parser import (
     load_reliance_pdf_as_dataframe,
 )
+from online_po_processor.engine.myntra_pdf_parser import (
+    load_myntra_pdf_as_dataframe,
+)
+from online_po_processor.engine.bigbasket_parser import (
+    load_bigbasket_excel_as_dataframe,
+)
+from online_po_processor.engine.purplle_parser import (
+    load_purplle_export_as_dataframe,
+)
+from online_po_processor.engine.flipkart_dump_parser import (
+    load_flipkart_po_as_dataframe,
+)
 
 
 # Registry of PDF parsers — keyed by the ``pdf_parser`` config value.
@@ -59,6 +71,20 @@ PDF_PARSERS: Dict[str, Callable[[str], pd.DataFrame]] = {
     'avenue': load_avenue_pdf_as_dataframe,
     'firstcry': load_firstcry_pdf_as_dataframe,
     'reliance': load_reliance_pdf_as_dataframe,
+    # v2.4.0: Myntra is dual-format (Excel + PDF) — see the extension
+    # routing in process() and 'pdf_parser'/'accepted_extensions' in its
+    # config. The Excel-only / PDF-only marketplaces are unaffected.
+    'myntra': load_myntra_pdf_as_dataframe,
+    # v2.7: Big Basket — a custom EXCEL parser (preamble + table), routed
+    # via the config's ``file_parser='bigbasket'`` key (not extension).
+    'bigbasket': load_bigbasket_excel_as_dataframe,
+    # Purplle: tab-separated '.XLS' (SAP export) — routed by file_parser.
+    'purplle': load_purplle_export_as_dataframe,
+    # v2.7.x: Flipkart — the new portal emits ONE 'purchase_order_<PO>.xlsx'
+    # per PO (two-row header). Routed via ``file_parser='flipkart'``; the
+    # operator drops all of the day's PO files → process_multi compiles them
+    # into one batch in memory (replaces the old standalone dump generator).
+    'flipkart': load_flipkart_po_as_dataframe,
 }
 
 
@@ -206,6 +232,21 @@ class MarketplaceEngine:
             # source_location were already tagged by _process_row.
             combined.rows.extend(sub.rows)
 
+            # v2.4.2: carry per-file Master-Exception records into the
+            # combined result so the Exceptions sheet is populated for
+            # MULTI-FILE marketplaces too (Myntra Goddess vendor-CP, Flipkart,
+            # …). Without this they were recorded on each sub-result and lost
+            # at merge time — the sheet came up empty despite rows being
+            # flagged/highlighted.
+            if getattr(sub, 'exceptions_applied', None):
+                combined.exceptions_applied.extend(sub.exceptions_applied)
+
+            # v2.4.3: the registry is the SAME full list for every file (it's
+            # the master's, not per-file), so copy it once.
+            if (not combined.exception_registry
+                    and getattr(sub, 'exception_registry', None)):
+                combined.exception_registry = sub.exception_registry
+
             # Prefix every warning with the filename so the user can
             # tell which upload caused which warning in a combined
             # batch. Batch-level warnings (empty PO + empty location
@@ -279,17 +320,35 @@ class MarketplaceEngine:
         # ``'excel'`` preserves all pre-existing behaviour exactly.
         source_format = config.get('source_format', 'excel')
 
-        if source_format == 'pdf':
-            df = self._load_pdf(filepath, config, result)
+        # v2.4.0: dual-format marketplaces (Myntra) keep their regular
+        # ``source_format='excel'`` AND register a ``pdf_parser`` so they
+        # also accept the PO PDF. Route by the *uploaded file's*
+        # extension: a ``.pdf`` whose config has a registered parser goes
+        # through the PDF path; everything else uses the configured
+        # ``source_format``. Single-format marketplaces (Excel-only and
+        # PDF-only) are unaffected — Excel-only configs have no
+        # ``pdf_parser``, PDF-only configs already set source_format='pdf'.
+        if (os.path.splitext(filepath)[1].lower() == '.pdf'
+                and config.get('pdf_parser')):
+            source_format = 'pdf'
+
+        # v2.7: a ``file_parser`` config key routes ANY file (e.g. Big
+        # Basket's custom-layout Excel) through a registered parser →
+        # DataFrame, regardless of extension. ``pdf_parser`` is the
+        # extension-based special case of the same mechanism.
+        parser_key = (config.get('pdf_parser') if source_format == 'pdf'
+                      else config.get('file_parser'))
+
+        if parser_key:
+            df = self._load_pdf(filepath, config, result, parser_key=parser_key)
             if df is None:
                 # _load_pdf has already appended an abort warning.
                 return result
-            # PDF parsers produce a DataFrame with the same columns
-            # the engine's downstream logic expects (po_col / loc_col /
-            # qty_col / ean_col / etc.). No sheet or header_row dance
-            # needed — PDFs aren't paginated by sheets.
+            # Parsers produce a DataFrame with the same columns the engine's
+            # downstream logic expects (po_col / loc_col / qty_col /
+            # ean_col / etc.). No sheet or header_row dance needed.
             result.raw_df = df
-            logging.info("Read %d rows from PDF %s",
+            logging.info("Read %d rows from %s",
                          len(df), os.path.basename(filepath))
             # Skip the Excel-specific sheet resolution + pre_process
             # hook chain; jump straight to column alias resolution.
@@ -476,6 +535,13 @@ class MarketplaceEngine:
         # when doing ``col in df.columns`` against the unresolved list.
         result.resolved_config = config
 
+        # v2.4.3: carry the full cross-marketplace exception registry onto the
+        # result so the Exceptions sheet can list ALL marketplaces' exceptions
+        # (highlighting this marketplace's own). Independent of which fired.
+        if self.master is not None:
+            result.exception_registry = getattr(
+                self.master, 'exception_registry', []) or []
+
         # ── Required-column validation ──────────────────────────────────
         if not self._validate_required_columns(df, config, result):
             return result
@@ -515,6 +581,15 @@ class MarketplaceEngine:
         item_resolution = config.get('item_resolution', 'from_column')
         compare_basis = config.get('compare_basis', 'cost')
         compare_label = config.get('compare_label', 'Price')
+
+        # v2.4.4: PO-status REVIEW (Swiggy). When the config names a
+        # ``status_col`` + ``status_keep`` set, every line whose PO is in any
+        # other state (EXPIRED / COMPLETED / CANCELLED / PENDING) is KEPT in the
+        # output but FLAGGED — one named warning per such PO — so the operator
+        # can manually audit and remove it. We do NOT auto-drop: a status can
+        # be wrongly given, so the human makes the final call (golden rule:
+        # nothing skipped silently, and nothing skipped at all here).
+        self._flag_po_status(df, config, result)
 
         for _, row in df.iterrows():
             so_row = self._process_row(
@@ -584,10 +659,10 @@ class MarketplaceEngine:
         path: str,
         config: Dict[str, Any],
         result: ProcessingResult,
-    ) -> Dict[str, str]:
+    ) -> Dict[str, Dict[str, str]]:
         """
-        Build a ``{PO -> Warehouse Id}`` lookup from Flipkart's
-        Consignment Visibility Report (v2.3.1).
+        Build a ``{PO -> {wh, po_date, exp_date}}`` lookup from Flipkart's
+        Consignment Visibility Report (v2.3.1; dates added v2.4.0).
 
         The raw consignment CSVs carry no Location, so when the operator
         supplies the visibility report we recover each PO's destination
@@ -620,6 +695,13 @@ class MarketplaceEngine:
         cmode = config.get('consignment_mode', {})
         po_col = cmode.get('visibility_po_col', 'Consignment Id')
         wh_col = cmode.get('visibility_loc_col', 'Warehouse Id')
+        # v2.4.0: the report also carries the dates the tracker wants —
+        # 'Creation Date' (→ PO Date) and 'Scheduled Pick Up Date'
+        # (→ Exp Date). Optional: a report missing them just leaves those
+        # tracker cells blank, exactly as before.
+        po_date_col = cmode.get('visibility_po_date_col', 'Creation Date')
+        exp_date_col = cmode.get('visibility_exp_date_col',
+                                 'Scheduled Pick Up Date')
 
         try:
             df = pd.read_csv(path)
@@ -641,7 +723,14 @@ class MarketplaceEngine:
             ))
             return {}
 
-        lookup: Dict[str, str] = {}
+        have_po_date = po_date_col in df.columns
+        have_exp_date = exp_date_col in df.columns
+
+        # v2.4.0: each entry is {wh, po_date, exp_date}. wh drives Location
+        # (resolved to a Transfer-to Code downstream); the two dates are
+        # injected as __po_date__/__exp_date__ so build_tracker_rows fills
+        # the PO Date / Exp Date columns.
+        lookup: Dict[str, Dict[str, str]] = {}
         conflicts: Set[str] = set()
         for _, row in df.iterrows():
             po = self._coerce_po_to_str(row[po_col])
@@ -652,16 +741,37 @@ class MarketplaceEngine:
             # Skip blanks and Flipkart's literal 'N/A' placeholders.
             if not po or wh == '' or wh.upper() == 'N/A':
                 continue
-            if po in lookup and lookup[po] != wh and po not in conflicts:
+            if (po in lookup and lookup[po]['wh'] != wh
+                    and po not in conflicts):
                 conflicts.add(po)
                 result.warnings.append((
                     po, '',
                     f"Location report lists PO {po} under multiple "
-                    f"Warehouse Ids ('{lookup[po]}' and '{wh}'). Using "
-                    f"the first ('{lookup[po]}')."
+                    f"Warehouse Ids ('{lookup[po]['wh']}' and '{wh}'). Using "
+                    f"the first ('{lookup[po]['wh']}')."
                 ))
                 continue
-            lookup.setdefault(po, wh)
+            if po in lookup:
+                continue
+            po_date = ''
+            if have_po_date and not pd.isna(row[po_date_col]):
+                po_date = str(row[po_date_col]).strip()
+            exp_date = ''
+            if have_exp_date and not pd.isna(row[exp_date_col]):
+                exp_date = str(row[exp_date_col]).strip()
+            lookup[po] = {'wh': wh, 'po_date': po_date, 'exp_date': exp_date}
+
+        if not have_po_date or not have_exp_date:
+            miss = []
+            if not have_po_date:
+                miss.append(f"'{po_date_col}' (PO Date)")
+            if not have_exp_date:
+                miss.append(f"'{exp_date_col}' (Exp Date)")
+            result.warnings.append((
+                '', '',
+                f"Visibility report has no {', '.join(miss)} column — "
+                f"those tracker date cells will be blank."
+            ))
 
         logging.info(
             "consignment location report: %d PO->Warehouse mappings from %s",
@@ -760,15 +870,50 @@ class MarketplaceEngine:
             compare_label=config.get('compare_label', 'Price'),
             input_files_count=len(filepaths),
         )
+        # v2.4.3: full exception registry for the Exceptions sheet (TO mode).
+        if self.master is not None:
+            result.exception_registry = getattr(
+                self.master, 'exception_registry', []) or []
 
         # v2.3.1: build the PO -> Warehouse Id lookup from the optional
         # visibility report. Empty dict when no report is supplied, in
         # which case every Location stays blank (original behaviour).
-        loc_lookup: Dict[str, str] = {}
+        loc_lookup: Dict[str, Dict[str, str]] = {}
         if visibility_report_path:
             loc_lookup = self._load_consignment_location_lookup(
                 visibility_report_path, config, result,
             )
+
+        # v2.4.0 (Meesho): Location comes from the FILENAME. Build a {city
+        # token → Ship-To B2B Del Location name} map from the loaded mapping
+        # by taking the suffix of each Transfer-to Code (MS_BLR → 'BLR'). The
+        # filename is scanned for any token; the matched Del Location name is
+        # injected as the row's Location so the normal Ship-To B2B resolution
+        # in _process_to produces the right Transfer-to Code.
+        cmode = config.get('consignment_mode', {})
+        token_map: Dict[str, str] = {}
+        if cmode.get('filename_loc_from_shipto'):
+            for info in self.mapping.mappings.values():
+                code = str(info.get('ship_to', '') or '')
+                tok = code.split('_')[-1].strip().upper() if '_' in code else ''
+                if tok:
+                    # token (BLR) → the short Transfer-to Code (MS_BLR), which
+                    # becomes the row's Location and resolves to itself via the
+                    # mapping's by-ship-to-code index — short and self-evident.
+                    token_map.setdefault(tok, code)
+
+        # v2.4.0 (Meesho): synthetic dates — PO Date = today, Exp Date =
+        # today + N days. Files carry no dates; the tracker still wants them.
+        synth_po_date = ''
+        synth_exp_date = ''
+        if cmode.get('po_date_today') or cmode.get('exp_date_offset_days') is not None:
+            from datetime import date, timedelta
+            _today = date.today()
+            if cmode.get('po_date_today'):
+                synth_po_date = _today.isoformat()
+            _off = cmode.get('exp_date_offset_days')
+            if _off is not None:
+                synth_exp_date = (_today + timedelta(days=int(_off))).isoformat()
 
         logging.info("process_consignments: assembling dump from %d files",
                      len(filepaths))
@@ -814,7 +959,8 @@ class MarketplaceEngine:
             # deciphered friendly name as 'Location (Mapped)'. Blank when
             # no report was supplied or the PO is absent from it (warn so
             # the operator knows that PO's Transfer-to Code will be empty).
-            wh_id = loc_lookup.get(po, '')
+            vis = loc_lookup.get(po) or {}
+            wh_id = vis.get('wh', '')
             if loc_lookup and not wh_id:
                 result.warnings.append((
                     po, '',
@@ -823,8 +969,36 @@ class MarketplaceEngine:
                     f"be blank)."
                 ))
 
+            # v2.4.0 (Meesho): derive Location from a city token in the
+            # filename (e.g. '…-blr.csv' → MS_BLR's Del Location).
+            if token_map and not wh_id:
+                base_up = basename.upper()
+                hit = None
+                for tok in sorted(token_map, key=len, reverse=True):
+                    if re.search(r'(?<![A-Z0-9])' + re.escape(tok)
+                                 + r'(?![A-Z0-9])', base_up):
+                        hit = token_map[tok]
+                        break
+                if hit:
+                    wh_id = hit
+                else:
+                    result.warnings.append((
+                        po, '',
+                        f"[{basename}] No ship-to city token "
+                        f"({', '.join(sorted(token_map))}) found in the "
+                        f"filename — Location left empty (Transfer-to Code "
+                        f"will be blank). Rename the file to include the "
+                        f"city, e.g. 'order-line-items-{po}-blr.csv'."))
+
             df[po_col] = po          # PO recovered from the filename
             df[loc_col] = wh_id      # RAW Warehouse Id (or '' if unknown)
+            # v2.4.0: inject the dates so the tracker's PO Date / Exp Date
+            # fill in. From the visibility report when present (Flipkart-TO),
+            # else the synthetic today / today+N (Meesho). __po_date__ /
+            # __exp_date__ are the first date candidates build_tracker_rows
+            # looks for.
+            df['__po_date__'] = vis.get('po_date', '') or synth_po_date
+            df['__exp_date__'] = vis.get('exp_date', '') or synth_exp_date
             # Tag the source file so Raw Data can distinguish rows.
             df['__source_file__'] = basename
             per_file_dfs.append(df)
@@ -1017,6 +1191,7 @@ class MarketplaceEngine:
         filepath: str,
         config: Dict[str, Any],
         result: ProcessingResult,
+        parser_key: Optional[str] = None,
     ) -> Optional[pd.DataFrame]:
         """
         Load a PDF marketplace file via the configured PDF parser.
@@ -1041,12 +1216,14 @@ class MarketplaceEngine:
             caller treats ``None`` as a signal to abort and surface the
             warnings.
         """
-        parser_key = config.get('pdf_parser')
+        parser_key = (parser_key or config.get('pdf_parser')
+                      or config.get('file_parser'))
         if not parser_key:
             result.warnings.append((
                 '', '',
-                f"Marketplace config sets source_format='pdf' but no "
-                f"'pdf_parser' key was provided — cannot load {os.path.basename(filepath)}."
+                f"Marketplace config requires a parser but none "
+                f"('pdf_parser'/'file_parser') was provided — cannot load "
+                f"{os.path.basename(filepath)}."
             ))
             return None
 
@@ -1183,7 +1360,16 @@ class MarketplaceEngine:
             'qty': config['qty_col'],
         }
 
-        if item_resolution == 'from_ean':
+        if item_resolution == 'from_swiggy_sku':
+            sku_required = config.get('sku_col')
+            if not sku_required:
+                result.warnings.append((
+                    '', '',
+                    "Config error: item_resolution='from_swiggy_sku' requires "
+                    "sku_col."))
+                return False
+            required_cols['sku'] = sku_required
+        elif item_resolution == 'from_ean':
             ean_required = config.get('ean_col')
             if not ean_required:
                 result.warnings.append((
@@ -1505,6 +1691,28 @@ class MarketplaceEngine:
                         f"with EMPTY Transfer-to Code — fix in D365 "
                         f"import preview or update Ship-To B2B."))
 
+            # ── Tracker amount (v2.4.0) ─────────────────────────────────
+            # TOs carry no ``amount_col``, but the operator wants a per-
+            # consignment Total Amount in the tracker. Two figures exist:
+            #
+            #   OUR amount  = engine Transfer Price grossed back up by GST
+            #                 × qty  =  (MRP × margin ÷ (1+GST)) × (1+GST)
+            #                 × qty  =  landing (MRP × margin) × qty.
+            #                 This is the GST-inclusive value D365 records
+            #                 (Total Amount Incl. GST) — what we want in the
+            #                 tracker's Order Value per the operator.
+            #   VENDOR amount = Flipkart's stated Cost Price × qty. Equals
+            #                 the portal's "Amount" figure (verified to the
+            #                 paisa). Kept only for the reference log so the
+            #                 operator can cross-check against the portal.
+            #
+            # NOT_IN_MASTER lines have no calc_price → our amount is 0 for
+            # them (no MRP/GST to value the transfer); the vendor amount
+            # still accrues so the reference total stays complete.
+            our_line = (calc_price * MasterLoader.gst_divisor(gst_code) * qty
+                        if calc_price is not None else 0.0)
+            vendor_line = (fob_price * qty) if fob_price is not None else 0.0
+
             # ── Aggregate into the (PO, Item No) bucket ──────────────
             agg_key = (po_str, item_no)
             entry = aggregator.get(agg_key)
@@ -1526,9 +1734,13 @@ class MarketplaceEngine:
                     'fob_price': fob_price,
                     'diffn': diffn,
                     'validation_status': validation_status,
+                    'amount': our_line,
+                    'vendor_amount': vendor_line,
                 }
             else:
                 entry['qty'] += qty
+                entry['amount'] += our_line
+                entry['vendor_amount'] += vendor_line
                 if loc_str != entry['location']:
                     key = ('multi_loc', po_str, item_no)
                     if key not in warned_locations:
@@ -1560,8 +1772,33 @@ class MarketplaceEngine:
                 cost_price_ref=entry['calc_price'],
                 diffn=entry['diffn'],
                 validation_status=entry['validation_status'],
+                amount=entry['amount'],
             )
             result.rows.append(so_row)
+
+        # ── v2.4.0: per-PO vendor vs our total (reference log) ───────────
+        # The tracker's Order Value uses OUR amount (landing × qty, incl
+        # GST). Flipkart's portal shows the VENDOR amount (stated Cost
+        # Price × qty). They legitimately differ, so we log both per PO —
+        # the operator can reconcile the tracker against the portal at a
+        # glance without re-opening each consignment.
+        po_totals: Dict[str, Dict[str, float]] = {}
+        for entry in aggregator.values():
+            t = po_totals.setdefault(entry['po_number'], {'our': 0.0, 'vendor': 0.0})
+            t['our'] += entry['amount']
+            t['vendor'] += entry['vendor_amount']
+        for po_str in sorted(po_totals):
+            t = po_totals[po_str]
+            logging.info(
+                "Flipkart-TO PO %s: our total (incl GST) = %.2f, "
+                "vendor/portal total = %.2f",
+                po_str, t['our'], t['vendor'],
+            )
+            result.warnings.append((
+                po_str, '',
+                f"Amount reference — Tracker Order Value (ours, incl GST) = "
+                f"₹{t['our']:,.2f}; Flipkart portal 'Amount' (vendor "
+                f"Cost Price × qty) = ₹{t['vendor']:,.2f}."))
 
         # Roll-up warnings.
         if provisional_aliases:
@@ -1753,6 +1990,68 @@ class MarketplaceEngine:
 
         return keep, label
 
+    def _flag_po_status(self, df, config: Dict[str, Any],
+                        result: ProcessingResult) -> None:
+        """
+        FLAG (but never drop) rows whose PO status is outside ``status_keep``.
+
+        Opt-in: active only when the config sets both ``status_col`` (the
+        dump's status column, e.g. Swiggy 'Status') and ``status_keep`` (the
+        states that need no review, e.g. ``['CONFIRMED']``). Every line in any
+        other state — EXPIRED / COMPLETED / CANCELLED / PENDING — is KEPT in the
+        output (pasted as-is) and flagged with ONE named warning per such PO,
+        so the operator can manually audit and remove it. We deliberately do
+        NOT auto-drop: a status may be wrongly given, so the human decides.
+
+        Mutates ``result.warnings`` only; the DataFrame is untouched.
+        """
+        status_col = config.get('status_col')
+        keep = config.get('status_keep')
+        if not (status_col and keep):
+            return
+
+        # Case-insensitive column match (dumps occasionally vary header case).
+        actual = next((c for c in df.columns
+                       if str(c).strip().lower() == str(status_col).strip().lower()),
+                      None)
+        if actual is None:
+            result.warnings.append((
+                '', '',
+                f"Status review: column '{status_col}' not found — cannot flag "
+                f"PO statuses. Columns: {list(df.columns)[:12]}…"))
+            return
+
+        keep_norm = {str(s).strip().upper() for s in keep}
+        col = df[actual].astype(str).str.strip().str.upper()
+        bad = ~col.isin(keep_norm)
+        if not bool(bad.any()):
+            return
+
+        states = col[bad].value_counts().to_dict()
+        po_col = config.get('po_col')
+        # GOLDEN RULE — nothing skipped silently (and here, nothing skipped at
+        # all). Name EVERY non-confirmed PO so the operator can see and
+        # rectify it; the lines stay in the output for manual audit.
+        n_pos = 0
+        if po_col and po_col in df.columns:
+            sub = df.loc[bad, [po_col]].copy()
+            sub['__st__'] = col[bad]
+            for po_no, grp in sub.groupby(po_col):
+                sts = ', '.join(sorted(set(grp['__st__'].astype(str))))
+                n_pos += 1
+                result.warnings.append((
+                    str(po_no), '',
+                    f"PO STATUS {sts} — NOT {sorted(keep_norm)}; KEPT in output "
+                    f"for manual review — remove if it should not be punched "
+                    f"({len(grp)} line(s))."))
+        result.warnings.append((
+            '', '',
+            f"Status review: {int(bad.sum())} line(s) across {n_pos} PO(s) are "
+            f"not {sorted(keep_norm)} (states {states}). They were NOT dropped "
+            f"— pasted as-is for manual audit."))
+        logging.info("Status review (%s): flagged %d line(s) across %d POs %s",
+                     config.get('party_name'), int(bad.sum()), n_pos, states)
+
     def _process_row(
         self,
         row: pd.Series,
@@ -1822,6 +2121,16 @@ class MarketplaceEngine:
 
         # ── Extract EAN (needed before item resolution for from_ean) ────
         ean = self._extract_ean(row, df, config)
+
+        # v2.4.0 (Swiggy): the dump carries only a SkuCode (no EAN). Recover
+        # the EAN from the master's 'Swiggy' sheet (SkuCode→EAN) so the rest
+        # of the row flows through the standard from_ean path (master lookup,
+        # validation, deal override all key off this EAN).
+        if item_resolution == 'from_swiggy_sku' and not ean:
+            sku_raw = row.get(config.get('sku_col')) if config.get('sku_col') else None
+            if sku_raw is not None and not pd.isna(sku_raw):
+                ean = self.master.swiggy_sku.get(
+                    MasterLoader._clean_code(sku_raw), '') if self.master else ''
 
         # ── Resolve Item No per the marketplace's strategy ──────────────
         item_no = self._resolve_item_no(
@@ -1926,12 +2235,42 @@ class MarketplaceEngine:
         source_po = ''
         source_location = ''
 
+        # v2.7: per-line GST% straight from the punch/PDF (config
+        # 'gst_pct_col', e.g. Reliance 'GST Rate'). Used for the
+        # GST-inclusive order value so it matches the PDF's Total Order
+        # Value (the PDF's GST is authoritative over the master's code).
+        gst_rate_pct = None
+        _gpc = config.get('gst_pct_col')
+        if _gpc:
+            gst_rate_pct = self._extract_float(row, _gpc, only_if_in_df=df)
+
+        # v2.4.0: Master-Exceptions per-line markers (highlight + Lines price).
+        # exception_label drives the row highlight on Validation/Lines;
+        # forced_unit_price writes the vendor cost into the D365 Lines Unit
+        # Price for 'Use Vendor CP' rows (else blank/WMS as before).
+        exception_label = ''
+        forced_unit_price = None
+        if self.master:
+            mp = getattr(result, 'marketplace', '')
+            ean_c = MasterLoader._clean_code(ean) if ean else ''
+            if fob_price is not None and self.master.use_vendor_cp(
+                    ean, item_no, marketplace=mp):
+                exception_label = 'Vendor CP (deal)'
+                forced_unit_price = fob_price
+            elif self.master.price_override(ean, item_no, marketplace=mp):
+                exception_label = 'Price override'
+            elif ean_c and ean_c not in self.master.master \
+                    and self.master.exceptions.get(ean_c):
+                exception_label = 'EAN remap'
+
         return SORow(
             po_number=po,
             location=location,
             item_no=item_no,
             qty=qty,
             unit_price=unit_price,
+            forced_unit_price=forced_unit_price,
+            exception_label=exception_label,
             amount=amount,
             cust_no=cust_no,
             ship_to=ship_to,
@@ -1949,6 +2288,7 @@ class MarketplaceEngine:
             ref_diffn=ref_diffn,
             mrp=mrp,
             gst_code=gst_code,
+            gst_rate_pct=gst_rate_pct,
             hsn_punch=hsn_punch,
             hsn_master=hsn_master,
             hsn_check_status=hsn_check_status,
@@ -2201,15 +2541,39 @@ class MarketplaceEngine:
         """
         Resolve the canonical Item No based on ``item_resolution``.
 
-        ``from_column`` path: read from ``item_col``. NaN → skip row.
+        ``from_column`` path: read from ``item_col``.
         ``from_ean`` path: look the EAN up in the master and use
-        ``master_info['item_no']``. Empty EAN → skip with warning.
-        EAN not in master → emit row with ``item_no = ean`` so it still
-        appears (in NOT_IN_MASTER state in the validation sheet).
+        ``master_info['item_no']``. EAN not in master → emit row with
+        ``item_no = ean`` so it still appears (NOT_IN_MASTER on Validation).
 
-        Returns ``None`` if the row should be skipped (warnings already
-        appended where appropriate).
+        GOLDEN RULE (v2.4.4): a row that carries a PO + qty is NEVER dropped,
+        even when its EAN / Item No is missing — it's KEPT with a BLANK Item No
+        (NOT_IN_MASTER) and a per-PO warning, so the operator can see it and
+        fill it in. Only returns ``None`` when there is genuinely nothing to
+        write (and that's already logged upstream).
         """
+        # v2.4.0 (Swiggy): from_swiggy_sku behaves like from_ean once the EAN
+        # has been recovered from the SkuCode (done in _process_row). A SkuCode
+        # that didn't resolve to an EAN surfaces the SkuCode as the placeholder
+        # so the line still appears (NOT_IN_MASTER) — never silently dropped.
+        if item_resolution == 'from_swiggy_sku':
+            if not ean:
+                sku_raw = row.get(config.get('sku_col')) if config.get('sku_col') else None
+                placeholder = (MasterLoader._clean_code(sku_raw)
+                               if sku_raw is not None and not pd.isna(sku_raw) else '')
+                key = ('NO_SWIGGY_SKU', po, placeholder)
+                if key not in warned_keys:
+                    warned_keys.add(key)
+                    result.warnings.append((
+                        po, '',
+                        f"Swiggy SkuCode '{placeholder or 'n/a'}' not found in "
+                        f"the master 'Swiggy' sheet (SkuCode→EAN) for PO {po} — "
+                        f"row KEPT with the SkuCode as a placeholder Item No "
+                        f"(blank if no SkuCode) for manual review. Add it to the "
+                        f"Swiggy sheet."))
+                return placeholder   # keep the line (golden rule), even if ''
+            item_resolution = 'from_ean'   # fall through to the EAN path
+
         if item_resolution == 'from_ean':
             if not ean:
                 key = ('NO_EAN', po)
@@ -2217,11 +2581,12 @@ class MarketplaceEngine:
                     warned_keys.add(key)
                     result.warnings.append((
                         po, '',
-                        f"Row skipped: ean_col '{config.get('ean_col')}' is "
-                        f"empty for PO {po}. item_resolution='from_ean' "
-                        f"requires a non-empty EAN."
+                        f"PO {po}: a line has qty but NO EAN (ean_col "
+                        f"'{config.get('ean_col')}' is empty) — KEPT in the "
+                        f"output with a BLANK Item No (NOT_IN_MASTER) for "
+                        f"manual review; fill the EAN/Item before import."
                     ))
-                return None
+                return ''   # golden rule: keep the line, don't drop it
 
             if not self.master:
                 key = ('NO_MASTER', 'global')
@@ -2248,18 +2613,19 @@ class MarketplaceEngine:
         # 'from_column' (default)
         item_raw = row[config['item_col']]
         if pd.isna(item_raw):
-            # v2.3.1: log (don't silently skip) — mirrors the from_ean
-            # empty-EAN warning so no item line is dropped unexplained.
+            # Golden rule: keep the line (blank Item No) + flag — never drop a
+            # qty-bearing row just because its Item No cell is empty.
             key = ('NO_ITEM', po)
             if key not in warned_keys:
                 warned_keys.add(key)
                 result.warnings.append((
                     po, '',
-                    f"Row skipped: item_col '{config.get('item_col')}' is "
-                    f"empty for PO {po}. item_resolution='from_column' "
-                    f"requires a non-empty Item No."
+                    f"PO {po}: a line has qty but NO Item No (item_col "
+                    f"'{config.get('item_col')}' is empty) — KEPT in the "
+                    f"output with a BLANK Item No for manual review; fill it "
+                    f"before import."
                 ))
-            return None
+            return ''   # keep the line, don't drop it
         try:
             return int(item_raw)
         except (ValueError, TypeError):
@@ -2333,6 +2699,51 @@ class MarketplaceEngine:
         gst_code = master_info['gst_code']
         description = master_info.get('description', '')
 
+        # v2.4.4: tracks whether a deal/exception modified this row's pricing
+        # (price override / Swiggy deal / vendor-CP). The dual landing+cost
+        # check (``also_check_cost``) skips such rows — their CP is
+        # intentionally non-standard, so it must not trip a cost MISMATCH.
+        _pricing_exception = False
+
+        # v2.4.0: central PRICE override (exceptions file). When this EAN/Item
+        # has a deal price recorded for this marketplace, the expected MRP
+        # and/or landing% come from the override instead of the master — so a
+        # legit negotiated price (e.g. Blinkit EPISENSE: 24% off a 899 deal
+        # MRP) validates as OK rather than MISMATCH. Recorded in
+        # result.exceptions_applied for the Exceptions log. Wins over the
+        # Reliance-style gst_margin_discount for this row.
+        override = self.master.price_override(
+            ean, item_no, marketplace=getattr(result, 'marketplace', ''))
+        if override:
+            _pricing_exception = True
+            ov_mrp = override.get('mrp')
+            ov_margin = override.get('margin_pct')
+            if ov_mrp is not None:
+                mrp = ov_mrp
+            if ov_margin is not None:
+                applied_margin = ov_margin
+                gst_margin_discount = None     # override wins
+            result.exceptions_applied.append({
+                'type': 'price_override', 'po': po,
+                'ean': ean, 'item_no': str(item_no),
+                'detail': (f"deal MRP {ov_mrp if ov_mrp is not None else '—'}, "
+                           f"landing {round(ov_margin*100,2) if ov_margin is not None else '—'}%"
+                           f"{' ('+override['marketplace']+')' if override.get('marketplace') else ''}"),
+            })
+
+        # v2.4.0: record item-alias remaps that resolved this row (the EAN
+        # wasn't in the master verbatim but the exceptions file mapped it to a
+        # key that is — FirstCry's '…885' → '…885_1'). Only when the alias was
+        # actually needed (EAN not a direct master key).
+        ean_clean = MasterLoader._clean_code(ean) if ean else ''
+        if (ean_clean and ean_clean not in self.master.master
+                and self.master.exceptions.get(ean_clean)):
+            result.exceptions_applied.append({
+                'type': 'item_alias', 'po': po, 'ean': ean,
+                'item_no': str(item_no),
+                'detail': f"EAN {ean} → master {self.master.exceptions[ean_clean]}",
+            })
+
         # v2.3.1: GST-dependent margin (Reliance). The keep% depends on
         # the item's GST: keep = 1 − discount × (1+GST). Replaces the run
         # margin for this row. For everyone else applied_margin stays the
@@ -2360,6 +2771,31 @@ class MarketplaceEngine:
         # column shown in the Validation sheet.
         cost_price_ref = MasterLoader.calc_cost_price(mrp, gst_code, margin_pct)
 
+        # v2.4.0 (Swiggy): deal-SKU override. For EANs in the 'Swiggy Deal
+        # SKUs' sheet the expected cost is the sheet's explicit 'Cost after
+        # GST' (a negotiated deal price), NOT MRP×80%÷(1+GST). Override the
+        # expected CP so the deal validates OK and the row's pricing is right.
+        # v2.4.1 (BUGFIX): this is a SWIGGY-ONLY negotiated price — it must NOT
+        # leak into other marketplaces. Previously any marketplace whose punch
+        # carried a deal-sheet EAN (e.g. Blinkit's Villain combo 8906121643282)
+        # had its expected CP wrongly clamped to Swiggy's deal cost (355.42),
+        # producing a false MISMATCH. Gate on the active marketplace.
+        _mp_norm = ''.join(str(getattr(result, 'marketplace', '')).split()).lower()
+        if (_mp_norm == 'swiggy'
+                and getattr(self.master, 'swiggy_deals', None) and ean_clean):
+            sdeal = self.master.swiggy_deals.get(ean_clean)
+            cag = sdeal.get('cost_after_gst') if sdeal else None
+            if cag is not None:
+                _pricing_exception = True
+                cost_price_ref = cag
+                if sdeal.get('mrp') is not None:
+                    mrp = sdeal['mrp']
+                result.exceptions_applied.append({
+                    'type': 'price_override', 'po': po,
+                    'ean': ean, 'item_no': str(item_no),
+                    'detail': f"Swiggy deal SKU — expected CP {cag} (sheet)",
+                })
+
         # Reference diff (vs naked CP) — display-only, always vs post-GST
         # because the reference column itself is post-GST (e.g. Myntra's
         # List price).
@@ -2371,6 +2807,24 @@ class MarketplaceEngine:
             calc_price = MasterLoader.calc_landing_price(mrp, margin_pct)
         else:  # 'cost' (default)
             calc_price = cost_price_ref
+
+        # v2.4.0: 'Use Vendor CP' exception (Master Exceptions). The vendor's
+        # stated cost is authoritative for this EAN+marketplace (e.g. Myntra's
+        # RENEE Goddess perfume) — accept it: expected == vendor so the row
+        # validates OK instead of MISMATCH, and the Validation 'Our CP' shows
+        # the vendor figure. The Lines Unit Price overwrite happens in
+        # _process_row (forced_unit_price).
+        if (fob_price is not None and ean_clean
+                and self.master.use_vendor_cp(
+                    ean, item_no, marketplace=getattr(result, 'marketplace', ''))):
+            _pricing_exception = True
+            calc_price = fob_price
+            cost_price_ref = fob_price
+            result.exceptions_applied.append({
+                'type': 'vendor_cp', 'po': po,
+                'ean': ean, 'item_no': str(item_no),
+                'detail': f"vendor CP {fob_price} accepted (deal) — written to Lines",
+            })
 
         # Compute active diff + status
         if calc_price is not None and fob_price is not None:
@@ -2388,6 +2842,33 @@ class MarketplaceEngine:
                         f"Marketplace={fob_price:.2f}, "
                         f"Calculated={calc_price:.2f}, "
                         f"Diff={diffn:.2f}"
+                    ))
+
+            # v2.4.4: DUAL landing+cost check (opt-in via ``also_check_cost``,
+            # Myntra). The landing check above governs status by default; with
+            # this flag a row is OK only when BOTH the landing pair AND the
+            # cost pair (vendor CP = ``ref_fob_price`` vs our CP =
+            # ``cost_price_ref``) agree — so either failing → MISMATCH. Rows
+            # whose pricing came from a deal/exception are skipped (their CP is
+            # intentionally non-standard). Only downgrades an otherwise-OK row;
+            # a landing failure is already MISMATCH.
+            if (validation_status == 'OK'
+                    and (result.resolved_config or {}).get('also_check_cost')
+                    and not _pricing_exception
+                    and ref_fob_price is not None
+                    and cost_price_ref is not None
+                    and abs(ref_fob_price - cost_price_ref) > self.DIFFN_THRESHOLD):
+                validation_status = 'MISMATCH'
+                key = ('VALIDATION_CP', str(item_no))
+                if key not in warned_keys:
+                    warned_keys.add(key)
+                    result.warnings.append((
+                        po, str(item_no),
+                        f"Cost mismatch: Item {item_no}, "
+                        f"Vendor CP={ref_fob_price:.2f}, "
+                        f"Our CP={cost_price_ref:.2f}, "
+                        f"Diff={ref_fob_price - cost_price_ref:.2f} "
+                        f"(landing matched)"
                     ))
         else:
             validation_status = 'NO_PRICE'
@@ -2407,7 +2888,15 @@ class MarketplaceEngine:
         On miss, appends a warning (deduped per (po, location)) and
         returns blanks plus mapped=False.
         """
-        mapping_result = self.mapping.lookup(location)
+        # v2.7.x: address-based marketplaces (Flipkart — loc_col is a full
+        # postal address) opt into the pincode+body-overlap resolver, which
+        # matches the new portal's prefix-less Shipped-To address against the
+        # Ship-To B2B Del Location entries. Everyone else uses the generic
+        # name-based tiers unchanged.
+        if (result.resolved_config or {}).get('loc_match') == 'address':
+            mapping_result = self.mapping.lookup_by_address(location)
+        else:
+            mapping_result = self.mapping.lookup(location)
 
         if mapping_result:
             return (

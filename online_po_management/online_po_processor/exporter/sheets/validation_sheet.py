@@ -81,6 +81,7 @@ numbers mean.
 from __future__ import annotations
 
 import pandas as pd
+from openpyxl.comments import Comment
 
 from online_po_processor.data.models import ProcessingResult
 from online_po_processor.exporter._styles import (
@@ -95,8 +96,22 @@ from online_po_processor.exporter._styles import (
 # Calculated column indices (1-based). These get a green header instead
 # of the default blue to visually separate "our math" from "their data".
 # v2.3.1: the "our" half of each side-by-side pair (Our MRP / Our Landing
-# / Our CP).
-_CALC_COL_INDICES = {7, 9, 11}
+# / Our CP). v2.7: +1 each — a 'Qty' column was inserted after Description.
+_CALC_COL_INDICES = {8, 10, 12}
+
+
+def _margin_label(result: ProcessingResult) -> str:
+    """Short, NON-misleading margin tag for the 'Our Landing' header and the
+    info row. A single '66%' lies for rule-based marketplaces (Nykaa prices
+    perfume at 69%, cosmetics at 66%) and GST-based ones (Reliance), so those
+    get a descriptive tag instead of one number. Straight-margin marketplaces
+    keep their honest single percentage."""
+    cfg = getattr(result, 'resolved_config', None) or {}
+    if cfg.get('margin_rules'):
+        return 'per rule'
+    if cfg.get('gst_margin_discount') is not None:
+        return 'GST-based'
+    return f"{int(result.margin_pct * 100)}%"
 
 
 def write(wb, result: ProcessingResult) -> None:
@@ -147,9 +162,9 @@ def write(wb, result: ProcessingResult) -> None:
     # Items_March master. Vendor columns are blank when the file doesn't
     # carry that metric (e.g. Flipkart has no MRP or CP column).
     headers = [
-        'PO', 'Item No', 'EAN', 'Description', 'GST Code',
+        'PO', 'Item No', 'EAN', 'Description', 'Qty', 'GST Code',
         'Vendor MRP', 'Our MRP',
-        'Vendor Landing', f'Our Landing ({margin_pct_int}%)',
+        'Vendor Landing', f'Our Landing ({_margin_label(result)})',
         'Vendor CP', 'Our CP',
         f'Difference ({label})',
         'Status',
@@ -175,8 +190,9 @@ def write(wb, result: ProcessingResult) -> None:
     # spans it across the header columns happens last.
     header_row_idx = 1
     banner_n_cols_for_merge = 0  # tracks merge width; 0 = no banner
+    banner_parts = []
     if is_reference_only:
-        banner_msg = (
+        banner_parts.append(
             f"\u2139 Reference-only comparison: '{label}' values from "
             f"the punch file are shown for audit only. Transfer Prices "
             f"in the output use ENGINE-CALCULATED values "
@@ -184,7 +200,20 @@ def write(wb, result: ProcessingResult) -> None:
             f"regardless of any diff. Diffs above \u20b90.01 are also "
             f"logged as warnings."
         )
-        banner_cell = ws.cell(row=1, column=1, value=banner_msg)
+    # v2.7: GST-dependent pricing config (Reliance) \u2014 note the exact table
+    # so the output records which pricing basis was followed.
+    _gmd = (result.resolved_config or {}).get('gst_margin_discount')
+    if _gmd is not None:
+        banner_parts.append(
+            f"\u2139 Pricing config (GST-dependent): margin {_gmd*100:.0f}% "
+            f"pre-GST \u2192 cost = MRP \u00d7 keep%, keep% = 1 \u2212 "
+            f"{_gmd*100:.0f}% \u00d7 (1+GST) = {(1-_gmd)*100:.2f}% / "
+            f"{(1-_gmd*1.05)*100:.2f}% / {(1-_gmd*1.18)*100:.2f}% of MRP at "
+            f"GST 0% / 5% / 18% (per the Reliance pricing config table)."
+        )
+    if banner_parts:
+        banner_cell = ws.cell(row=1, column=1,
+                              value='     |     '.join(banner_parts))
         banner_cell.font = INFO_ITALIC_FONT
         banner_n_cols_for_merge = len(headers)
         header_row_idx = 2
@@ -194,11 +223,11 @@ def write(wb, result: ProcessingResult) -> None:
         hdr_cell(ws, header_row_idx, col_idx, header, fill=fill)
 
     n_cols = len(headers)
-    status_col = 13   # Price-validation status column index (fixed)
-    # HSN columns, when present, occupy 14/15/16.
-    hsn_punch_col = 14
-    hsn_master_col = 15
-    hsn_status_col = 16
+    status_col = 14   # Price-validation status column (v2.7: +1 for 'Qty')
+    # HSN columns, when present, occupy 15/16/17.
+    hsn_punch_col = 15
+    hsn_master_col = 16
+    hsn_status_col = 17
 
     # ── Data rows ───────────────────────────────────────────────────────
     # Alignment policy:
@@ -248,18 +277,21 @@ def write(wb, result: ProcessingResult) -> None:
         data_cell(ws, r, 2, so_row.item_no, align='center')
         data_cell(ws, r, 3, so_row.ean, align='center')
         data_cell(ws, r, 4, so_row.description, align='left')
-        data_cell(ws, r, 5, so_row.gst_code, align='center')
+        # v2.7: Qty — so the operator can spot low-qty items to exclude
+        # without working through them.
+        data_cell(ws, r, 5, so_row.qty, align='center')
+        data_cell(ws, r, 6, so_row.gst_code, align='center')
 
         # MRP pair | Landing pair | CP pair (Vendor then Our, side by side)
-        data_cell(ws, r, 6,  _money(v_mrp),     '#,##0.00', align='right')
-        data_cell(ws, r, 7,  _money(o_mrp),     '#,##0.00', align='right')
-        data_cell(ws, r, 8,  _money(v_landing), '#,##0.00', align='right')
-        data_cell(ws, r, 9,  _money(o_landing), '#,##0.00', align='right')
-        data_cell(ws, r, 10, _money(v_cp),      '#,##0.00', align='right')
-        data_cell(ws, r, 11, _money(o_cp),      '#,##0.00', align='right')
+        data_cell(ws, r, 7,  _money(v_mrp),     '#,##0.00', align='right')
+        data_cell(ws, r, 8,  _money(o_mrp),     '#,##0.00', align='right')
+        data_cell(ws, r, 9,  _money(v_landing), '#,##0.00', align='right')
+        data_cell(ws, r, 10, _money(o_landing), '#,##0.00', align='right')
+        data_cell(ws, r, 11, _money(v_cp),      '#,##0.00', align='right')
+        data_cell(ws, r, 12, _money(o_cp),      '#,##0.00', align='right')
 
         # Primary difference (active basis): vendor − our for that basis.
-        data_cell(ws, r, 12,
+        data_cell(ws, r, 13,
                    round(so_row.diffn, 2) if so_row.diffn is not None else '',
                    '#,##0.00', align='right')
 
@@ -281,14 +313,33 @@ def write(wb, result: ProcessingResult) -> None:
                 ws.cell(row=r, column=c).fill = NO_MASTER_FILL
             ws.cell(row=r, column=status_col).font = NOT_IN_MASTER_TEXT_FONT
 
+        # ── v2.4.1: per-row EXCEPTION highlight ─────────────────────────
+        # When a Master Exception was applied to THIS row (vendor CP accepted,
+        # price override, or EAN remap), amber-tint the whole row so the
+        # operator can see at a glance that special handling was used — even
+        # though the exception typically makes the row validate OK. The Status
+        # pill keeps its green OK colour on top; a cell comment names the
+        # exact exception. This is the Validation-sheet half of "highlight
+        # each exception" (the Lines sheet amber-tints the forced Unit Price).
+        exc_label = getattr(so_row, 'exception_label', '') or ''
+        if exc_label and so_row.validation_status != 'MISMATCH':
+            for c in range(1, n_cols + 1):
+                ws.cell(row=r, column=c).fill = LOC_MISMATCH_FILL
+            sc = ws.cell(row=r, column=status_col)
+            if so_row.validation_status == 'OK':
+                sc.fill = STATUS_OK_FILL          # keep the green OK pill
+                sc.font = STATUS_OK_FONT
+            sc.comment = Comment(
+                f"Exception applied: {exc_label}", "PO Engine")
+
         # ── v2.3.1: per-metric mismatch flag ────────────────────────────
         # Amber-tint the VENDOR cell of any pair whose vendor value differs
         # from ours by more than a paisa, so an MRP / Landing / CP mismatch
         # is spotted directly from the side-by-side columns. Applied AFTER
         # the row fill so it wins on that specific cell.
-        for vcol, vval, oval in ((6, v_mrp, o_mrp),
-                                  (8, v_landing, o_landing),
-                                  (10, v_cp, o_cp)):
+        for vcol, vval, oval in ((7, v_mrp, o_mrp),
+                                  (9, v_landing, o_landing),
+                                  (11, v_cp, o_cp)):
             if (vval is not None and oval is not None
                     and not pd.isna(vval) and not pd.isna(oval)
                     and abs(float(vval) - float(oval)) > 0.01):
@@ -348,7 +399,7 @@ def write(wb, result: ProcessingResult) -> None:
     else:
         summary_parts.append(f"Mismatches: {mismatches}")
     summary_parts.extend([
-        f"Margin: {margin_pct_int}%",
+        f"Margin: {_margin_label(result)}",
         basis_note,
     ])
     if has_hsn_check:

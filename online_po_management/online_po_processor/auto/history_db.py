@@ -171,7 +171,10 @@ class HistoryStore(ABC):
     def close(self) -> None: ...
 
 
-# Columns returned by fetch_orders (same shape for every backend).
+# Columns returned by fetch_orders (same shape for every backend). The
+# 'po' key carries the ORDER REFERENCE shown in the tracker — our
+# generated SO No for offline rows, the marketplace PO for online rows
+# (both stored directly in the 'po' column).
 _FETCH_COLS = ['segment', 'marketplace', 'marketplace_label', 'po', 'location',
                'po_date', 'exp_date', 'order_type', 'qty', 'order_value']
 
@@ -192,6 +195,8 @@ def _fetch_orders_sql(cur, table: str, ph: str, run_id):
 # Order History export — shared by both backends. Column headers (in DB
 # select order); index-free styling keyed on the header NAME so columns can
 # be added without breaking alignment.
+# The 'PO' column holds the order reference exactly as stored in the DB:
+# our SO No for offline rows, the marketplace PO for online rows.
 _HISTORY_COLS = ['Run #', 'Run Time', 'Mode', 'Segment', 'Market Place', 'PO',
                  'Location', 'Warehouse', 'PO Date', 'Exp Date', 'Type',
                  'Items', 'Qty', 'Order Value', 'Output File']
@@ -424,7 +429,21 @@ class MySqlHistoryStore(HistoryStore):
             # only new POs (no duplicate tracking). Rows are kept.
             self._drop_column(cur, 'order_headers', 'is_duplicate')
             self._drop_column(cur, 'order_headers', 'first_seen_ts')
+            # The order (SO No for offline) lives directly in the existing
+            # 'po' column. Clean up the short-lived order_no column + its
+            # unique key if a prior build added them (no separate order
+            # column — 'po' is the single order column).
+            self._drop_index(cur, 'order_headers', 'uq_order_no')
+            self._drop_column(cur, 'order_headers', 'order_no')
         self.conn.commit()
+
+    def _drop_index(self, cur, table: str, index: str) -> None:
+        cur.execute(
+            "SELECT COUNT(*) FROM information_schema.statistics WHERE "
+            "table_schema=DATABASE() AND table_name=%s AND index_name=%s",
+            (table, index))
+        if cur.fetchone()[0] > 0:
+            cur.execute(f"ALTER TABLE {table} DROP INDEX {index}")
 
     def _ensure_column(self, cur, table: str, col: str, decl: str,
                        after: str = '') -> None:

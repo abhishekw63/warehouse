@@ -63,6 +63,19 @@ class SORow:
     # Pass-through input
     unit_price: Optional[float] = None
 
+    # v2.4.0: per-row forced Unit Price for the D365 Lines sheet, set ONLY
+    # when a 'Use Vendor CP' exception applies (Master Exceptions file) —
+    # e.g. Myntra's RENEE Goddess perfume, where the vendor's stated cost is
+    # correct and must be written into Lines (not left blank/WMS-computed).
+    # Overrides the global override_unit_price for this one row.
+    forced_unit_price: Optional[float] = None
+
+    # v2.4.0: short label when a Master-Exceptions entry was applied to this
+    # line (e.g. 'Vendor CP (deal)', 'Price override', 'EAN remap'). Drives
+    # the per-row highlight on the Validation + Lines sheets so every applied
+    # exception is visible at a glance, not just on the Exceptions sheet.
+    exception_label: str = ''
+
     # v1.5.1: Marketplace-native row amount.
     # Some marketplaces (Blink, RK) report a per-row monetary value on
     # the punch file itself — this is the figure the marketplace will
@@ -125,6 +138,11 @@ class SORow:
     # Master attributes (raw, for display)
     mrp: Optional[float] = None
     gst_code: str = ''
+    # v2.7: per-line GST% from the PUNCH/PDF itself (e.g. Reliance's
+    # 'GST Rate' / IGST%). When set it's the authoritative rate for the
+    # GST-inclusive order value (the PDF's own GST may differ from the
+    # master's gst_code). None → fall back to the master gst_code.
+    gst_rate_pct: Optional[float] = None
 
     # v1.6.0: HSN cross-check (currently used by Reliance only).
     # Some marketplaces carry an HSN/SAC Code on their punch file for
@@ -180,6 +198,19 @@ class ProcessingResult:
     # tuples of (po, location, message). PO and location may be empty
     # strings for global warnings.
     warnings: List[Tuple[str, str, str]] = field(default_factory=list)
+
+    # v2.4.0: exceptions from the central 'Master Exceptions' file that were
+    # actually applied this run — item-alias remaps and price overrides. Each
+    # is {type, po, ean, item_no, detail}. Surfaced on a dedicated
+    # 'Exceptions' sheet so the operator can see every override in effect.
+    exceptions_applied: List[dict] = field(default_factory=list)
+
+    # v2.4.3: the FULL cross-marketplace exception registry (every row of
+    # 'Master Exceptions.xlsx'), stamped from the MasterLoader so EVERY
+    # marketplace's Exceptions sheet can list ALL exceptions — highlighting
+    # the ones that belong to the marketplace being processed. Independent of
+    # exceptions_applied (which is only what fired this run).
+    exception_registry: List[dict] = field(default_factory=list)
 
     # Marketplace context
     marketplace: str = ''

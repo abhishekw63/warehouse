@@ -76,7 +76,8 @@ _COL_ORDER_QTY = 9
 # Marketplaces the per-marketplace Tracker sheet is wired up for. (The
 # Auto consolidated/standalone tracker is NOT gated by this — it tracks
 # every processed marketplace via build_tracker_rows.)
-_SUPPORTED = {'Zepto', 'Firstcry', 'Reliance', 'RK'}
+_SUPPORTED = {'Zepto', 'Firstcry', 'Reliance', 'RK', 'Bigbasket', 'Blink',
+              'Meesho-TO', 'Nykaa', 'Purplle', 'Swiggy', 'Myntra'}
 
 # Our config key → the exact 'Market Place' label the master tracker uses
 # (verified against New PO format.xlsx → Feb-June'26). Names not listed
@@ -88,6 +89,7 @@ _MARKETPLACE_DISPLAY = {
     'Flipkart':    'Flipkart Alpha',
     'Flipkart-TO': 'Flipkart Branch',
     'Meesho-TO':   'Meesho-SB',
+    'Bigbasket':   'Big Basket',
 }
 
 # v2.3.1: we currently sync only the PO details, so State Name and PO
@@ -171,6 +173,14 @@ def build_tracker_rows(result: ProcessingResult) -> list:
         result.marketplace, result.marketplace)
     incl_gst = bool((result.resolved_config or {}).get('amount_is_pre_gst'))
 
+    # v2.4.0: some sources carry a per-PO GRAND TOTAL on every line (e.g.
+    # Nykaa's 'PO Amount' = the portal's exact PO value, GST-inclusive,
+    # repeated on each line). When the config names that column via
+    # ``po_total_col``, the tracker uses it VERBATIM as Order Value (taken
+    # once per PO) instead of summing per-line amounts — so the tracker
+    # matches the marketplace portal to the rupee.
+    po_totals = _build_po_total_lookup(result)
+
     po_groups: Dict[str, dict] = {}
     for so_row in result.rows:
         if so_row.po_number not in po_groups:
@@ -179,13 +189,17 @@ def build_tracker_rows(result: ProcessingResult) -> list:
         po_groups[so_row.po_number]['qty'] += so_row.qty
         amt = float(so_row.amount or 0.0)
         if incl_gst:
-            amt *= MasterLoader.gst_divisor(so_row.gst_code)
+            amt *= MasterLoader.row_gst_divisor(so_row)
         po_groups[so_row.po_number]['amount'] += amt
 
     rows = []
     for po, info in po_groups.items():
         dates = po_dates.get(po, {})
         exp_str = dates.get('exp_date', '')
+        # Per-PO total column wins when present (exact portal match).
+        order_value = po_totals.get(po)
+        if order_value is None:
+            order_value = info['amount']
         rows.append({
             'segment': ORDER_SEGMENT,
             'market_place': market_place,
@@ -195,10 +209,40 @@ def build_tracker_rows(result: ProcessingResult) -> list:
             'po_date': dates.get('po_date', ''),
             'exp_date': exp_str,
             'aging': _aging_days(exp_str) if _FILL_AGING else '',
-            'order_value': info['amount'],
+            'order_value': order_value,
             'order_qty': info['qty'],
         })
     return rows
+
+
+def _build_po_total_lookup(result: ProcessingResult) -> Dict[str, float]:
+    """Build ``{po_number: per-PO total}`` from the raw DataFrame when the
+    config names a ``po_total_col`` (a column carrying the whole-PO value on
+    every line, e.g. Nykaa's 'PO Amount'). First non-null value per PO wins
+    (it's identical across a PO's lines). Empty dict when not configured or
+    the column is missing — callers then fall back to the summed amount."""
+    cfg = result.resolved_config or {}
+    col = cfg.get('po_total_col')
+    df = result.raw_df
+    if not col or df is None or getattr(df, 'empty', True):
+        return {}
+    po_col = cfg.get('po_col', 'PO Number')
+    if (not isinstance(po_col, str) or po_col not in df.columns
+            or col not in df.columns):
+        return {}
+    out: Dict[str, float] = {}
+    for _, raw_row in df.iterrows():
+        po = _coerce_po(raw_row[po_col])
+        if not po or po in out:
+            continue
+        val = raw_row[col]
+        if pd.isna(val):
+            continue
+        try:
+            out[po] = float(str(val).replace(',', '').strip())
+        except (ValueError, TypeError):
+            continue
+    return out
 
 
 # Excel number format for the date columns. Real DATE values are written
@@ -284,8 +328,14 @@ def _build_po_date_lookup(result: ProcessingResult) -> Dict[str, dict]:
     if not isinstance(po_col, str) or po_col not in df.columns:
         return {}
 
-    po_date_col = _find_col(df, _PO_DATE_CANDIDATES)
-    exp_date_col = _find_col(df, _EXP_DATE_CANDIDATES)
+    # v2.4.0: prefer the config's explicit date columns (e.g. Nykaa's
+    # 'PO Release Date' / 'Expiry Date') over the generic candidate lists,
+    # so a source with non-standard date headers still fills the tracker.
+    def _cfg_col(key):
+        c = cfg.get(key)
+        return c if (isinstance(c, str) and c in df.columns) else None
+    po_date_col = _cfg_col('po_date_col') or _find_col(df, _PO_DATE_CANDIDATES)
+    exp_date_col = _cfg_col('exp_date_col') or _find_col(df, _EXP_DATE_CANDIDATES)
     state_col = _find_col(df, _STATE_CANDIDATES)
 
     lookup: Dict[str, dict] = {}

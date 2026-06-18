@@ -212,42 +212,71 @@ class AutoRunner:
         paths = [str(f) for f in files]
         cons = config.get('consignment_mode')
 
-        # Decide the batch split (list of (paths, mode)). 'mode' picks the
-        # engine call in _run_batch. This mirrors the GUI's generate().
+        # Decide the batch split: list of (paths, mode, visibility_path).
+        # 'mode' picks the engine call in _run_batch; 'visibility_path' is
+        # only meaningful for consignment mode (else None). This mirrors
+        # the GUI's generate().
         batches: List[tuple] = []
         if cons and cons.get('enabled'):
+            # v2.4.1: a Consignment Visibility Report dropped in the folder
+            # alongside the per-PO consignment files is auto-detected by
+            # filename and threaded into process_consignments — so Auto
+            # mode resolves Locations exactly like the manual GUI (which
+            # took the report as a separate pick). Detection is by the
+            # ``visibility_filename_regex`` config key; the report itself
+            # is NOT treated as a consignment / consolidated dump.
+            vis_re = cons.get('visibility_filename_regex')
+            vis_files = [p for p in paths
+                         if vis_re and re.search(vis_re, Path(p).name,
+                                                 re.IGNORECASE)]
+            vis_path = vis_files[0] if vis_files else None
+            if vis_files and len(vis_files) > 1:
+                self.log(f"[{marketplace}] {len(vis_files)} visibility "
+                         f"reports found — using {Path(vis_path).name}")
+            rest_paths = [p for p in paths if p not in vis_files]
+
             if cons.get('consolidated_option'):
                 # Flipkart-TO: consignment CSVs are recognised by filename;
-                # anything else in the folder is a consolidated dump.
+                # anything else left over is a consolidated dump.
                 regex = cons.get('filename_po_regex')
-                cfiles = [p for p in paths
+                cfiles = [p for p in rest_paths
                           if regex and re.search(regex, Path(p).name)]
                 if cfiles:
-                    batches.append((cfiles, 'consignment'))
-                    rest = [p for p in paths if p not in cfiles]
-                    batches += [([p], 'single') for p in rest]
+                    batches.append((cfiles, 'consignment', vis_path))
+                    rest = [p for p in rest_paths if p not in cfiles]
+                    batches += [([p], 'single', None) for p in rest]
                 else:
-                    batches += [([p], 'single') for p in paths]
+                    batches += [([p], 'single', None) for p in rest_paths]
             else:
                 # Meesho-TO: consignment-only.
-                batches.append((paths, 'consignment'))
+                batches.append((rest_paths, 'consignment', vis_path))
         elif config.get('source_format') == 'pdf':
             # PDF POs are one-per-file → combine into one SO batch.
-            batches.append((paths, 'multi'))
+            batches.append((paths, 'multi', None))
+        elif config.get('pdf_parser'):
+            # v2.4.1: dual-format (Myntra) — a folder of PO PDFs combines
+            # into one SO batch (like PDF-only marketplaces); any non-PDF
+            # (Excel punch) files stay one-run-per-file.
+            pdfs = [p for p in paths if p.lower().endswith('.pdf')]
+            others = [p for p in paths if not p.lower().endswith('.pdf')]
+            if pdfs:
+                batches.append((pdfs, 'multi', None))
+            batches += [([p], 'single', None) for p in others]
         else:
             # Excel/CSV single-dump marketplaces: one run per file so a
             # second dump in the folder is never silently ignored.
-            batches += [([p], 'single') for p in paths]
+            batches += [([p], 'single', None) for p in paths]
 
         return [
-            self._run_batch(marketplace, config, bpaths, mode)
-            for bpaths, mode in batches
+            self._run_batch(marketplace, config, bpaths, mode, vis)
+            for bpaths, mode, vis in batches
         ]
 
     # ── one batch → process + export ───────────────────────────────────
     def _run_batch(
         self, marketplace: str, config: dict,
         paths: List[str], mode: str,
+        visibility_report_path: Optional[str] = None,
     ) -> MarketplaceRun:
         run = MarketplaceRun(
             marketplace=marketplace, status='ok',
@@ -266,9 +295,12 @@ class AutoRunner:
             engine = MarketplaceEngine(mapping, master=self._master)
 
             if mode == 'consignment':
+                if visibility_report_path:
+                    self.log(f"[{marketplace}] using visibility report: "
+                             f"{Path(visibility_report_path).name}")
                 result = engine.process_consignments(
                     paths, config, margin_pct=margin,
-                    visibility_report_path=None,
+                    visibility_report_path=visibility_report_path,
                 )
             elif mode == 'multi':
                 result = (engine.process_multi(paths, config, margin_pct=margin)

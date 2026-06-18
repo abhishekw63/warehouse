@@ -110,6 +110,56 @@ def _format_duration(seconds: Optional[float]) -> str:
     return f"{h}h {m:02d}m"
 
 
+def pricing_rule_str(result: ProcessingResult) -> str:
+    """
+    Describe the pricing RULE this marketplace actually follows — so the
+    Summary banner shows *which* rule, not a misleading single % when the
+    marketplace prices by category or by GST.
+
+    Three shapes:
+      * ``margin_rules`` (Nykaa) → per-category keep% (e.g.
+        "Perfume/Fragrance 69% · Cosmetics 66%"), since a flat "66%" hides
+        the perfume rule entirely.
+      * ``gst_margin_discount`` (Reliance) → the GST-dependent formula and
+        the resulting keep% at each GST slab.
+      * otherwise → the straight run margin ("70%").
+    """
+    cfg = getattr(result, 'resolved_config', None) or {}
+
+    mr = cfg.get('margin_rules')
+    if mr:
+        parts = []
+        for rule in mr.get('rules', []):
+            kp = rule.get('keep_pct')
+            lbl = rule.get('label', 'rule')
+            parts.append(f"{lbl} {kp}% ({100 - kp}% off)"
+                         if kp is not None else lbl)
+        dk = mr.get('default_keep_pct')
+        if dk is not None:
+            parts.append(f"{mr.get('default_label', 'Default')} {dk}% "
+                         f"({100 - dk}% off)")
+        base = "category rule — " + " · ".join(parts)
+    else:
+        gmd = cfg.get('gst_margin_discount')
+        if gmd is not None:
+            pct = round(gmd * 100, 2)
+            slabs = " / ".join(
+                f"{round((1 - gmd * (1 + g)) * 100, 2)}%@{int(g * 100)}%GST"
+                for g in (0.0, 0.05, 0.18))
+            base = f"GST-based — keep 1-{pct}%x(1+GST) -> {slabs}"
+        else:
+            base = f"{int(result.margin_pct * 100)}% straight"
+
+    # v2.4.0: note any deal/override SKUs that actually fired this run (Swiggy
+    # deal sheet, Blinkit EPISENSE-style overrides), so the banner answers
+    # "…and were any deal SKUs applied?" at a glance. Counts unique EANs.
+    eans = {e.get('ean') for e in (getattr(result, 'exceptions_applied', None) or [])
+            if e.get('type') == 'price_override' and e.get('ean')}
+    if eans:
+        base += f"  ·  {len(eans)} deal/override SKU(s) applied"
+    return base
+
+
 def write(wb, result: ProcessingResult) -> None:
     """
     Append the 'Summary' sheet to ``wb``.
@@ -173,7 +223,7 @@ def write(wb, result: ProcessingResult) -> None:
         # totals correctly). Only consumed when incl_gst, but cheap to
         # always accumulate.
         po_groups[so_row.po_number]['amount_incgst'] += (
-            amt * MasterLoader.gst_divisor(so_row.gst_code))
+            amt * MasterLoader.row_gst_divisor(so_row))
 
     # ── Data rows ───────────────────────────────────────────────────────
     # v2.1.0 alignment overrides per column (everything not listed
@@ -274,7 +324,7 @@ def write(wb, result: ProcessingResult) -> None:
 
     # ── Info sub-row ────────────────────────────────────────────────────
     r += 2
-    margin_str = f"{int(result.margin_pct * 100)}%"
+    margin_str = pricing_rule_str(result)
 
     # v1.9.0: surface the warehouse the D365 export used so operations
     # can reconcile which RENEE warehouse this batch ships from.
@@ -292,7 +342,7 @@ def write(wb, result: ProcessingResult) -> None:
     duration_segment = f"  |  Duration: {duration_str}" if duration_str else ''
 
     info_text = (f"Marketplace: {result.marketplace}  |  "
-                 f"Margin: {margin_str}  |  "
+                 f"Pricing: {margin_str}  |  "
                  f"Warehouse: {wh_display} ({wh_code})  |  "
                  f"File: {result.input_file}  |  "
                  f"Generated: {datetime.now().strftime('%d-%m-%Y %H:%M')}"
@@ -440,14 +490,14 @@ def _write_to(wb, result: ProcessingResult) -> None:
     # Info sub-row (omit "Margin: 60%" — present but less relevant
     # for TO, kept anyway so users can verify the value used).
     r += 2
-    margin_str = f"{int(result.margin_pct * 100)}%"
+    margin_str = pricing_rule_str(result)
     wh_display = getattr(result, 'warehouse_display', '') or 'AHD'
     wh_code = getattr(result, 'warehouse_code', '') or 'PICK'
     duration_str = _format_duration(result.elapsed_seconds)
     duration_segment = f"  |  Duration: {duration_str}" if duration_str else ''
 
     info_text = (f"Marketplace: {result.marketplace}  |  "
-                 f"Margin: {margin_str}  |  "
+                 f"Pricing: {margin_str}  |  "
                  f"Warehouse: {wh_display} ({wh_code})  |  "
                  f"File: {result.input_file}  |  "
                  f"Generated: {datetime.now().strftime('%d-%m-%Y %H:%M')}"
