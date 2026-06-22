@@ -2334,6 +2334,200 @@ def open_file(file_path: Path):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  SHARED HISTORY DB — Push to DB (Offline / GT Mass)
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# GT Mass records into the SAME shared history DB the Online tool uses, so
+# offline and online orders live in one place. Segment 'Offline', marketplace
+# 'GT Mass', label 'GT Mass'. GT Mass carries no pricing, so order_value is 0
+# (qty-only tracking). The `location` column holds the Distributor Name (so the
+# DB shows which distributor each SO is for). Testers are NOT pushed to the
+# D365 headers/lines, but ARE recorded here as a separate 'Testers' row per SO
+# (po tagged '/TT/' so it doesn't collide with the regular SO under the
+# (marketplace, po) de-dupe key) — mirroring EKA/MT tester labelling.
+
+GT_SEGMENT = 'Offline'
+GT_MARKETPLACE = 'GT Mass'
+GT_WAREHOUSE = 'AHD'
+
+
+def _find_online_history_db():
+    """Locate + import the Online tool's ``history_db`` module by walking up
+    to ``online_po_management``. Returns the module or None (soft-fail)."""
+    here = Path(__file__).resolve()
+    for base in [here.parent, *here.parents]:
+        cand = base / 'online_po_management'
+        if (cand / 'online_po_processor' / 'auto' / 'history_db.py').exists():
+            if str(cand) not in sys.path:
+                sys.path.insert(0, str(cand))
+            try:
+                import online_po_processor.auto.history_db as H
+                return H
+            except Exception:
+                return None
+    return None
+
+
+def load_gt_value_lookup(d365_path: str) -> dict:
+    """Build ``{SO No. → Total Amount Incl. GST}`` from a D365 'Sales Orders'
+    export (the file the operator downloads after importing the package).
+
+    GT Mass distributor files carry no price, so the per-SO order value can
+    only come from D365 after it prices the lines. The export's ``No.`` column
+    is our SO number verbatim (e.g. 'SO/GTM/7639') and ``Total Amount Incl.
+    GST`` is the GST-inclusive total. Column names are matched case/space-
+    insensitively. Returns {} on any read error (push then falls back to 0)."""
+    import pandas as pd
+    try:
+        df = pd.read_excel(d365_path, dtype=str)
+    except Exception:
+        return {}
+    norm = {''.join(str(c).split()).lower(): c for c in df.columns}
+    no_col = norm.get('no.') or norm.get('no')
+    val_col = (norm.get('totalamountincl.gst')
+               or norm.get('totalamountinclgst')
+               or norm.get('totalamountincludingvat'))
+    if not no_col or not val_col:
+        return {}
+    out: dict = {}
+    for _, r in df.iterrows():
+        so = str(r[no_col]).strip()
+        if not so or so.lower() == 'nan':
+            continue
+        raw = r[val_col]
+        try:
+            out[so] = round(float(str(raw).replace(',', '')), 2)
+        except (ValueError, TypeError):
+            continue
+    return out
+
+
+def build_gt_order_rows(result, output_file: str = '',
+                        po_date: str = '', warehouse: str = GT_WAREHOUSE,
+                        value_lookup: dict = None) -> list:
+    """One history row per distinct SO number — the GT Mass structure kept
+    as-is. ``qty`` is the TOTAL count for the SO (order qty + tester qty), so
+    testers are captured within the SO's own number (no separate tester row,
+    no synthetic PO). ``items`` = #SKU lines that carry any quantity.
+
+    marketplace 'GT Mass', label 'GT Mass', location = Distributor Name.
+    ``order_value`` = the SO's ``Total Amount Incl. GST`` from the optional
+    ``value_lookup`` (D365 Sales Orders export, keyed by SO No.); 0 when no
+    lookup is supplied (GT Mass files have no pricing). po_date defaults to
+    today; warehouse to AHD.
+    """
+    from collections import OrderedDict
+    if not po_date:
+        from datetime import date
+        po_date = date.today().isoformat()
+
+    rows = getattr(result, 'rows', None) or []
+    orders: "OrderedDict[str, dict]" = OrderedDict()
+    for r in rows:
+        so = (r.so_number or '').strip()
+        if not so:
+            continue
+        oqty = int(r.qty or 0)
+        tqty = int(r.tester_qty or 0)
+        if oqty <= 0 and tqty <= 0:
+            continue
+        o = orders.get(so)
+        if o is None:
+            o = {
+                'segment':           GT_SEGMENT,
+                'marketplace':       GT_MARKETPLACE,
+                'marketplace_label': GT_MARKETPLACE,
+                'po':                so,
+                'location':          '',
+                'warehouse':         warehouse or '',
+                'po_date':           po_date,
+                'exp_date':          '',
+                'order_type':        'SO',
+                'items':             0,
+                'qty':               0,
+                'order_value':       0.0,
+                'output_file':       output_file or '',
+            }
+            orders[so] = o
+        dist = (r.distributor or '').strip()
+        if not o['location'] and dist:
+            o['location'] = dist
+        o['items'] += 1
+        o['qty'] += oqty + tqty      # total count = order + tester
+
+    # Fill order_value from the D365 export (Total Amount Incl. GST), matched
+    # on SO No. == po. Unmatched SOs keep 0.0.
+    if value_lookup:
+        for po, o in orders.items():
+            o['order_value'] = float(value_lookup.get(po, 0.0) or 0.0)
+
+    return list(orders.values())
+
+
+def gt_sql_preview(rows: list) -> list:
+    """Human-readable INSERT statements for what will be written — shown to the
+    operator (and printed to the console) so the SQL going to the DB is visible."""
+    cols = ['segment', 'marketplace', 'marketplace_label', 'po', 'location',
+            'warehouse', 'po_date', 'exp_date', 'order_type', 'items', 'qty',
+            'order_value']
+    out = []
+    for o in rows:
+        vals = ', '.join(
+            (repr(o[c]) if isinstance(o[c], str) else str(o[c]))
+            for c in cols)
+        out.append(f"INSERT INTO order_headers ({', '.join(cols)}) "
+                   f"VALUES ({vals});")
+    return out
+
+
+def record_gt_batch(result, output_file: str = '',
+                    value_lookup: dict = None) -> dict:
+    """Record the last generated GT Mass batch into the shared history DB
+    (Offline / GT Mass). New order numbers only; soft-fails (never raises).
+    ``value_lookup`` (D365 Sales Orders export, {SO No. → Total Amount Incl.
+    GST}) fills order_value; omitted ⇒ order_value 0."""
+    H = _find_online_history_db()
+    if H is None:
+        return {'recorded': False, 'reason': 'history_db module not found'}
+    from datetime import date, datetime
+    rows = build_gt_order_rows(
+        result, output_file, po_date=date.today().isoformat(),
+        warehouse=GT_WAREHOUSE, value_lookup=value_lookup)
+    if not rows:
+        return {'recorded': False, 'reason': 'no orders to record'}
+    try:
+        db_path = H.default_history_db_path()
+        store = H.get_history_store(db_path)
+        try:
+            existing = store.existing_pos()
+        finally:
+            store.close()
+        new_rows = [r for r in rows
+                    if (r['marketplace'], r['po']) not in existing]
+        skipped = len(rows) - len(new_rows)
+        if not new_rows:
+            return {'recorded': False, 'reason': 'all orders already recorded',
+                    'skipped': skipped}
+        run_meta = {
+            'run_ts': datetime.now().isoformat(timespec='seconds'),
+            'mode': 'MANUAL',
+            'online_root': (f'OFFLINE GT MASS: {output_file}'
+                            if output_file else 'OFFLINE GT MASS'),
+            'marketplaces': 1,
+            'total_pos':   len(new_rows),
+            'total_items': sum(r['items'] for r in new_rows),
+            'total_qty':   sum(r['qty'] for r in new_rows),
+            'total_value': sum(r['order_value'] for r in new_rows),
+            'consolidated_path': '',
+            'tracker_path': '',
+        }
+        res = H._record(new_rows, run_meta, db_path, skipped=skipped)
+        return {'recorded': True, 'skipped': skipped, **res}
+    except Exception as e:   # noqa: BLE001 — never block on the DB
+        return {'recorded': False, 'reason': f'DB error: {e}'}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  MAIN AUTOMATION ENGINE
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -2529,6 +2723,16 @@ class AutomationUI:
             command=self._send_email,
         ).pack(pady=6)
 
+        # Push to DB — record the generated SOs into the shared history DB
+        # (Offline / GT Mass). Enabled after a successful Generate; a
+        # deliberate separate step (verify the output first, then push).
+        self.push_db_btn = tk.Button(
+            self.root, text="⤓ Push to DB", width=22,
+            bg="#2563eb", fg='white', font=("Arial", 10, "bold"),
+            state=tk.DISABLED, command=self._push_to_db,
+        )
+        self.push_db_btn.pack(pady=6)
+
         # ── Status labels ──
         self.status = tk.Label(
             self.root,
@@ -2605,6 +2809,8 @@ class AutomationUI:
         if output_path:
             self.last_output_path = output_path
             self.open_button.config(state=tk.NORMAL)
+            # Re-arm Push to DB for this fresh batch.
+            self.push_db_btn.config(state=tk.NORMAL, text="⤓ Push to DB")
 
             if failed > 0 or warned > 0:
                 status_text = (
@@ -2667,6 +2873,91 @@ class AutomationUI:
                 "Not Found",
                 "File gone. Generate a new dump.",
             )
+
+    def _push_to_db(self):
+        """Record the last generated GT Mass batch into the shared history DB
+        (Offline / GT Mass). One row per SO (qty = order qty) plus a separate
+        'Testers' row per SO with testers. New order numbers only."""
+        if not self.last_result or not self.last_result.rows:
+            messagebox.showinfo(
+                "Push to DB",
+                "Generate output first, verify it, then push.")
+            return
+        from datetime import date
+        out_name = self.last_output_path.name if self.last_output_path else ''
+
+        # ── Optional: D365 Sales Orders export → order_value ────────────
+        # GT Mass files carry no price, so the per-SO total value can only
+        # come from D365 after it prices the lines. Prompt for that export
+        # (the 'Sales Orders (NN).xlsx' the operator downloads). Cancel ⇒
+        # push with order_value 0.
+        value_lookup = {}
+        val_msg = "order value 0 (no D365 export selected)"
+        if messagebox.askyesno(
+                "D365 value",
+                "Add the order value from D365?\n\n"
+                "Select the D365 'Sales Orders' export (it has the SO No. + "
+                "Total Amount Incl. GST). Choose 'No' to push with value 0."):
+            d365_path = filedialog.askopenfilename(
+                title="Select D365 Sales Orders export",
+                filetypes=[("Excel", "*.xlsx *.xls"), ("All files", "*.*")])
+            if d365_path:
+                value_lookup = load_gt_value_lookup(d365_path)
+                if not value_lookup:
+                    messagebox.showwarning(
+                        "D365 value",
+                        "Couldn't read SO No. / 'Total Amount Incl. GST' from "
+                        "that file — pushing with value 0 instead.")
+
+        preview = build_gt_order_rows(
+            self.last_result, out_name, po_date=date.today().isoformat(),
+            warehouse=GT_WAREHOUSE, value_lookup=value_lookup)
+        if not preview:
+            messagebox.showinfo("Push to DB", "No SO numbers to record.")
+            return
+        # Print the SQL that will run so the operator can see it.
+        print("─── GT Mass Push to DB — SQL preview ───")
+        for stmt in gt_sql_preview(preview):
+            print(stmt)
+
+        total_qty = sum(r['qty'] for r in preview)
+        if value_lookup:
+            matched = sum(1 for r in preview if r['po'] in value_lookup)
+            total_val = sum(r['order_value'] for r in preview)
+            val_msg = (f"value matched on {matched}/{len(preview)} SO(s); "
+                       f"total ₹{total_val:,.2f} (incl GST)")
+        if not messagebox.askyesno(
+                "Push to DB",
+                f"Push {len(preview)} SO(s) to the history DB?\n\n"
+                f"  Total qty (incl. testers): {total_qty}\n"
+                f"  Order value: {val_msg}\n\n"
+                f"Segment 'Offline' / marketplace 'GT Mass'.\n"
+                f"One row per SO; qty = order + tester count.\n"
+                f"Distributor name goes in Location.\n"
+                f"Re-pushing the same SO numbers is skipped.\n\n"
+                f"(SQL preview printed to the console.)"):
+            return
+
+        self.push_db_btn.config(state=tk.DISABLED, text="⏳ Pushing...")
+        self.root.update()
+        try:
+            rec = record_gt_batch(self.last_result, out_name,
+                                  value_lookup=value_lookup)
+        except Exception as e:   # noqa: BLE001
+            rec = {'recorded': False, 'reason': str(e)}
+
+        if rec.get('recorded'):
+            msg = f"Recorded {rec.get('new_orders', 0)} row(s) [Offline / GT Mass]."
+            if rec.get('skipped'):
+                msg += f"\nSkipped {rec['skipped']} already in DB."
+            messagebox.showinfo("Push to DB", msg)
+            self.push_db_btn.config(state=tk.DISABLED, text="⤓ Push to DB")
+        else:
+            reason = rec.get('reason', 'unknown')
+            messagebox.showerror(
+                "Push to DB",
+                f"Not recorded:\n{reason}\n\nFix and try again.")
+            self.push_db_btn.config(state=tk.NORMAL, text="⤓ Push to DB")
 
     def _export_d365(self):
         """Prompt for D365 template and fill it with processed data."""

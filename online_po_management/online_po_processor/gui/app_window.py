@@ -577,6 +577,21 @@ class OnlinePOApp:
         self.push_db_btn.grid(row=4, column=0, columnspan=2,
                                padx=4, pady=(4, 6), sticky='ew')
 
+        # v2.4.6: Push Issues to DB — records ONLY the flagged lines (MISMATCH
+        # / NOT_IN_MASTER) to the order_issue_lines audit table. Separate &
+        # independent from the header "Push to DB"; append-with-guard (a
+        # revised MRP/CP records a new dated snapshot, an identical re-push is
+        # skipped). Enabled after a successful Generate.
+        self.push_issues_btn = tk.Button(
+            btn_frame, text="⚠  Push Issues to DB (mismatch / not-in-master)",
+            width=_BTN_W, font=("Arial", 10, "bold"),
+            bg="#b45309", fg='white', activebackground="#92400e",
+            activeforeground='white', state=tk.DISABLED,
+            command=self._push_issues_to_db,
+        )
+        self.push_issues_btn.grid(row=5, column=0, columnspan=2,
+                                  padx=4, pady=(0, 6), sticky='ew')
+
         # ── Status line ─────────────────────────────────────────────────
         self.status_var = tk.StringVar(
             value="Status: Waiting — select files and generate"
@@ -1156,6 +1171,7 @@ class OnlinePOApp:
         # A new generate supersedes any un-pushed result.
         self._pending_push = None
         self.push_db_btn.config(state=tk.DISABLED)
+        self.push_issues_btn.config(state=tk.DISABLED)
 
         # ── Load Items_March (master) ───────────────────────────────────
         master_loader: Optional[MasterLoader] = None
@@ -1241,6 +1257,15 @@ class OnlinePOApp:
                 "computed Cost Price"
             )
 
+        # ── v2.4.6: Flipkart Tracker from the optional header file ──────────
+        # Flipkart's per-PO Order Value / Qty / dates live in the portal's
+        # 'purchase-orders-*.csv' PO-list (the "header file"), not in the
+        # individual PO xlsx. Offer to upload it; if provided, build the
+        # Tracker rows (Market Place by location, locked mapping) and stamp
+        # them on the result so the exporter writes a 'Tracker' sheet.
+        if marketplace == 'Flipkart':
+            self._maybe_load_flipkart_header(result)
+
         if not result.rows:
             self._log("ERROR: No valid rows extracted!")
             for _, _, msg in result.warnings:
@@ -1323,6 +1348,13 @@ class OnlinePOApp:
             self._pending_push = {'result': result,
                                    'output_path': str(output_path)}
             self.push_db_btn.config(state=tk.NORMAL)
+            # v2.4.6: enable the Issues push only when there ARE flagged lines.
+            _n_issues = sum(
+                1 for r in result.rows
+                if getattr(r, 'validation_status', '') in
+                ('MISMATCH', 'NOT_IN_MASTER'))
+            self.push_issues_btn.config(
+                state=tk.NORMAL if _n_issues else tk.DISABLED)
             hist_line = ("\nHistory     : ⏳ NOT recorded yet — verify the "
                          "output, then click 'Push to DB'")
 
@@ -1472,6 +1504,115 @@ class OnlinePOApp:
                 "Push to DB",
                 f"Not recorded:\n{type(e).__name__}: {e}\n\n"
                 f"Fix the issue and try again.")
+
+    def _push_issues_to_db(self) -> None:
+        """v2.4.6: record ONLY the flagged lines (MISMATCH / NOT_IN_MASTER) of
+        the last result to the ``order_issue_lines`` audit table. Append with
+        the value-aware guard — a revised MRP/CP is a new dated snapshot, an
+        identical re-push is skipped. Independent of the header Push to DB."""
+        pend = getattr(self, '_pending_push', None)
+        if not pend:
+            messagebox.showinfo(
+                "Push Issues to DB",
+                "Generate an SO first, verify the output, then push issues.")
+            return
+        result = pend['result']
+        output_path = pend['output_path']
+
+        from online_po_processor.auto.history_db import (
+            issue_lines_from_result, record_issue_lines_manual,
+        )
+        preview = issue_lines_from_result(result, os.path.basename(output_path))
+        if not preview:
+            messagebox.showinfo(
+                "Push Issues to DB",
+                "No flagged lines (MISMATCH / NOT_IN_MASTER) in this output — "
+                "nothing to record.")
+            return
+
+        if not messagebox.askyesno(
+                "Push Issues to DB",
+                f"Record the FLAGGED lines to the issue-audit table?\n\n"
+                f"Marketplace : {result.marketplace}\n"
+                f"Flagged     : {len(preview)} line(s) "
+                f"(mismatch / not-in-master)\n\n"
+                f"Unchanged lines already pushed are skipped; revised values "
+                f"are recorded as a new snapshot."):
+            return
+
+        try:
+            self._log("─── Push Issues to DB — order_issue_lines ───")
+            for ln in preview:
+                self._log(
+                    f"  [{ln['status']}] PO {ln['po']} item {ln['item_no']} "
+                    f"vMRP={ln['vendor_mrp']} oMRP={ln['our_mrp']} "
+                    f"vCP={ln['vendor_cp']} oCP={ln['our_cp']} "
+                    f"diff={ln['diff']}")
+            info = record_issue_lines_manual(result, output_path)
+            self._log(
+                f"Issues: {info['recorded']} recorded "
+                f"(new/revised), {info['skipped']} unchanged skipped "
+                f"(of {info['total_issues']} flagged).")
+            messagebox.showinfo(
+                "Push Issues to DB",
+                f"Recorded {info['recorded']} flagged line(s) "
+                f"(new/revised).\n"
+                f"{info['skipped']} unchanged (already pushed) skipped.")
+        except Exception as e:  # noqa: BLE001
+            self._log(f"ERROR: Push Issues failed: {type(e).__name__}: {e}")
+            messagebox.showerror(
+                "Push Issues to DB",
+                f"Not recorded:\n{type(e).__name__}: {e}")
+
+    # ── v2.4.6: Flipkart Tracker header file ─────────────────────────────
+
+    def _maybe_load_flipkart_header(self, result) -> None:
+        """Ask whether to upload the Flipkart header file (PO-list CSV) and,
+        if so, build the Tracker rows onto ``result.flipkart_tracker_rows``.
+
+        Best-effort: any failure logs a warning and leaves the tracker empty
+        (the rest of the output is unaffected)."""
+        try:
+            want = messagebox.askyesno(
+                "Flipkart Tracker",
+                "Upload the Flipkart header file (the portal "
+                "'purchase-orders-*.csv' PO list) to generate the Tracker "
+                "sheet?\n\nYes → pick the CSV.   No → skip the Tracker.",
+            )
+        except Exception:  # noqa: BLE001
+            want = False
+        if not want:
+            self._log("Flipkart Tracker: header file not uploaded — skipped.")
+            return
+
+        path = filedialog.askopenfilename(
+            title="Select Flipkart header file (purchase-orders-*.csv)",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if not path:
+            self._log("Flipkart Tracker: no file chosen — skipped.")
+            return
+
+        try:
+            from online_po_processor.engine.flipkart_tracker import (
+                build_flipkart_tracker, unknown_locations,
+            )
+            rows = build_flipkart_tracker(path)
+        except Exception as e:  # noqa: BLE001
+            self._log(f"Flipkart Tracker: could not read header file — {e}")
+            messagebox.showwarning(
+                "Flipkart Tracker",
+                f"Couldn't build the Tracker from that file:\n\n{e}\n\n"
+                f"Pick the portal 'purchase-orders-*.csv' export.",
+            )
+            return
+
+        result.flipkart_tracker_rows = rows
+        unk = unknown_locations(rows)
+        self._log(f"Flipkart Tracker: {len(rows)} PO(s) from "
+                  f"{os.path.basename(path)}"
+                  + (f"; {len(unk)} unknown location(s) → 'FK (review)': "
+                     f"{', '.join(unk)}" if unk else ""))
 
     # ── v1.5.0: D365 Package Export ──────────────────────────────────────
 

@@ -241,7 +241,8 @@ class MappingLoader:
             return ''
         return re.sub(r'[\s\-]', '', str(s).lower())
 
-    def lookup(self, location: str) -> Optional[Dict[str, str]]:
+    def lookup(self, location: str,
+               fuzzy: bool = True) -> Optional[Dict[str, str]]:
         """
         Find the ERP codes for a delivery location string.
 
@@ -325,7 +326,11 @@ class MappingLoader:
                     )
                     return {**val, 'matched_key': key}
 
-        # 4. Substring match (lossy — log it so a misuse is visible)
+        # 4. Substring match (lossy — log it so a misuse is visible). Skipped
+        # when ``fuzzy=False`` (callers that want EXACT-only resolution, e.g.
+        # FirstCry's address-first pass, which must not loosely match).
+        if not fuzzy:
+            return None
         loc_lower = loc_clean.lower()
         for key, val in self.mappings.items():
             key_lower = key.lower()

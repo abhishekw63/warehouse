@@ -313,22 +313,28 @@ def write(wb, result: ProcessingResult) -> None:
                 ws.cell(row=r, column=c).fill = NO_MASTER_FILL
             ws.cell(row=r, column=status_col).font = NOT_IN_MASTER_TEXT_FONT
 
-        # ── v2.4.1: per-row EXCEPTION highlight ─────────────────────────
-        # When a Master Exception was applied to THIS row (vendor CP accepted,
-        # price override, or EAN remap), amber-tint the whole row so the
-        # operator can see at a glance that special handling was used — even
-        # though the exception typically makes the row validate OK. The Status
-        # pill keeps its green OK colour on top; a cell comment names the
-        # exact exception. This is the Validation-sheet half of "highlight
-        # each exception" (the Lines sheet amber-tints the forced Unit Price).
+        # ── v2.4.7: per-row EXCEPTION highlight — ALWAYS ────────────────
+        # Any row with a Master Exception (vendor-CP / Swiggy deal / price
+        # override / EAN remap) is amber-tinted across the WHOLE row, whatever
+        # its status, so it's unmistakable that special handling (a deal /
+        # agreed price) was applied — including deal rows whose dump cost
+        # differs from the agreed cost (MISMATCH). Amber = exception, distinct
+        # from plain MISMATCH (pink) and plain OK (no fill). The Status cell
+        # keeps its own pill/font so OK/MISMATCH stays readable, and a comment
+        # names the exact exception. (The Lines sheet amber-tints the forced
+        # Unit Price for the same rows.)
         exc_label = getattr(so_row, 'exception_label', '') or ''
-        if exc_label and so_row.validation_status != 'MISMATCH':
+        if exc_label:
             for c in range(1, n_cols + 1):
                 ws.cell(row=r, column=c).fill = LOC_MISMATCH_FILL
             sc = ws.cell(row=r, column=status_col)
             if so_row.validation_status == 'OK':
                 sc.fill = STATUS_OK_FILL          # keep the green OK pill
                 sc.font = STATUS_OK_FONT
+            elif so_row.validation_status == 'MISMATCH':
+                sc.font = MISMATCH_TEXT_FONT       # red bold 'MISMATCH' on amber
+            elif so_row.validation_status == 'NOT_IN_MASTER':
+                sc.font = NOT_IN_MASTER_TEXT_FONT
             sc.comment = Comment(
                 f"Exception applied: {exc_label}", "PO Engine")
 

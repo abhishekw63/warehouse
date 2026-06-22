@@ -911,6 +911,11 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
                     # DECIDER: description keywords (your manual search).
                     'contains': ['perfume', 'fragra'],
                     'contains_column': 'SKU Name',
+                    # v2.4.6: a 'HAIR PERFUME'/'HAIR FRAGRANCE' is a HAIR
+                    # product (e.g. RENEE Caramel Crush Hair Perfume), NOT a
+                    # fragrance — exclude it so it gets the regular Cosmetics
+                    # rate (66%), not 69%. ``excludes`` wins over ``contains``.
+                    'excludes': ['hair'],
                     # CROSS-CHECK only (does not decide the margin): flags
                     # rows whose HSN disagrees with the name decision.
                     'hsn_prefix': ['3303'],
@@ -1475,10 +1480,22 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
         # Dmart's 'Landed Price' column == MRP × 45% (post-GST,
         # verified across rows at both 5% and 18% GST rates). Matches
         # the engine's ``'landing'`` formula exactly when margin=45.
-        'fob_col': 'Landed Price',            # [VALIDATION]
+        'fob_col': 'Landed Price',            # [VALIDATION] vendor Landing (post-GST)
+        # v2.4.5: the PDF also carries vendor MRP + vendor CP — surface both.
+        #   * ``mrp_col='MRP'`` → Validation 'Vendor MRP' (vs Our MRP).
+        #   * ``ref_fob_col='Basic Price'`` → Validation 'Vendor CP'. Basic
+        #     Price = Landed ÷ (1+GST) = the PRE-GST cost, which equals our CP
+        #     (MRP×45%÷(1+GST)) for a correctly-priced line.
+        'mrp_col': 'MRP',
+        'ref_fob_col': 'Basic Price',
         'default_margin': 45,                 # Dmart's operating margin
-        'compare_basis': 'landing',           # MRP × margin% (no GST division)
+        'compare_basis': 'landing',           # Landing shown (MRP × margin%)
         'compare_label': 'Landed Price',
+        # v2.4.5: FINALIZE status on the CP pair, not landing. Vendor Landing /
+        # Our LR are still shown and amber-highlighted on any diff, but the
+        # row's OK/MISMATCH is decided by |Vendor CP − Our CP| — the operator's
+        # reconciliation basis for Dmart.
+        'status_basis': 'cost',
         # Total Value is pre-calculated by Avenue (Landed × Qty, with
         # paise-level rounding). Matched within ₹0.5 against the PDF's
         # footer 'Total <qty> <value>' line on the Renee_AE00.pdf
@@ -1544,7 +1561,13 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
         'pdf_parser':    'firstcry',
         # Synthetic columns injected by the FirstCry PDF parser.
         'po_col':  '__po__',                  # [REQUIRED] synthetic
-        'loc_col': '__loc__',                 # [REQUIRED] synthetic (Delivered To)
+        'loc_col': '__loc__',                 # [REQUIRED] synthetic (Delivered To NAME)
+        # v2.4.6: ship-to ADDRESS, tried as an EXACT match BEFORE the name/
+        # fuzzy tiers — so one buyer name with several ship-tos (OM ENTERPRISES
+        # → 20493_1 vs the Pune Survey-27/1B address → 20493_2) resolves right.
+        # Add the exact PDF address as a Del Location to target a specific
+        # ship-to; otherwise resolution falls back to the Delivered-To name.
+        'loc_addr_col': '__loc_address__',
         'qty_col': 'Total Qty',               # [REQUIRED] Billed + Free
         'item_resolution': 'from_ean',
         'ean_col': 'Manufacturer',            # [REQUIRED] the GTIN column

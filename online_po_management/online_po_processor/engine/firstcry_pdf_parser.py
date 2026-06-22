@@ -95,7 +95,8 @@ class FirstcryPOHeader:
     po_number:      str = ''
     po_date:        str = ''
     po_expiry:      str = ''      # PO Expiry Date (Tracker sheet)
-    delivered_to:   str = ''      # ship-to location key (→ Ship-To B2B)
+    delivered_to:   str = ''      # ship-to buyer NAME (→ Ship-To B2B)
+    delivered_address: str = ''   # ship-to full ADDRESS (exact-match key)
     delivery_state: str = ''      # state in the Delivered-To address
     buyer_gst:      str = ''
     raw_header:     str = ''
@@ -186,6 +187,20 @@ def _parse_header(text: str) -> FirstcryPOHeader:
         for ln in text.splitlines():
             if ln.strip():
                 header.delivered_to = ln.strip()
+                break
+
+    # v2.4.6: ship-to ADDRESS — the 'Address:' line that FOLLOWS the
+    # 'Delivered To:' line (the vendor's own 'Address:' lines appear ABOVE
+    # it). Used for EXACT-match resolution so one buyer name with several
+    # ship-tos (e.g. OM ENTERPRISES → 20493_1 vs the Pune Survey-27/1B
+    # address → 20493_2) resolves to the right Del Location.
+    lines = text.splitlines()
+    _dt = next((i for i, ln in enumerate(lines)
+                if re.search(r'Delivered\s*To', ln, re.IGNORECASE)), -1)
+    if _dt >= 0:
+        for ln in lines[_dt:]:
+            if m := re.search(r'Address\s*:\s*(.+)', ln, re.IGNORECASE):
+                header.delivered_address = _clean_text(m.group(1))
                 break
 
     return header
@@ -361,6 +376,7 @@ def firstcry_po_to_dataframe(po: FirstcryPO):
         rows.append({
             '__po__':        po.header.po_number,
             '__loc__':       po.header.delivered_to,
+            '__loc_address__': po.header.delivered_address,   # exact-match key
             # v2.3.1: header fields replicated per row for the Tracker sheet.
             '__po_date__':   po.header.po_date,
             '__exp_date__':  po.header.po_expiry,

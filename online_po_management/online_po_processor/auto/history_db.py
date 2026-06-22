@@ -205,13 +205,24 @@ _HISTORY_SELECT = (
     "warehouse, po_date, exp_date, order_type, items, qty, order_value, "
     "output_file")
 
+# v2.4.6: the Issue-Lines tab in the history export — flagged SKUs across all
+# pushes (latest first). Same columns as order_issue_lines.
+_ISSUE_COLS = ['Run Time', 'Market Place', 'PO', 'Item No', 'EAN',
+               'Description', 'Qty', 'GST Code', 'Vendor MRP', 'Our MRP',
+               'Vendor Landing', 'Our Landing', 'Vendor CP', 'Our CP',
+               'Difference', 'Margin %', 'Status', 'Output File']
+_ISSUE_SELECT = (
+    "run_ts, marketplace, po, item_no, ean, description, qty, gst_code, "
+    "vendor_mrp, our_mrp, vendor_landing, our_landing, vendor_cp, our_cp, "
+    "diff, margin_pct, status, output_file")
 
-def _write_history_xlsx(rows, out_path) -> str:
+
+def _write_history_xlsx(rows, out_path, issue_rows=None) -> str:
     from openpyxl import Workbook
     from online_po_processor.exporter._styles import (
         auto_width, data_cell, hdr_cell,
     )
-    left = {'Location', 'Output File'}
+    left = {'Location', 'Output File', 'Description'}
     wb = Workbook()
     ws = wb.active
     ws.title = 'Order History'
@@ -227,8 +238,37 @@ def _write_history_xlsx(rows, out_path) -> str:
             data_cell(ws, r, c, val, align='left' if name in left else 'center')
     auto_width(ws)
     ws.freeze_panes = 'A2'
+
+    # v2.4.6: second tab — the flagged-SKU audit (MISMATCH / NOT_IN_MASTER).
+    if issue_rows:
+        ws2 = wb.create_sheet('Issue Lines')
+        for c, h in enumerate(_ISSUE_COLS, 1):
+            hdr_cell(ws2, 1, c, h)
+        for r, rec in enumerate(issue_rows, start=2):
+            for c, val in enumerate(rec, start=1):
+                name = _ISSUE_COLS[c - 1]
+                if isinstance(val, datetime):
+                    val = val.isoformat(sep=' ')
+                elif hasattr(val, 'isoformat'):
+                    val = val.isoformat()
+                data_cell(ws2, r, c, val,
+                          align='left' if name in left else 'center')
+        auto_width(ws2)
+        ws2.freeze_panes = 'A2'
+
     wb.save(str(out_path))
     return str(out_path)
+
+
+def _fetch_issue_rows(cur, ph_table: str):
+    """Read all issue rows (latest first) for the history export. Returns []
+    if the table is somehow absent (defensive)."""
+    try:
+        cur.execute(f"SELECT {_ISSUE_SELECT} FROM order_issue_lines "
+                    "ORDER BY run_ts DESC, line_id DESC")
+        return cur.fetchall()
+    except Exception:  # noqa: BLE001 — table missing / backend quirk
+        return []
 
 
 # ── SQLite implementation ───────────────────────────────────────────────
@@ -275,6 +315,53 @@ _ORDERS_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_orders_mp_po ON orders(marketplace, po)"
 )
 
+# v2.4.6: ISSUE-line audit. One row per FLAGGED SORow (status MISMATCH or
+# NOT_IN_MASTER only) — the exact Validation-sheet data (vendor vs our MRP/
+# landing/CP, diff, status). Append per push (value-aware: identical re-push
+# is skipped, a revised value is recorded as a new snapshot) so the operator
+# has a running, dated list of problem SKUs.
+_LINES_DDL = """
+CREATE TABLE IF NOT EXISTS order_issue_lines (
+    line_id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_ts            TEXT,
+    marketplace       TEXT,
+    po                TEXT,
+    item_no           TEXT,
+    ean               TEXT,
+    description       TEXT,
+    qty               INTEGER,
+    gst_code          TEXT,
+    vendor_mrp        REAL,
+    our_mrp           REAL,
+    vendor_landing    REAL,
+    our_landing       REAL,
+    vendor_cp         REAL,
+    our_cp            REAL,
+    diff              REAL,
+    margin_pct        REAL,
+    status            TEXT,
+    output_file       TEXT,
+    created_at        TEXT DEFAULT CURRENT_TIMESTAMP
+)
+"""
+_LINES_INDEX = (
+    "CREATE INDEX IF NOT EXISTS idx_issue_mp_po "
+    "ON order_issue_lines(marketplace, po, item_no)"
+)
+
+# Insert column order — shared by both backends (placeholder differs).
+_LINE_COLS = [
+    'run_ts', 'marketplace', 'po', 'item_no', 'ean', 'description', 'qty',
+    'gst_code', 'vendor_mrp', 'our_mrp', 'vendor_landing', 'our_landing',
+    'vendor_cp', 'our_cp', 'diff', 'margin_pct', 'status', 'output_file',
+]
+# Fields compared to decide "changed vs unchanged" for the value-aware guard
+# (run_ts / output_file deliberately excluded — they change every run).
+_LINE_VALUE_COLS = [
+    'qty', 'gst_code', 'vendor_mrp', 'our_mrp', 'vendor_landing',
+    'our_landing', 'vendor_cp', 'our_cp', 'diff', 'margin_pct', 'status',
+]
+
 
 class SqliteHistoryStore(HistoryStore):
     """``history.db`` SQLite backend."""
@@ -290,6 +377,8 @@ class SqliteHistoryStore(HistoryStore):
         cur.execute(_RUNS_DDL)
         cur.execute(_ORDERS_DDL)
         cur.execute(_ORDERS_INDEX)
+        cur.execute(_LINES_DDL)          # v2.4.6
+        cur.execute(_LINES_INDEX)
         # Forward-compatible migration: add 'mode' to DBs created before it.
         self._ensure_column(cur, 'runs', 'mode', 'TEXT')
         self._ensure_column(cur, 'orders', 'mode', 'TEXT')
@@ -338,6 +427,11 @@ class SqliteHistoryStore(HistoryStore):
         self.conn.commit()
         return run_id
 
+    def record_issue_lines(self, line_rows: List[dict]) -> dict:
+        """v2.4.6: append flagged (MISMATCH/NOT_IN_MASTER) lines with the
+        value-aware guard. See :func:`_insert_issue_lines`."""
+        return _insert_issue_lines(self.conn, '?', line_rows)
+
     def fetch_orders(self, run_id=None) -> List[dict]:
         return _fetch_orders_sql(self.conn.cursor(), 'orders', '?', run_id)
 
@@ -345,7 +439,8 @@ class SqliteHistoryStore(HistoryStore):
         cur = self.conn.cursor()
         cur.execute(f"SELECT {_HISTORY_SELECT} FROM orders "
                     "ORDER BY run_id DESC, id ASC")
-        return _write_history_xlsx(cur.fetchall(), out_path)
+        rows = cur.fetchall()
+        return _write_history_xlsx(rows, out_path, _fetch_issue_rows(cur, ''))
 
     def close(self) -> None:
         self.conn.close()
@@ -396,6 +491,36 @@ CREATE TABLE IF NOT EXISTS order_headers (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 """
 
+# v2.4.6: ISSUE-line audit (MySQL). Mirror of _LINES_DDL — flagged lines only
+# (MISMATCH / NOT_IN_MASTER), appended per push with the value-aware guard.
+_MYSQL_LINES_DDL = """
+CREATE TABLE IF NOT EXISTS order_issue_lines (
+    line_id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+    run_ts            DATETIME,
+    marketplace       VARCHAR(50),
+    po                VARCHAR(100),
+    item_no           VARCHAR(50),
+    ean               VARCHAR(20),
+    description       VARCHAR(255),
+    qty               INT,
+    gst_code          VARCHAR(20),
+    vendor_mrp        DECIMAL(14,2),
+    our_mrp           DECIMAL(14,2),
+    vendor_landing    DECIMAL(14,2),
+    our_landing       DECIMAL(14,2),
+    vendor_cp         DECIMAL(14,2),
+    our_cp            DECIMAL(14,2),
+    diff              DECIMAL(14,2),
+    margin_pct        DECIMAL(6,2),
+    status            VARCHAR(20),
+    output_file       VARCHAR(500),
+    created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_issue_mp_po (marketplace, po, item_no),
+    INDEX idx_issue_status (status),
+    INDEX idx_issue_run_ts (run_ts)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+"""
+
 
 class MySqlHistoryStore(HistoryStore):
     """
@@ -422,6 +547,7 @@ class MySqlHistoryStore(HistoryStore):
         with self.conn.cursor() as cur:
             cur.execute(_MYSQL_RUNS_DDL)
             cur.execute(_MYSQL_ORDERS_DDL)
+            cur.execute(_MYSQL_LINES_DDL)          # v2.4.6
             # Forward-compatible migrations:
             self._ensure_column(cur, 'order_headers', 'segment',
                                 "VARCHAR(20)", "AFTER mode")
@@ -496,6 +622,10 @@ class MySqlHistoryStore(HistoryStore):
         self.conn.commit()
         return run_id
 
+    def record_issue_lines(self, line_rows: List[dict]) -> dict:
+        """v2.4.6: append flagged lines with the value-aware guard (MySQL)."""
+        return _insert_issue_lines(self.conn, '%s', line_rows)
+
     def fetch_orders(self, run_id=None) -> List[dict]:
         return _fetch_orders_sql(self.conn.cursor(), 'order_headers', '%s',
                                  run_id)
@@ -505,7 +635,8 @@ class MySqlHistoryStore(HistoryStore):
             cur.execute(f"SELECT {_HISTORY_SELECT} FROM order_headers "
                         "ORDER BY run_id DESC, order_id ASC")
             rows = cur.fetchall()
-        return _write_history_xlsx(rows, out_path)
+            issue_rows = _fetch_issue_rows(cur, '')
+        return _write_history_xlsx(rows, out_path, issue_rows)
 
     def close(self) -> None:
         self.conn.close()
@@ -577,6 +708,127 @@ def _record(order_rows: List[dict], run_meta: dict, db_path,
         store.close()
     return {'db_path': str(db_path), 'run_id': run_id,
             'new_orders': len(order_rows), 'skipped': skipped}
+
+
+# ── v2.4.6: Issue-line audit (MISMATCH / NOT_IN_MASTER) ──────────────────
+
+#: statuses that count as a "needs-attention" / problem SKU.
+_ISSUE_STATUSES = {'MISMATCH', 'NOT_IN_MASTER'}
+
+
+def _f(x):
+    """Coerce to a 2-dp float; None for blanks / NaN / non-numeric."""
+    if x is None:
+        return None
+    try:
+        v = float(x)
+        return None if v != v else round(v, 2)      # v != v → NaN
+    except (TypeError, ValueError):
+        return None
+
+
+def _values_equal(a, b) -> bool:
+    """Numeric compare within a paisa; else string compare (NULL-safe)."""
+    if a is None and b is None:
+        return True
+    try:
+        return abs(float(a) - float(b)) <= 0.005
+    except (TypeError, ValueError):
+        return str(a if a is not None else '') == str(b if b is not None else '')
+
+
+def issue_lines_from_result(result, output_file: str = '') -> List[dict]:
+    """One row per FLAGGED line (status MISMATCH or NOT_IN_MASTER) — the
+    Validation-sheet data (vendor vs our MRP/landing/CP, diff, status). OK
+    lines are skipped (we only track problem SKUs)."""
+    import datetime as _dt
+    basis = getattr(result, 'compare_basis', None) or 'landing'
+    run_ts = _dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    out: List[dict] = []
+    for so in result.rows:
+        status = getattr(so, 'validation_status', '') or ''
+        if status not in _ISSUE_STATUSES:
+            continue
+        # Which file column is the vendor Landing vs CP depends on the basis
+        # (same derivation the Validation sheet uses).
+        v_landing = so.fob_price if basis == 'landing' else so.ref_fob_price
+        v_cp = so.fob_price if basis == 'cost' else so.ref_fob_price
+        row_margin = (so.applied_margin_pct
+                      if getattr(so, 'applied_margin_pct', None) is not None
+                      else result.margin_pct)
+        o_landing = None
+        if so.mrp is not None and _f(so.mrp) is not None and row_margin:
+            o_landing = round(float(so.mrp) * float(row_margin), 2)
+        out.append({
+            'run_ts':         run_ts,
+            'marketplace':    result.marketplace,
+            'po':             str(so.po_number),
+            'item_no':        str(so.item_no or ''),
+            'ean':            str(so.ean or ''),
+            'description':    (str(so.description or ''))[:255],
+            'qty':            int(so.qty or 0),
+            'gst_code':       str(so.gst_code or ''),
+            'vendor_mrp':     _f(so.vendor_mrp),
+            'our_mrp':        _f(so.mrp),
+            'vendor_landing': _f(v_landing),
+            'our_landing':    _f(o_landing),
+            'vendor_cp':      _f(v_cp),
+            'our_cp':         _f(so.cost_price_ref),
+            'diff':           _f(so.diffn),
+            'margin_pct':     round(float(row_margin) * 100, 2) if row_margin else None,
+            'status':         status,
+            'output_file':    output_file or '',
+        })
+    return out
+
+
+def _insert_issue_lines(conn, ph: str, line_rows: List[dict]) -> dict:
+    """Append flagged lines with the VALUE-AWARE guard: for each (marketplace,
+    po, item_no) compare against the MOST RECENT existing row — if every value
+    column is unchanged, skip it (already pushed); otherwise insert a new
+    snapshot (a revised MRP/CP/status records a fresh dated row). Returns
+    ``{recorded, skipped}``."""
+    cur = conn.cursor()
+    sel = ', '.join(_LINE_VALUE_COLS)
+    ins_cols = ', '.join(_LINE_COLS)
+    ins_ph = ', '.join([ph] * len(_LINE_COLS))
+    recorded = skipped = 0
+    for ln in line_rows:
+        cur.execute(
+            f"SELECT {sel} FROM order_issue_lines "
+            f"WHERE marketplace={ph} AND po={ph} AND item_no={ph} "
+            f"ORDER BY line_id DESC LIMIT 1",
+            (ln['marketplace'], ln['po'], ln['item_no']))
+        prev = cur.fetchone()
+        if prev is not None and all(
+                _values_equal(prev[i], ln[_LINE_VALUE_COLS[i]])
+                for i in range(len(_LINE_VALUE_COLS))):
+            skipped += 1
+            continue
+        cur.execute(
+            f"INSERT INTO order_issue_lines ({ins_cols}) VALUES ({ins_ph})",
+            tuple(ln[c] for c in _LINE_COLS))
+        recorded += 1
+    conn.commit()
+    return {'recorded': recorded, 'skipped': skipped}
+
+
+def record_issue_lines_manual(result, output_path: str = '') -> dict:
+    """Build + push the flagged lines for a verified result. Returns
+    ``{total_issues, recorded, skipped}`` (recorded = new/revised snapshots,
+    skipped = unchanged since last push)."""
+    out_name = os.path.basename(output_path) if output_path else ''
+    rows = issue_lines_from_result(result, out_name)
+    if not rows:
+        return {'total_issues': 0, 'recorded': 0, 'skipped': 0, 'rows': []}
+    store = get_history_store()
+    try:
+        res = store.record_issue_lines(rows)
+    finally:
+        store.close()
+    res['total_issues'] = len(rows)
+    res['rows'] = rows
+    return res
 
 
 # ── Dedup: remove already-uploaded POs from a result ────────────────────

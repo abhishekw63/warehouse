@@ -212,6 +212,12 @@ class ProcessingResult:
     # exceptions_applied (which is only what fired this run).
     exception_registry: List[dict] = field(default_factory=list)
 
+    # v2.4.6: Flipkart Tracker rows built from the optional uploaded header
+    # file (the portal 'purchase-orders-*.csv' PO list). When non-empty the
+    # exporter writes a 'Tracker' sheet from these (Market Place by location,
+    # PO/dates/Order Value/Qty). Empty for every other path.
+    flipkart_tracker_rows: List[dict] = field(default_factory=list)
+
     # Marketplace context
     marketplace: str = ''
     input_file: str = ''            # basename, for display

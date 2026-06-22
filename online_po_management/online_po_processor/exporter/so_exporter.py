@@ -44,7 +44,7 @@ from openpyxl import Workbook
 
 from online_po_processor.data.models import ProcessingResult
 from online_po_processor.exporter.sheets import (
-    headers_sheet, lines_sheet, raw_data_sheet,
+    flipkart_tracker_sheet, headers_sheet, lines_sheet, raw_data_sheet,
     rules_sheet, skipped_sheet, summary_sheet, tracker_sheet,
     validation_sheet, warnings_sheet,
 )
@@ -137,6 +137,7 @@ class SOExporter:
         lines_sheet.write(wb, result)
         summary_sheet.write(wb, result)
         tracker_sheet.write(wb, result)
+        flipkart_tracker_sheet.write(wb, result)  # v2.4.6 — Flipkart header-file tracker
         skipped_sheet.write(wb, result)        # v2.4.0 — only if dups removed
         validation_sheet.write(wb, result)
         rules_sheet.write(wb, result)            # v2.4.4 — per-marketplace rules+exceptions (single sheet)

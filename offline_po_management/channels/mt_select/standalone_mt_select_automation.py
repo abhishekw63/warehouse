@@ -365,12 +365,20 @@ _CENTERED_COLS = {
 
 def _apply_table_format(ws, header_row: int = 1,
                           data_start: Optional[int] = None,
-                          data_end: Optional[int] = None) -> None:
+                          data_end: Optional[int] = None,
+                          style_data: bool = True) -> None:
     """
     Apply table-style formatting to a worksheet:
       - Header row: dark blue fill, white bold, centered, bordered.
       - Data rows: thin grey borders + per-column alignment.
       - Freeze on header row.
+
+    ``style_data=False`` styles ONLY the header (+ freeze) and skips the
+    per-cell border/alignment on data rows. openpyxl re-hashes the full style
+    on every cell-attribute set, so styling hundreds of thousands of cells on
+    the big sheets (Raw Data / Validation / Reconciliation in a 12-file batch)
+    dominated the runtime — those sheets opt out (header stays styled,
+    columns auto-sized, status rows still tinted).
     """
     if ws.max_row < header_row:
         return
@@ -393,13 +401,23 @@ def _apply_table_format(ws, header_row: int = 1,
         elif name in _CENTERED_COLS:
             center_cols.add(idx)
 
+    if not style_data:
+        return
+
     if data_start is None:
         data_start = header_row + 1
     if data_end is None:
         data_end = ws.max_row
 
-    for r in range(data_start, data_end + 1):
-        for c_idx, cell in enumerate(ws[r], start=1):
+    # PERF FIX (v0.6.x): the previous loop did ``enumerate(ws[r])`` per row,
+    # and openpyxl RECOMPUTES ``max_column`` (a full scan of every cell in the
+    # sheet) on each ``ws[<int row>]`` access → O(rows²). On the big Raw Data
+    # sheet that made a 12-file HG batch take minutes (looked "stuck"). Compute
+    # the column extent ONCE and walk the grid with ``iter_rows`` → O(rows).
+    max_col = ws.max_column
+    for row in ws.iter_rows(min_row=data_start, max_row=data_end,
+                            min_col=1, max_col=max_col):
+        for c_idx, cell in enumerate(row, start=1):
             cell.border = _BORDER_THIN
             if c_idx in numeric_cols:
                 cell.alignment = _ALIGN_RIGHT
@@ -609,7 +627,11 @@ class ChannelConfig:
     csv_store_col:      str          # store name / site code (Ship-to lookup)
     csv_id_col:         str          # SKU code OR EAN (depends on lookup_via)
     csv_qty_col:        str
-    csv_mrp_col:        str
+    # ``csv_mrp_col`` is OPTIONAL (default None) — some channels' POs carry
+    # no MRP column (Shoppers Stop). When None the MRP is taken from Items
+    # Master at resolution time (line.items_master_mrp) and the per-line
+    # CSV MRP is simply 0.0. HG still passes 'MRP'.
+    csv_mrp_col:        Optional[str] = None
     csv_cost_col:       Optional[str] = None   # per-unit cost (if present)
     csv_value_col:      Optional[str] = None   # line total (if present)
 
@@ -617,8 +639,85 @@ class ChannelConfig:
     # 'SKU': csv_id_col is a SKU; resolve via channel master to EAN, then
     #        EAN → Items Master → Item No. (Used by HG.)
     # 'EAN': csv_id_col IS the EAN; resolve EAN → Items Master directly.
-    #        No channel master sheet needed.
+    #        No channel master sheet needed. (Used by Shoppers Stop.)
     lookup_via:         str = 'SKU'
+
+    # ── Store → Ship-to matching strategy ──
+    # 'exact'        : (party, store_name) is an exact key in Ship-to B2B
+    #                  (HG: store_name is the full store name).
+    # 'plant_suffix' : store_name is a numeric Plant id (e.g. '153') that
+    #                  appears as a number token in the Ship-to B2B
+    #                  'Del Location' name — typically the trailing code,
+    #                  e.g. 'SHOPPERS STOP LIMITED_Viviana_153',
+    #                  'Shoppers Stop MALAD 114', 'TAPASYA ONE (478)'.
+    #                  Matched by number token, not exact string. Used by
+    #                  Shoppers Stop.
+    store_match:        str = 'exact'
+
+    # ── PO date column (history DB) ──
+    # Column holding the PO/document date, recorded as the tracker's
+    # 'PO Date'. None = the channel's PO carries no date (left blank).
+    # Read straight from the raw row at record time (no parsing change).
+    csv_date_col:       Optional[str] = None
+    # Delivery/expiry date column → tracker/DB 'Exp Date'. None = none.
+    csv_expdate_col:    Optional[str] = None
+
+    # ── PDF input ──
+    # When set, this channel's POs arrive as PDF; the named parser
+    # (see _CHANNEL_PDF_PARSERS) turns the PDF into the same DataFrame an
+    # Excel/CSV read would yield. None = Excel/CSV input. Used by Naturals.
+    pdf_parser:         Optional[str] = None
+
+    # ── Custom DataFrame builder (special Excel layouts) ──
+    # When set, the named builder (see _CHANNEL_DF_BUILDERS) reads the file
+    # into the engine DataFrame instead of a plain read. Used by Off
+    # Institutional (reads the 'Shades' sheet, OOS-filters, injects PO /
+    # Store / dates / inc-GST value). None = plain CSV/Excel read.
+    df_builder:         Optional[str] = None
+
+    # ── Product description column (for nail detection etc.) ──
+    csv_name_col:       Optional[str] = None
+
+    # ── Regular SO line Unit Price ──
+    # Most channels leave Unit Price BLANK (D365 sources price). When True,
+    # the regular line's Unit Price = the cost column (Off Institutional →
+    # Basic Price, fetched exactly). Default keeps the blank behaviour.
+    regular_unit_price_from_cost: bool = False
+
+    # ── Tester quantity rule ──
+    # Default tester qty is 1 per eligible line. When ``tester_qty_divisor``
+    # is set, tester qty = ceil(regular_qty / divisor) (Off Institutional →
+    # 18). ``tester_exclude_nail`` drops nail-category lines from testers
+    # (nail paint is never sent as a tester — thumb rule).
+    tester_qty_divisor:   Optional[int] = None
+    tester_exclude_nail:  bool = False
+
+    # ── GUI ship-to (counter) selection ──
+    # When True, the GUI shows a counter dropdown (the party's Ship-to B2B
+    # Del Locations) and the operator picks the destination per run instead
+    # of it coming from the file. Used by Off Institutional.
+    counter_select:     bool = False
+
+    # ── External Document No fallback ──
+    # When True, if a PO has no customer doc number (pf.external_doc unset),
+    # the External Document No falls back to our generated SO No rather than
+    # ``po_no``. Used by Off Institutional (Demand No when present, else SO No).
+    external_doc_fallback_so: bool = False
+
+    # ── Standalone-only channel ──
+    # When True, this channel is NOT shown in the MT Select channel dropdown
+    # — it's a separate offline channel launched on its own (Off
+    # Institutional, which has its own launcher entry). The engine still
+    # lives here (shared), but the GUI only exposes it when launched in
+    # ``only_channel`` mode.
+    standalone_only: bool = False
+
+    # ── History-DB marketplace label ──
+    # The 'marketplace' value recorded in the shared history DB. MT Select
+    # sub-channels (HG/SS/NT) all record under 'MT' (the default). A
+    # separate offline channel records under its own name (Off
+    # Institutional → 'Off Institutional').
+    db_marketplace:     Optional[str] = None
 
     # ── Optional channel master (SKU → EAN) ──
     # Used only when lookup_via == 'SKU'. The sheet in MT_Masters.xlsx
@@ -685,6 +784,159 @@ CHANNELS: Dict[str, ChannelConfig] = {
         channel_master_cols=['sku_code', 'sku_name', 'ENN code', 'status'],
         expected_landing_ratio=0.65,
     ),
+    'SS': ChannelConfig(
+        code='SS',
+        display_name='Shoppers Stop',
+        party='SS',                          # Ship-to B2B party (Cust No 20041)
+        input_folder_name='Input_SS',
+        output_folder_name='Output_SS',
+        sell_to='20041',                     # Shoppers Stop Limited master account
+        # Shoppers Stop POs are SAP exports (one .XLSX per PO). Columns:
+        #   Purchasing Document | … | EAN Code | … | Plant | Order Quantity
+        # No MRP / cost / value columns — MRP comes from Items Master.
+        csv_required_cols=[
+            'Purchasing Document', 'EAN Code', 'Plant', 'Order Quantity',
+        ],
+        csv_po_col='Purchasing Document',
+        csv_store_col='Plant',               # numeric Plant id → Del Location
+        csv_id_col='EAN Code',
+        csv_qty_col='Order Quantity',
+        csv_mrp_col=None,                    # not in file → Items Master MRP
+        csv_date_col='Document Date',        # → tracker/DB 'PO Date'
+        lookup_via='EAN',                    # EAN Code is the EAN directly
+        channel_master_sheet=None,           # no SKU→EAN master needed
+        store_match='plant_suffix',          # Plant 153 → '…_Viviana_153'
+        tester_unit_price=None,              # no testers
+        # Shoppers Stop PO carries no price; landing is computed from a
+        # flat 38.94% discount off MRP → landing rate = MRP × 0.6106.
+        # Used for the Validation landing reference and the order value
+        # (= landing × qty) recorded to the tracker/DB.
+        expected_landing_ratio=0.6106,       # MRP × (100 − 38.94)%
+    ),
+    'NT': ChannelConfig(
+        code='NT',
+        display_name='Naturals',
+        party='Naturals',                    # Ship-to B2B party (Cust No 20673)
+        input_folder_name='Input_NT',
+        output_folder_name='Output_NT',
+        sell_to='20673',                     # Naturals Salon Private Limited
+        # Naturals POs arrive as PDF; parse_naturals_pdf turns each into a
+        # DataFrame with these columns. The PDF carries the EAN, MRP, Rate,
+        # Qty and a GST-inclusive 'Gross Amount' per line, plus PO date and
+        # 'Delivery by'. Store is the shipping-address city (→ Del Location).
+        csv_required_cols=['PO No', 'Store', 'EAN', 'Qty'],
+        csv_po_col='PO No',
+        csv_store_col='Store',               # shipping city → '(Bengaluru)' etc.
+        csv_id_col='EAN',
+        csv_qty_col='Qty',
+        csv_mrp_col='MRP',
+        csv_cost_col='Rate',                 # landing rate (pre-GST)
+        csv_value_col='Gross Amount',        # GST-INCLUSIVE line total (from PDF)
+        csv_date_col='Date',                 # → PO Date
+        csv_expdate_col='Delivery by',       # → Exp Date
+        lookup_via='EAN',                    # EAN column resolves to Item No
+        channel_master_sheet=None,
+        store_match='city_in_name',          # city matched in the Del Location
+        pdf_parser='naturals',               # PDF input
+        tester_unit_price=None,
+        # Order value comes straight from the PDF's Gross Amount (inc GST),
+        # so no landing-ratio reference is needed.
+        expected_landing_ratio=None,
+    ),
+    'INST': ChannelConfig(
+        code='INST',
+        display_name='Off Institutional',
+        party='OFF-INST',                    # Ship-to B2B party (Cust No 20633)
+        input_folder_name='Input_INST',
+        output_folder_name='Output_INST',
+        sell_to='20633',                     # Indian Naval Canteen Service
+        # INCS POs arrive as an Excel with a 'Shades' sheet (header row 12).
+        # The custom builder reads only that sheet, drops OOS rows (0 demand
+        # AND 0 inv), and injects PO / Store / Date / a GST-inclusive value.
+        df_builder='offinst',
+        csv_required_cols=['EAN Code', 'Demand (units)'],
+        csv_po_col='PO',                     # demand no, else synthetic (builder)
+        csv_store_col='Store',               # GUI-selected counter (builder)
+        csv_id_col='EAN Code',
+        csv_qty_col='Demand (units)',        # regular qty = demanded units
+        csv_mrp_col='MRP',
+        csv_cost_col='Basic Price',          # → regular Unit Price (exact)
+        csv_value_col='Order Value',         # INCS Cost × demand (inc GST)
+        csv_name_col='Product Description',  # for nail detection
+        csv_date_col='Date',                 # demand date → PO Date
+        lookup_via='EAN',
+        channel_master_sheet=None,
+        store_match='exact',                 # store = exact Del Location (GUI)
+        counter_select=True,                 # operator picks the counter
+        regular_unit_price_from_cost=True,   # Unit Price = Basic Price
+        tester_unit_price=0.54,              # tester sample price
+        tester_qty_divisor=18,               # tester qty = ceil(demand/18)
+        tester_exclude_nail=True,            # nails never sent as testers
+        external_doc_fallback_so=True,       # Demand No, else SO No
+        expected_landing_ratio=None,         # value comes from the file
+        standalone_only=True,                # its own offline channel (not in MT dropdown)
+        db_marketplace='Off Institutional',  # DB marketplace (not 'MT')
+    ),
+    'BN': ChannelConfig(
+        code='BN',                           # SO numbers → SO/BN/MM/######
+        display_name='Apollo (Beaute Netrue)',
+        party='BN',                          # Ship-to B2B party (Cust No 20735)
+        input_folder_name='Input_BN',
+        output_folder_name='Output_BN',
+        sell_to='20735',                     # Apollo Pharmaproducts Private Limited
+        # Apollo's PO arrives as a clean tabular Excel ('Excel Renee.xlsx')
+        # with one row per line. Columns carry the EAN, qty, MRP, a per-unit
+        # 'Cost Rate' and a GST-INCLUSIVE 'PO Value', plus PO/Delivery dates.
+        # Store key = DC Name (e.g. 'KONDAPUR') → matched exactly to the
+        # Ship-to B2B Del Location (party 'BN'). Per operator: no cost
+        # validation here — the cost columns are shown for reference only and
+        # never block; every ordered line is taken into the SO.
+        csv_required_cols=['PO Number', 'DC Name', 'EAN Code', 'PO Qty'],
+        csv_po_col='PO Number',
+        csv_store_col='DC Name',             # → Del Location (exact)
+        csv_id_col='EAN Code',
+        csv_qty_col='PO Qty',
+        csv_mrp_col='MRP',
+        csv_cost_col='Cost Rate',            # reference only (no CP check)
+        csv_value_col='PO Value',            # GST-inclusive line total
+        csv_date_col='PO Date',
+        csv_expdate_col='Delivery Date',
+        lookup_via='EAN',                    # EAN Code resolves to Item No
+        channel_master_sheet=None,           # no SKU→EAN master needed
+        store_match='exact',                 # DC Name == Del Location
+        tester_unit_price=None,              # no testers
+        expected_landing_ratio=None,         # value comes from PO Value
+    ),
+    'LL': ChannelConfig(
+        code='LL',                           # SO numbers → SO/LL/MM/######
+        display_name='Lulu Hypermarket',
+        party='LL',                          # Ship-to B2B party (Cust No 20303)
+        input_folder_name='Input_LL',
+        output_folder_name='Output_LL',
+        sell_to='20303',                     # Lulu International Shopping Malls
+        # Lulu POs arrive as a PDF (Purchase Order ZL02) — parse_lulu_pdf
+        # turns each into a flat DataFrame. The PDF carries the EAN, Qty, MRP,
+        # a pre-GST 'Gross Price' and a GST-INCLUSIVE per-line 'Amount', plus
+        # PO/Delivery dates. Store = the delivery CITY ('Calicut') matched as
+        # a substring in the Ship-to B2B Del Location. Per operator: no cost
+        # validation here — mapping only; cost shown for reference.
+        csv_required_cols=['PO No', 'Store', 'EAN', 'Qty'],
+        csv_po_col='PO No',
+        csv_store_col='Store',               # delivery city → Del Location
+        csv_id_col='EAN',
+        csv_qty_col='Qty',
+        csv_mrp_col='MRP',
+        csv_cost_col='Gross Price',          # pre-GST cost (reference only)
+        csv_value_col='Amount',              # GST-inclusive line total
+        csv_date_col='PO Date',
+        csv_expdate_col='Delivery Date',
+        lookup_via='EAN',                    # EAN resolves to Item No
+        channel_master_sheet=None,
+        pdf_parser='lulu',                   # PDF input
+        store_match='city_in_name',          # 'Calicut' in the Del Location
+        tester_unit_price=None,              # no testers
+        expected_landing_ratio=None,         # value comes from Amount
+    ),
     # Example placeholder showing how HB will be added later:
     # 'HB': ChannelConfig(
     #     code='HB', display_name='Health & Beauty', party='HB',
@@ -714,6 +966,7 @@ class ItemMasterEntry:
     description: str
     mrp:         Optional[float]  # May be None if blank
     gst_code:    str              # e.g. 'G-18-S'
+    category:    str = ''         # Items Master 'Catagory' (e.g. '02_NAILS')
 
 @dataclass
 class ShipToEntry:
@@ -818,6 +1071,7 @@ class POLine:
     items_master_mrp:   Optional[float] = None
     gst_code:           Optional[str]   = None
     items_master_desc:  Optional[str]   = None
+    items_master_category: str          = ''   # e.g. '02_NAILS'
     hg_master_status:   Optional[str]   = None
 
     # ── Status & notes ──
@@ -836,6 +1090,10 @@ class POLine:
     # (operator enabled the Generate Testers checkbox). 0 if no tester
     # row was generated for this input line.
     tester_output_line_no: int = 0
+
+    # Per-line tester quantity. Default 1 (set by assign_so_numbers); for
+    # channels with a tester_qty_divisor it's ceil(regular_qty / divisor).
+    tester_qty: int = 1
 
     # Marks whether this line should produce a tester output row.
     # Default False — assign_so_numbers flips it to True for eligible
@@ -884,6 +1142,12 @@ class POFile:
     # Empty when testers were not enabled, OR when the regular SO is
     # also empty (no tester without a corresponding regular).
     tester_so_number: str = ''
+
+    # Customer document number for the SO's External Document No. When None,
+    # the writer uses po_no (or the SO No if the channel sets
+    # external_doc_fallback_so). Off Institutional sets this to the Demand
+    # No when the file carries one.
+    external_doc: Optional[str] = None
 
     # Resolved ship-to
     ship_to:        Optional[str]         = None
@@ -1122,6 +1386,15 @@ def load_items_master(workbook_path: Path
             f"Found: {list(df.columns)}"))
         return entries, findings, actual_sheet
 
+    # Optional 'Catagory' column (e.g. '02_NAILS') — used to exclude nail
+    # products from tester orders. Tolerant of the 'Catagory'/'Category'
+    # spelling; absent → category stays blank (description-based fallback).
+    cat_col = None
+    for c in df.columns:
+        if str(c).strip().lower() in ('catagory', 'category'):
+            cat_col = c
+            break
+
     blank_gtin = 0
     duplicates = 0
     for _, row in df.iterrows():
@@ -1153,9 +1426,13 @@ def load_items_master(workbook_path: Path
         gst_raw = row[col_map['GST Group Code']]
         gst = '' if pd.isna(gst_raw) else str(gst_raw).strip()
 
+        cat = ''
+        if cat_col is not None and pd.notna(row[cat_col]):
+            cat = str(row[cat_col]).strip()
+
         entries[gtin] = ItemMasterEntry(
             item_no=item_no_str, gtin=gtin, description=desc,
-            mrp=mrp, gst_code=gst,
+            mrp=mrp, gst_code=gst, category=cat,
         )
 
     findings.append(('info',
@@ -1438,21 +1715,96 @@ def load_non_stock_list(workbook_path: Path
         f"(blank rows: {blank_rows}, duplicates: {duplicates})"))
     return entries, findings, actual_sheet
 
+def _read_file_bytes_shared(path: str) -> bytes:
+    """
+    Read a file's bytes even when it's **open in Excel** / mid OneDrive sync.
+
+    The shared ``Online_B2B_Dump_Compilation.xlsx`` is normally kept open
+    for other use, so a plain ``open(path,'rb')`` fails with
+    PermissionError (Excel holds a write lock). Try the normal read first;
+    on PermissionError re-open with Windows **shared** mode
+    (FILE_SHARE_READ | WRITE | DELETE) and copy the last-saved bytes into
+    memory. (Same technique the EKA channel uses.)
+    """
+    try:
+        with open(path, 'rb') as f:
+            return f.read()
+    except PermissionError:
+        if os.name != 'nt':
+            raise
+        import ctypes
+        from ctypes import wintypes
+        GENERIC_READ = 0x80000000
+        SHARE_ALL = 0x1 | 0x2 | 0x4          # READ | WRITE | DELETE
+        OPEN_EXISTING = 3
+        FILE_ATTRIBUTE_NORMAL = 0x80
+        INVALID = ctypes.c_void_p(-1).value
+        k = ctypes.windll.kernel32
+        k.CreateFileW.restype = wintypes.HANDLE
+        k.CreateFileW.argtypes = [
+            wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+            wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+        k.ReadFile.argtypes = [
+            wintypes.HANDLE, wintypes.LPVOID, wintypes.DWORD,
+            ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID]
+        h = k.CreateFileW(str(path), GENERIC_READ, SHARE_ALL, None,
+                          OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, None)
+        if not h or h == INVALID:
+            raise PermissionError(
+                f"Could not open '{path}' even in shared mode "
+                f"(it may be exclusively locked).")
+        try:
+            chunks, size = [], 1 << 20       # 1 MiB chunks
+            buf = ctypes.create_string_buffer(size)
+            nread = wintypes.DWORD(0)
+            while True:
+                ok = k.ReadFile(h, buf, size, ctypes.byref(nread), None)
+                if not ok or nread.value == 0:
+                    break
+                chunks.append(buf.raw[:nread.value])
+            return b''.join(chunks)
+        finally:
+            k.CloseHandle(h)
+
+
+def _make_internal_master_copy(src: Path):
+    """
+    Snapshot the (possibly-open) master workbook to a PRIVATE internal copy
+    so loading never clashes with Excel/OneDrive keeping the original open.
+
+    Returns ``(load_path, finding_or_None)``. On any failure it falls back
+    to the original path (the normal read will then surface a clear error
+    if the file truly can't be opened).
+    """
+    try:
+        data = _read_file_bytes_shared(str(src))
+        dest = get_script_dir() / BUNDLED_FOLDER / '._mt_master_snapshot.xlsx'
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+        return dest, None
+    except Exception as e:  # noqa: BLE001 — fall back to direct read
+        return src, ('warn',
+                     f"Could not make an internal copy of the master "
+                     f"({e}); reading it directly instead.")
+
+
 def load_all_masters(workbook_path: Optional[Path] = None) -> MasterBundle:
     """
     Top-level loader: reads shared masters (Items Master, Ship-to B2B)
     plus every configured channel's master sheet (if any).
 
-    All findings from all loaders are collected into bundle.findings.
-    Per-channel master entries are stored in bundle.channel_masters
-    keyed by channel code.
+    The workbook is first snapshotted to a private internal copy
+    (:func:`_make_internal_master_copy`) so it loads cleanly even while the
+    shared ``Online_B2B_Dump_Compilation.xlsx`` stays open in Excel for
+    other use. All findings are collected into bundle.findings; per-channel
+    master entries into bundle.channel_masters keyed by channel code.
     """
     bundle = MasterBundle()
 
     if workbook_path is None:
         workbook_path = get_masters_path()
 
-    bundle.workbook_path = workbook_path
+    bundle.workbook_path = workbook_path     # ORIGINAL path (for display)
 
     if not workbook_path.exists():
         bundle.findings.append(('error',
@@ -1467,19 +1819,24 @@ def load_all_masters(workbook_path: Optional[Path] = None) -> MasterBundle:
     except OSError as e:
         bundle.findings.append(('warn', f"Cannot read mtime: {e}"))
 
+    # Snapshot to a private copy so we can read it while it's open elsewhere.
+    load_path, copy_finding = _make_internal_master_copy(workbook_path)
+    if copy_finding:
+        bundle.findings.append(copy_finding)
+
     # ── Shared masters (every channel uses these) ──
-    items, items_findings, items_sheet = load_items_master(workbook_path)
+    items, items_findings, items_sheet = load_items_master(load_path)
     bundle.items_by_gtin = items
     bundle.items_sheet_name = items_sheet
     bundle.findings.extend(items_findings)
 
-    ship_to, ship_findings, ship_sheet = load_ship_to_b2b(workbook_path)
+    ship_to, ship_findings, ship_sheet = load_ship_to_b2b(load_path)
     bundle.ship_to_lookup = ship_to
     bundle.ship_to_sheet_name = ship_sheet
     bundle.findings.extend(ship_findings)
 
     # ── Non Stock list (optional GWP/PWP kit) ──
-    ns_entries, ns_findings, ns_sheet = load_non_stock_list(workbook_path)
+    ns_entries, ns_findings, ns_sheet = load_non_stock_list(load_path)
     bundle.non_stock = ns_entries
     bundle.non_stock_sheet_name = ns_sheet
     bundle.findings.extend(ns_findings)
@@ -1492,7 +1849,7 @@ def load_all_masters(workbook_path: Optional[Path] = None) -> MasterBundle:
         if channel.lookup_via != 'SKU' or not channel.channel_master_sheet:
             continue
         entries, findings, sheet_name = load_channel_master(
-            channel, workbook_path)
+            channel, load_path)
         bundle.channel_masters[code] = entries
         bundle.channel_sheet_names[code] = sheet_name
         bundle.findings.extend(findings)
@@ -1754,6 +2111,7 @@ def _resolve_line(line: POLine, channel: ChannelConfig,
     line.items_master_mrp  = item_entry.mrp
     line.gst_code          = item_entry.gst_code
     line.items_master_desc = item_entry.description
+    line.items_master_category = item_entry.category
 
     # NOTE: MRP-drift warning (channel MRP vs Items Master MRP) used to
     # live here. It was REMOVED on operator instruction — MRP
@@ -1761,28 +2119,365 @@ def _resolve_line(line: POLine, channel: ChannelConfig,
     # MRP is still captured on the line and shown in the Validation
     # sheet alongside the channel's MRP for reference.
 
+def _del_location_number_tokens(del_location: str) -> List[str]:
+    """All standalone digit runs in a Del Location name, e.g.
+    'SHOPPERS STOP LIMITED_Viviana_153' → ['153'];
+    'TAPASYA ONE (478)' → ['478']; 'Spaze-Gurgaon-184' → ['184']."""
+    return re.findall(r'\d+', str(del_location or ''))
+
+
+def _match_ship_to_by_plant(party: str, plant: str,
+                              bundle: MasterBundle) -> Optional['ShipToEntry']:
+    """
+    Resolve a numeric Plant id to a Ship-to B2B entry for ``party`` by
+    matching the plant against the number token(s) in each entry's Del
+    Location name (the store code Shoppers Stop embeds as a suffix —
+    e.g. Plant 153 → 'SHOPPERS STOP LIMITED_Viviana_153').
+
+    Prefers the *trailing* number (the canonical store code); falls back
+    to any number token so a prefix/mid placement still resolves. Returns
+    None when nothing matches.
+    """
+    plant = str(plant or '').strip()
+    if not plant:
+        return None
+    trailing_hit = None
+    token_hit = None
+    for (p, del_loc), entry in bundle.ship_to_lookup.items():
+        if p != party:
+            continue
+        tokens = _del_location_number_tokens(del_loc)
+        if not tokens:
+            continue
+        if tokens[-1] == plant and trailing_hit is None:
+            trailing_hit = entry
+        elif plant in tokens and token_hit is None:
+            token_hit = entry
+    return trailing_hit or token_hit
+
+
+def _match_ship_to_by_city(party: str, city: str,
+                             bundle: MasterBundle) -> Optional['ShipToEntry']:
+    """
+    Resolve a store CITY to a Ship-to B2B entry for ``party`` by matching
+    the city as a substring of the Del Location name (Naturals embeds the
+    store city in parentheses — e.g. city 'Bengaluru' →
+    'Naturals Salon Private Limited (Bengaluru)'). Case-insensitive;
+    returns None when nothing matches.
+    """
+    city = str(city or '').strip().lower()
+    if not city:
+        return None
+    for (p, del_loc), entry in bundle.ship_to_lookup.items():
+        if p != party:
+            continue
+        if city in str(del_loc).lower():
+            return entry
+    return None
+
+
 def _resolve_ship_to(po_file: POFile, channel: ChannelConfig,
                        bundle: MasterBundle) -> None:
     """Resolve store key → Ship-to B2B → Ship-to Code + Cust No."""
-    key = (channel.party, po_file.store_name)
-    entry = bundle.ship_to_lookup.get(key)
-
-    if entry is None:
-        po_file.add_finding('warn',
+    if channel.store_match == 'city_in_name':
+        # Naturals: store_name is the shipping-address city, matched as a
+        # substring of the Del Location (e.g. '… (Bengaluru)').
+        entry = _match_ship_to_by_city(
+            channel.party, po_file.store_name, bundle)
+        not_found_msg = (
+            f"{channel.csv_store_col} '{po_file.store_name}' did not match "
+            f"any {channel.party} Del Location by city (looked for "
+            f"'{po_file.store_name}' inside names like "
+            f"'Naturals Salon Private Limited (...)'). Ship-to Code and "
+            f"Cust No will be BLANK — verify the city exists in Ship-to "
+            f"B2B (party={channel.party}), then re-run.")
+    elif channel.store_match == 'plant_suffix':
+        # Shoppers Stop: store_name is a numeric Plant id matched against
+        # the number suffix of the SS Del Location names.
+        entry = _match_ship_to_by_plant(
+            channel.party, po_file.store_name, bundle)
+        not_found_msg = (
+            f"{channel.csv_store_col} '{po_file.store_name}' did not match "
+            f"any {channel.party} Del Location by store number (looked for "
+            f"'{po_file.store_name}' as the suffix in names like "
+            f"'SHOPPERS STOP LIMITED_..._{po_file.store_name}'). Ship-to "
+            f"Code and Cust No will be BLANK — verify the Plant exists in "
+            f"Ship-to B2B (party={channel.party}), then re-run.")
+    else:
+        entry = bundle.ship_to_lookup.get((channel.party, po_file.store_name))
+        not_found_msg = (
             f"{channel.csv_store_col} '{po_file.store_name}' not in "
             f"Ship-to B2B (party={channel.party}) — Ship-to Code and "
             f"Cust No will be BLANK. Add this entry to MT_Masters.xlsx "
             f"(Ship-to B2B sheet), then re-run.")
+
+    if entry is None:
+        po_file.add_finding('warn', not_found_msg)
         return
 
     po_file.ship_to       = entry.ship_to
     po_file.cust_no       = entry.cust_no
     po_file.ship_to_entry = entry
 
+
+# ── Channel PDF parsers ─────────────────────────────────────────────────
+# Some MT channels receive their PO as a PDF (Naturals). A parser turns the
+# PDF into the SAME flat DataFrame an Excel/CSV read would produce (columns
+# named per the channel's csv_* config), so the rest of the pipeline is
+# unchanged. Registered in _CHANNEL_PDF_PARSERS, selected by channel.pdf_parser.
+
+# One Naturals line item. EAN (13 digits) + HSN (6-8 digits) + the trailing
+# numeric block anchor each item's row; wrapped product-name lines (no EAN)
+# are skipped automatically. Columns after EAN:
+#   MRP  Rate  Qty  UOM  [Disc% (blank)]  Amount  GST%  Gross
+_NAT_ITEM = re.compile(
+    r'^\s*(\d+)\s+(\S+)\s+(.+?)\s+(\d{6,8})\s+(\d{12,14})\s+'
+    r'([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+(\d+)\s+(\S+)\s+'
+    r'(.*?)([\d,]+\.\d{2})\s+(\d+)\s+([\d,]+\.\d{2})\s*$')
+_NAT_PO   = re.compile(r'PO No\.?\s*:?\s*(\S+)', re.IGNORECASE)
+_NAT_DATE = re.compile(r'Date\s*:?\s*(\d{2}-\d{2}-\d{4})', re.IGNORECASE)
+_NAT_DEL  = re.compile(r'Delivery by\s*:?\s*(\d{2}-\d{2}-\d{4})', re.IGNORECASE)
+# '<City> <pincode>' — the single word before a 6-digit PIN.
+_NAT_CITY = re.compile(r'([A-Za-z]+)[\s,\-]+(\d{6})\b')
+
+
+def parse_naturals_pdf(file_path: Path):
+    """
+    Parse a Naturals Salon PO PDF → flat DataFrame (one row per line item)
+    with the columns the Naturals channel config expects: PO No, Store,
+    Date, Delivery by, EAN, Qty, MRP, Rate, Gross Amount, Product Name,
+    Item Code, HSN Code.
+
+    Header (PO No / Date / Delivery by) and the shipping-address city are
+    read from the text; the city is the word before the LAST 6-digit PIN in
+    the HEADER region (the buyer's PIN comes first, the grand-total amount
+    sits below the items, so we cut at the first EAN to isolate the header).
+    """
+    import pdfplumber
+    import pandas as pd
+
+    with pdfplumber.open(file_path) as pdf:
+        text = '\n'.join(p.extract_text() or '' for p in pdf.pages)
+
+    def _g(rx):
+        m = rx.search(text)
+        return m.group(1).strip() if m else ''
+
+    po_no   = _g(_NAT_PO)
+    po_date = _g(_NAT_DATE)
+    deliver = _g(_NAT_DEL)
+
+    # Shipping city: search only the header (before the first EAN) so the
+    # grand-total amount can't be mistaken for a PIN; take the last city
+    # (buyer PIN first, shipping PIN after).
+    m_ean = re.search(r'\d{13}', text)
+    header = text[:m_ean.start()] if m_ean else text
+    city_matches = _NAT_CITY.findall(header)
+    store = city_matches[-1][0].strip() if city_matches else ''
+
+    rows = []
+    for ln in text.splitlines():
+        m = _NAT_ITEM.match(ln)
+        if not m:
+            continue
+        (_sl, item_code, name, hsn, ean, mrp, rate, qty, _uom,
+         _mid, _amount, _gst, gross) = m.groups()
+        rows.append({
+            'PO No':        po_no,
+            'Store':        store,
+            'Date':         po_date,
+            'Delivery by':  deliver,
+            'Item Code':    item_code,
+            'Product Name': name.strip(),
+            'HSN Code':     hsn,
+            'EAN':          ean,
+            'MRP':          float(mrp.replace(',', '')),
+            'Rate':         float(rate.replace(',', '')),
+            'Qty':          int(qty),
+            'Gross Amount': float(gross.replace(',', '')),
+        })
+
+    if not rows:
+        raise ValueError(
+            f"{Path(file_path).name}: no Naturals line items found — the PO "
+            f"layout may differ from the reference (expected lines like "
+            f"'<Sl> <ItemCode> <Name> <HSN> <EAN> <MRP> <Rate> <Qty> ...'). "
+            f"Inspect extract_text() output.")
+    return pd.DataFrame(rows)
+
+
+# One Lulu Hypermarket line item (Purchase Order ZL02). Columns:
+#   Item Article Brand HSN Description EAN Qty UOM MRP Gross Net Tax% GST Amount
+# EAN is a clean 13-digit token (not split). Amount = inc-GST line total.
+_LULU_ITEM = re.compile(
+    r'^\s*(\d+)\s+(\S+)\s+(\S+)\s+(\d{6,8})\s+(.+?)\s+(\d{12,14})\s+'
+    r'(\d+)\s+(\S+)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+'
+    r'([\d.]+)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$')
+_LULU_PO   = re.compile(r'PO Number\s*:?\s*(\d+)', re.IGNORECASE)
+_LULU_DATE = re.compile(r'PO Date\s*:?\s*(\d{2}\.\d{2}\.\d{4})', re.IGNORECASE)
+_LULU_DEL  = re.compile(r'Delivery Date\s*:?\s*(\d{2}\.\d{2}\.\d{4})',
+                        re.IGNORECASE)
+# 'Delivery to: Lulu Hypermarket,Calicut' → city = Calicut.
+_LULU_CITY = re.compile(r'Delivery to\s*:?\s*[^,\n]*,\s*([A-Za-z]+)',
+                        re.IGNORECASE)
+
+
+def parse_lulu_pdf(file_path: Path):
+    """
+    Parse a Lulu Hypermarket PO PDF (Purchase Order ZL02) → flat DataFrame,
+    one row per line item, with the columns the Lulu channel config expects:
+    PO No, Store (delivery city), PO Date, Delivery Date, EAN, Qty, MRP,
+    Gross Price, Amount (inc-GST line total), Item Code, Product Name, HSN.
+
+    PO number / dates and the delivery city come from the text; the city is
+    the word after the comma in 'Delivery to: Lulu Hypermarket,<City>'.
+    """
+    import pdfplumber
+    import pandas as pd
+
+    with pdfplumber.open(file_path) as pdf:
+        text = '\n'.join(p.extract_text() or '' for p in pdf.pages)
+
+    def _g(rx):
+        m = rx.search(text)
+        return m.group(1).strip() if m else ''
+
+    po_no   = _g(_LULU_PO)
+    po_date = _g(_LULU_DATE)
+    deliver = _g(_LULU_DEL)
+    store   = _g(_LULU_CITY)
+
+    rows = []
+    for ln in text.splitlines():
+        m = _LULU_ITEM.match(ln)
+        if not m:
+            continue
+        (_it, article, _brand, hsn, name, ean, qty, _uom,
+         mrp, gross, _net, _tax, _gst, amount) = m.groups()
+        rows.append({
+            'PO No':        po_no,
+            'Store':        store,
+            'PO Date':      po_date,
+            'Delivery Date': deliver,
+            'Item Code':    article,
+            'Product Name': name.strip(),
+            'HSN Code':     hsn,
+            'EAN':          ean,
+            'MRP':          float(mrp.replace(',', '')),
+            'Gross Price':  float(gross.replace(',', '')),
+            'Qty':          int(qty),
+            'Amount':       float(amount.replace(',', '')),
+        })
+
+    if not rows:
+        raise ValueError(
+            f"{Path(file_path).name}: no Lulu line items found — the PO "
+            f"layout may differ from the reference (expected lines like "
+            f"'<Item> <Article> <Brand> <HSN> <Desc> <EAN> <Qty> EA=1EA "
+            f"<MRP> <Gross> <Net> <Tax%> <GST> <Amount>'). "
+            f"Inspect extract_text() output.")
+    return pd.DataFrame(rows)
+
+
+_CHANNEL_PDF_PARSERS = {
+    'naturals': parse_naturals_pdf,
+    'lulu':     parse_lulu_pdf,
+}
+
+
+def _parse_channel_pdf(file_path: Path, channel: ChannelConfig):
+    """Dispatch to the channel's PDF parser (by channel.pdf_parser)."""
+    fn = _CHANNEL_PDF_PARSERS.get(channel.pdf_parser or '')
+    if fn is None:
+        raise ValueError(
+            f"No PDF parser registered for {channel.display_name} "
+            f"(pdf_parser={channel.pdf_parser!r}).")
+    return fn(file_path)
+
+
+# ── Custom DataFrame builders (special Excel layouts) ───────────────────
+# Some channels need more than a plain read. Off Institutional ships an
+# Excel whose 'Shades' sheet has a multi-row preamble (header on row 13),
+# a Demand No / Demand Date in the preamble, an 'Inv' column for OOS
+# filtering, and no PO/Store columns (the counter is picked in the GUI).
+# A builder turns that into the flat DataFrame the pipeline expects.
+
+_OFFINST_DEMAND_NO   = re.compile(r'Demand\s*No\.?\s*[-:]\s*(.+)', re.IGNORECASE)
+_OFFINST_DEMAND_DATE = re.compile(r'Demand\s*Date\s*[-:]\s*(.+)', re.IGNORECASE)
+
+
+def build_offinst_df(file_path: Path, store_override: str = ''):
+    """
+    Build the engine DataFrame for an Off Institutional (INCS) PO.
+
+    Reads ONLY the 'Shades' sheet (header on row 13 / index 12), cleans the
+    column names (the 'Basic _x000D_\\nPrice' artifact), drops OOS rows
+    (Demand=0 AND Inv=0), and injects:
+      * 'PO'    — the Demand No when the file carries one, else the file
+                  stem (a stable grouping key; External Doc then falls back
+                  to our SO No).
+      * 'Store' — the GUI-selected counter (Del Location); exact-matched.
+      * 'Date'  — the Demand Date (→ PO Date).
+      * 'Order Value' — INCS Cost Price × Demand (GST-INCLUSIVE line total).
+      * '__demand_no__' — the raw Demand No ('' when nil) → sets External Doc.
+    """
+    import io
+    import pandas as pd
+
+    data = _read_file_bytes_shared(str(file_path))   # works if open in Excel
+    raw = pd.read_excel(io.BytesIO(data), sheet_name='Shades', header=None)
+
+    demand_no = demand_date = ''
+    for i in range(min(13, len(raw))):
+        cell = str(raw.iloc[i, 0]) if raw.shape[1] else ''
+        if (m := _OFFINST_DEMAND_NO.search(cell)):
+            v = m.group(1).strip()
+            if v and v.lower() not in ('nil', 'na', 'n/a', '-', 'nan'):
+                demand_no = v
+        if (m := _OFFINST_DEMAND_DATE.search(cell)):
+            demand_date = m.group(1).strip()
+
+    # Line-item table (header on row index 12), all-string to keep EANs exact.
+    df = pd.read_excel(io.BytesIO(data), sheet_name='Shades',
+                       header=12, dtype=str)
+    df.columns = [re.sub(r'\s+', ' ', str(c).replace('_x000D_', ' ')).strip()
+                  for c in df.columns]
+    if 'EAN Code' not in df.columns or 'Demand (units)' not in df.columns:
+        raise ValueError(
+            f"Off Institutional 'Shades' sheet missing EAN Code / Demand "
+            f"(units) columns. Found: {list(df.columns)}")
+
+    df = df[df['EAN Code'].notna()].copy()
+    dem = pd.to_numeric(df['Demand (units)'], errors='coerce').fillna(0)
+    inv = pd.to_numeric(df.get('Inv', 0), errors='coerce').fillna(0)
+    # OOS removal: drop SKUs with 0 demand AND no inventory.
+    df = df[~((dem == 0) & (inv == 0))].copy()
+
+    dem2 = pd.to_numeric(df['Demand (units)'], errors='coerce').fillna(0)
+    incs = pd.to_numeric(df.get('INCS Cost Price', 0),
+                         errors='coerce').fillna(0)
+    df['Order Value'] = (incs * dem2).round(2)        # inc-GST line total
+
+    df['PO'] = demand_no if demand_no else Path(file_path).stem
+    df['Store'] = store_override or ''
+    df['Date'] = demand_date
+    df['__demand_no__'] = demand_no
+    return df
+
+
+_CHANNEL_DF_BUILDERS = {
+    'offinst': build_offinst_df,
+}
+
+
 def read_channel_csv(file_path: Path, channel: ChannelConfig,
-                       bundle: MasterBundle) -> List[POFile]:
+                       bundle: MasterBundle,
+                       store_override: str = '') -> List[POFile]:
     """
     Parse ONE channel CSV (H&G, future H&B, etc.) → list of POFiles.
+
+    ``store_override`` injects the GUI-selected destination (counter) for
+    channels that pick the ship-to in the GUI (Off Institutional).
 
     Each returned POFile represents ONE (PO_NO, STORE_NAME) group from
     the source file. A single CSV may contain multiple POs across
@@ -1817,23 +2512,57 @@ def read_channel_csv(file_path: Path, channel: ChannelConfig,
     except OSError as e:
         file_level_pf.add_finding('warn', f"Cannot read file mtime: {e}")
 
-    # H&G CSVs use \r line endings (legacy). pandas auto-detects.
-    # UTF-8 first, latin-1 fallback for any channel that ships non-ASCII.
-    try:
-        df = pd.read_csv(file_path, dtype=str, encoding='utf-8',
-                          lineterminator=None)
-    except UnicodeDecodeError:
+    # Read the PO file. Most channels (H&G) ship CSV; some (Shoppers Stop)
+    # ship one .XLSX per PO — detect by extension and read accordingly so
+    # the rest of the pipeline (which is DataFrame-shaped, not
+    # format-aware) is unchanged. ``dtype=str`` everywhere keeps IDs/EANs
+    # as exact strings (no float coercion of 8906121648515).
+    ext = file_path.suffix.lower()
+    if channel.df_builder:
+        # Channels with a special Excel layout (Off Institutional) use a
+        # custom builder that yields the flat engine DataFrame.
+        builder = _CHANNEL_DF_BUILDERS.get(channel.df_builder)
+        if builder is None:
+            file_level_pf.add_finding('error',
+                f"No DataFrame builder '{channel.df_builder}' registered.")
+            return [file_level_pf]
         try:
-            df = pd.read_csv(file_path, dtype=str, encoding='latin-1',
+            df = builder(file_path, store_override)
+        except Exception as e:  # noqa: BLE001 — surface ANY build error
+            file_level_pf.add_finding('error', f"Cannot read file: {e}")
+            return [file_level_pf]
+    elif ext == '.pdf':
+        # PDF channels (Naturals) parse the PO PDF into the same flat
+        # DataFrame an Excel/CSV read would yield.
+        try:
+            df = _parse_channel_pdf(file_path, channel)
+        except Exception as e:  # noqa: BLE001 — surface ANY parse error
+            file_level_pf.add_finding('error', f"Cannot read PDF: {e}")
+            return [file_level_pf]
+    elif ext in ('.xlsx', '.xls', '.xlsm'):
+        try:
+            df = pd.read_excel(file_path, dtype=str)
+        except Exception as e:  # noqa: BLE001 — surface ANY read error
+            file_level_pf.add_finding('error', f"Cannot read file: {e}")
+            return [file_level_pf]
+    else:
+        # H&G CSVs use \r line endings (legacy). pandas auto-detects.
+        # UTF-8 first, latin-1 fallback for any channel with non-ASCII.
+        try:
+            df = pd.read_csv(file_path, dtype=str, encoding='utf-8',
                               lineterminator=None)
-            file_level_pf.add_finding('warn',
-                f"Decoded as latin-1 (UTF-8 failed) — verify product names")
+        except UnicodeDecodeError:
+            try:
+                df = pd.read_csv(file_path, dtype=str, encoding='latin-1',
+                                  lineterminator=None)
+                file_level_pf.add_finding('warn',
+                    f"Decoded as latin-1 (UTF-8 failed) — verify product names")
+            except Exception as e:
+                file_level_pf.add_finding('error', f"Cannot read file: {e}")
+                return [file_level_pf]
         except Exception as e:
             file_level_pf.add_finding('error', f"Cannot read file: {e}")
             return [file_level_pf]
-    except Exception as e:
-        file_level_pf.add_finding('error', f"Cannot read file: {e}")
-        return [file_level_pf]
 
     if df.empty:
         file_level_pf.add_finding('error', "File contains no data rows")
@@ -1963,6 +2692,13 @@ def _build_pofile_from_group(group_df,
     pf.po_no = po_no
     pf.store_name = store_name
 
+    # External Document No source: a customer doc number when the file
+    # carries one (Off Institutional Demand No, in the '__demand_no__'
+    # column). Empty → the header writer falls back per channel config.
+    if '__demand_no__' in group_df.columns:
+        dn = _opt_str(_get_col_value(group_df.iloc[0], '__demand_no__'))
+        pf.external_doc = dn or None
+
     # Capture other PO-header fields from the first row of this group.
     # In well-formed files these are constant within the group; if not
     # we still take the first occurrence and warn.
@@ -1992,8 +2728,15 @@ def _build_pofile_from_group(group_df,
         csv_row_num = idx + 2   # pandas idx 0 → file row 2 (after header)
 
         sku   = _coerce_id(_get_col_value(row, channel.csv_id_col))
-        name  = _opt_str(_get_col_value(row, 'SKU_NAME'))   # HG-specific
-        mrp   = _safe_float(_get_col_value(row, channel.csv_mrp_col))
+        # Product description: the channel's name column when set (Off
+        # Institutional → 'Product Description'), else HG's 'SKU_NAME'.
+        name  = _opt_str(_get_col_value(
+            row, channel.csv_name_col or 'SKU_NAME'))
+        # MRP is optional: channels without an MRP column (Shoppers Stop)
+        # leave the per-line CSV MRP at 0.0 and rely on the Items Master
+        # MRP captured during resolution (line.items_master_mrp).
+        mrp   = (_safe_float(_get_col_value(row, channel.csv_mrp_col))
+                  if channel.csv_mrp_col else 0.0)
         qty   = _safe_int(_get_col_value(row, channel.csv_qty_col))
 
         pcost = (_safe_float(_get_col_value(row, channel.csv_cost_col))
@@ -2045,7 +2788,8 @@ def _build_pofile_from_group(group_df,
 
 def read_channel_csv_batch(file_paths: List[Path],
                               channel: ChannelConfig,
-                              bundle: MasterBundle) -> POBatch:
+                              bundle: MasterBundle,
+                              store_override: str = '') -> POBatch:
     """
     Multi-file batch reader.
 
@@ -2067,7 +2811,8 @@ def read_channel_csv_batch(file_paths: List[Path],
         # read_channel_csv returns a list — one POFile per (PO, store)
         # group in the file. A multi-PO file produces multiple POFiles;
         # a hard-error file produces a single POFile with the error.
-        batch.po_files.extend(read_channel_csv(path, channel, bundle))
+        batch.po_files.extend(
+            read_channel_csv(path, channel, bundle, store_override))
 
     # ── Cross-file check 1: same PO at same location (HIGHLIGHT) ──
     # Operator's explicit ask: flag when the same PO_NO appears twice
@@ -2271,7 +3016,24 @@ def assign_so_numbers(batch: POBatch,
                         # AUTOMATIC mode: every resolved line gets a tester.
                         line.is_tester_eligible = True
 
+                    # Nails are NEVER sent as testers (thumb rule). Prefer
+                    # the Items Master 'Catagory' (e.g. '02_NAILS') — the
+                    # reliable signal — and fall back to the product
+                    # description containing 'nail'.
+                    if (line.is_tester_eligible
+                            and channel.tester_exclude_nail
+                            and ('nail' in (line.items_master_category
+                                            or '').lower()
+                                 or 'nail' in (line.sku_name or '').lower())):
+                        line.is_tester_eligible = False
+
+                    # Tester quantity: ceil(regular qty / divisor) when the
+                    # channel sets a divisor (Off Institutional → 18); else
+                    # the default sample-of-one. (-(-a//b) = ceil(a/b).)
                     if line.is_tester_eligible:
+                        d = channel.tester_qty_divisor
+                        line.tester_qty = (max(1, -(-line.quantity // d))
+                                           if d else 1)
                         any_eligible = True
 
                 # Assign a tester SO only if at least one line is eligible.
@@ -2474,34 +3236,34 @@ LINES_SHEET_COLS = [
     'Location Code', 'Quantity', 'Unit Price',
 ]
 
+# v2.7.0: Summary matches the Online PO-Mgmt layout (one consistent format
+# across all generated output), with the order's own number ('PO' = our SO
+# No) and the GST-inclusive value. Three tester columns are appended so the
+# paired tester order is tracked on the SAME row as its regular order.
 SUMMARY_SHEET_COLS = [
-    'Location Code',   # numeric LOCATION_CODE from CSV (matches
-                        # operator's pivot view: "3 | HG-ADYAR-CHE | ...")
-    'PO',              # H&G's PO number from CSV
-    # v1.10: SO No columns let the operator trace each PO → its
-    # generated D365 Sales Order at a glance, without cross-referencing
-    # the Headers (SO) sheet. The Tester SO column is populated only
-    # when the "Generate Testers" checkbox was on AND the PO had at
-    # least one tester-eligible line; otherwise it stays blank.
-    'SO No',           # regular SO assigned to this PO (e.g. SO/HG/06/070626)
-    'Tester SO',       # tester SO if generated (e.g. SO/HG/TT/070627) else ''
-    'Location (Raw)',  # CSV's STORE_NAME / LOCATION_NAME
+    'PO',                       # the order = our SO No (e.g. SO/INST/06/..)
+    'Location (Raw)',
     'Location (Mapped)',
     'Cust No',
     'Ship-to',
-    'Items',           # rows in input CSV (= count of unique EAN/SKU
-                        # in a clean H&G PO, matches "Count of EAN")
-    'Total Qty',       # sum of QUANTITY column from CSV
-    'Total Amount',    # sum of PO_VALUE column from CSV
-    'Lines Written',   # how many lines actually made it into the output SO
+    'Items',                    # lines in the SO (resolved)
+    'Total Qty',
+    'Total Amount',             # pre-GST
+    'Total Amount (Inc GST)',
+    'Tester SO No',             # paired tester order (blank if none)
+    'Tester Qty',
+    'Tester Value',
     'Status',
 ]
 
+# v2.7.0: Validation matches the Online PO-Mgmt layout. Offline channels
+# without an "our landing/CP" margin model leave those cells blank.
 VALIDATION_SHEET_COLS = [
-    'PO', 'Item No', 'EAN', 'Description', 'MRP',
-    'Landing ({pct}%)', 'GST Code',
-    'Our Cost Price', 'Marketplace Cost',
-    'Difference with Cost', 'Status',
+    'PO', 'Item No', 'EAN', 'Description', 'GST Code',
+    'Vendor MRP', 'Our MRP',
+    'Vendor Landing', 'Our Landing',
+    'Vendor CP', 'Our CP',
+    'Difference (Cost)', 'Status',
 ]
 
 WARNINGS_SHEET_COLS = ['PO', 'Location', 'Warning']
@@ -2645,6 +3407,12 @@ def _write_headers_sheet(wb, batch: POBatch, channel: ChannelConfig,
     for pf in batch.po_files:
         if pf.has_hard_errors or not pf.so_number:
             continue
+        # External Document No.: the customer's doc number when present
+        # (pf.external_doc — e.g. INCS Demand No); else our SO No when the
+        # channel opts into that fallback (Off Institutional); else po_no.
+        ext_doc = (pf.external_doc
+                   or (pf.so_number if channel.external_doc_fallback_so
+                       else pf.po_no))
         row = [
             channel.document_type,                  # 'Order'
             pf.so_number,                            # SO/HG/06/050626
@@ -2652,7 +3420,7 @@ def _write_headers_sheet(wb, batch: POBatch, channel: ChannelConfig,
             pf.ship_to or '',                        # 20039_115
             date_str, date_str, date_str,           # Posting / Order / Document
             date_str, date_str,                      # Invoice From / To
-            pf.po_no,                                # External Document No.
+            ext_doc,                                 # External Document No.
             warehouse_code,                          # PICK or DS_BL_OFF1
             '',                                      # Dimension Set ID
             channel.supply_type,                     # 'B2B'
@@ -2690,7 +3458,7 @@ def _write_headers_sheet(wb, batch: POBatch, channel: ChannelConfig,
     # Style: D365 preamble band on row 1, then table format with
     # header at row 3, then tint tester rows pale blue.
     _apply_preamble_style(ws, preamble_row=1)
-    _apply_table_format(ws, header_row=3)
+    _apply_table_format(ws, header_row=3, style_data=False)  # PERF: header-only styling
     for r in tester_row_indices:
         _tint_row(ws, r, _TESTER_ROW_TINT)
     _autosize_columns(ws)
@@ -2737,11 +3505,12 @@ def _write_lines_sheet(wb, batch: POBatch, channel: ChannelConfig,
             if line.status == 'SKIP':
                 continue
 
-            # Lines sheet stays minimal — Unit Price is deliberately
-            # LEFT BLANK for regulars. D365 will source the price from
-            # its own sales price list / customer agreement at posting
-            # time. The cost vs MRP×landing comparison is reported
-            # separately in the Validation sheet, not duplicated in Lines.
+            # Unit Price: BLANK for most channels (D365 sources the price
+            # at posting). Channels that fetch the price from the file
+            # (Off Institutional → Basic Price, exact) write it here.
+            unit_price = (f"{line.purchase_cost}"
+                          if channel.regular_unit_price_from_cost
+                          and line.purchase_cost else '')
             row = [
                 channel.document_type,            # 'Order'
                 pf.so_number,                      # SO/HG/06/050626
@@ -2750,7 +3519,7 @@ def _write_lines_sheet(wb, batch: POBatch, channel: ChannelConfig,
                 line.item_no,                      # D365 Item No
                 warehouse_code,                    # PICK / DS_BL_OFF1
                 line.quantity,
-                '',                                # Unit Price — see Validation
+                unit_price,                        # Basic Price or blank
             ]
             ws.append(row)
             # Stamp the assigned line number onto the POLine so the
@@ -2787,7 +3556,7 @@ def _write_lines_sheet(wb, batch: POBatch, channel: ChannelConfig,
                     'Item',
                     line.item_no,
                     warehouse_code,
-                    1,                                  # qty = 1 always
+                    line.tester_qty,                   # ceil(demand/18) or 1
                     tester_price_str,                  # '0.54' STRING
                 ]
                 ws.append(row)
@@ -2818,7 +3587,7 @@ def _write_lines_sheet(wb, batch: POBatch, channel: ChannelConfig,
 
     # Style: preamble band, table format (header_row=3), tinting.
     _apply_preamble_style(ws, preamble_row=1)
-    _apply_table_format(ws, header_row=3)
+    _apply_table_format(ws, header_row=3, style_data=False)  # PERF: header-only styling
     for r in tester_row_indices:
         _tint_row(ws, r, _TESTER_ROW_TINT)
     for r in nonstock_row_indices:
@@ -2836,172 +3605,155 @@ def _write_summary_sheet(wb, batch: POBatch, channel: ChannelConfig,
     ws.append(SUMMARY_SHEET_COLS)
     status_col = len(SUMMARY_SHEET_COLS)     # 1-based index of Status column
 
-    total_items, total_qty, total_amount = 0, 0, 0.0
-    total_resolved = 0
+    t_items = t_qty = t_tqty = 0
+    t_amt = t_amt_inc = t_tval = 0.0
 
     for pf in batch.po_files:
         if pf.has_hard_errors:
-            status = 'FAIL'
             ws.append([
-                pf.location_code or '',          # Location Code
                 pf.po_no or pf.source_name,      # PO
-                pf.so_number or '',              # SO No (probably blank — pf failed)
-                pf.tester_so_number or '',       # Tester SO (blank)
-                pf.store_name or '',             # Location (Raw)
-                '', '', '',                       # Loc Mapped / Cust No / Ship-to
-                0, 0, 0.0,                       # Items / Qty / Amount
-                0,                                # Lines Written
-                status,                          # Status
+                pf.store_name or '', '', '', '',  # Loc Raw/Mapped/Cust/Ship-to
+                0, 0, 0.0, 0.0,                   # Items/Qty/Amount/Amount Inc
+                '', 0, 0.0,                       # Tester SO/Qty/Value
+                'FAIL',
             ])
             _apply_status_style(
-                ws, ws.max_row, status_col, status,
+                ws, ws.max_row, status_col, 'FAIL',
                 tint_row_cols=(1, status_col))
             continue
 
-        # Summary reflects the PO AS SENT BY THE CHANNEL — operator wants
-        # to see the actual qty/amount/items in the PO (just like a
-        # pandas pivot on the raw CSV), not just what made it through
-        # resolution. So the totals come from the input CSV columns:
-        #   - input_line_count = rows in CSV (clean POs = 1 SKU per row,
-        #                       so this matches "Count of EAN" pivot)
-        #   - input_qty_total  = SUM of QUANTITY column
-        #   - input_po_value_total = SUM of PO_VALUE column
-        # The new "Lines Written" column shows the resolved subset so
-        # the operator can see master-coverage gaps at a glance.
-        items_n   = pf.input_line_count
-        qty_n     = pf.input_qty_total
-        amt_n     = pf.input_po_value_total
+        # Totals reflect the ORDER (the lines that became the SO) — the
+        # same items/qty/inc-GST value recorded to the DB.
+        items_n, qty_n, amt_inc = _po_clean_totals(pf, channel)
+        # Pre-GST amount = Σ(file cost × qty) where a cost column exists
+        # (Off Institutional Basic / Naturals Rate / HG cost). When the
+        # channel carries no cost column (Shoppers Stop) the value is
+        # already GST-inclusive, so show that figure in both columns.
+        amt_pre = round(sum(
+            round(l.purchase_cost or 0.0, 2) * l.quantity
+            for l in pf.lines if l.item_no and l.status != 'SKIP'), 2)
+        if not amt_pre:
+            amt_pre = amt_inc
+
+        # Paired tester order (tracked on the same row).
+        t_lines = [l for l in pf.lines
+                   if l.is_tester_eligible and l.item_no
+                   and l.status != 'SKIP']
+        tqty = sum(l.tester_qty for l in t_lines)
+        tval = round((channel.tester_unit_price or 0.0) * tqty, 2)
 
         resolved_n = sum(
             1 for l in pf.lines
-            if l.item_no and l.status != 'SKIP' and l.output_line_no)
+            if l.item_no and l.status != 'SKIP' and not l.output_line_no == -1)
 
-        # Status: OK if no warnings anywhere, else WARN.
-        # Includes Ship-to unresolved (would block D365) AND any line
-        # that failed to resolve (operator needs visibility).
         has_warnings = (
             any(lvl == 'warn' for lvl, _ in pf.findings)
             or any(l.status == 'WARN' for l in pf.lines)
             or not pf.ship_to
-            or resolved_n < items_n
         )
         status = 'WARN' if has_warnings else 'OK'
-
         loc_mapped = (pf.ship_to_entry.del_location
                        if pf.ship_to_entry else '')
 
         ws.append([
-            pf.location_code or '',         # Location Code (LOCATION_CODE)
-            pf.po_no,                        # PO
-            pf.so_number or '',              # SO No  (v1.10)
-            pf.tester_so_number or '',       # Tester SO  (v1.10)
+            pf.so_number or pf.po_no,        # PO (= our SO No / order)
             pf.store_name,                   # Location (Raw)
             loc_mapped,                      # Location (Mapped)
             pf.cust_no or '',                # Cust No
             pf.ship_to or '',                # Ship-to
             items_n,                         # Items
             qty_n,                           # Total Qty
-            amt_n,                           # Total Amount
-            resolved_n,                      # Lines Written
+            amt_pre,                         # Total Amount (pre-GST)
+            amt_inc,                         # Total Amount (Inc GST)
+            pf.tester_so_number or '',       # Tester SO No
+            tqty,                            # Tester Qty
+            tval,                            # Tester Value
             status,                          # Status
         ])
         _apply_status_style(
             ws, ws.max_row, status_col, status,
             tint_row_cols=(1, status_col))
-        total_items    += items_n
-        total_qty      += qty_n
-        total_amount   += amt_n
-        total_resolved += resolved_n
+        t_items += items_n
+        t_qty += qty_n
+        t_amt += amt_pre
+        t_amt_inc += amt_inc
+        t_tqty += tqty
+        t_tval += tval
 
     # TOTAL row
     total_row_idx = ws.max_row + 1
     ws.append([
-        '',                                  # Location Code (blank)
-        'TOTAL',                             # PO column header
-        '',                                  # SO No (blank)
-        '',                                  # Tester SO (blank)
-        '', '', '', '',                       # Loc Raw/Mapped/Cust/Ship-to (blank)
-        total_items, total_qty,
-        round(total_amount, 2),
-        total_resolved, '',
+        'TOTAL', '', '', '', '',
+        t_items, t_qty, round(t_amt, 2), round(t_amt_inc, 2),
+        '', t_tqty, round(t_tval, 2), '',
     ])
-    # Bold the TOTAL row
     bold = Font(bold=True)
     for cell in ws[total_row_idx]:
         cell.font = bold
 
-    # Spacer + footer
     ws.append([])
-    pct = (f"{int(channel.expected_landing_ratio*100)}%"
-            if channel.expected_landing_ratio is not None else 'N/A')
     ws.append([
         f"Channel: {channel.display_name} ({channel.code})  |  "
-        f"Landing rate: {pct}  |  "
         f"Warehouse: {warehouse_code}"
     ])
 
-    _apply_table_format(ws, header_row=1)
+    _apply_table_format(ws, header_row=1, style_data=False)  # PERF: header-only styling
     _autosize_columns(ws)
 
 def _write_validation_sheet(wb, batch: POBatch,
                               channel: ChannelConfig) -> None:
     """
-    Validation — one row per resolved line with item lookup details + a
-    cost-vs-expected comparison. Lets the operator spot pricing drift.
+    Validation — one row per resolved line, in the Online PO-Mgmt layout:
+    PO | Item No | EAN | Description | GST Code | Vendor MRP | Our MRP |
+    Vendor Landing | Our Landing | Vendor CP | Our CP | Difference (Cost) |
+    Status. 'Vendor' = the file's values; 'Our' = master-derived (blank for
+    channels with no landing-ratio model). Difference is informational.
     """
-    pct_int = (int(channel.expected_landing_ratio*100)
-                if channel.expected_landing_ratio is not None else 0)
-    cols = [c.format(pct=pct_int) for c in VALIDATION_SHEET_COLS]
-
     ws = wb.create_sheet('Validation')
-    ws.append(cols)
-    status_col = len(cols)         # 1-based index of the Status column
+    ws.append(VALIDATION_SHEET_COLS)
+    status_col = len(VALIDATION_SHEET_COLS)
+    cur_row = 1   # PERF: track the row as we append (ws.max_row is O(cells))
+
+    ratio = channel.expected_landing_ratio
 
     for pf in batch.po_files:
         if pf.has_hard_errors:
             continue
-
         for line in pf.lines:
-            if not line.item_no:
-                continue
-            if line.status == 'SKIP':
+            if not line.item_no or line.status == 'SKIP':
                 continue
 
-            mrp_master = line.items_master_mrp or 0
-            landing = (round(mrp_master * channel.expected_landing_ratio, 2)
-                        if (channel.expected_landing_ratio is not None
-                             and mrp_master)
-                        else '')
-            our_cost = landing if landing != '' else ''
-            mkt_cost = line.purchase_cost
-
-            # Difference is INFORMATION ONLY per operator instruction:
-            # "we won't consider any difference". Status reflects the
-            # line's actual health (resolution, ship-to), NOT the diff.
-            if landing != '' and mkt_cost:
-                diff = round(mkt_cost - landing, 2)
-            else:
-                diff = ''
+            our_mrp = line.items_master_mrp or 0
+            vendor_mrp = line.mrp or 0
+            vendor_landing = line.purchase_cost or 0      # file cost (pre-GST)
+            # 'Our Landing' only when the channel has an MRP×ratio model.
+            our_landing = (round(our_mrp * ratio, 2)
+                            if (ratio and our_mrp) else '')
+            diff = (round(vendor_landing - our_landing, 2)
+                    if (our_landing != '' and vendor_landing) else '')
             status = 'OK' if line.status == 'OK' else 'WARN'
 
             ws.append([
-                pf.po_no,
+                pf.so_number or pf.po_no,                 # PO (= order)
                 line.item_no,
                 line.ean or '',
                 line.items_master_desc or line.sku_name or '',
-                mrp_master if mrp_master else '',
-                landing,
                 line.gst_code or '',
-                our_cost,
-                mkt_cost if mkt_cost else '',
-                diff,
+                vendor_mrp if vendor_mrp else '',         # Vendor MRP
+                our_mrp if our_mrp else '',               # Our MRP
+                vendor_landing if vendor_landing else '', # Vendor Landing
+                our_landing,                              # Our Landing
+                '',                                       # Vendor CP (n/a)
+                '',                                       # Our CP (n/a)
+                diff,                                     # Difference (Cost)
                 status,
             ])
+            cur_row += 1
             _apply_status_style(
-                ws, ws.max_row, status_col, status,
+                ws, cur_row, status_col, status,
                 tint_row_cols=(1, status_col))
 
-    _apply_table_format(ws, header_row=1)
+    _apply_table_format(ws, header_row=1, style_data=False)  # PERF: header-only styling
     _autosize_columns(ws)
 
 # Column layout for the Reconciliation sheet. Defined as a module-level
@@ -3040,6 +3792,7 @@ def _write_reconciliation_sheet(wb, batch: POBatch,
     ws = wb.create_sheet('Reconciliation')
     ws.append(RECONCILIATION_SHEET_COLS)
     status_col = len(RECONCILIATION_SHEET_COLS)   # 1-based Status col idx
+    cur_row = 1   # PERF: track row as we append (ws.max_row is O(cells))
 
     # Running counts for the verification totals row
     n_written = n_skipped = n_failed = n_file_err = 0
@@ -3069,8 +3822,9 @@ def _write_reconciliation_sheet(wb, batch: POBatch,
                 'FILE ERR',
                 hard_errs or 'File had hard errors',
             ])
+            cur_row += 1
             _apply_status_style(
-                ws, ws.max_row, status_col, 'FAIL',
+                ws, cur_row, status_col, 'FAIL',
                 tint_row_cols=(1, status_col))
             n_file_err += row_count
             continue
@@ -3113,8 +3867,9 @@ def _write_reconciliation_sheet(wb, batch: POBatch,
                 status,
                 reason,
             ])
+            cur_row += 1
             _apply_status_style(
-                ws, ws.max_row, status_col, status,
+                ws, cur_row, status_col, status,
                 tint_row_cols=(1, status_col))
 
     # ── Verification totals block ──
@@ -3195,7 +3950,7 @@ def _write_reconciliation_sheet(wb, batch: POBatch,
                     f"Group: {ns.group}" if ns.group else '',
                 ])
 
-    _apply_table_format(ws, header_row=1)
+    _apply_table_format(ws, header_row=1, style_data=False)  # PERF: header-only styling
     _autosize_columns(ws)
 
 def _status_reason_from_notes(line) -> str:
@@ -3245,7 +4000,7 @@ def _write_warnings_sheet(wb, batch: POBatch,
             marker = '✗ ' if level == 'error' else ''
             ws.append(['', '', marker + msg])
 
-    _apply_table_format(ws, header_row=1)
+    _apply_table_format(ws, header_row=1, style_data=False)  # PERF: header-only styling
     _autosize_columns(ws)
 
 def _write_raw_data_sheet(wb, batch: POBatch,
@@ -3322,7 +4077,7 @@ def _write_raw_data_sheet(wb, batch: POBatch,
 
             ws.append(row_values + appended)
 
-    _apply_table_format(ws, header_row=1)
+    _apply_table_format(ws, header_row=1, style_data=False)  # PERF: header-only styling
     _autosize_columns(ws)
 
 #
@@ -3502,6 +4257,195 @@ def print_batch_report(batch: POBatch) -> None:
     print()
 
 # ════════════════════════════════════════════════════════════════════════════
+# ───────────── SECTION 7b — Shared history DB recording ─────────────────────
+# ════════════════════════════════════════════════════════════════════════════
+#
+# v2.5.0: MT-channel SOs are recorded into the SAME history DB the Online
+# tool writes to, so ONE consolidated tracker (sourced from the DB) spans
+# Online + Offline. Mapping for every MT channel:
+#     segment           = 'Offline'
+#     marketplace       = 'MT'                 (the MT-Select channel group)
+#     marketplace_label = channel.display_name ('Shoppers Stop', 'Health & Glow')
+#
+# Only CLEAN data is stored — items/qty/value count the lines that resolved
+# to a D365 Item No (the rows actually written to Lines (SO)). Unresolved
+# lines stay fully visible in the workbook's Validation / Warnings / Raw
+# Data sheets but never enter the DB. The DB layer is reused from the
+# Online package (single schema, single source of truth); if it can't be
+# located/imported, recording is skipped with a note and SO generation is
+# never blocked.
+
+OFFLINE_SEGMENT     = 'Offline'
+OFFLINE_MARKETPLACE = 'MT'
+
+
+def _find_online_history_db():
+    """Locate + import the Online tool's ``history_db`` module by walking
+    up from this script to ``online_po_management``. Returns the module or
+    None (recording then no-ops)."""
+    here = get_script_dir().resolve()
+    for base in [here, *here.parents]:
+        cand = base / 'online_po_management'
+        if (cand / 'online_po_processor' / 'auto' / 'history_db.py').exists():
+            if str(cand) not in sys.path:
+                sys.path.insert(0, str(cand))
+            try:
+                import online_po_processor.auto.history_db as H
+                return H
+            except Exception:
+                return None
+    return None
+
+
+def _po_clean_totals(pf: POFile, channel: ChannelConfig) -> Tuple[int, int, float]:
+    """
+    (items, qty, order_value) over the lines that reached Lines (SO) —
+    resolved to an Item No and not SKIP. order_value is GST-INCLUSIVE:
+      * when the PO carries a per-line value (Naturals 'Gross Amount'),
+        sum it directly (it's already inc-GST);
+      * otherwise compute landing = MRP × expected_landing_ratio × qty
+        (Shoppers Stop: MRP × 0.6106 — MRP includes GST).
+    """
+    ratio = channel.expected_landing_ratio or 0.0
+    items = qty = 0
+    value = 0.0
+    for l in pf.lines:
+        if not l.item_no or l.status == 'SKIP':
+            continue
+        items += 1
+        qty   += l.quantity
+        if l.po_value:                      # channel PO carries the line value
+            value += l.po_value
+        elif ratio:                         # no value column → MRP × ratio
+            value += round((l.items_master_mrp or 0.0) * ratio, 2) * l.quantity
+    return items, qty, round(value, 2)
+
+
+def _date_from_raw(pf: POFile, col: Optional[str]) -> str:
+    """A date as 'YYYY-MM-DD' read from the raw row's ``col`` (day-first
+    tolerant — Naturals uses DD-MM-YYYY, SS uses ISO); '' when absent."""
+    if not col or pf.raw_df is None or pf.raw_df.empty:
+        return ''
+    s = _opt_str(_get_col_value(pf.raw_df.iloc[0], col))
+    if not s:
+        return ''
+    # v2.4.0: Apollo/BN ships PO Date as an Excel serial (e.g. '46188') when
+    # the cell is number-formatted, not a real date. Detect a bare integer in
+    # the Excel date-serial range and convert via Excel's epoch (1899-12-30)
+    # so it renders '2026-06-15' instead of a meaningless number.
+    try:
+        f = float(s)
+        if f.is_integer() and 20000 <= f <= 80000:
+            return str(pd.to_datetime(f, unit='D',
+                                      origin='1899-12-30').date())
+    except (ValueError, TypeError):
+        pass
+    try:
+        return str(pd.to_datetime(s, dayfirst=True).date())
+    except Exception:
+        return s[:10]
+
+
+def build_offline_order_rows(batch: POBatch, channel: ChannelConfig,
+                              warehouse: str, output_file: str) -> List[dict]:
+    """
+    Per-SO history rows for one generated batch (Offline). One row per
+    regular SO, plus — when the channel generates testers — one row per
+    tester SO (so both D365 orders are tracked).
+    """
+    rows: List[dict] = []
+    for pf in batch.po_files:
+        if pf.has_hard_errors or not pf.so_number:
+            continue
+        items, qty, value = _po_clean_totals(pf, channel)
+        if items == 0:
+            continue                       # nothing resolvable → not generated
+        loc = pf.ship_to_entry.del_location if pf.ship_to_entry else ''
+        po_date = _date_from_raw(pf, channel.csv_date_col)
+        exp_date = _date_from_raw(pf, channel.csv_expdate_col)
+        base = {
+            'segment':           OFFLINE_SEGMENT,
+            'marketplace':       channel.db_marketplace or OFFLINE_MARKETPLACE,
+            'marketplace_label': channel.display_name,
+            'location':          loc,
+            'warehouse':         warehouse or '',
+            'po_date':           po_date,
+            'exp_date':          exp_date,
+            'order_type':        'SO',
+            'output_file':       output_file or '',
+        }
+        # Regular SO — our SO No in the 'po' column.
+        rows.append({**base, 'po': pf.so_number,
+                     'items': items, 'qty': qty, 'order_value': value})
+        # Tester SO (when generated) — qty = Σ tester_qty, value = 0.54 × qty.
+        if pf.tester_so_number:
+            t_lines = [l for l in pf.lines
+                       if l.is_tester_eligible and l.item_no
+                       and l.status != 'SKIP']
+            t_qty = sum(l.tester_qty for l in t_lines)
+            if t_lines:
+                rows.append({**base, 'po': pf.tester_so_number,
+                             'marketplace_label': 'Testers',
+                             'items': len(t_lines), 'qty': t_qty,
+                             'order_value': round(
+                                 (channel.tester_unit_price or 0.0) * t_qty, 2)})
+    return rows
+
+
+def record_offline_batch(batch: POBatch, channel: ChannelConfig,
+                          warehouse: str, output_file: str) -> dict:
+    """
+    Record a generated MT batch into the shared history DB (Offline
+    segment). Mirrors the Online "DB holds only NEW POs" rule: POs already
+    present for ('MT', po) are skipped so re-generating never double-counts.
+    Soft-fails — any problem returns a status dict, never raises, so SO
+    generation is never blocked by the DB.
+    """
+    H = _find_online_history_db()
+    if H is None:
+        return {'recorded': False, 'reason': 'history_db module not found'}
+
+    rows = build_offline_order_rows(batch, channel, warehouse, output_file)
+    if not rows:
+        return {'recorded': False, 'reason': 'no clean orders to record'}
+
+    try:
+        db_path = H.default_history_db_path()
+        store = H.get_history_store(db_path)
+        try:
+            existing = store.existing_pos()
+        finally:
+            store.close()
+        new_rows = [r for r in rows
+                    if (r['marketplace'], r['po']) not in existing]
+        skipped = len(rows) - len(new_rows)
+        if not new_rows:
+            return {'recorded': False, 'reason': 'all POs already recorded',
+                    'skipped': skipped}
+        run_meta = {
+            'run_ts': datetime.now().isoformat(timespec='seconds'),
+            # Offline MT generation is operator-triggered → MANUAL mode
+            # (the DB 'mode' ENUM is AUTO/MANUAL). The Offline vs Online
+            # distinction is carried by each order row's segment='Offline'.
+            'mode': 'MANUAL',
+            'online_root': (f'OFFLINE MT/{channel.code}: '
+                            f'{os.path.basename(output_file)}'
+                            if output_file else f'OFFLINE MT/{channel.code}'),
+            'marketplaces': 1,
+            'total_pos':   len(new_rows),
+            'total_items': sum(r['items'] for r in new_rows),
+            'total_qty':   sum(r['qty'] for r in new_rows),
+            'total_value': sum(r['order_value'] for r in new_rows),
+            'consolidated_path': '',
+            'tracker_path': '',
+        }
+        res = H._record(new_rows, run_meta, db_path, skipped=skipped)
+        return {'recorded': True, 'skipped': skipped, **res}
+    except Exception as e:                   # noqa: BLE001 — never block SO gen
+        return {'recorded': False, 'reason': f'DB error: {e}'}
+
+
+# ════════════════════════════════════════════════════════════════════════════
 # ───────────────── SECTION 8 — GUI (Tkinter) ───────────────────────────────
 # ════════════════════════════════════════════════════════════════════════════
 #
@@ -3584,7 +4528,8 @@ class MTSelectGUI:
     FONT_MONO       = ('Consolas', 9)
     FONT_PRIMARY_BTN = ('Segoe UI', 11, 'bold')
 
-    def __init__(self, root):
+    def __init__(self, root, only_channel: Optional[str] = None,
+                 app_title: Optional[str] = None):
         # Lazy import — keeps the loader portion of the module headless-safe.
         import tkinter as tk
         from tkinter import ttk, filedialog, messagebox, scrolledtext
@@ -3594,8 +4539,15 @@ class MTSelectGUI:
         self.messagebox = messagebox
         self.scrolledtext = scrolledtext
 
+        # ``only_channel`` runs this GUI as a SINGLE-channel tool (the
+        # separate offline channels, e.g. Off Institutional). The channel
+        # dropdown is then locked to that channel and the standalone-only
+        # channels are hidden from the normal MT Select dropdown.
+        self.only_channel = only_channel if only_channel in CHANNELS else None
+
         self.root = root
-        self.root.title("MT Select — Multi-Channel PO Processor  v0.6")
+        self.root.title(app_title or
+                        "MT Select — Multi-Channel PO Processor  v0.6")
         self.root.geometry("1020x840")
         self.root.minsize(920, 620)
 
@@ -3613,13 +4565,20 @@ class MTSelectGUI:
         self.bundle:       Optional[MasterBundle] = None
         self.csv_files:    List[Path] = []
         self.is_processing: bool = False
+        # v2.6.0: last generated batch awaiting a manual "Push to DB".
+        self._pending_push: Optional[dict] = None
 
-        # Active channel — restored from config if previously set,
-        # otherwise defaults to the first registered channel.
-        saved_channel = self.config.get('active_channel', DEFAULT_CHANNEL)
-        if saved_channel not in CHANNELS:
-            saved_channel = DEFAULT_CHANNEL
-        self.active_channel_code: str = saved_channel
+        # Active channel — locked to ``only_channel`` when running as a
+        # standalone single-channel tool; otherwise restored from config
+        # (never a standalone-only channel, which has its own launcher).
+        if self.only_channel:
+            self.active_channel_code: str = self.only_channel
+        else:
+            saved_channel = self.config.get('active_channel', DEFAULT_CHANNEL)
+            if (saved_channel not in CHANNELS
+                    or CHANNELS[saved_channel].standalone_only):
+                saved_channel = DEFAULT_CHANNEL
+            self.active_channel_code: str = saved_channel
 
         # Tester checkbox state — persisted so operator's preference
         # survives between launches. Default off (regulars only).
@@ -3643,6 +4602,7 @@ class MTSelectGUI:
         self.testers_var         = tk.BooleanVar(value=self.generate_testers)
         self.add_non_stock_var   = tk.BooleanVar(value=self.add_non_stock)
         self.warehouse_var       = tk.StringVar(value=DEFAULT_WAREHOUSE)
+        self.counter_var         = tk.StringVar()   # OFF-INST counter pick
         self.warehouse_code_var  = tk.StringVar(
             value=f'→ {WAREHOUSES[DEFAULT_WAREHOUSE]}')
         self.master_status_var   = tk.StringVar(value='Loading...')
@@ -3678,9 +4638,11 @@ class MTSelectGUI:
         row = 0
 
         # ─── Title + Subtitle (centered) ───
-        # Title is static "MT Select"; subtitle reflects the active
-        # channel and updates when the operator switches via the dropdown.
-        ttk.Label(outer, text='MT Select',
+        # Heading: 'MT Select' normally, or the channel's own name when this
+        # window runs as a single dedicated channel (Off Institutional).
+        heading = (CHANNELS[self.only_channel].display_name
+                   if self.only_channel else 'MT Select')
+        ttk.Label(outer, text=heading,
                    font=self.FONT_TITLE, foreground=self.COLOR_TITLE,
                    anchor='center'
                    ).grid(row=row, column=0, sticky='ew', pady=(0, 2))
@@ -3746,28 +4708,29 @@ class MTSelectGUI:
         frame.pack(side='top', anchor='w', fill='x')
 
         # ─── Channel selector ───
-        # Dropdown values are "HG — Health & Glow" style for clarity.
-        # When HB is added to CHANNELS, it appears here automatically.
-        ttk.Label(frame, text='Channel:',
-                   font=self.FONT_LABEL).pack(side='left', padx=(0, 6))
-
+        # Hidden when this window is locked to a single channel (Off
+        # Institutional runs as its own dedicated tool) — no dropdown clutter.
         self.channel_combo_values = [
             f'{code} — {ch.display_name}'
             for code, ch in CHANNELS.items()
+            if (self.only_channel == code) or
+               (self.only_channel is None and not ch.standalone_only)
         ]
-        self.channel_combo = ttk.Combobox(
-            frame, values=self.channel_combo_values,
-            state='readonly', width=22,
-            font=self.FONT_NORMAL,
-        )
-        # Set initial display value to match active_channel_code
-        for i, v in enumerate(self.channel_combo_values):
-            if v.startswith(self.active_channel_code + ' '):
-                self.channel_combo.current(i)
-                break
-        self.channel_combo.pack(side='left', padx=(0, 18))
-        self.channel_combo.bind('<<ComboboxSelected>>',
-                                  self._on_channel_change)
+        self.channel_combo = None
+        if not self.only_channel:
+            ttk.Label(frame, text='Channel:',
+                       font=self.FONT_LABEL).pack(side='left', padx=(0, 6))
+            self.channel_combo = ttk.Combobox(
+                frame, values=self.channel_combo_values,
+                state='readonly', width=22, font=self.FONT_NORMAL,
+            )
+            for i, v in enumerate(self.channel_combo_values):
+                if v.startswith(self.active_channel_code + ' '):
+                    self.channel_combo.current(i)
+                    break
+            self.channel_combo.pack(side='left', padx=(0, 18))
+            self.channel_combo.bind('<<ComboboxSelected>>',
+                                      self._on_channel_change)
 
         # ─── Warehouse selector ───
         ttk.Label(frame, text='Warehouse:',
@@ -3784,6 +4747,17 @@ class MTSelectGUI:
                    font=self.FONT_NORMAL,
                    foreground='#666').pack(side='left', padx=(10, 0))
 
+        # ─── Counter selector (only for counter_select channels) ───
+        # Off Institutional: the operator picks which INCS counter
+        # (Ship-to B2B Del Location) the order ships to. Populated from the
+        # loaded masters; hidden/disabled for other channels.
+        self.counter_label = ttk.Label(frame, text='Counter:',
+                                        font=self.FONT_LABEL)
+        self.counter_combo = ttk.Combobox(
+            frame, textvariable=self.counter_var, state='readonly',
+            width=40, font=self.FONT_NORMAL)
+        # Packed/unpacked dynamically by _refresh_counter_options().
+
         # ─── Testers checkbox ───
         # When enabled, every cleanly-parsed regular PO also gets a
         # paired tester SO (SO/HG/TT/...) with qty=1 / unit_price=0.54
@@ -3791,34 +4765,40 @@ class MTSelectGUI:
         # continuous block after the regulars (confirmed by operator).
         # Disabled when the active channel doesn't declare a tester
         # price (channel.tester_unit_price is None).
+        # Tester / GWP controls are hidden in single-channel (Off
+        # Institutional) mode — that channel ALWAYS generates its tester
+        # order automatically (no operator toggle), keeping the GUI simple:
+        # upload file → select counter → Generate → Push to DB.
         active_channel = CHANNELS.get(self.active_channel_code)
-        chk_state = ('normal'
-                      if (active_channel is not None
-                          and active_channel.tester_unit_price is not None)
-                      else 'disabled')
-        self.testers_check = ttk.Checkbutton(
-            frame,
-            text='Generate Testers',
-            variable=self.testers_var,
-            command=self._on_testers_toggle,
-            state=chk_state,
-        )
-        self.testers_check.pack(side='left', padx=(20, 0))
-
-        # Show the tester price next to the checkbox so operator can
-        # confirm at a glance which price will be used.
-        if active_channel is not None and active_channel.tester_unit_price is not None:
-            ttk.Label(
+        if not self.only_channel:
+            chk_state = ('normal'
+                          if (active_channel is not None
+                              and active_channel.tester_unit_price is not None)
+                          else 'disabled')
+            self.testers_check = ttk.Checkbutton(
                 frame,
-                text=f'(qty=1, price={active_channel.tester_unit_price})',
-                font=self.FONT_SMALL,
-                foreground='#666',
-            ).pack(side='left', padx=(6, 0))
+                text='Generate Testers',
+                variable=self.testers_var,
+                command=self._on_testers_toggle,
+                state=chk_state,
+            )
+            self.testers_check.pack(side='left', padx=(20, 0))
+
+            # Show the tester price next to the checkbox.
+            if (active_channel is not None
+                    and active_channel.tester_unit_price is not None):
+                ttk.Label(
+                    frame,
+                    text=f'(qty=1, price={active_channel.tester_unit_price})',
+                    font=self.FONT_SMALL,
+                    foreground='#666',
+                ).pack(side='left', padx=(6, 0))
 
         # ─── Add Non Stock checkbox ───
         # Active only on channels that support testers (non-stock goes
-        # INTO the tester SO).
-        if active_channel is not None and active_channel.tester_unit_price is not None:
+        # INTO the tester SO). Hidden in single-channel mode.
+        if (not self.only_channel and active_channel is not None
+                and active_channel.tester_unit_price is not None):
             self.non_stock_check = ttk.Checkbutton(
                 frame,
                 text='Add Non Stock',
@@ -3838,8 +4818,9 @@ class MTSelectGUI:
         # leave it unset (AUTOMATIC mode — all resolved lines become
         # testers) or browse to a Skin_care_NPI_tester.xlsm-style file
         # (SELECTIVE mode — only (location, SKU) pairs in the dump
-        # become testers).
-        if active_channel is not None and active_channel.tester_unit_price is not None:
+        # become testers). Hidden in single-channel mode.
+        if (not self.only_channel and active_channel is not None
+                and active_channel.tester_unit_price is not None):
             dump_frame = ttk.Frame(outer)
             dump_frame.pack(side='top', anchor='w', fill='x',
                               pady=(6, 0))
@@ -3857,6 +4838,7 @@ class MTSelectGUI:
                         command=self._on_clear_dump
                         ).pack(side='left')
 
+        self._refresh_counter_options()   # show counter combo if applicable
         return outer
 
     def _build_input_files_frame(self, parent):
@@ -3963,6 +4945,22 @@ class MTSelectGUI:
         )
         self.process_btn.pack(pady=(0, 6))
 
+        # v2.6.0: Push to DB — separate, deliberate step. Generation only
+        # writes the workbook; the operator reviews it (and re-runs on any
+        # error), THEN clicks this to record the verified batch into the
+        # shared history DB. Disabled until a successful generation.
+        self.push_btn = tk.Button(
+            center, text='⤓  Push to DB',
+            font=self.FONT_PRIMARY_BTN,
+            bg='#2563eb', fg='#ffffff',
+            activebackground='#1d4ed8', activeforeground='#ffffff',
+            relief='flat', borderwidth=0,
+            padx=36, pady=6, cursor='hand2',
+            state='disabled',
+            command=self._push_to_db,
+        )
+        self.push_btn.pack(pady=(0, 6))
+
         # Secondary buttons (smaller, ttk default style, stacked)
         self.template_btn = ttk.Button(
             center, text='Create Template',
@@ -3974,7 +4972,99 @@ class MTSelectGUI:
             command=self._auto_load_masters, width=22)
         self.reload_btn.pack(pady=2)
 
+        # v2.5.0: view the shared order history (Online + Offline) recorded
+        # in the DB — exports a snapshot workbook and opens it.
+        self.history_btn = ttk.Button(
+            center, text='View Order History',
+            command=self._view_history, width=22)
+        self.history_btn.pack(pady=2)
+
         return outer
+
+    def _view_history(self):
+        """Open the shared history DB, export a snapshot of all recorded
+        orders (Online + Offline) to a workbook, and open it. Read-only;
+        soft-fails with a dialog if the DB/module is unavailable."""
+        from tkinter import messagebox
+        H = _find_online_history_db()
+        if H is None:
+            messagebox.showwarning(
+                'Order History',
+                'Could not locate the shared history DB '
+                '(online_po_management). Order history is unavailable.')
+            return
+        try:
+            store = H.get_history_store(H.default_history_db_path())
+            try:
+                n = len(store.fetch_orders(None))   # all runs / all segments
+                if n == 0:
+                    messagebox.showinfo(
+                        'Order History', 'No orders have been recorded yet.')
+                    return
+                out_dir = get_output_folder(self.active_channel_code)
+                out_dir.mkdir(parents=True, exist_ok=True)
+                out = (out_dir /
+                       f'Order_History_{datetime.now():%Y%m%d_%H%M%S}.xlsx')
+                store.export_to_xlsx(str(out))
+            finally:
+                store.close()
+        except Exception as e:   # noqa: BLE001 — surface, never crash the GUI
+            messagebox.showerror(
+                'Order History', f'Could not read the history DB:\n{e}')
+            return
+        self._open_path(out)
+        self._log(f'Order history: {n} order(s) → {out.name}')
+
+    def _push_to_db(self):
+        """
+        Record the LAST successfully-generated batch into the shared history
+        DB (Offline segment). This is a deliberate, separate step from
+        generation: the operator verifies the output workbook first, then
+        clicks this. Records the SO No into the 'po' column.
+        """
+        from tkinter import messagebox
+        pend = getattr(self, '_pending_push', None)
+        if not pend:
+            messagebox.showinfo(
+                'Push to DB',
+                'Nothing to push yet. Generate Sales Orders first, verify '
+                'the output, then push.')
+            return
+        if not messagebox.askyesno(
+                'Push to DB',
+                f"Push this batch to the history DB?\n\n"
+                f"Channel : {pend['channel'].display_name}\n"
+                f"Warehouse: {pend['warehouse']}\n"
+                f"Output  : {pend['output_file']}\n\n"
+                f"(Order No goes into the DB as the order; re-pushing adds "
+                f"new rows.)"):
+            return
+        self.push_btn.config(state='disabled', text='⏳  Pushing...')
+        try:
+            rec = record_offline_batch(
+                pend['batch'], pend['channel'],
+                pend['warehouse'], pend['output_file'])
+        except Exception as e:   # noqa: BLE001 — never crash the GUI
+            rec = {'recorded': False, 'reason': str(e)}
+
+        if rec.get('recorded'):
+            msg = (f"Recorded {rec.get('new_orders', 0)} order(s) "
+                   f"[Offline / MT / {pend['channel'].display_name}].")
+            if rec.get('skipped'):
+                msg += f"\nSkipped {rec['skipped']} already in DB."
+            self._log(f'✓ Pushed to DB: {msg}', tag='ok')
+            messagebox.showinfo('Push to DB', msg)
+            # Consume the pending batch so it isn't pushed twice by accident.
+            self._pending_push = None
+            self.push_btn.config(state='disabled', text='⤓  Push to DB')
+        else:
+            reason = rec.get('reason', 'unknown')
+            self._log(f'✗ Push to DB failed: {reason}', tag='error')
+            messagebox.showerror(
+                'Push to DB',
+                f"Not recorded:\n{reason}\n\n"
+                f"Fix the issue and try again (the batch is still pending).")
+            self.push_btn.config(state='normal', text='⤓  Push to DB')
 
     def _build_log_frame(self, parent):
         """The Log panel: scrollable text with [HH:MM:SS]-prefixed entries."""
@@ -4186,9 +5276,37 @@ class MTSelectGUI:
 
         # Update the subtitle to reflect the newly active channel
         self.subtitle_var.set(self._subtitle_for_channel())
+        self._refresh_counter_options()
         self._log(f'Channel changed to {channel.code} '
                    f'({channel.display_name}) — input folder is now '
                    f'"{channel.input_folder_name}/"')
+
+    def _refresh_counter_options(self):
+        """Show/populate the Counter dropdown for counter_select channels
+        (Off Institutional) from the loaded masters' Ship-to B2B Del
+        Locations for the channel's party; hide it otherwise."""
+        combo = getattr(self, 'counter_combo', None)
+        if combo is None:
+            return
+        channel = CHANNELS.get(self.active_channel_code)
+        show = bool(channel and channel.counter_select)
+        if not show:
+            self.counter_label.pack_forget()
+            combo.pack_forget()
+            self.counter_var.set('')
+            return
+        # Del Locations for this party (from the loaded bundle).
+        locs = []
+        if self.bundle is not None:
+            locs = sorted({
+                dl for (party, dl) in self.bundle.ship_to_lookup
+                if party == channel.party})
+        combo['values'] = locs
+        if locs and self.counter_var.get() not in locs:
+            self.counter_var.set(locs[0])
+        # Place it right after the warehouse code label.
+        self.counter_label.pack(side='left', padx=(18, 6))
+        combo.pack(side='left')
 
     # ────────────────────────────────────────────────────────────────────────
     #                       MASTER LOADING
@@ -4225,6 +5343,7 @@ class MTSelectGUI:
     def _on_masters_loaded(self, bundle: MasterBundle):
         """UI thread: bundle ready, update display and log."""
         self.bundle = bundle
+        self._refresh_counter_options()   # populate OFF-INST counters
 
         has_errors = any(l == 'error' for l, _ in bundle.findings)
 
@@ -4357,12 +5476,24 @@ class MTSelectGUI:
     # ────────────────────────────────────────────────────────────────────────
 
     def _add_files(self):
-        """File dialog: multi-select CSVs from anywhere on disk."""
+        """File dialog: multi-select PO files (CSV or Excel) from disk.
+
+        Channel-aware: H&G ships .CSV, Shoppers Stop ships .XLSX — the
+        combined first filter shows both so a multi-file batch of either
+        format can be picked at once.
+        """
         channel = CHANNELS[self.active_channel_code]
         ch_folder = get_input_folder(self.active_channel_code)
         paths = self.filedialog.askopenfilenames(
-            title=f'Select {channel.display_name} PO CSVs',
-            filetypes=[('CSV files', '*.csv'), ('All files', '*.*')],
+            title=f'Select {channel.display_name} PO file(s) — pick one or many',
+            filetypes=[
+                (f'{channel.display_name} PO files',
+                 '*.csv *.xlsx *.xls *.xlsm *.pdf'),
+                ('CSV files', '*.csv'),
+                ('Excel files', '*.xlsx *.xls *.xlsm'),
+                ('PDF files', '*.pdf'),
+                ('All files', '*.*'),
+            ],
             initialdir=str(ch_folder if ch_folder.exists()
                             else get_script_dir()),
         )
@@ -4447,6 +5578,9 @@ class MTSelectGUI:
         self.is_processing = True
         self.process_btn.config(state='disabled',
                                   text='⏳  Processing...')
+        # New generation supersedes any un-pushed batch.
+        self._pending_push = None
+        self.push_btn.config(state='disabled', text='⤓  Push to DB')
         self.action_status_var.set('')
         self._set_status(f'Processing {len(self.csv_files)} file(s)...')
 
@@ -4488,9 +5622,23 @@ class MTSelectGUI:
             output_filename = generate_output_filename(channel)
             preferred_output = output_dir / output_filename
 
+            # Counter (ship-to) for channels that pick it in the GUI.
+            store_override = (self.counter_var.get()
+                              if channel.counter_select else '')
+            # Channels with a tester-qty rule (Off Institutional) ALWAYS
+            # generate the paired tester order (two orders per the spec),
+            # regardless of the checkbox.
+            gen_testers = (self.generate_testers
+                           or channel.tester_qty_divisor is not None)
+
             with redirect_stdout(buf):
+                if channel.counter_select and not store_override:
+                    print("  ✗ No counter selected — pick the destination "
+                          "counter before generating.")
+                    raise RuntimeError('counter not selected')
                 batch = read_channel_csv_batch(
-                    self.csv_files, channel, self.bundle)
+                    self.csv_files, channel, self.bundle,
+                    store_override=store_override)
 
                 # If testers are enabled AND a dump file is configured,
                 # reload the dump from disk (operator may have edited it
@@ -4521,7 +5669,7 @@ class MTSelectGUI:
                 # assign_so_numbers for details. tester_dump=None means
                 # AUTOMATIC mode; a TesterDump means SELECTIVE mode.
                 assign_so_numbers(batch, channel,
-                                    generate_testers=self.generate_testers,
+                                    generate_testers=gen_testers,
                                     tester_dump=tester_dump)
                 print_batch_report(batch)
 
@@ -4558,6 +5706,20 @@ class MTSelectGUI:
                     print(f"  ✓ OUTPUT WORKBOOK WRITTEN")
                     print("─" * 78)
                     print(f"  {output_path}")
+
+                    # v2.6.0: generation NO LONGER auto-pushes to the DB.
+                    # We stash this batch as "pending push" so the operator
+                    # can VERIFY the output workbook first (and re-run on any
+                    # error) and then click "Push to DB" to record it.
+                    self._pending_push = {
+                        'batch': batch,
+                        'channel': channel,
+                        'warehouse': self.warehouse_var.get(),
+                        'output_file': output_path.name if output_path else '',
+                    }
+                    print()
+                    print("  • Output ready — review it, then click "
+                          "'Push to DB' to record this batch.")
                 else:
                     print()
                     print("  ✗ No files cleanly parsed — no output workbook "
@@ -4576,6 +5738,11 @@ class MTSelectGUI:
         # Push the captured report into the log AS-IS (no per-line
         # timestamping — the report itself is structured).
         self._append_log(output)
+
+        # v2.6.0: enable "Push to DB" only when a workbook was produced and
+        # a batch is pending (the worker stashed it). Review-then-push.
+        if getattr(self, '_pending_push', None) and output_path is not None:
+            self.push_btn.config(state='normal', text='⤓  Push to DB')
 
         # Summary
         n_files = len(batch.po_files)
@@ -4705,11 +5872,13 @@ class MTSelectGUI:
         return (f'{channel.display_name} ({channel.code}) PO  →  '
                  f'D365 Sales Order Import')
 
-def run_gui():
-    """Open the Tkinter GUI."""
+def run_gui(only_channel: Optional[str] = None,
+            app_title: Optional[str] = None):
+    """Open the Tkinter GUI. ``only_channel`` runs it as a single-channel
+    tool (used by the separate offline channels, e.g. Off Institutional)."""
     import tkinter as tk
     root = tk.Tk()
-    MTSelectGUI(root)
+    MTSelectGUI(root, only_channel=only_channel, app_title=app_title)
     root.mainloop()
 
 # ════════════════════════════════════════════════════════════════════════════

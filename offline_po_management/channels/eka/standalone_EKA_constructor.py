@@ -2607,6 +2607,205 @@ class UpdateDialog:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  SHARED HISTORY DB RECORDING  (Push to DB)
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# EKA orders are recorded into the SAME shared history DB the Online tool
+# (and the other offline channels) write to, so one consolidated tracker
+# spans everything. Mapping:
+#     segment           = 'Offline'
+#     marketplace       = 'EKA'
+#     marketplace_label = 'EKA'
+#     po                = the order number (TO/.. or SO/..) — one DB row per
+#                         distinct order number across all locations/types
+#     order_type        = 'TO' or 'SO' (from the number prefix)
+# Recording is a deliberate, separate step (the "Push to DB" button): the
+# operator generates + verifies the output first, then pushes. If the DB
+# layer can't be located/reached, the push soft-fails with a message and
+# never affects the generated output.
+
+EKA_SEGMENT     = 'Offline'
+EKA_MARKETPLACE = 'EKA'
+
+
+def _find_online_history_db():
+    """Locate + import the Online tool's ``history_db`` module by walking up
+    to ``online_po_management``. Returns the module or None."""
+    import sys as _sys
+    here = get_script_dir().resolve()
+    for base in [here, *here.parents]:
+        cand = base / 'online_po_management'
+        if (cand / 'online_po_processor' / 'auto' / 'history_db.py').exists():
+            if str(cand) not in _sys.path:
+                _sys.path.insert(0, str(cand))
+            try:
+                import online_po_processor.auto.history_db as H
+                return H
+            except Exception:
+                return None
+    return None
+
+
+def _load_eka_type_map() -> dict:
+    """
+    {code → Type} from EKA_DATA, where Type is the segment label shown in
+    the DB (Airport / EBO / Kiosk). Keyed by Location, Transfer Code AND
+    Short Code (all upper-cased) so an order resolves whether we match on
+    its transfer-to code or its SO/TO short code. {} if EKA_DATA missing.
+    """
+    import io
+    import pandas as pd
+    p = get_bundled_eka_path()
+    out: dict = {}
+    if not p or not Path(p).exists():
+        return out
+    try:
+        df = pd.read_excel(io.BytesIO(read_file_bytes_shared(str(p))),
+                           dtype=str)
+    except Exception:
+        return out
+    cols = {str(c).strip().lower(): c for c in df.columns}
+    tcol = cols.get('type')
+    if not tcol:
+        return out
+    key_cols = [cols[k] for k in ('location', 'transfer code', 'short code')
+                if k in cols]
+    for _, r in df.iterrows():
+        t = str(r[tcol] or '').strip()
+        if not t:
+            continue
+        for kc in key_cols:
+            v = str(r[kc] or '').strip()
+            if v:
+                out[v.upper()] = t
+    return out
+
+
+def build_eka_order_rows(results, output_file: str = '',
+                         type_map: dict = None, po_date: str = '',
+                         warehouse: str = 'AHD') -> list:
+    """One history row per distinct order number (TO/SO) across all
+    LocationResults — aggregating every order type (regular / tester /
+    PWP / GWP / non-stock). qty = Σ qty, order_value = Σ unit_price × qty.
+
+    marketplace stays 'EKA'; the LABEL is the EKA_DATA segment of the
+    order's location (Airport / EBO / Kiosk). po_date defaults to today,
+    warehouse to AHD.
+    """
+    from collections import OrderedDict
+    type_map = type_map or {}
+    if not po_date:
+        from datetime import date
+        po_date = date.today().isoformat()
+
+    def _label(to: str, transfer_to: str) -> str:
+        # Match on the transfer-to/location code, else the SO/TO short code
+        # (e.g. 'TO/BLRKS/06/..' → 'BLRKS'); fall back to 'EKA'.
+        lab = type_map.get((transfer_to or '').strip().upper())
+        if not lab:
+            parts = to.split('/')
+            if len(parts) >= 2:
+                lab = type_map.get(parts[1].strip().upper())
+        return lab or EKA_MARKETPLACE
+
+    orders: "OrderedDict[str, dict]" = OrderedDict()
+    for res in results:
+        for row in (res.regular_orders + res.tester_orders + res.pwp_orders
+                    + res.gwp_orders + res.nonstock_orders):
+            to = (row.to or '').strip()
+            if not to:
+                continue
+            o = orders.get(to)
+            if o is None:
+                o = {
+                    'segment':           EKA_SEGMENT,
+                    'marketplace':       EKA_MARKETPLACE,
+                    # Tester orders (…/TT/…) are labelled 'Testers' straight;
+                    # regular orders carry their segment (Airport/EBO/Kiosk).
+                    'marketplace_label': ('Testers' if '/TT/' in to
+                                          else _label(to, row.transfer_to)),
+                    'po':                to,
+                    'location':          row.transfer_to or '',
+                    'warehouse':         warehouse or '',
+                    'po_date':           po_date,
+                    'exp_date':          '',
+                    'order_type':        'TO' if to.startswith('TO/') else 'SO',
+                    'items':             0,
+                    'qty':               0,
+                    'order_value':       0.0,
+                    'output_file':       output_file or '',
+                }
+                orders[to] = o
+            o['items'] += 1
+            o['qty'] += int(row.qty or 0)
+            o['order_value'] += float(row.unit_price or 0.0) * int(row.qty or 0)
+    for o in orders.values():
+        o['order_value'] = round(o['order_value'], 2)
+    return list(orders.values())
+
+
+def eka_sql_preview(rows: list) -> list:
+    """Human-readable INSERT statements for what will be written — shown in
+    the EKA log so the operator can see the SQL going to the DB."""
+    cols = ['segment', 'marketplace', 'marketplace_label', 'po', 'location',
+            'warehouse', 'po_date', 'exp_date', 'order_type', 'items', 'qty',
+            'order_value']
+    out = []
+    for o in rows:
+        vals = ', '.join(
+            (repr(o[c]) if isinstance(o[c], str) else str(o[c]))
+            for c in cols)
+        out.append(f"INSERT INTO order_headers ({', '.join(cols)}) "
+                   f"VALUES ({vals});")
+    return out
+
+
+def record_eka_batch(results, output_file: str = '') -> dict:
+    """Record the last generated EKA batch into the shared history DB
+    (Offline segment). New order numbers only; soft-fails (never raises)."""
+    H = _find_online_history_db()
+    if H is None:
+        return {'recorded': False, 'reason': 'history_db module not found'}
+    from datetime import date
+    rows = build_eka_order_rows(
+        results, output_file, type_map=_load_eka_type_map(),
+        po_date=date.today().isoformat(), warehouse='AHD')
+    if not rows:
+        return {'recorded': False, 'reason': 'no orders to record'}
+    try:
+        from datetime import datetime
+        db_path = H.default_history_db_path()
+        store = H.get_history_store(db_path)
+        try:
+            existing = store.existing_pos()
+        finally:
+            store.close()
+        new_rows = [r for r in rows
+                    if (r['marketplace'], r['po']) not in existing]
+        skipped = len(rows) - len(new_rows)
+        if not new_rows:
+            return {'recorded': False, 'reason': 'all orders already recorded',
+                    'skipped': skipped}
+        run_meta = {
+            'run_ts': datetime.now().isoformat(timespec='seconds'),
+            'mode': 'MANUAL',
+            'online_root': (f'OFFLINE EKA: {output_file}'
+                            if output_file else 'OFFLINE EKA'),
+            'marketplaces': 1,
+            'total_pos':   len(new_rows),
+            'total_items': sum(r['items'] for r in new_rows),
+            'total_qty':   sum(r['qty'] for r in new_rows),
+            'total_value': sum(r['order_value'] for r in new_rows),
+            'consolidated_path': '',
+            'tracker_path': '',
+        }
+        res = H._record(new_rows, run_meta, db_path, skipped=skipped)
+        return {'recorded': True, 'skipped': skipped, **res}
+    except Exception as e:   # noqa: BLE001 — never block on the DB
+        return {'recorded': False, 'reason': f'DB error: {e}'}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  GUI APPLICATION
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -2761,6 +2960,16 @@ class ReneePOApp:
             state=tk.DISABLED, command=self._export_d365,
         )
         self.d365_btn.pack(pady=3)
+
+        # Push to DB — record the generated orders into the shared history
+        # DB (Offline / EKA). Enabled after a successful Generate; a
+        # deliberate separate step (verify the output first, then push).
+        self.push_db_btn = tk.Button(
+            btn_frame, text="⤓  Push to DB", width=24,
+            bg="#2563eb", fg='white', font=("Arial", 10, "bold"),
+            state=tk.DISABLED, command=self._push_to_db,
+        )
+        self.push_db_btn.pack(pady=3)
 
         tmpl_btn = tk.Menubutton(
             btn_frame, text="📋  Download Templates ▾",
@@ -3594,6 +3803,7 @@ class ReneePOApp:
             self.last_output = Path(output_path)
             self.open_btn.config(state=tk.NORMAL)
             self.d365_btn.config(state=tk.NORMAL)
+            self.push_db_btn.config(state=tk.NORMAL)
             self._log(f"Saved → {output_path}", 'inf')
 
             if messagebox.askyesno(
@@ -3615,6 +3825,62 @@ class ReneePOApp:
                 subprocess.Popen([opener, str(self.last_output)])
         except Exception as e:
             messagebox.showerror("Error", f"Could not open file:\n{e}")
+
+    def _push_to_db(self) -> None:
+        """Record the last generated EKA batch into the shared history DB
+        (Offline / EKA). One row per order number (TO/SO); new only."""
+        if not self.last_results:
+            messagebox.showinfo(
+                "Push to DB",
+                "Generate output first, verify it, then push.")
+            return
+        from datetime import date
+        preview = build_eka_order_rows(
+            self.last_results, type_map=_load_eka_type_map(),
+            po_date=date.today().isoformat(), warehouse='AHD')
+        if not preview:
+            messagebox.showinfo("Push to DB",
+                                "No order numbers (TO/SO) to record.")
+            return
+        # Show the SQL that will run, in the log, so the operator can see it.
+        self._log("─── Push to DB — SQL preview ───", 'inf')
+        for stmt in eka_sql_preview(preview):
+            self._log(stmt, 'dim')
+        n_to = sum(1 for r in preview if r['order_type'] == 'TO')
+        n_so = len(preview) - n_to
+        labels = sorted({r['marketplace_label'] for r in preview})
+        if not messagebox.askyesno(
+                "Push to DB",
+                f"Push {len(preview)} order(s) to the history DB?\n\n"
+                f"  Transfer Orders: {n_to}\n"
+                f"  Sales Orders:    {n_so}\n"
+                f"  Segments:        {', '.join(labels)}\n"
+                f"  Total qty:       {sum(r['qty'] for r in preview)}\n\n"
+                f"Segment 'Offline' / marketplace 'EKA' (label = segment).\n"
+                f"Re-pushing the same order numbers is skipped."):
+            return
+        self.push_db_btn.config(state=tk.DISABLED, text="⏳  Pushing...")
+        self.root.update()
+        out_name = self.last_output.name if self.last_output else ''
+        try:
+            rec = record_eka_batch(self.last_results, out_name)
+        except Exception as e:   # noqa: BLE001
+            rec = {'recorded': False, 'reason': str(e)}
+
+        if rec.get('recorded'):
+            msg = f"Recorded {rec.get('new_orders', 0)} order(s) [Offline / EKA]."
+            if rec.get('skipped'):
+                msg += f"\nSkipped {rec['skipped']} already in DB."
+            self._log(f"Push to DB: {msg}", 'ok')
+            messagebox.showinfo("Push to DB", msg)
+            self.push_db_btn.config(state=tk.DISABLED, text="⤓  Push to DB")
+        else:
+            reason = rec.get('reason', 'unknown')
+            self._log(f"Push to DB failed: {reason}", 'err')
+            messagebox.showerror(
+                "Push to DB",
+                f"Not recorded:\n{reason}\n\nFix and try again.")
+            self.push_db_btn.config(state=tk.NORMAL, text="⤓  Push to DB")
 
     def _export_d365(self) -> None:
         if not self.last_results:

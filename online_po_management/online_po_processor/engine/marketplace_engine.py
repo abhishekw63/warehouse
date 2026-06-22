@@ -1937,8 +1937,15 @@ class MarketplaceEngine:
         for rule in rules:
             col = rule.get('contains_column')
             needles = rule.get('contains') or []
+            # v2.4.6: ``excludes`` overrides ``contains`` — a name that matches
+            # an exclude needle is NOT this rule (e.g. Nykaa: 'HAIR PERFUME' is
+            # a hair product, not a fragrance, so it must NOT get the perfume
+            # rate). Falls through to the next rule / default.
+            excludes = rule.get('excludes') or []
             if col and needles and col in row.index and pd.notna(row[col]):
                 text = str(row[col]).lower()
+                if any(str(ex).lower() in text for ex in excludes):
+                    continue
                 if any(str(nd).lower() in text for nd in needles):
                     chosen_rule = rule
                     break
@@ -2207,9 +2214,15 @@ class MarketplaceEngine:
         )
 
         # ── Mapping lookup ──────────────────────────────────────────────
+        # v2.4.6: pass the optional ship-to ADDRESS (FirstCry ``loc_addr_col``)
+        # so _resolve_mapping can EXACT-match it before the name/fuzzy tiers.
+        addr_col = config.get('loc_addr_col')
+        address = (str(row[addr_col]).strip()
+                   if addr_col and addr_col in row.index
+                   and pd.notna(row[addr_col]) else '')
         cust_no, ship_to, mapped, mapped_location = self._resolve_mapping(
             location=location, po=po, party_name=config['party_name'],
-            warned_keys=warned_keys, result=result,
+            warned_keys=warned_keys, result=result, address=address,
         )
 
         # ── v1.6.0: HSN cross-check (opt-in via ``hsn_col``) ────────────
@@ -2248,17 +2261,33 @@ class MarketplaceEngine:
         # exception_label drives the row highlight on Validation/Lines;
         # forced_unit_price writes the vendor cost into the D365 Lines Unit
         # Price for 'Use Vendor CP' rows (else blank/WMS as before).
+        # v2.4.7: a PRICING exception (vendor-CP / Swiggy deal / price override)
+        # carries an ecom-agreed cost that differs from the marketplace's flat
+        # ERP margin (e.g. Swiggy is flat 80% in D365, but a deal SKU has a
+        # negotiated cost). For those rows we WRITE that agreed cost into the
+        # D365 Lines Unit Price (``forced_unit_price``) so the ERP uses it
+        # instead of computing the flat margin — and tag the row so it's
+        # highlighted on Validation/Lines. ``cost_price_ref`` already holds the
+        # agreed cost for all three (set in _validate_against_master). EAN
+        # remap is NOT a price deal → label only, no forced price.
         exception_label = ''
         forced_unit_price = None
         if self.master:
             mp = getattr(result, 'marketplace', '')
+            mp_norm = ''.join(str(mp).split()).lower()
             ean_c = MasterLoader._clean_code(ean) if ean else ''
             if fob_price is not None and self.master.use_vendor_cp(
                     ean, item_no, marketplace=mp):
                 exception_label = 'Vendor CP (deal)'
                 forced_unit_price = fob_price
+            elif (mp_norm == 'swiggy' and ean_c
+                  and getattr(self.master, 'swiggy_deals', None)
+                  and self.master.swiggy_deals.get(ean_c)):
+                exception_label = 'Swiggy deal'
+                forced_unit_price = cost_price_ref      # = deal Cost after GST
             elif self.master.price_override(ean, item_no, marketplace=mp):
                 exception_label = 'Price override'
+                forced_unit_price = cost_price_ref      # = deal MRP×margin÷GST
             elif ean_c and ean_c not in self.master.master \
                     and self.master.exceptions.get(ean_c):
                 exception_label = 'EAN remap'
@@ -2828,21 +2857,44 @@ class MarketplaceEngine:
 
         # Compute active diff + status
         if calc_price is not None and fob_price is not None:
-            diffn = fob_price - calc_price
-            if abs(diffn) <= self.DIFFN_THRESHOLD:
+            diffn = fob_price - calc_price   # active-basis (landing) diff — shown
+
+            # v2.4.5: ``status_basis='cost'`` (Dmart/Avenue) FINALIZES the
+            # OK/MISMATCH on the COST pair (vendor CP = ``ref_fob_price`` =
+            # Basic Price, vs our CP = ``cost_price_ref``) instead of the
+            # active landing pair. The landing diff (``diffn``) is still
+            # computed and shown, and the MRP / Landing / CP cells are
+            # amber-highlighted on any mismatch by the Validation sheet — but
+            # the row's STATUS is decided by the CP difference, per the
+            # operator's reconciliation basis.
+            cfg = result.resolved_config or {}
+            use_cp_status = (cfg.get('status_basis') == 'cost'
+                             and ref_diffn is not None)
+            decision_diff = ref_diffn if use_cp_status else diffn
+
+            if abs(decision_diff) <= self.DIFFN_THRESHOLD:
                 validation_status = 'OK'
             else:
                 validation_status = 'MISMATCH'
                 key = ('VALIDATION', str(item_no))
                 if key not in warned_keys:
                     warned_keys.add(key)
-                    result.warnings.append((
-                        po, str(item_no),
-                        f"{compare_label} mismatch: Item {item_no}, "
-                        f"Marketplace={fob_price:.2f}, "
-                        f"Calculated={calc_price:.2f}, "
-                        f"Diff={diffn:.2f}"
-                    ))
+                    if use_cp_status:
+                        result.warnings.append((
+                            po, str(item_no),
+                            f"Cost (CP) mismatch: Item {item_no}, "
+                            f"Vendor CP={ref_fob_price:.2f}, "
+                            f"Our CP={cost_price_ref:.2f}, "
+                            f"Diff={ref_diffn:.2f} (status basis: CP)"
+                        ))
+                    else:
+                        result.warnings.append((
+                            po, str(item_no),
+                            f"{compare_label} mismatch: Item {item_no}, "
+                            f"Marketplace={fob_price:.2f}, "
+                            f"Calculated={calc_price:.2f}, "
+                            f"Diff={diffn:.2f}"
+                        ))
 
             # v2.4.4: DUAL landing+cost check (opt-in via ``also_check_cost``,
             # Myntra). The landing check above governs status by default; with
@@ -2851,9 +2903,11 @@ class MarketplaceEngine:
             # ``cost_price_ref``) agree — so either failing → MISMATCH. Rows
             # whose pricing came from a deal/exception are skipped (their CP is
             # intentionally non-standard). Only downgrades an otherwise-OK row;
-            # a landing failure is already MISMATCH.
-            if (validation_status == 'OK'
-                    and (result.resolved_config or {}).get('also_check_cost')
+            # a landing failure is already MISMATCH. Skipped when CP is already
+            # the primary status basis (Dmart).
+            if (not use_cp_status
+                    and validation_status == 'OK'
+                    and cfg.get('also_check_cost')
                     and not _pricing_exception
                     and ref_fob_price is not None
                     and cost_price_ref is not None
@@ -2880,6 +2934,7 @@ class MarketplaceEngine:
     def _resolve_mapping(self, location: str, po: str, party_name: str,
                           warned_keys: Set[Tuple],
                           result: ProcessingResult,
+                          address: str = '',
                           ) -> Tuple[str, str, bool, str]:
         """
         Look up the location in the mapping registry.
@@ -2887,7 +2942,20 @@ class MarketplaceEngine:
         Returns (cust_no, ship_to, mapped_bool, mapped_location_str).
         On miss, appends a warning (deduped per (po, location)) and
         returns blanks plus mapped=False.
+
+        v2.4.6: ``address`` (optional, FirstCry's ``loc_addr_col``) is tried
+        FIRST as an EXACT match — so one buyer name with several ship-tos
+        (OM ENTERPRISES → 20493_1 vs the Pune Survey-27/1B address → 20493_2)
+        resolves to the right Del Location. Only if the exact address misses
+        do we fall back to the name-based lookup (exact → fuzzy) below.
         """
+        # v2.4.6: exact-address pass first (no fuzzy — must be a precise hit).
+        if address:
+            addr_hit = self.mapping.lookup(address, fuzzy=False)
+            if addr_hit:
+                return (addr_hit['cust_no'], addr_hit['ship_to'], True,
+                        addr_hit.get('matched_key', address))
+
         # v2.7.x: address-based marketplaces (Flipkart — loc_col is a full
         # postal address) opt into the pincode+body-overlap resolver, which
         # matches the new portal's prefix-less Shipped-To address against the

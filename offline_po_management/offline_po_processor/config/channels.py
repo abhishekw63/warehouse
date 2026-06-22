@@ -65,6 +65,12 @@ CHANNELS: Tuple[Channel, ...] = (
         description='Modern-trade multi-channel PO processor (e.g. H&G)',
         script='mt_select/standalone_mt_select_automation.py',
     ),
+    Channel(
+        key='off_inst',
+        name='Off Institutional',
+        description='Institutional PO processor (INCS) — regular + tester SOs',
+        script='off_inst/standalone_off_inst_automation.py',
+    ),
 )
 
 

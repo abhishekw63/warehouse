@@ -31,3 +31,14 @@ standalone_files/Output_HG/
 # Auto mode — history DB lives under Dump/Tracker (local/OneDrive, not source)
 Dump/
 *.db
+
+# Generated channel outputs (MT Select INST / SS / etc.)
+Output_*/
+
+# Django web app media (uploaded POs + generated workbooks — runtime, not source)
+media/
+
+# Python tooling caches
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/

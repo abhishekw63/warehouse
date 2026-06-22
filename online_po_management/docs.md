@@ -372,6 +372,131 @@ instead of a single number that lies for rule-based marketplaces.
 
 ## 10. Changelog (append one line per development)
 
+- **2026-06-22** — **Freeze backup engine + dev-tooling foundation (web only)**: the
+  Tkinter `online_po_management` (engine) and `offline_po_management` are the FROZEN
+  backup — reverted the `order_lines` additions I'd briefly made to engine
+  `history_db.py`; the full line-item audit is now **owned entirely by the Django
+  side** in `online_b2b/services/lines_store.py` (creates/writes `order_lines` via the
+  shared raw connection; engine unchanged, only its existing `record_manual` is reused
+  for headers). Added web-only quality tooling at the repo root: `pyproject.toml`
+  (ruff + mypy + pytest config, scoped to `renee_cosmetics`/`core`/`online_b2b`,
+  excludes the engine/offline), `renee_cosmetics/settings_test.py` (sqlite-only), and a
+  `tests/` pytest-django suite (18 tests green: money filters, order_db helpers,
+  lines_store builder). Ruff clean.
+- **2026-06-22** — **Admin CRUD on the order DB (Django admin)**: added a second
+  Django DB connection `orders` → MySQL `renee_orders` (creds from the engine's
+  `db_config.json`, pymysql shim `version_info=(2,2,8)` for Django 6) with
+  managed=False ORM models (`Run`/`OrderHeader`/`OrderLine`) + an `OrdersRouter`
+  that blocks ALL migrations on that connection (Django never creates/alters/drops
+  the engine-owned tables — only INSERT/UPDATE/DELETE on rows an admin edits).
+  Registered in Django admin (list/search/filter/inline-edit/delete), gated to
+  staff; a "DB Admin" link shows on the dashboard for staff. Dashboards still read
+  via raw pymysql; the ORM path is admin-only.
+- **2026-06-22** — **Web Review → Confirm flow + 2-table line audit (Blink pilot)**:
+  the web upload is now **3 steps** — Upload (stash files under a token) → **Review**
+  (`engine_bridge.preview`, processes in memory, **no DB write**; shows summary, all
+  line items, affected/mismatch, already-uploaded dedup, warnings + a downloadable
+  preview workbook) → **Confirm** (`engine_bridge.confirm`, re-processes the same files
+  and PUSHES). Persistence consolidated to **2 tables**: `order_headers` (per-PO) +
+  NEW **`order_lines`** (every line, with full vendor-vs-our comparison cols + status) —
+  the "affected" view is just `status IN ('MISMATCH','NOT_IN_MASTER')`, so the separate
+  issue-lines table is no longer needed by the web flow. (`order_lines` is owned by the
+  Django side in `online_b2b/services/lines_store.py` — the engine is NOT modified; see
+  the later "freeze backup engine" entry.) Django: `engine_bridge.preview/confirm`,
+  views `review/confirm/discard/review_download`, `review.html` (tabbed), run-detail
+  now shows Line Items; dashboard Issues/KPIs read affected from `order_lines`. Tkinter
+  untouched (it still uses `order_issue_lines`).
+- **2026-06-22** — **Web UI restyle (clean & corporate design system)**: extracted a
+  shared stylesheet `online_b2b/static/online_b2b/b2b.css` (one indigo accent, white
+  surfaces, soft borders/shadows, airy) applied across the **dashboard, Issues page,
+  run-detail, and Departments hub** — inline `<style>` blocks removed from all
+  templates; added a `{% block extra_css %}` hook in `core/base.html` and Indian-money
+  filters (`inr_short` → ₹4.58 Cr / ₹3.21 L, `compact` → 1.2k) in `b2b_extras`.
+  **Elegance pass**: emoji KPI glyphs → crisp Feather-style SVG line-icons
+  (`_icons.html`); sparse bar chart → smooth SVG **area chart** with gradient fill +
+  per-day hover tooltips (paths pre-computed in `_trends`); balanced 4×2 KPI grid,
+  tabular-aligned numbers, no-wrap currency, header divider.
+  **Interaction pass**: chart **Value⇄POs toggle** (dual paths from `_trends`);
+  **per-marketplace sparklines** in the rollup (`_mp_sparklines`); **skeleton-shimmer**
+  placeholders while AJAX results load; **upload page** redesigned into the design
+  system (dropzone with filename echo + submit-busy state).
+- **2026-06-22** — **Online-B2B dashboard v2 (KPIs, trends, filters, issues, export)**:
+  `online_b2b` dashboard upgraded — KPI cards now include Expiring-≤7d, Needs-attention
+  (POs with a flagged line), and ▲/▼ deltas (last-7d vs prior-7d) on POs/Value; a
+  30-day order-value trend chart; per-marketplace value bars; expanded AJAX filters
+  (warehouse, SO/TO, custom PO-date range) + sortable columns + Load-more pagination;
+  a dedicated **Issues page** (clickable Issue/Attention cards → flagged-SKU list,
+  vendor vs our MRP/CP/diff); and **Excel export** of the filtered view. All reads
+  stay read-only on MySQL `renee_orders` (`order_db.py` extended:
+  `_kpis`/`_deltas`/`_trends`/`issues`/`orders_page`/`orders_for_export`). Engine
+  unchanged.
+- **2026-06-22** — **Django web frontend (Phase 0 — Blink pilot)**: new
+  `online_b2b` app in the `renee_cosmetics` Django project reuses THIS engine as
+  a **library** (Option A — `online_po_management/` added to `sys.path` in
+  settings; the Tkinter app + engine source are untouched). Flow: upload PO →
+  `online_b2b/services/engine_bridge.run_marketplace()` replicates the desktop
+  Generate path (bundled master+mapping → `MarketplaceEngine.process` → `apply_dedup`
+  → `SOExporter.export` → `record_manual` + `record_issue_lines_manual`) → result
+  recorded into the SAME MySQL `renee_orders` history. A **dashboard** reads that DB
+  read-only (`online_b2b/services/order_db.py`, no Django migration ever runs against
+  MySQL) — scoped to `segment='OnlineB2B'` (Offline channel rows excluded). KPI cards
+  (Total POs, Updated last-2d, Qty, Order Value, Marketplaces, Issue Lines) + a
+  per-marketplace rollup + a filterable Orders table (marketplace / period / PO search),
+  plus a per-run detail page with SO-workbook download. Django's own sqlite holds
+  auth/session only — no order data is duplicated there. Engine code unchanged.
+- **2026-06-22** — **Deal/exception price written to Lines + always highlighted**:
+  pricing exceptions (Vendor-CP, **Swiggy deal**, price override) now write their
+  ecom-AGREED cost into the D365 Lines Unit Price (`forced_unit_price = cost_price_ref`)
+  so the ERP uses the deal price instead of the marketplace's flat margin (e.g.
+  Swiggy flat 80% in D365 was overriding negotiated deal costs). Previously only
+  Vendor-CP forced the price; Swiggy deals/price-overrides fell through to the
+  flat margin. ALSO: the Validation sheet now amber-highlights EVERY exception
+  row + comment — regardless of OK/MISMATCH — so deals are unmistakable
+  (`exception_label` set for Swiggy deals too). Engine `_process_row` +
+  `validation_sheet`.
+- **2026-06-20** — **Issue-line audit DB + 'Push Issues to DB'**: new
+  `order_issue_lines` table (SQLite + MySQL) records ONLY flagged lines
+  (status MISMATCH / NOT_IN_MASTER) — the exact Validation data (vendor vs our
+  MRP/landing/CP, diff, margin, status). New GUI button "Push Issues to DB"
+  (separate from the header push; enabled only when there are flags).
+  **Append with a value-aware guard**: identical re-push is skipped, a revised
+  MRP/CP/status is recorded as a new dated snapshot — full per-SKU history of
+  problem lines. `issue_lines_from_result` / `_insert_issue_lines` /
+  `record_issue_lines_manual` in history_db. Also surfaced as an **'Issue
+  Lines' tab in the history export**. Safety: only CREATE-IF-NOT-EXISTS +
+  INSERT on the new table; `runs`/`order_headers` untouched.
+- **2026-06-19** — **Nykaa: 'Hair Perfume' is Cosmetics, not Perfume**: the
+  margin-rule matcher now supports an `excludes` list (wins over `contains`).
+  Nykaa's perfume rule gets `excludes: ['hair']` so a HAIR PERFUME / HAIR
+  FRAGRANCE (e.g. RENEE Caramel Crush Hair Perfume) is a hair product → regular
+  Cosmetics rate (66%), not 69%. Engine: `_resolve_row_margin` checks excludes
+  before contains.
+- **2026-06-19** — **Flipkart Tracker from header file**: on a Flipkart run the
+  GUI asks "upload the header file (portal 'purchase-orders-*.csv') for the
+  Tracker?" — if yes, `engine/flipkart_tracker.py` builds one row per PO
+  (PO/Location/PO Date/Exp Date/PO Aging/Order Value/Order Qty) and assigns
+  **Market Place by Origin Warehouse via a LOCKED location→marketplace map**
+  (FK Hyperlocal default; bhi_pad_wh_nl_04nl→FK; unknown→'FK (review)', never
+  blank, amber-flagged). Rendered as a 'Tracker' sheet
+  (`flipkart_tracker_sheet.py`, ₹ Indian grouping). Mirrors the old
+  Marketplace_Automation `flipkart.py` approach. Verified: the 8 POs in the
+  19-06 header file map exactly to the operator's expected tracker.
+- **2026-06-19** — **FirstCry: exact-address-first ship-to resolution**: the
+  PDF's delivery ADDRESS (`__loc_address__`, the 'Address:' line after
+  'Delivered To:') is now EXACT-matched against Ship-To B2B BEFORE the name/
+  fuzzy tiers — so one buyer name with several ship-tos (OM ENTERPRISES →
+  20493_1 vs the Pune Survey-27/1B address → 20493_2) resolves right.
+  `loc_addr_col` config + `MappingLoader.lookup(fuzzy=False)` +
+  `_resolve_mapping(address=...)`.
+- **2026-06-19** — **Dmart/Avenue: vendor MRP + CP surfaced, status on CP**:
+  the Avenue PDF already carried MRP / Basic Price / Landed Price — Dmart now
+  maps `mrp_col='MRP'` (Vendor MRP) and `ref_fob_col='Basic Price'` (Vendor CP
+  = Landed ÷ (1+GST)), so the Validation sheet shows all three pairs
+  (Vendor/Our MRP, LR, CP). New `status_basis='cost'` finalizes OK/MISMATCH on
+  the CP pair (|Vendor CP − Our CP|) instead of landing; the landing diff is
+  still shown and the MRP/LR/CP cells light-yellow on any diff (per-metric
+  amber tint, as in FirstCry). Engine: `_validate_against_master` picks
+  `ref_diffn` for status when `status_basis='cost'`.
 - **2026-06-18** — **Never drop a qty-bearing line (missing EAN/Item)**: a row
   with a PO + qty but an EMPTY EAN (or empty Item No) is no longer skipped —
   `_resolve_item_no` now returns a blank placeholder so the line is KEPT in

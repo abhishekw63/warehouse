@@ -24,8 +24,7 @@ def _configure_logging() -> None:
         format='%(asctime)s | %(levelname)s | %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
     )
-
-
+    
 def main() -> None:
     """Entry point: configure logging, open the channel launcher."""
     _configure_logging()
