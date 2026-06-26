@@ -1,0 +1,76 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static b2b_extras %}
+{% block title %}Item Master — Preview{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_item_master' %}"> / Item Master</a> <span>/ Preview</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap b2b-wide">
+  <div class="b2b-head">
+    <div>
+      <h1>Item Master <span>· Preview</span></h1>
+      <p class="src">{{ meta.items_name }} + {{ meta.mrp_name }} · effective MRP as of <b>{{ stats.as_of }}</b> · nothing is written until you confirm.</p>
+    </div>
+    <a href="{% url 'b2b_item_master' %}" class="back">← Item Master</a>
+  </div>
+
+  <div class="hub-kpis reveal">
+    <div class="hk"><div class="n">{{ stats.items }}</div><div class="l">Items computed</div></div>
+    <div class="hk"><div class="n">{{ stats.with_ean }}</div><div class="l">With EAN</div></div>
+    <div class="hk"><div class="n">{{ stats.swiggy_mapped }}</div><div class="l">Swiggy-mapped</div></div>
+    <div class="hk"><div class="n">{{ current.count }}</div><div class="l">Current → replaced</div></div>
+  </div>
+
+  <form method="post" action="{% url 'b2b_item_master_confirm' token=token %}">
+    {% csrf_token %}
+    <div class="confirm-bar">
+      <div class="cb-text">Rebuild the master with <b>{{ stats.items }} items</b> (full replace). The current {{ current.count }} rows are swapped in one transaction; Swiggy codes are preserved.</div>
+      <div class="cb-actions">
+        <button class="btn-discard" type="submit" formaction="{% url 'b2b_item_master_discard' token=token %}" formnovalidate>Discard</button>
+        <button class="btn-primary" type="submit">✓ Confirm &amp; rebuild</button>
+      </div>
+    </div>
+  </form>
+
+  {% if warnings %}
+  <div class="warnbox" style="margin-top:14px;">
+    <strong>{{ warnings|length }} note(s)</strong>
+    <ul>{% for w in warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+  <div class="im-card reveal" style="margin-top:16px;">
+    <h2>GST spread</h2>
+    <div class="im-gst">
+      {% for code, n in stats.gst_spread.items %}<span class="gst-chip">{{ code|default:'(blank)' }} · <b>{{ n }}</b></span>{% endfor %}
+    </div>
+  </div>
+
+  <div class="im-card reveal">
+    <h2>Sample <span class="count">first {{ sample|length }}</span></h2>
+    <div class="scroll">
+    <table class="grid compact">
+      <thead><tr><th>Item No</th><th>EAN</th><th>Description</th><th class="r">MRP</th><th>GST</th><th>HSN</th><th>Swiggy</th><th>MRP window</th></tr></thead>
+      <tbody>
+        {% for r in sample %}
+        <tr>
+          <td class="mono">{{ r.item_no }}</td>
+          <td class="mono">{{ r.ean|default:'—' }}</td>
+          <td class="desc" title="{{ r.description }}">{{ r.description }}</td>
+          <td class="r">{{ r.mrp|default_if_none:'—' }}</td>
+          <td>{{ r.gst_code }}</td>
+          <td class="mono">{{ r.hsn|default:'—' }}</td>
+          <td class="mono">{{ r.swiggy_sku_code|default:'—' }}</td>
+          <td class="muted">{% if r.mrp_start %}{{ r.mrp_start }} → {{ r.mrp_end }}{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

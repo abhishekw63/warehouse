@@ -1,6 +1,8 @@
 {% extends 'core/base.html' %}
+{% load static %}
 
 {% block title %}Departments - RENEE Warehouse{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
 
 {% block breadcrumb %}
     <span>Departments</span>
@@ -10,33 +12,13 @@
     <div class="departments-container">
         <h1>Select Department</h1>
         <div class="departments-grid">
-            <a href="#" class="department-card coming-soon" onclick="alert('OnlineB2B functionality coming soon.'); return false;">
-                <h2>OnlineB2B</h2>
-                <span>Coming Soon</span>
+            <a href="{% url 'b2b_dashboard' %}" class="department-card">
+                <h2>Order Management</h2>
+                <span style="font-size: 12px; color: #777; margin-top: 10px; text-transform: uppercase; letter-spacing: 1px;">Online B2B · Offline · MT / GT</span>
             </a>
 
-            <a href="{% url 'offline_dashboard' %}" class="department-card">
-                <h2>Offline</h2>
-                <span style="font-size: 12px; color: #777; margin-top: 10px; text-transform: uppercase; letter-spacing: 1px;">Active</span>
-            </a>
-
-            <a href="#" class="department-card coming-soon" onclick="alert('Returns functionality coming soon.'); return false;">
-                <h2>Returns</h2>
-                <span>Coming Soon</span>
-            </a>
-
-            <a href="#" class="department-card coming-soon" onclick="alert('OnlineB2C functionality coming soon.'); return false;">
-                <h2>OnlineB2C</h2>
-                <span>Coming Soon</span>
-            </a>
-
-            <a href="#" class="department-card coming-soon" onclick="alert('Inventory functionality coming soon.'); return false;">
-                <h2>Inventory</h2>
-                <span>Coming Soon</span>
-            </a>
-
-            <a href="#" class="department-card coming-soon" onclick="alert('Other functionality coming soon.'); return false;">
-                <h2>Other</h2>
+            <a href="#" class="department-card coming-soon" onclick="alert('GRN (Goods Receipt Note) coming soon.'); return false;">
+                <h2>GRN</h2>
                 <span>Coming Soon</span>
             </a>
         </div>

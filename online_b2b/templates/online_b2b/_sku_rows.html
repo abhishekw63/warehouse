@@ -1,0 +1,16 @@
+{% for r in d.rows %}
+<tr class="sku-row" data-item="{{ r.item_no }}" data-ean="{{ r.ean }}">
+  <td class="mono">{{ r.item_no|default:'—' }}</td>
+  <td class="mono">{{ r.ean|default:'—' }}</td>
+  <td class="desc" title="{{ r.description }}">{{ r.description|default:'—' }}</td>
+  <td class="r">{{ r.our_mrp|default_if_none:'—' }}</td>
+  <td class="r">{{ r.vendor_mrp|default_if_none:'—' }}{% if r.vmrp_varies %} <span class="vary" title="vendor MRP differs across this SKU's POs">⚠</span>{% endif %}</td>
+  <td class="r"><b>{{ r.tot_qty }}</b></td>
+  <td class="r sk-ok">{% if r.ok_qty or r.ok_n %}<span class="m-qty">{{ r.ok_qty }}</span><span class="m-line">{{ r.ok_n }}</span>{% else %}<span class="m0">0</span>{% endif %}</td>
+  <td class="r sk-mis">{% if r.mis_qty or r.mis_n %}<span class="m-qty">{{ r.mis_qty }}</span><span class="m-line">{{ r.mis_n }}</span>{% else %}<span class="m0">0</span>{% endif %}</td>
+  <td class="r sk-nim">{% if r.nim_qty or r.nim_n %}<span class="m-qty">{{ r.nim_qty }}</span><span class="m-line">{{ r.nim_n }}</span>{% else %}<span class="m0">0</span>{% endif %}</td>
+  <td class="r">{{ r.pos }}</td>
+  <td class="r {% if r.diff and r.diff != 0 %}diff{% endif %}">{{ r.diff|default_if_none:'—' }}</td>
+  <td class="muted mp-cell" title="{{ r.marketplaces }}">{{ r.marketplaces|default:'—' }}</td>
+</tr>
+{% empty %}<tr><td colspan="12" class="muted">No SKUs{% if d.totals.qty %} match the filters.{% else %} recorded yet.{% endif %}</td></tr>{% endfor %}

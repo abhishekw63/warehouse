@@ -1,0 +1,63 @@
+<div class="iss-kpis">
+  <div class="ik mis" data-filter="status:MISMATCH" title="Show mismatch only"><div class="n">{{ d.counts.MISMATCH|default:0 }}</div><div class="l">Mismatch</div></div>
+  <div class="ik nim" data-filter="status:NOT_IN_MASTER" title="Show not-in-master only"><div class="n">{{ d.counts.NOT_IN_MASTER|default:0 }}</div><div class="l">Not in master</div></div>
+  <div class="ik tot" data-filter="status:" title="Show all statuses"><div class="n">{{ d.rows|length }}</div><div class="l">Shown</div></div>
+  <div class="ik res" data-filter="resolution:resolved" title="Click to view resolved lines"><div class="n">{{ d.resolved_total }}</div><div class="l">Resolved →</div></div>
+</div>
+
+<div class="iss-scroll">
+<table class="grid compact">
+  <thead><tr>
+    <th>MP</th><th>PO</th><th>Item</th><th>EAN</th><th title="wrong EAN as received, if corrected">Recv EAN</th><th>Description</th>
+    <th class="r">Qty</th>
+    <th class="r">Our MRP</th><th class="r">Their MRP</th>
+    <th class="r">Our Land</th><th class="r">Their Land</th>
+    <th class="r">Our CP</th><th class="r">Their CP</th>
+    <th class="r">Diff</th><th>Basis</th>
+    <th>Status</th><th>Action</th><th>Remark</th>
+  </tr></thead>
+  <tbody>
+    {% for i in d.rows %}
+    <tr class="{% if i.status == 'MISMATCH' %}rmis{% else %}rnim{% endif %}">
+      <td>{{ i.marketplace }}</td>
+      <td class="mono">{{ i.po }}</td>
+      <td class="mono">{{ i.item_no }}</td>
+      <td class="mono">{{ i.ean }}</td>
+      <td class="mono">{% if i.received_ean %}<span class="ef-wrong" title="arrived with this WRONG EAN — corrected to {{ i.ean }}">{{ i.received_ean }}</span>{% else %}—{% endif %}</td>
+      <td class="desc" title="{{ i.description }}">{{ i.description }}</td>
+      <td class="r">{{ i.qty }}</td>
+      <td class="r">{{ i.our_mrp|default_if_none:'—' }}</td><td class="r">{{ i.vendor_mrp|default_if_none:'—' }}</td>
+      <td class="r {% if i.basis == 'Landing' %}basis-on{% endif %}">{{ i.our_landing|default_if_none:'—' }}</td><td class="r {% if i.basis == 'Landing' %}basis-on{% endif %}">{{ i.vendor_landing|default_if_none:'—' }}</td>
+      <td class="r {% if i.basis == 'CP' %}basis-on{% endif %}">{{ i.our_cp|default_if_none:'—' }}</td><td class="r {% if i.basis == 'CP' %}basis-on{% endif %}">{{ i.vendor_cp|default_if_none:'—' }}</td>
+      <td class="r {% if i.diff and i.diff != 0 %}diff{% endif %}">{{ i.diff|default_if_none:'—' }}</td>
+      <td>{% if i.basis %}<span class="basis-badge b-{{ i.basis|lower }}">{{ i.basis }}</span>{% endif %}</td>
+      <td>{% if i.received_ean %}<span class="st nim" title="was NOT_IN_MASTER">EAN fixed</span>{% else %}<span class="st {{ i.status|lower }}">{{ i.status }}</span>{% endif %}</td>
+      {% if i.received_ean %}
+      <td><span class="ean-fixed">corrected ✓</span></td>
+      <td class="muted">EAN → <span class="mono">{{ i.ean }}</span></td>
+      {% elif i.status == 'NOT_IN_MASTER' %}
+      <td colspan="2">
+        <div class="iss-eanfix" data-line="{{ i.line_id }}">
+          <input class="ef-in" data-line="{{ i.line_id }}" placeholder="correct EAN…"
+                 autocomplete="off" maxlength="20" inputmode="numeric">
+          <button type="button" class="ef-go" data-line="{{ i.line_id }}" data-ean="{{ i.ean }}">Fix &amp; resolve</button>
+          <span class="ef-msg" data-line="{{ i.line_id }}"></span>
+        </div>
+      </td>
+      {% else %}
+      <td>
+        <select class="act-sel" data-line="{{ i.line_id }}">
+          <option value="" {% if not i.action %}selected{% endif %}>— set —</option>
+          <option value="KEEP" {% if i.action == 'KEEP' %}selected{% endif %}>Keep (flag)</option>
+          <option value="OVERRIDE" {% if i.action == 'OVERRIDE' %}selected{% endif %}>Override</option>
+          <option value="EXCLUDE" {% if i.action == 'EXCLUDE' %}selected{% endif %}>Exclude</option>
+        </select>
+      </td>
+      <td><input class="act-rem" data-line="{{ i.line_id }}" value="{{ i.remark|default:'' }}"
+            placeholder="remark…" autocomplete="off" maxlength="255"><span class="saved" data-line="{{ i.line_id }}" hidden>✓</span></td>
+      {% endif %}
+    </tr>
+    {% empty %}<tr><td colspan="19" class="muted">{% if d.resolution == 'pending' %}No pending issues — all resolved. ✓{% else %}No flagged lines.{% endif %}</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>

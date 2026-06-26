@@ -268,9 +268,13 @@ def _map_columns(page, bounds: List[float],
     for w in page.extract_words():
         top = w['top']
         # Header band: the wrapped header cells sit just above the first
-        # line item. Keep it tight (45pt) so the vendor address/email
-        # block above and the first data row below don't bleed in.
-        if not (first_anchor_top - 45 <= top < first_anchor_top - 3):
+        # line item. 60pt (was 45) because when the FIRST item's name wraps
+        # tall, its SKU code (col 0, the anchor) sits lower — pushing the
+        # header row up to ~50pt above the anchor (seen on real POs where the
+        # first item has a long name). Anything extra pulled in is harmless:
+        # _map_columns only assigns a column when a header NEEDLE matches, and
+        # emails / bare long-digit strings are dropped below.
+        if not (first_anchor_top - 60 <= top < first_anchor_top - 3):
             continue
         text = w['text']
         # Drop non-label pollution that can still fall in the band: emails

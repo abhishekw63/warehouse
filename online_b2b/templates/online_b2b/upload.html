@@ -1,0 +1,228 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static %}
+{% block title %}Online B2B — Process PO{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_dashboard' %}"> / Online B2B</a> <span>/ Process</span>
+{% endblock %}
+
+{% block content %}
+<div class="up-wrap">
+  <div class="b2b-head">
+    <div>
+      <h1>Process PO</h1>
+      <p class="src">Runs the production engine with the bundled master &amp; Ship-To mapping, then records the result into the order DB.</p>
+    </div>
+    <a href="{% url 'b2b_dashboard' %}" class="back">← Dashboard</a>
+  </div>
+
+  <form method="post" enctype="multipart/form-data" class="up-card" id="up-form">
+    {% csrf_token %}
+
+    <div class="up-grid">
+      <div class="fld">
+        <label>Marketplace</label>
+        {{ form.marketplace }}
+        {% if form.marketplace.errors %}<span class="err-t">{{ form.marketplace.errors|striptags }}</span>{% endif %}
+      </div>
+      <div class="fld">
+        <label>Warehouse</label>
+        {{ form.warehouse }}
+        {% if form.warehouse.errors %}<span class="err-t">{{ form.warehouse.errors|striptags }}</span>{% endif %}
+      </div>
+      <div class="fld">
+        <label>Margin %</label>
+        {{ form.margin_pct }}
+        {% if form.margin_pct.errors %}<span class="err-t">{{ form.margin_pct.errors|striptags }}</span>{% endif %}
+      </div>
+    </div>
+
+    <div class="fld">
+      <label>PO file(s)</label>
+      <label class="dropzone" id="dz">
+        <span class="dz-ic">{% include 'online_b2b/_icons.html' with i='download' %}</span>
+        <span class="dz-main" id="dz-main">Click to choose PO file(s)</span>
+        <span class="dz-sub">.xlsx / .pdf · Blink = one punch file · Flipkart = all purchase_order_*.xlsx (+ optional header .csv) · DMart = PO PDF(s) · Myntra = compiled dump.xlsx</span>
+        {{ form.po_files }}
+      </label>
+      {% if form.po_files.errors %}<span class="err-t">{{ form.po_files.errors|striptags }}</span>{% endif %}
+    </div>
+
+    <div class="up-actions">
+      <button type="submit" class="btn-primary" id="up-submit">Process</button>
+      <a href="{% url 'b2b_dashboard' %}" class="btn-clear">Cancel</a>
+    </div>
+  </form>
+
+  {% if result and not result.ok %}
+    <div class="banner err" style="margin-top:16px;">{{ result.error }}</div>
+  {% endif %}
+  {% if result and result.warnings %}
+    <div class="warnbox" style="margin-top:14px;">
+      <strong>Warnings ({{ result.warnings|length }})</strong>
+      <ul>{% for w in result.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+    </div>
+  {% endif %}
+
+  <div class="proc-overlay" id="proc-overlay" hidden>
+    <div class="proc-card">
+      <div class="proc-spin"></div>
+      <div class="proc-title">Processing PO</div>
+      <div class="proc-stage" id="proc-stage">Starting…</div>
+      <div class="proc-bar"><span id="proc-fill"></span></div>
+      <div class="proc-meta"><span id="proc-pct">0%</span><span id="proc-time">elapsed 0:00</span></div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .up-wrap{max-width:660px;margin:28px auto 64px;padding:0 20px;color:var(--text);}
+  .up-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:24px;margin-top:20px;}
+  .up-grid{display:grid;grid-template-columns:1fr 1fr 110px;gap:16px;margin-bottom:18px;}
+  @media(max-width:560px){.up-grid{grid-template-columns:1fr;}}
+  .fld{display:flex;flex-direction:column;gap:6px;margin-bottom:16px;}
+  .fld label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+  .fld select,.fld input[type=number],.fld input[type=text]{padding:10px 12px;border:1px solid var(--border);
+    border-radius:9px;font-size:14px;background:var(--surface-2);color:var(--text);width:100%;box-sizing:border-box;}
+  .fld select:focus,.fld input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);background:#fff;}
+  .dropzone{display:flex;flex-direction:column;align-items:center;gap:6px;padding:26px;cursor:pointer;
+    border:1.5px dashed var(--border);border-radius:12px;background:var(--surface-2);text-align:center;transition:all .15s;}
+  .dropzone:hover{border-color:var(--accent);background:var(--accent-soft);}
+  .dz-ic{width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:50%;
+    background:var(--accent-soft);color:var(--accent);}
+  .dz-ic svg{width:18px;height:18px;}
+  .dz-main{font-weight:600;font-size:14px;color:var(--text);}
+  .dz-sub{font-size:12px;color:var(--muted);}
+  .dropzone input[type=file]{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;}
+  .up-actions{display:flex;align-items:center;gap:14px;margin-top:6px;}
+  .err-t{color:var(--red);font-size:12px;}
+  /* processing overlay */
+  .proc-overlay{position:fixed;inset:0;background:rgba(20,24,40,.45);backdrop-filter:blur(3px);
+    display:flex;align-items:center;justify-content:center;z-index:999;}
+  .proc-overlay[hidden]{display:none;}   /* hidden attr must beat .proc-overlay display:flex */
+  .proc-card{background:var(--surface);border-radius:16px;box-shadow:var(--shadow-lg);
+    padding:30px 34px;width:340px;max-width:90vw;text-align:center;font-family:var(--font);}
+  .proc-spin{width:34px;height:34px;border:3px solid var(--accent-soft);border-top-color:var(--accent);
+    border-radius:50%;margin:0 auto 16px;animation:spin .7s linear infinite;}
+  .proc-title{font-size:17px;font-weight:700;color:var(--text);}
+  .proc-stage{font-size:13px;color:var(--text-2);margin:6px 0 16px;min-height:18px;}
+  .proc-bar{height:9px;background:var(--border-2);border-radius:20px;overflow:hidden;}
+  .proc-bar span{display:block;height:100%;width:0;border-radius:20px;
+    background:linear-gradient(90deg,var(--accent),#8b94f7);transition:width .25s ease;}
+  .proc-meta{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);
+    margin-top:9px;font-variant-numeric:tabular-nums;}
+  #proc-pct{font-weight:700;color:var(--accent);}
+  .proc-done .proc-title{color:#0a9d6e;font-size:22px;}
+  .proc-done .proc-bar span{background:#10b981;}
+  .proc-done #proc-pct{color:#0a9d6e;}
+  .proc-err .proc-title{color:var(--red);}
+  .proc-err .proc-bar span{background:var(--red);}
+  .proc-err .proc-stage{color:var(--red);}
+  .proc-close{background:var(--red);color:#fff;border:none;border-radius:6px;
+    padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer;}
+</style>
+
+<script>
+(function () {
+  // Auto-fill Margin % to the selected marketplace's default (Flipkart 77, Blink 70).
+  var MARGINS = {{ margin_defaults|safe }};
+  var mpSel = document.getElementById('id_marketplace');
+  var marginIn = document.getElementById('id_margin_pct');
+  if (mpSel && marginIn) {
+    var applyMargin = function () {
+      var def = MARGINS[mpSel.value];
+      if (def !== undefined && def !== null) marginIn.value = def;
+    };
+    applyMargin();                         // set correct default on first load
+    mpSel.addEventListener('change', applyMargin);
+  }
+
+  var dz = document.getElementById('dz');
+  if (!dz) return;
+  var input = dz.querySelector('input[type=file]');
+  var main = document.getElementById('dz-main');
+  input.addEventListener('change', function () {
+    if (input.files.length === 1) main.textContent = input.files[0].name;
+    else if (input.files.length > 1) main.textContent = input.files.length + ' files selected';
+    else main.textContent = 'Click to choose PO file(s)';
+  });
+  var form = document.getElementById('up-form'), btn = document.getElementById('up-submit');
+  var overlay = document.getElementById('proc-overlay');
+  var fill = document.getElementById('proc-fill'), pctEl = document.getElementById('proc-pct'),
+      stageEl = document.getElementById('proc-stage'), timeEl = document.getElementById('proc-time');
+  var STAGES = [
+    { p: 0,  t: 'Loading master & Ship-To mapping…' },
+    { p: 42, t: 'Reading & processing PO file…' },
+    { p: 68, t: 'Validating against master…' },
+    { p: 86, t: 'Building preview & workbook…' },
+    { p: 95, t: 'Finalizing…' }
+  ];
+  function clock(ms) { var s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
+
+  var card = overlay.querySelector('.proc-card');
+  var titleEl = overlay.querySelector('.proc-title');
+  var spin = overlay.querySelector('.proc-spin');
+
+  form.addEventListener('submit', function (e) {
+    if (!input.files.length) return;          // let native "required" handle empty
+    e.preventDefault();                       // AJAX: drive the overlay ourselves
+    btn.disabled = true; btn.textContent = 'Processing…';
+    overlay.hidden = false;
+    // Perceived staged progress while the engine runs; the elapsed timer is
+    // real, the % is a smooth asymptotic estimate that holds near 96% until the
+    // server responds — then we snap to 100% and show a definitive ✓ Imported.
+    var start = Date.now(), EST = 14000, pct = 0, done = false;
+    var tick = setInterval(function () {
+      if (done) return;
+      var el = Date.now() - start;
+      var target = 96 * (1 - Math.exp(-el / (EST * 0.55)));
+      pct = Math.max(pct, target);
+      fill.style.width = pct.toFixed(0) + '%';
+      pctEl.textContent = pct.toFixed(0) + '%';
+      var st = STAGES[0];
+      for (var i = 0; i < STAGES.length; i++) { if (pct >= STAGES[i].p) st = STAGES[i]; }
+      stageEl.textContent = st.t;
+      timeEl.textContent = 'elapsed ' + clock(el);
+    }, 150);
+
+    function fail(msg) {
+      done = true; clearInterval(tick);
+      card.classList.add('proc-err');
+      if (spin) spin.style.display = 'none';
+      titleEl.textContent = 'Import failed';
+      stageEl.textContent = msg || 'Something went wrong — please try again.';
+      fill.style.width = '100%'; pctEl.textContent = '';
+      timeEl.innerHTML = '<button type="button" id="proc-close" class="proc-close">Close</button>';
+      var c = document.getElementById('proc-close');
+      if (c) c.addEventListener('click', function () {
+        overlay.hidden = true; card.classList.remove('proc-err');
+        if (spin) spin.style.display = ''; titleEl.textContent = 'Processing PO';
+        btn.disabled = false; btn.textContent = 'Process';
+      });
+    }
+
+    fetch(form.action || window.location.href, {
+      method: 'POST', body: new FormData(form),
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin'
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      if (!j.ok) { fail(j.error); return; }
+      done = true; clearInterval(tick);
+      // snap to 100% + a clear completion the operator can't miss
+      card.classList.add('proc-done');
+      if (spin) spin.style.display = 'none';
+      fill.style.width = '100%'; pctEl.textContent = '100%';
+      var el = Date.now() - start;
+      titleEl.innerHTML = '✓ Imported';
+      stageEl.textContent = j.pos + ' PO(s) · ' + j.lines + ' line(s)' +
+        (j.affected ? ' · ' + j.affected + ' to review' : ' · all clean') +
+        (j.warnings ? ' · ' + j.warnings + ' warning(s)' : '');
+      timeEl.textContent = 'done in ' + clock(el) + ' — opening review…';
+      setTimeout(function () { window.location = j.review_url; }, 1100);
+    }).catch(function () { fail('Network error — please retry.'); });
+  });
+})();
+</script>
+{% endblock %}

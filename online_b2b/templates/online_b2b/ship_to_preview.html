@@ -1,0 +1,74 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static %}
+{% block title %}Ship-To Mapping — Preview{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_ship_to' %}"> / Ship-To Mapping</a> <span>/ Preview</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap b2b-wide">
+  <div class="b2b-head">
+    <div>
+      <h1>Ship-To Mapping <span>· Preview</span></h1>
+      <p class="src">{{ meta.name }} · nothing is written until you confirm. Manual rows are preserved on replace.</p>
+    </div>
+    <a href="{% url 'b2b_ship_to' %}" class="back">← Ship-To Mapping</a>
+  </div>
+
+  <div class="hub-kpis reveal">
+    <div class="hk"><div class="n">{{ stats.rows }}</div><div class="l">Rows parsed</div></div>
+    <div class="hk"><div class="n">{{ stats.parties }}</div><div class="l">Parties</div></div>
+    <div class="hk"><div class="n">{{ stats.dropped }}</div><div class="l">Skipped (blank)</div></div>
+    <div class="hk"><div class="n">{{ current.count }}</div><div class="l">Current → replaced</div></div>
+  </div>
+
+  <form method="post" action="{% url 'b2b_ship_to_confirm' token=token %}">
+    {% csrf_token %}
+    <div class="confirm-bar">
+      <div class="cb-text">Replace the Excel-sourced mapping with <b>{{ stats.rows }} rows</b> across <b>{{ stats.parties }} parties</b> (manual rows kept).</div>
+      <div class="cb-actions">
+        <button class="btn-discard" type="submit" formaction="{% url 'b2b_ship_to_discard' token=token %}" formnovalidate>Discard</button>
+        <button class="btn-primary" type="submit">✓ Confirm &amp; replace</button>
+      </div>
+    </div>
+  </form>
+
+  {% if warnings %}
+  <div class="warnbox" style="margin-top:14px;">
+    <strong>{{ warnings|length }} note(s)</strong>
+    <ul>{% for w in warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+  <div class="im-card reveal" style="margin-top:16px;">
+    <h2>Rows per party</h2>
+    <div class="im-gst">
+      {% for party, n in stats.by_party.items %}<span class="gst-chip">{{ party }} · <b>{{ n }}</b></span>{% endfor %}
+    </div>
+  </div>
+
+  <div class="im-card reveal">
+    <h2>Sample <span class="count">first {{ sample|length }}</span></h2>
+    <div class="scroll">
+    <table class="grid compact">
+      <thead><tr><th>Party</th><th>Del Location</th><th>Cust No</th><th>Ship-to</th><th>City</th><th>Postcode</th></tr></thead>
+      <tbody>
+        {% for r in sample %}
+        <tr>
+          <td>{{ r.party }}</td>
+          <td class="desc" title="{{ r.del_location }}">{{ r.del_location }}</td>
+          <td class="mono">{{ r.cust_no|default:'—' }}</td>
+          <td class="mono">{{ r.ship_to|default:'—' }}</td>
+          <td>{{ r.city|default:'—' }}</td>
+          <td class="mono">{{ r.postcode|default:'—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

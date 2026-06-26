@@ -1,0 +1,47 @@
+{% extends 'core/base.html' %}
+{% load static b2b_extras %}
+{% block title %}Offline — Order Management{% endblock %}
+{% block extra_css %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_dashboard' %}"> / Order Management</a> <span>/ Offline</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap">
+
+  <div class="b2b-head">
+    <div>
+      <h1>Offline <span>· Channels</span></h1>
+      <p class="src">MT Select / GT Mass — SO generation, recorded to {{ d.backend }}</p>
+    </div>
+    <div class="head-actions">
+      <a href="{% url 'b2b_dashboard' %}" class="btn-ghost">← Hub</a>
+      <a href="{% url 'b2b_orders' %}" class="btn-ghost">All orders →</a>
+    </div>
+  </div>
+
+  {% if d.ok %}
+  <div class="hub-kpis reveal">
+    <div class="hk"><div class="n">{{ d.kpis.pos|default:0 }}</div><div class="l">Offline POs</div></div>
+    <div class="hk"><div class="n">{{ d.kpis.qty|compact }}</div><div class="l">Total Qty</div></div>
+    <div class="hk"><div class="n">{{ d.kpis.value|inr_short }}</div><div class="l">Order Value</div></div>
+  </div>
+  {% endif %}
+
+  <div class="hub-groups reveal">
+    {% for c in offline_channels %}
+    <a class="group-card gc-offline" href="{{ c.url }}">
+      <div class="gc-head"><h2>{{ c.name }}</h2><span class="gc-go">Open →</span></div>
+      <p class="gc-sub">{% if c.name == 'Shoppers Stop' %}Upload PO → Preview → Confirm → records to DB (online-style flow){% else %}Upload GT-Mass / Everyday PO files → 7-sheet ERP dump{% endif %}</p>
+    </a>
+    {% endfor %}
+  </div>
+
+</div>
+{% endblock %}

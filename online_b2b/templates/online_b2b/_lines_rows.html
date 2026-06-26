@@ -1,0 +1,21 @@
+{% load b2b_extras %}
+{% for l in rows %}
+<tr>
+  <td>{{ l.marketplace }}</td>
+  <td class="mono"><a href="{% url 'b2b_run_detail' run_id=l.run_id %}" class="po">{{ l.po }}</a></td>
+  <td class="mono">{{ l.item_no|default:'—' }}</td>
+  <td class="mono">{{ l.ean }}</td>
+  <td class="mono">{% if l.received_ean %}<span class="ef-wrong" title="arrived with this WRONG EAN — corrected to {{ l.ean }}">{{ l.received_ean }}</span>{% else %}—{% endif %}</td>
+  <td class="desc" title="{{ l.description }}">{{ l.description }}</td>
+  <td class="r">{{ l.qty }}</td>
+  <td class="r">{{ l.unit_price|default_if_none:'—' }}</td>
+  <td class="r">{{ l.our_mrp|default_if_none:'—' }}</td><td class="r">{{ l.vendor_mrp|default_if_none:'—' }}</td>
+  <td class="r {% if l.basis == 'Landing' %}basis-on{% endif %}">{{ l.our_landing|default_if_none:'—' }}</td><td class="r {% if l.basis == 'Landing' %}basis-on{% endif %}">{{ l.vendor_landing|default_if_none:'—' }}</td>
+  <td class="r {% if l.basis == 'CP' %}basis-on{% endif %}">{{ l.our_cp|default_if_none:'—' }}</td><td class="r {% if l.basis == 'CP' %}basis-on{% endif %}">{{ l.vendor_cp|default_if_none:'—' }}</td>
+  <td class="r {% if l.diff and l.diff != 0 %}diff{% endif %}">{{ l.diff|default_if_none:'—' }}</td>
+  <td>{% if l.basis %}<span class="basis-badge b-{{ l.basis|lower }}">{{ l.basis }}</span>{% endif %}</td>
+  <td><span class="st {{ l.status|lower|default:'ok' }}">{{ l.status|default:'OK' }}</span></td>
+  <td>{% if l.action %}<span class="actpill a-{{ l.action|lower }}">{{ l.action }}</span>{% else %}—{% endif %}</td>
+  <td class="r"><a href="{% url 'b2b_run_detail' run_id=l.run_id %}" class="lnk">#{{ l.run_id }}</a></td>
+</tr>
+{% endfor %}

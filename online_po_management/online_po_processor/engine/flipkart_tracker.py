@@ -53,11 +53,17 @@ LOCATION_MARKETPLACE: Dict[str, str] = {
     'ben_hos_wh_nl_02nl': _FK_HYPERLOCAL,
     'bhi_pad_wh_nl_04nl': _FK,                 # NB: _04nl = FK …
     'bhi_pad_wh_nl_05nl': _FK_HYPERLOCAL,      # … _05nl = FK Hyperlocal
-    'bhu_men_wh_g_01':    _FK_HYPERLOCAL,
+     'bhu_men_wh_g_01':    _FK_GROCERY,         # operator-confirmed 2026-06-23: Grocery
     'bin_sh_wh_nl_01nl':  _FK_HYPERLOCAL,
+    # added 2026-06-25 (were missing → fell through to 'FK (review)')
+    'che_gsh_wh_nl_01nl': _FK_HYPERLOCAL,      # Chennai
+    'coi_app_wh_g_01':    _FK_GROCERY,         # Coimbatore — _wh_g_ = Grocery
+    'guw_gsh_wh_nl_01nl': _FK_HYPERLOCAL,      # Guwahati
+    'jai_sh_wh_nl_01nl':  _FK_HYPERLOCAL,      # Jaipur
     'hyd_gsh_wh_nl_01nl': _FK_HYPERLOCAL,
     'kol_gsh_wh_nl_01nl': _FK_HYPERLOCAL,
     'luc_gsh_wh_nl_01nl': _FK_HYPERLOCAL,
+    'lud_gsh_wh_nl_01nl': _FK_HYPERLOCAL,      # added 2026-06-23 (was missing)
     'pat_sh_wh_nl_01nl':  _FK_HYPERLOCAL,
     'sai_gsh_wh_nl_01nl': _FK_HYPERLOCAL,
     'son_gsh_wh_nl_01nl': _FK_HYPERLOCAL,

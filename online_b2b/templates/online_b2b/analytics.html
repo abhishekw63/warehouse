@@ -1,0 +1,181 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static b2b_extras %}
+{% block title %}Analytics — Order Management{% endblock %}
+{% block extra_css %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_dashboard' %}"> / Order Management</a> <span>/ Analytics</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap b2b-wide">
+
+  <div class="b2b-head">
+    <div>
+      <h1>Analytics <span>· Daily Intake</span></h1>
+      <p class="src">Orders received per day (by recorded date) · last {{ days }} days</p>
+    </div>
+    <div class="head-actions">
+      <a href="{% url 'b2b_dashboard' %}" class="btn-ghost">← Hub</a>
+      <form method="get" class="date-filter" id="dateForm">
+        <input type="hidden" name="days" value="{{ days }}">
+        <label>Any date</label>
+        <input type="date" name="date" value="{{ date }}" onchange="document.getElementById('dateForm').submit()">
+        {% if date %}<a href="?days={{ days }}&date=" class="rg" title="Show full range">✕</a>{% endif %}
+      </form>
+      <span class="range-toggle">
+        <a href="?days=7{% if date %}&date={{ date }}{% endif %}" class="rg{% if days == 7 %} on{% endif %}">7d</a>
+        <a href="?days=30{% if date %}&date={{ date }}{% endif %}" class="rg{% if days == 30 %} on{% endif %}">30d</a>
+        <a href="?days=90{% if date %}&date={{ date }}{% endif %}" class="rg{% if days == 90 %} on{% endif %}">90d</a>
+      </span>
+    </div>
+  </div>
+
+  <!-- period totals -->
+  {% with scope=date|default:'' %}
+  <div class="hub-kpis reveal" style="grid-template-columns:repeat(4,1fr);">
+    <a class="hk" href="{% url 'b2b_orders' %}"><div class="n">{{ hier.total.pos }}</div><div class="l">POs · {% if date %}{{ date }}{% else %}last {{ days }}d{% endif %}</div></a>
+    <div class="hk"><div class="n">{{ hier.total.qty|compact }}</div><div class="l">Total Qty</div></div>
+    <div class="hk"><div class="n">{{ hier.total.value|inr_short }}</div><div class="l">Order Value</div></div>
+    <a class="hk" href="{% url 'b2b_lines' %}"><div class="n">{{ hier.total.items|compact }}</div><div class="l">Line Items</div></a>
+  </div>
+  {% endwith %}
+
+  {{ daily|json_script:"daily-data" }}
+
+  <!-- daily stacked chart -->
+  <div class="chart-card reveal" style="margin-bottom:22px;padding:16px 18px 10px;">
+    <div class="chart-head">
+      <span class="chart-title">Daily intake · stacked by segment</span>
+      <span class="chart-toggle">
+        <button type="button" class="ctg on" data-metric="value">Value</button>
+        <button type="button" class="ctg" data-metric="qty">Qty</button>
+        <button type="button" class="ctg" data-metric="pos">POs</button>
+        <button type="button" class="ctg" data-metric="items">Items</button>
+      </span>
+    </div>
+    <div id="daily-chart"><div class="chart-ph">Loading chart…</div></div>
+  </div>
+
+  <!-- tree-branch breakdown: segment → marketplace → child -->
+  <div class="reveal">
+    <div class="sec-head">
+      <h2>Breakdown tree {% if date %}· {{ date }}{% else %}· last {{ days }} days{% endif %}</h2>
+      <span class="muted">{{ hier.total.pos }} POs · {{ hier.total.value|inr_short }} · {{ hier.total.items }} items</span>
+    </div>
+    <div class="tree">
+      {% for s in hier.segments %}
+      <details class="tnode tseg" open>
+        <summary>
+          <span class="tname"><span class="seg-tag {% if s.segment == 'Offline' %}off{% else %}on{% endif %}">{{ s.segment }}</span></span>
+          <span class="tmeta">{{ s.pos }} POs · {{ s.qty|compact }} qty · <b>{{ s.value|inr_short }}</b></span>
+          <span class="tbar"><span style="width:{{ s.bar }}%"></span></span>
+        </summary>
+        <div class="tchildren">
+          {% for m in s.marketplaces %}
+            {% if m.multi %}
+            <details class="tnode tmkt">
+              <summary>
+                <span class="tname">{{ m.marketplace }} <span class="tcount">{{ m.children|length }}</span></span>
+                <span class="tmeta">{{ m.pos }} POs · {{ m.qty|compact }} qty · <b>{{ m.value|inr_short }}</b></span>
+                <span class="tbar"><span style="width:{{ m.bar }}%"></span></span>
+              </summary>
+              <div class="tchildren">
+                {% for c in m.children %}
+                <a class="tnode tleaf tlink" href="{% url 'b2b_orders' %}?marketplace={{ c.label|urlencode }}" title="View {{ c.label }} orders">
+                  <span class="tname">{{ c.label }}</span>
+                  <span class="tmeta">{{ c.pos }} POs · {{ c.qty|compact }} qty · {{ c.value|inr_short }} <span class="tgo">→</span></span>
+                  <span class="tbar"><span style="width:{{ c.bar }}%"></span></span>
+                </a>
+                {% endfor %}
+              </div>
+            </details>
+            {% else %}
+            <a class="tnode tleaf tlink" href="{% url 'b2b_orders' %}?marketplace={{ m.children.0.label|urlencode }}" title="View {{ m.marketplace }} orders">
+              <span class="tname">{{ m.marketplace }}</span>
+              <span class="tmeta">{{ m.pos }} POs · {{ m.qty|compact }} qty · <b>{{ m.value|inr_short }}</b> <span class="tgo">→</span></span>
+              <span class="tbar"><span style="width:{{ m.bar }}%"></span></span>
+            </a>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </details>
+      {% empty %}<p class="muted">No orders received {% if date %}on {{ date }}{% else %}in this period{% endif %}.</p>{% endfor %}
+    </div>
+  </div>
+
+</div>
+
+<script src="{% static 'online_b2b/vendor/apexcharts.min.js' %}"></script>
+<script>
+(function () {
+  var el = document.getElementById('daily-data');
+  if (!el) return;
+  var data;
+  try { data = JSON.parse(el.textContent); } catch (e) { return; }
+  function inr(v) {
+    v = Number(v) || 0; var s = v < 0 ? '-' : ''; v = Math.abs(v);
+    if (v >= 1e7) return s + '₹' + (v / 1e7).toFixed(2) + ' Cr';
+    if (v >= 1e5) return s + '₹' + (v / 1e5).toFixed(2) + ' L';
+    if (v >= 1000) return s + '₹' + Math.round(v).toLocaleString('en-IN');
+    return s + '₹' + Math.round(v);
+  }
+  function num(v) {
+    v = Number(v) || 0;
+    if (v >= 1e5) return (v / 1e5).toFixed(1) + 'L';
+    if (v >= 1000) return (v / 1000).toFixed(1) + 'k';
+    return Math.round(v);
+  }
+  var COLORS = { 'Online B2B': '#4f46e5', 'Offline': '#11998e', 'Other': '#9aa1b2' };
+  var metric = 'value';
+  var chart = null;
+  function fmt(v) { return metric === 'value' ? inr(v) : num(v); }
+  function series() {
+    return data.segments.map(function (s) { return { name: s, data: (data[metric] || {})[s] || [] }; });
+  }
+  function build() {
+    var box = document.getElementById('daily-chart');
+    if (!window.ApexCharts) { box.textContent = 'Charts library unavailable.'; return; }
+    if (!data.segments || !data.segments.length) { box.innerHTML = '<div class="chart-empty">No orders in this period.</div>'; return; }
+    box.innerHTML = '';
+    var cfg = {
+      chart: { type: 'bar', height: 380, stacked: true, fontFamily: 'Inter, sans-serif', toolbar: { show: false }, animations: { enabled: true, speed: 600, dynamicAnimation: { enabled: true, speed: 450 } } },
+      series: series(),
+      colors: data.segments.map(function (s) { return COLORS[s] || '#9aa1b2'; }),
+      plotOptions: { bar: { columnWidth: '62%', borderRadius: 3 } },
+      dataLabels: { enabled: false },
+      xaxis: { categories: data.labels, axisBorder: { show: false }, axisTicks: { show: false }, labels: { style: { colors: '#9aa1b2', fontSize: '10px' } } },
+      yaxis: { labels: { style: { colors: '#9aa1b2', fontSize: '10px' }, formatter: function (v) { return fmt(v); } } },
+      legend: { position: 'top', horizontalAlign: 'right', fontSize: '12px', labels: { colors: '#9aa1b2' } },
+      grid: { borderColor: '#eef1f5', strokeDashArray: 4 },
+      tooltip: { y: { formatter: function (v) { return fmt(v); } } }
+    };
+    // When a single date is picked, dull the other days and spotlight that one.
+    if (data.focus) {
+      cfg.fill = { opacity: 0.32 };
+      cfg.annotations = { xaxis: [{ x: data.focus, borderColor: '#4f46e5', strokeDashArray: 0,
+        label: { text: '● ' + data.focus, orientation: 'horizontal', position: 'top',
+          style: { background: '#4f46e5', color: '#fff', fontSize: '10px', fontWeight: 700, padding: { left: 7, right: 7, top: 3, bottom: 3 } } } }] };
+    }
+    chart = new ApexCharts(box, cfg);
+    chart.render();
+    document.querySelectorAll('.ctg').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('.ctg').forEach(function (x) { x.classList.toggle('on', x === b); });
+        metric = b.getAttribute('data-metric');
+        // Single animated update — the y-axis + tooltip formatters read `metric`
+        // via closure, so they re-format automatically (no second redraw / jank).
+        chart.updateSeries(series(), true);
+      });
+    });
+  }
+  if (document.readyState !== 'loading') build();
+  else document.addEventListener('DOMContentLoaded', build);
+})();
+</script>
+{% endblock %}

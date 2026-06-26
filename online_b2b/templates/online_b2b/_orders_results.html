@@ -1,0 +1,32 @@
+{% load b2b_extras %}
+<div class="orders-panel">
+  <div class="sec-head">
+    <h2>Orders <span class="count">{{ d.total }}</span></h2>
+    <a href="{% url 'b2b_export' %}?{{ d.filters|querystring }}" class="export">⬇ Export</a>
+  </div>
+  <div class="scroll" id="b2b-scroll">
+  <table class="grid">
+    <thead><tr>
+      <th class="srt {% if d.sort == 'marketplace' %}on {{ d.direction }}{% endif %}" data-sort="marketplace">Marketplace</th>
+      <th class="srt {% if d.sort == 'po' %}on {{ d.direction }}{% endif %}" data-sort="po">PO</th>
+      <th>Location</th>
+      <th class="srt {% if d.sort == 'date' %}on {{ d.direction }}{% endif %}" data-sort="date">PO Date</th>
+      <th>Type</th>
+      <th class="r srt {% if d.sort == 'items' %}on {{ d.direction }}{% endif %}" data-sort="items">Items</th>
+      <th class="r srt {% if d.sort == 'qty' %}on {{ d.direction }}{% endif %}" data-sort="qty">Qty</th>
+      <th class="r srt {% if d.sort == 'value' %}on {{ d.direction }}{% endif %}" data-sort="value">Value</th>
+      <th class="srt {% if d.sort == 'expiry' %}on {{ d.direction }}{% endif %}" data-sort="expiry">Expiry</th>
+      <th></th>
+    </tr></thead>
+    <tbody id="b2b-orders-body">
+      {% include 'online_b2b/_orders_rows.html' with orders=d.orders %}
+      {% if not d.orders %}<tr><td colspan="10" class="muted">No orders match the filter.</td></tr>{% endif %}
+    </tbody>
+  </table>
+  </div>
+  {% if d.total > d.orders|length %}
+    <button type="button" id="b2b-more" class="btn-more"
+            data-offset="{{ d.orders|length }}" data-total="{{ d.total }}"
+            data-limit="{{ d.limit }}">Load more ({{ d.orders|length }} of {{ d.total }})</button>
+  {% endif %}
+</div>

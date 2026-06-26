@@ -1,0 +1,190 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static %}
+{% block title %}Ship-To Mapping — Order Management{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_dashboard' %}"> / Order Management</a> <span>/ Ship-To Mapping</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap b2b-wide">
+  <div class="b2b-head">
+    <div>
+      <h1>Ship-To Mapping <span>· DB</span></h1>
+      <p class="src">Delivery location → ERP <b>Cust No</b> + <b>Ship-to code</b>, per marketplace party. The engine reads this DB mapping directly · the bundled Excel is retired.</p>
+    </div>
+    <div class="head-actions"><a href="{% url 'b2b_dashboard' %}" class="btn-ghost">← Hub</a></div>
+  </div>
+
+  {% if messages %}{% for m in messages %}<div class="banner {% if m.tags == 'error' %}err{% else %}ok{% endif %}">{{ m }}</div>{% endfor %}{% endif %}
+
+  {% if status.ok %}
+  <div class="im-kpis reveal">
+    <div class="im-kpi k1"><span class="im-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span>
+      <div><div class="n">{{ status.count }}</div><div class="l">Mapping rows</div></div></div>
+    <div class="im-kpi k2"><span class="im-ic">{% include 'online_b2b/_icons.html' with i='store' %}</span>
+      <div><div class="n">{{ status.parties }}</div><div class="l">Parties</div></div></div>
+    <div class="im-kpi k4"><span class="im-ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span>
+      <div><div class="n">{% if status.last_updated %}{{ status.last_updated|date:"d M · H:i" }}{% else %}—{% endif %}</div><div class="l">Last updated</div></div></div>
+  </div>
+  {% else %}
+  <div class="banner err">Ship-To mapping DB unavailable{% if status.error %} — {{ status.error }}{% endif %}.</div>
+  {% endif %}
+
+  <!-- Upload / replace -->
+  <div class="im-card reveal">
+    <h2>Upload / replace</h2>
+    <p class="im-sub">Upload the <b>Ship-To B2B</b> Excel (sheet <b>Ship-To B2B</b>: Party · Del Location · Cust No · Ship to). It <b>fully replaces</b> the Excel-sourced rows — your hand-added <b>manual</b> rows are preserved.</p>
+    <form method="post" action="{% url 'b2b_ship_to_upload' %}" enctype="multipart/form-data" class="im-up">
+      {% csrf_token %}
+      <label class="im-file">
+        <span class="imf-l">Ship-To B2B Excel</span>
+        <input type="file" name="mapping_file" accept=".xlsx,.xls" required>
+        <span class="imf-h">Party · Del Location · Cust No · Ship to (+ address)</span>
+      </label>
+      <button type="submit" class="btn-primary">Preview &amp; replace →</button>
+    </form>
+    <form method="post" action="{% url 'b2b_ship_to_seed' %}" style="margin-top:10px;">
+      {% csrf_token %}
+      <button type="submit" class="btn-ghost" onclick="return confirm('Re-seed the Excel-sourced rows from the bundled Ship-To B2B Excel? Manual rows are kept.');">↻ Re-seed from bundled Excel</button>
+    </form>
+  </div>
+
+  <!-- Overview + add -->
+  <div class="im-card reveal">
+    <div class="im-ovh">
+      <h2>Mappings <span class="count" id="stm-count">{{ overview.total }}</span></h2>
+      <div class="im-tools">
+        <select id="stm-party" class="stm-party">
+          <option value="">All parties</option>
+          {% for p in overview.parties %}<option value="{{ p }}"{% if p == overview.party %} selected{% endif %}>{{ p }}</option>{% endfor %}
+        </select>
+        <div class="im-search">
+          <span class="ims-ic">{% include 'online_b2b/_icons.html' with i='search' %}</span>
+          <input type="text" id="stmq" value="{{ overview.q }}" placeholder="Search location / cust no / ship-to / city…" autocomplete="off">
+          <span class="ims-spin" id="stmspin" hidden></span>
+        </div>
+        <button type="button" class="btn-primary" id="stm-addbtn">＋ Add mapping</button>
+      </div>
+    </div>
+
+    <!-- inline add panel -->
+    <form class="im-add" id="stm-addpanel">
+      {% csrf_token %}
+      <div class="im-addgrid">
+        <label><span>Party <b class="req">*</b></span><input type="text" name="party" required placeholder="e.g. Myntra"></label>
+        <label class="wide"><span>Del Location <b class="req">*</b></span><input type="text" name="del_location" required placeholder="warehouse / location name"></label>
+        <label><span>Cust No</span><input type="text" name="cust_no" placeholder="e.g. 20011"></label>
+        <label><span>Ship-to code</span><input type="text" name="ship_to" placeholder="e.g. 20011_4"></label>
+        <label><span>City</span><input type="text" name="city" placeholder="optional"></label>
+        <label><span>Postcode</span><input type="text" name="postcode" placeholder="optional"></label>
+        <label class="wide"><span>Address</span><input type="text" name="address" placeholder="optional"></label>
+        <label class="wide"><span>Address 2</span><input type="text" name="address2" placeholder="optional"></label>
+        <label class="wide"><span>Name</span><input type="text" name="name" placeholder="optional"></label>
+      </div>
+      <div class="im-addfoot">
+        <span class="im-addnote">Saved as a <b>manual</b> row — survives an Excel re-upload.</span>
+        <div>
+          <button type="button" class="btn-clear" id="stm-addcancel">Cancel</button>
+          <button type="button" class="btn-primary" id="stm-addsave">Save mapping</button>
+        </div>
+      </div>
+      <span class="stm-msg" id="stm-addmsg"></span>
+    </form>
+
+    <p class="im-sub" id="stm-shown">Showing {{ overview.shown }} of {{ overview.total }}{% if overview.party %} · {{ overview.party }}{% endif %}.</p>
+    <div class="scroll im-tablewrap">
+    <table class="grid compact im-table">
+      <thead><tr><th>Party</th><th>Del Location</th><th>Cust No</th><th>Ship-to</th><th>City</th><th>Postcode</th><th>Source</th><th></th></tr></thead>
+      <tbody id="stm-tbody">
+        {% include 'online_b2b/_ship_to_rows.html' %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<input type="hidden" id="stm-csrf" value="{{ csrf_token }}">
+<script>
+(function () {
+  var csrf = document.getElementById('stm-csrf').value;
+  var hdrs = { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded' };
+  var tbody = document.getElementById('stm-tbody');
+  var partySel = document.getElementById('stm-party');
+  var input = document.getElementById('stmq');
+  var shown = document.getElementById('stm-shown');
+  var spin = document.getElementById('stmspin');
+  var searchUrl = "{% url 'b2b_ship_to_search' %}";
+  var addUrl = "{% url 'b2b_ship_to_add' %}";
+  var FIELDS = ['party', 'del_location', 'cust_no', 'ship_to', 'city', 'postcode'];
+
+  function reload() {
+    var p = new URLSearchParams();
+    if (partySel.value) p.set('party', partySel.value);
+    if (input.value.trim()) p.set('q', input.value.trim());
+    if (spin) spin.hidden = false;
+    fetch(searchUrl + '?' + p.toString(), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.text(); })
+      .then(function (html) { tbody.innerHTML = html; if (spin) spin.hidden = true; bind(); });
+  }
+  var t = null;
+  input.addEventListener('input', function () { clearTimeout(t); t = setTimeout(reload, 180); });
+  partySel.addEventListener('change', reload);
+
+  // add panel
+  var addBtn = document.getElementById('stm-addbtn'), panel = document.getElementById('stm-addpanel');
+  addBtn.addEventListener('click', function () { panel.classList.toggle('open'); });
+  document.getElementById('stm-addcancel').addEventListener('click', function () { panel.classList.remove('open'); });
+  document.getElementById('stm-addsave').addEventListener('click', function () {
+    var body = new URLSearchParams();
+    panel.querySelectorAll('input[name]').forEach(function (i) { body.set(i.name, i.value); });
+    var msg = document.getElementById('stm-addmsg');
+    fetch(addUrl, { method: 'POST', headers: hdrs, body: body.toString() })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) { msg.textContent = j.error || 'failed'; msg.className = 'stm-msg err'; return; }
+        msg.textContent = '✓ added'; msg.className = 'stm-msg ok';
+        panel.querySelectorAll('input[name]').forEach(function (i) { i.value = ''; });
+        panel.classList.remove('open'); reload();
+      });
+  });
+
+  function bind() {
+    tbody.querySelectorAll('.stm-del').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var tr = b.closest('tr'); if (!confirm('Delete this mapping row?')) return;
+        fetch('/b2b/ship-to/' + tr.getAttribute('data-id') + '/delete/', { method: 'POST', headers: hdrs })
+          .then(function (r) { return r.json(); })
+          .then(function (j) { if (j.ok) { tr.remove(); } });
+      });
+    });
+    tbody.querySelectorAll('.stm-edit').forEach(function (b) {
+      b.addEventListener('click', function () { editRow(b.closest('tr')); });
+    });
+  }
+  function editRow(tr) {
+    if (tr.classList.contains('editing')) return;
+    tr.classList.add('editing');
+    FIELDS.forEach(function (f) {
+      var td = tr.querySelector('.' + f); if (!td) return;
+      var v = td.getAttribute('data-v') || td.textContent.trim();
+      if (v === '—') v = '';
+      td.innerHTML = '<input class="stm-in" data-f="' + f + '" value="' + v.replace(/"/g, '&quot;') + '">';
+    });
+    var act = tr.querySelector('.stm-actions');
+    act.innerHTML = '<button type="button" class="stm-save">save</button> <button type="button" class="stm-cancel">✕</button>';
+    act.querySelector('.stm-cancel').addEventListener('click', reload);
+    act.querySelector('.stm-save').addEventListener('click', function () {
+      var body = new URLSearchParams();
+      tr.querySelectorAll('.stm-in').forEach(function (i) { body.set(i.getAttribute('data-f'), i.value); });
+      fetch('/b2b/ship-to/' + tr.getAttribute('data-id') + '/edit/', { method: 'POST', headers: hdrs, body: body.toString() })
+        .then(function (r) { return r.json(); })
+        .then(function (j) { if (j.ok) reload(); else alert(j.error || 'failed'); });
+    });
+  }
+  bind();
+})();
+</script>
+{% endblock %}

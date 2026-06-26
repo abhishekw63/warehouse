@@ -1,0 +1,15 @@
+{% for r in overview.rows %}
+<tr data-id="{{ r.id }}">
+  <td class="party" data-v="{{ r.party }}">{{ r.party }}</td>
+  <td class="del_location desc" data-v="{{ r.del_location }}" title="{{ r.del_location }}">{{ r.del_location }}</td>
+  <td class="cust_no mono" data-v="{{ r.cust_no }}">{{ r.cust_no|default:'—' }}</td>
+  <td class="ship_to mono" data-v="{{ r.ship_to }}">{{ r.ship_to|default:'—' }}</td>
+  <td class="city" data-v="{{ r.city }}">{{ r.city|default:'—' }}</td>
+  <td class="postcode mono" data-v="{{ r.postcode }}">{{ r.postcode|default:'—' }}</td>
+  <td>{% if r.source == 'manual' %}<span class="src-badge manual">manual</span>{% else %}<span class="src-badge">excel</span>{% endif %}</td>
+  <td class="r stm-actions">
+    <button type="button" class="stm-edit" title="edit">✎</button>
+    <button type="button" class="stm-del" title="delete">🗑</button>
+  </td>
+</tr>
+{% empty %}<tr><td colspan="8" class="muted">{% if overview.party or overview.q %}No mappings match.{% else %}No mappings — upload the Ship-To B2B Excel above, or re-seed from the bundled one.{% endif %}</td></tr>{% endfor %}

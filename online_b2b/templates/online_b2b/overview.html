@@ -1,0 +1,204 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static b2b_extras %}
+{% block title %}{{ branch.label|default:"Online B2B" }} — Overview{% endblock %}
+{% block extra_css %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_dashboard' %}"> / Order Management</a> <span>/ {{ branch.label|default:"Online B2B" }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap">
+
+  <div class="b2b-head">
+    <div>
+      <h1>{{ branch.label|default:"Online B2B" }} <span>· Overview</span></h1>
+      <p class="src">{{ d.backend }}{% if d.kpis.last_updated %} · last order {{ d.kpis.last_updated }}{% endif %}</p>
+    </div>
+    <div class="head-actions">
+      <a href="{% url 'b2b_dashboard' %}" class="btn-ghost">← Hub</a>
+      <a href="{% url 'b2b_lines' %}" class="btn-ghost">Line Items →</a>
+      <a href="{% url 'b2b_orders' %}?segment={% if branch.kind == 'offline' %}Offline{% else %}OnlineB2B{% endif %}" class="btn-ghost">View {{ branch.label }} orders →</a>
+      {% if branch.kind == 'offline' %}
+        <a href="/offline/gt-mass-dump/" class="btn-ghost">GT Mass</a>
+        <a href="/offline/shoppers-stop/" class="btn-primary">＋ MT Select</a>
+      {% else %}
+        <a href="{% url 'b2b_bulk_upload' %}" class="btn-ghost">⬆ Bulk Import</a>
+        {% if user.is_staff %}<a href="/admin/online_b2b/orderline/" class="btn-ghost">⚙ DB Admin</a>{% endif %}
+        <a href="{% url 'b2b_upload' %}" class="btn-primary">＋ Process PO</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if not d.ok %}
+    <div class="banner err">Order DB unavailable{% if d.error %} — {{ d.error }}{% endif %}.</div>
+  {% else %}
+
+
+  {{ d.charts|json_script:"b2b-charts" }}
+
+  <!-- KPI cards -->
+  <div class="kpis reveal">
+    {% with k=d.kpis %}
+    <div class="card c1"><span class="ic">{% include 'online_b2b/_icons.html' with i='po' %}</span><div>
+        <div class="n" data-countup="{{ k.pos }}">{{ k.pos }}</div><div class="l">Total POs
+        {% if k.pos_delta is not None %}<span class="delta {% if k.pos_delta >= 0 %}up{% else %}down{% endif %}">{% if k.pos_delta >= 0 %}▲{% else %}▼{% endif %}{{ k.pos_delta }}%</span>{% endif %}</div></div></div>
+    <div class="card c2"><span class="ic">{% include 'online_b2b/_icons.html' with i='refresh' %}</span><div><div class="n" data-countup="{{ k.updated_2d }}">{{ k.updated_2d }}</div><div class="l">Updated · 2d</div></div></div>
+    <div class="card c3"><span class="ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><div><div class="n">{{ k.qty|compact }}</div><div class="l">Total Qty</div></div></div>
+    <div class="card c4"><span class="ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><div>
+        <div class="n">{{ k.value|inr_short }}</div><div class="l">Order Value
+        {% if k.value_delta is not None %}<span class="delta {% if k.value_delta >= 0 %}up{% else %}down{% endif %}">{% if k.value_delta >= 0 %}▲{% else %}▼{% endif %}{{ k.value_delta }}%</span>{% endif %}</div></div></div>
+    <div class="card c5"><span class="ic">{% include 'online_b2b/_icons.html' with i='store' %}</span><div><div class="n" data-countup="{{ k.marketplaces }}">{{ k.marketplaces }}</div><div class="l">Marketplaces</div></div></div>
+    <div class="card c7"><span class="ic">{% include 'online_b2b/_icons.html' with i='clock' %}</span><div><div class="n" data-countup="{{ k.expiring_soon }}">{{ k.expiring_soon }}</div><div class="l">Expiring ≤7d</div></div></div>
+    <a class="card c6" href="{% url 'b2b_issues' %}"><span class="ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><div><div class="n" data-countup="{{ k.needs_attention }}">{{ k.needs_attention }}</div><div class="l">Needs attention</div></div></a>
+    <a class="card c8" href="{% url 'b2b_issues' %}"><span class="ic">{% include 'online_b2b/_icons.html' with i='search' %}</span><div><div class="n" data-countup="{{ d.issue_count }}">{{ d.issue_count }}</div><div class="l">Issue Lines</div></div></a>
+    {% endwith %}
+  </div>
+
+  <!-- Charts -->
+  <div class="chart-row">
+    <div class="chart-card chart-area">
+      <div class="chart-head">
+        <span class="chart-title">Order <b id="ch-metric">Value</b> · last 30 days</span>
+        <span class="chart-right">
+          <span class="ct">{{ d.trends.total_orders }} POs · {{ d.trends.total_value|inr_short }}</span>
+          <span class="chart-toggle">
+            <button type="button" class="ctg on" data-metric="value">Value</button>
+            <button type="button" class="ctg" data-metric="orders">POs</button>
+          </span>
+        </span>
+      </div>
+      <div id="b2b-area"><div class="chart-ph">Loading chart…</div></div>
+    </div>
+    <div class="chart-card chart-donut">
+      <div class="chart-head"><span class="chart-title">Marketplace mix</span></div>
+      <div id="b2b-donut"><div class="chart-ph">Loading…</div></div>
+    </div>
+  </div>
+
+  <!-- By marketplace summary -->
+  <div class="reveal">
+    <div class="sec-head">
+      <h2>By Marketplace</h2>
+      <a href="{% url 'b2b_orders' %}?segment={% if branch.kind == 'offline' %}Offline{% else %}OnlineB2B{% endif %}" class="seelink">All orders →</a>
+    </div>
+    <table class="grid">
+      <thead><tr><th>Marketplace</th><th>Trend</th><th class="r">POs</th><th class="r">Qty</th><th class="r">Value</th></tr></thead>
+      <tbody>
+        {% for m in d.by_marketplace %}
+        <tr>
+          <td><a href="{% url 'b2b_orders' %}?segment={% if branch.kind == 'offline' %}Offline{% else %}OnlineB2B{% endif %}&marketplace={{ m.marketplace|urlencode }}" class="mp">{{ m.marketplace }}</a></td>
+          <td style="width:120px;">{% if m.spark %}<svg class="mpspark" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"><path d="{{ m.spark }}" fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>{% endif %}</td>
+          <td class="r">{{ m.pos }}</td><td class="r">{{ m.qty|compact }}</td><td class="r">{{ m.value|inr_short }}</td>
+        </tr>
+        {% empty %}<tr><td colspan="5" class="muted">No orders yet.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% endif %}
+</div>
+
+<script src="{% static 'online_b2b/vendor/apexcharts.min.js' %}"></script>
+<script>
+(function () {
+  var el = document.getElementById('b2b-charts');
+  if (!el) return;
+  var data;
+  try { data = JSON.parse(el.textContent); } catch (e) { return; }
+
+  function inr(v) {
+    v = Number(v) || 0; var s = v < 0 ? '-' : ''; v = Math.abs(v);
+    if (v >= 1e7) return s + '₹' + (v / 1e7).toFixed(2) + ' Cr';
+    if (v >= 1e5) return s + '₹' + (v / 1e5).toFixed(2) + ' L';
+    if (v >= 1000) return s + '₹' + Math.round(v).toLocaleString('en-IN');
+    return s + '₹' + Math.round(v);
+  }
+  var ACCENT = '#4f46e5', GREY = '#9aa1b2';
+  var COLORS = ['#4f46e5', '#6366f1', '#11998e', '#f7971e', '#cb2d3e', '#2193b0', '#7b4397', '#16a34a', '#db2777', '#9aa1b2'];
+  function has(a) { return Array.isArray(a) && a.some(function (x) { return Number(x) > 0; }); }
+  function note(id, t) { var n = document.getElementById(id); if (n) n.innerHTML = '<div class="chart-empty">' + t + '</div>'; }
+
+  function build() {
+    if (!window.ApexCharts) { note('b2b-area', 'Charts library failed to load.'); note('b2b-donut', ''); return; }
+
+    var area = null;
+    try {
+      if (!has(data.trend.value) && !has(data.trend.orders)) {
+        note('b2b-area', 'No orders in the last 30 days.');
+      } else {
+        document.getElementById('b2b-area').innerHTML = '';
+        area = new ApexCharts(document.getElementById('b2b-area'), {
+          chart: { type: 'area', height: 260, fontFamily: 'Inter, sans-serif', toolbar: { show: false } },
+          series: [{ name: 'Value', data: data.trend.value }],
+          colors: [ACCENT],
+          stroke: { curve: 'smooth', width: 2.5 },
+          fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.03, stops: [0, 95] } },
+          dataLabels: { enabled: false },
+          markers: { size: 0, hover: { size: 5 } },
+          xaxis: { categories: data.trend.labels, tickAmount: 6, axisBorder: { show: false }, axisTicks: { show: false }, labels: { style: { colors: GREY, fontSize: '10px' } } },
+          yaxis: { labels: { style: { colors: GREY, fontSize: '10px' }, formatter: function (v) { return inr(v); } } },
+          grid: { borderColor: '#eef1f5', strokeDashArray: 4 },
+          tooltip: { y: { formatter: function (v) { return inr(v); } } }
+        });
+        area.render();
+      }
+    } catch (e) { console.error(e); note('b2b-area', 'Chart error.'); }
+
+    if (area) {
+      document.querySelectorAll('.ctg').forEach(function (b) {
+        b.addEventListener('click', function () {
+          document.querySelectorAll('.ctg').forEach(function (x) { x.classList.toggle('on', x === b); });
+          var isVal = b.getAttribute('data-metric') === 'value';
+          area.updateSeries([{ name: isVal ? 'Value' : 'POs', data: isVal ? data.trend.value : data.trend.orders }]);
+          area.updateOptions({ tooltip: { y: { formatter: function (v) { return isVal ? inr(v) : (v + ' POs'); } } } });
+          document.getElementById('ch-metric').textContent = isVal ? 'Value' : 'POs';
+        });
+      });
+    }
+
+    try {
+      if (!has(data.mix.value)) {
+        note('b2b-donut', 'No marketplace data.');
+      } else {
+        document.getElementById('b2b-donut').innerHTML = '';
+        new ApexCharts(document.getElementById('b2b-donut'), {
+          chart: { type: 'donut', height: 260, fontFamily: 'Inter, sans-serif' },
+          series: data.mix.value,
+          labels: data.mix.labels,
+          colors: COLORS,
+          stroke: { width: 2, colors: ['#fff'] },
+          dataLabels: { enabled: false },
+          legend: { position: 'bottom', fontSize: '11px', labels: { colors: GREY } },
+          tooltip: { y: { formatter: function (v) { return inr(v); } } },
+          plotOptions: { pie: { donut: { size: '70%' } } }
+        }).render();
+      }
+    } catch (e) { console.error(e); note('b2b-donut', 'Chart error.'); }
+
+    document.querySelectorAll('[data-countup]').forEach(function (n) {
+      var target = parseFloat(n.getAttribute('data-countup')) || 0, t0 = null;
+      function tick(ts) {
+        if (!t0) t0 = ts;
+        var p = Math.min((ts - t0) / 900, 1);
+        n.textContent = Math.round(target * (0.5 - Math.cos(p * Math.PI) / 2)).toLocaleString('en-IN');
+        if (p < 1) requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    });
+  }
+
+  // Script is at end of <body> → DOM ready + head CSS applied → render now.
+  var built = false;
+  function start() { if (built) return; built = true; try { build(); } catch (e) { console.error(e); } }
+  if (document.readyState !== 'loading') start();
+  else document.addEventListener('DOMContentLoaded', start);
+})();
+</script>
+{% endblock %}

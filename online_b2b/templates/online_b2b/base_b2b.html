@@ -1,0 +1,8 @@
+{% extends 'core/base.html' %}
+{% comment %}
+Shared base for the Order-Management (b2b) pages: adds the left sidebar nav and
+tags the body so the content area shifts right of the rail. Individual pages
+extend THIS instead of core/base.html and keep filling title/breadcrumb/content.
+{% endcomment %}
+{% block body_class %}b2b-app{% endblock %}
+{% block sidebar %}{% include 'online_b2b/_sidebar.html' %}{% endblock %}

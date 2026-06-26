@@ -1,0 +1,107 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static b2b_extras %}
+{% block title %}Order Management{% endblock %}
+{% block extra_css %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a> <span>/ Order Management</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap">
+
+  <div class="b2b-head">
+    <div>
+      <h1>Order Management <span>· Hub</span></h1>
+      <p class="src">{{ backend }}{% if kpis.last_updated %} · last order {{ kpis.last_updated }}{% endif %}</p>
+    </div>
+    <div class="head-actions">
+      <a href="{% url 'b2b_analytics' %}" class="btn-primary">📊 Analytics</a>
+      <a href="{% url 'b2b_rules' %}" class="btn-ghost">📋 Rules</a>
+      <a href="{% url 'b2b_orders' %}" class="btn-ghost">All orders →</a>
+      <a href="{% url 'b2b_lines' %}" class="btn-ghost">Line Items →</a>
+      <a href="{% url 'b2b_issues' %}" class="btn-ghost">Issues</a>
+    </div>
+  </div>
+
+  {% if not ok %}
+    <div class="banner err">Order DB unavailable{% if error %} — {{ error }}{% endif %}.</div>
+  {% else %}
+
+  <!-- overall KPI strip — 4×3, equally allocated (trend deltas vs prior period) -->
+  <div class="hub-kpis reveal">
+    <div class="hk"><div class="n">{{ kpis.pos|default:0 }}</div><div class="l">Total POs
+      {% if kpis.pos_delta is not None %}<span class="delta {% if kpis.pos_delta >= 0 %}up{% else %}down{% endif %}">{% if kpis.pos_delta >= 0 %}▲{% else %}▼{% endif %}{{ kpis.pos_delta }}%</span>{% endif %}</div></div>
+    <div class="hk"><div class="n">{{ kpis.qty|compact }}</div><div class="l">Total Qty</div></div>
+    <div class="hk"><div class="n">{{ kpis.value|inr_short }}</div><div class="l">Order Value
+      {% if kpis.value_delta is not None %}<span class="delta {% if kpis.value_delta >= 0 %}up{% else %}down{% endif %}">{% if kpis.value_delta >= 0 %}▲{% else %}▼{% endif %}{{ kpis.value_delta }}%</span>{% endif %}</div></div>
+    <div class="hk"><div class="n">{{ extra.avg_po_value|inr_short }}</div><div class="l">Avg PO Value</div></div>
+
+    <div class="hk"><div class="n">{{ kpis.marketplaces|default:0 }}</div><div class="l">Channels</div></div>
+    <div class="hk today" tabindex="0">
+      <div class="n">{{ today.pos }}</div>
+      <div class="l">Received Today <span class="sub">· {{ today.value|inr_short }}</span></div>
+      <div class="hk-pop">
+        <div class="pop-h">Today's intake · by segment</div>
+        {% for s in today.by_segment %}
+          <div class="pop-r"><span class="pop-seg {% if s.segment == 'Offline' %}off{% else %}on{% endif %}">{{ s.segment }}</span>
+            <span class="pop-v">{{ s.pos }} POs · {{ s.value|inr_short }}</span></div>
+        {% empty %}<div class="pop-r muted">No orders received yet today.</div>{% endfor %}
+      </div>
+    </div>
+    <div class="hk"><div class="n">{{ extra.week_pos }}</div><div class="l">Received · 7d</div></div>
+    <a class="hk" href="{% url 'b2b_lines' %}"><div class="n">{{ extra.order_lines|compact }}</div><div class="l">Line Items</div></a>
+
+    <div class="hk"><div class="n">{{ kpis.expiring_soon|default:0 }}</div><div class="l">Expiring ≤7d</div></div>
+    <a class="hk warn" href="{% url 'b2b_issues' %}"><div class="n">{{ kpis.needs_attention|default:0 }}</div><div class="l">Needs attention</div></a>
+    <a class="hk warn" href="{% url 'b2b_issues' %}"><div class="n">{{ issue_count }}</div><div class="l">Issue Lines</div></a>
+    <a class="hk good" href="{% url 'b2b_issues' %}?resolution=resolved"><div class="n">{{ extra.resolved }}</div><div class="l">Resolved</div></a>
+  </div>
+
+  <!-- two group cards: Online B2B / Offline -->
+  <div class="hub-groups reveal">
+    <a class="group-card gc-online" href="{% url 'b2b_online' %}">
+      <div class="gc-head"><h2>Online B2B</h2><span class="gc-go">Open →</span></div>
+      <p class="gc-sub">Marketplace POs → SO / D365 · validation &amp; issues</p>
+      <div class="gc-stat"><b>{{ online_kpis.pos }}</b> POs · <b>{{ online_kpis.value|inr_short }}</b> · {{ online_kpis.qty|compact }} qty</div>
+      <div class="gc-chips">
+        {% for c in online_channels %}<span class="chip {{ c.tag }}">{{ c.name }}{% if c.tag == 'soon' %} · soon{% endif %}</span>{% endfor %}
+      </div>
+    </a>
+    <a class="group-card gc-offline" href="{% url 'b2b_offline' %}">
+      <div class="gc-head"><h2>Offline</h2><span class="gc-go">Open →</span></div>
+      <p class="gc-sub">MT / GT channels → SO generation · recorded to the same DB</p>
+      <div class="gc-stat"><b>{{ offline_kpis.pos }}</b> POs · <b>{{ offline_kpis.value|inr_short }}</b> · {{ offline_kpis.qty|compact }} qty</div>
+      <div class="gc-chips">
+        {% for c in offline_channels %}<span class="chip {{ c.tag }}">{{ c.name }}</span>{% endfor %}
+      </div>
+    </a>
+  </div>
+
+  <!-- recent activity — fills the page, gives an at-a-glance live feed -->
+  <div class="hub-recent reveal">
+    <div class="hr-head"><h2>Recent activity</h2><a href="{% url 'b2b_orders' %}" class="seelink">All orders →</a></div>
+    <table class="grid compact">
+      <thead><tr><th>Channel</th><th>Segment</th><th>PO / SO</th><th class="r">Qty</th><th class="r">Value</th><th>Recorded</th></tr></thead>
+      <tbody>
+        {% for r in recent %}
+        <tr>
+          <td><a href="{% url 'b2b_orders' %}?marketplace={{ r.marketplace|urlencode }}" class="mp">{{ r.marketplace }}</a></td>
+          <td><span class="seg-tag {% if r.segment == 'Offline' %}off{% else %}on{% endif %}">{{ r.segment }}</span></td>
+          <td class="mono">{% if r.run_id %}<a href="{% url 'b2b_run_detail' run_id=r.run_id %}" class="po">{{ r.po }}</a>{% else %}{{ r.po }}{% endif %}</td>
+          <td class="r">{{ r.qty }}</td>
+          <td class="r">{{ r.value|inr_short }}</td>
+          <td class="muted">{{ r.when|date:"d M · g:i a" }}</td>
+        </tr>
+        {% empty %}<tr><td colspan="6" class="muted">No orders yet.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% endif %}
+</div>
+{% endblock %}

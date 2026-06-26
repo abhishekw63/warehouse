@@ -1,0 +1,184 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static b2b_extras %}
+{% block title %}Item Master — Order Management{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_dashboard' %}"> / Order Management</a> <span>/ Item Master</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap b2b-wide">
+  <div class="b2b-head">
+    <div>
+      <h1>Item Master <span>· DB</span></h1>
+      <p class="src">Calculated from the two ERP exports — <b>Items</b> + <b>Item M.R.P.</b> The engine reads this DB master directly · no manual Excel.</p>
+    </div>
+    <div class="head-actions">
+      <a href="{% url 'b2b_dashboard' %}" class="btn-ghost">← Hub</a>
+    </div>
+  </div>
+
+  {% if status.ok %}
+  <div class="im-kpis reveal">
+    <div class="im-kpi k1"><span class="im-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span>
+      <div><div class="n">{{ status.count }}</div><div class="l">Items in master</div></div></div>
+    <div class="im-kpi k2"><span class="im-ic">{% include 'online_b2b/_icons.html' with i='hash' %}</span>
+      <div><div class="n">{{ status.swiggy_mapped }}</div><div class="l">Swiggy-mapped</div></div></div>
+    <div class="im-kpi k3"><span class="im-ic">{% include 'online_b2b/_icons.html' with i='search' %}</span>
+      <div><div class="n">{{ status.swiggy_map_rows }}</div><div class="l">Swiggy map size</div></div></div>
+    <div class="im-kpi k4"><span class="im-ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span>
+      <div><div class="n">{% if status.last_updated %}{{ status.last_updated|date:"d M · H:i" }}{% else %}—{% endif %}</div><div class="l">Last rebuilt</div></div></div>
+  </div>
+  {% else %}
+  <div class="banner err">Item master DB unavailable{% if status.error %} — {{ status.error }}{% endif %}.</div>
+  {% endif %}
+
+  <!-- Upload / refresh -->
+  <div class="im-card reveal">
+    <h2>Upload / refresh</h2>
+    <p class="im-sub">Provide both ERP exports. We take the <b>effective MRP</b> (the price active today), join it to the item attributes, and fully rebuild the master. Swiggy codes &amp; hand-added items are preserved across rebuilds.</p>
+    <form method="post" action="{% url 'b2b_item_master_upload' %}" enctype="multipart/form-data" class="im-up">
+      {% csrf_token %}
+      <label class="im-file">
+        <span class="imf-l">① Items export</span>
+        <input type="file" name="items_file" accept=".xlsx,.xls" required>
+        <span class="imf-h">No., GTIN, Description, GST, HSN…</span>
+      </label>
+      <label class="im-file">
+        <span class="imf-l">② Item M.R.P. export</span>
+        <input type="file" name="mrp_file" accept=".xlsx,.xls" required>
+        <span class="imf-h">Item No., M.R.P., Start / End dates</span>
+      </label>
+      <button type="submit" class="btn-primary">Preview &amp; rebuild →</button>
+    </form>
+  </div>
+
+  <!-- Overview + add -->
+  <div class="im-card reveal">
+    <div class="im-ovh">
+      <h2>Overview <span class="count">{{ overview.total }}</span></h2>
+      <div class="im-tools">
+        <div class="im-search">
+          <span class="ims-ic">{% include 'online_b2b/_icons.html' with i='search' %}</span>
+          <input type="text" id="imq" value="{{ overview.q }}" placeholder="Search item no / EAN / description / Swiggy…" autocomplete="off">
+          <span class="ims-spin" id="imspin" hidden></span>
+        </div>
+        <button type="button" class="btn-primary" id="im-addbtn">＋ Add item</button>
+      </div>
+    </div>
+
+    <!-- inline add panel -->
+    <form method="post" action="{% url 'b2b_item_master_add' %}" class="im-add" id="im-addpanel">
+      {% csrf_token %}
+      <div class="im-addgrid">
+        <label><span>Item No <b class="req">*</b></span><input type="text" name="item_no" required placeholder="e.g. 200999"></label>
+        <label><span>EAN</span><input type="text" name="ean" placeholder="barcode"></label>
+        <label class="wide"><span>Description</span><input type="text" name="description" placeholder="RENEE …"></label>
+        <label><span>MRP</span><input type="number" step="0.01" name="mrp" placeholder="0.00"></label>
+        <label><span>GST code</span>
+          <select name="gst_code">
+            <option value="">—</option>
+            <option>G-18-S</option><option>G-18</option><option>G-5-S</option>
+            <option>G-5</option><option>G-12</option><option>G-3</option><option>0-G</option>
+          </select></label>
+        <label><span>HSN</span><input type="text" name="hsn" placeholder="8-digit"></label>
+        <label><span>Swiggy SKU</span><input type="text" name="swiggy_sku_code" placeholder="optional"></label>
+        <label><span>MRP start</span><input type="date" name="mrp_start"></label>
+        <label><span>MRP end</span><input type="date" name="mrp_end"></label>
+      </div>
+      <div class="im-addfoot">
+        <span class="im-addnote">Kept across rebuilds until your ERP export includes this item.</span>
+        <div>
+          <button type="button" class="btn-clear" id="im-addcancel">Cancel</button>
+          <button type="submit" class="btn-primary">Save item</button>
+        </div>
+      </div>
+    </form>
+
+    <p class="im-sub" id="im-shown">Showing {{ overview.shown }} of {{ overview.total }}{% if overview.q %} matching “{{ overview.q }}”{% endif %}.</p>
+    <div class="scroll im-tablewrap">
+    <table class="grid compact im-table">
+      <thead><tr><th>Item No</th><th>EAN</th><th>Description</th><th class="r">MRP</th><th>GST</th><th>HSN</th><th>Swiggy SKU</th><th>MRP window</th></tr></thead>
+      <tbody id="im-tbody">
+        {% for r in overview.rows %}
+        <tr>
+          <td class="mono">{{ r.item_no }}</td>
+          <td class="mono">{{ r.ean|default:'—' }}</td>
+          <td class="desc" title="{{ r.description }}">{{ r.description }}</td>
+          <td class="r">{{ r.mrp|default_if_none:'—' }}</td>
+          <td>{{ r.gst_code|default:'—' }}</td>
+          <td class="mono">{{ r.hsn|default:'—' }}</td>
+          <td class="mono">{{ r.swiggy_sku_code|default:'—' }}</td>
+          <td class="muted">{% if r.mrp_start %}{{ r.mrp_start }} → {{ r.mrp_end }}{% else %}—{% endif %}</td>
+        </tr>
+        {% empty %}<tr><td colspan="8" class="muted">{% if status.count %}No items match.{% else %}Master is empty — upload the two files above to build it.{% endif %}</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  // ── Add-item panel toggle ──
+  var addBtn = document.getElementById('im-addbtn');
+  var panel  = document.getElementById('im-addpanel');
+  var cancel = document.getElementById('im-addcancel');
+  if (addBtn && panel) {
+    addBtn.addEventListener('click', function () {
+      panel.classList.toggle('open');
+      if (panel.classList.contains('open')) {
+        var f = panel.querySelector('input[name=item_no]'); if (f) f.focus();
+      }
+    });
+  }
+  if (cancel && panel) cancel.addEventListener('click', function () { panel.classList.remove('open'); });
+
+  // ── Live (as-you-type) search ──
+  var input = document.getElementById('imq');
+  var tbody = document.getElementById('im-tbody');
+  var shown = document.getElementById('im-shown');
+  var spin  = document.getElementById('imspin');
+  if (!input || !tbody) return;
+  var URL = "{% url 'b2b_item_master_search' %}";
+  var timer = null, ctl = null;
+
+  function esc(s) { var d = document.createElement('div'); d.textContent = (s == null ? '' : s); return d.innerHTML; }
+  function render(data) {
+    if (!data.rows.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="muted">No items match.</td></tr>';
+    } else {
+      tbody.innerHTML = data.rows.map(function (r) {
+        var win = r.mrp_start ? (esc(r.mrp_start) + ' → ' + esc(r.mrp_end)) : '—';
+        var mrp = (r.mrp == null) ? '—' : r.mrp;
+        return '<tr><td class="mono">' + esc(r.item_no) + '</td>' +
+          '<td class="mono">' + (esc(r.ean) || '—') + '</td>' +
+          '<td class="desc" title="' + esc(r.description) + '">' + esc(r.description) + '</td>' +
+          '<td class="r">' + mrp + '</td>' +
+          '<td>' + (esc(r.gst_code) || '—') + '</td>' +
+          '<td class="mono">' + (esc(r.hsn) || '—') + '</td>' +
+          '<td class="mono">' + (esc(r.swiggy_sku_code) || '—') + '</td>' +
+          '<td class="muted">' + win + '</td></tr>';
+      }).join('');
+    }
+    shown.textContent = 'Showing ' + data.shown + ' of ' + data.total +
+      (data.q ? (' matching “' + data.q + '”') : '');
+  }
+  function go() {
+    var q = input.value.trim();
+    if (spin) spin.hidden = false;
+    if (ctl) ctl.abort();
+    ctl = (window.AbortController ? new AbortController() : null);
+    fetch(URL + '?q=' + encodeURIComponent(q), {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      signal: ctl ? ctl.signal : undefined
+    }).then(function (r) { return r.json(); })
+      .then(function (data) { render(data); if (spin) spin.hidden = true; })
+      .catch(function () { if (spin) spin.hidden = true; });
+  }
+  input.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(go, 160); });
+})();
+</script>
+{% endblock %}

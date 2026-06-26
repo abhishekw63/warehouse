@@ -1,0 +1,171 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static b2b_extras %}
+{% block title %}Rules & Exceptions — Order Management{% endblock %}
+{% block extra_css %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_dashboard' %}"> / Order Management</a> <span>/ Rules &amp; Exceptions</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap b2b-wide">
+
+  <div class="b2b-head">
+    <div>
+      <h1>Rules &amp; Exceptions <span>· Reference</span></h1>
+      <p class="src">How every marketplace is validated — margins, basis, exceptions, and the decisions you can take. Pulled live from the engine config, so it never drifts.</p>
+    </div>
+    <div class="head-actions">
+      <a href="{% url 'b2b_dashboard' %}" class="btn-ghost">← Hub</a>
+      <a href="{% url 'b2b_upload' %}" class="btn-primary">＋ Process PO</a>
+    </div>
+  </div>
+
+  <!-- ── 1. How validation works ── -->
+  <div class="rule-card reveal">
+    <div class="rc-head"><span class="rc-no">1</span><h2>How a line is validated</h2></div>
+    <p class="rc-lead">Every marketplace ships a vendor price. The engine computes <b>our</b> price from the item's MRP and the marketplace's margin, then compares. If they agree (within tolerance) the line is <span class="pill ok">OK</span>; if not, it's a <span class="pill mis">MISMATCH</span> for you to decide on.</p>
+
+    <div class="rc-grid2">
+      <div class="basis-box">
+        <div class="bb-tag bb-land">Landing basis</div>
+        <p>Used by Blinkit, Flipkart, Myntra… The check is <b>pre-GST</b>.</p>
+        <div class="formula">Our Landing = MRP × margin%</div>
+        <div class="eg"><b>Example</b> — MRP <b>₹500</b>, margin <b>70%</b><br>
+          → Our Landing = 500 × 0.70 = <b>₹350</b><br>
+          Vendor landing ₹350 → <span class="pill ok">OK</span> · ₹380 → <span class="pill mis">MISMATCH</span> (diff ₹30)</div>
+      </div>
+      <div class="basis-box">
+        <div class="bb-tag bb-cost">Cost basis</div>
+        <p>Used by RK, Blink, Reliance… The check is <b>post-GST</b> (cost price).</p>
+        <div class="formula">Our CP = MRP × margin% ÷ (1 + GST)</div>
+        <div class="eg"><b>Example</b> — MRP <b>₹500</b>, margin <b>70%</b>, GST <b>18%</b><br>
+          → Our CP = 500 × 0.70 ÷ 1.18 = <b>₹296.61</b><br>
+          Vendor CP ₹296.61 → <span class="pill ok">OK</span> · ₹236.69 → <span class="pill mis">MISMATCH</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 2. Per-marketplace rules ── -->
+  <div class="rule-card reveal">
+    <div class="rc-head"><span class="rc-no">2</span><h2>Marketplace rules</h2>
+      <span class="rc-sub">{{ rules|length }} configured · <span class="pill live">live</span> = wired into Process PO</span></div>
+    <div class="scroll">
+    <table class="grid rule-tbl">
+      <thead><tr><th>Marketplace</th><th>Party</th><th class="r">Margin</th><th>Compare basis</th><th>Vendor label</th><th>Item match</th><th>Special</th></tr></thead>
+      <tbody>
+        {% for m in rules %}
+        <tr>
+          <td><b>{{ m.name }}</b>{% if m.pilot %} <span class="pill live">live</span>{% endif %}</td>
+          <td class="mono">{{ m.party }}</td>
+          <td class="r"><b>{{ m.margin }}%</b></td>
+          <td>{% if 'Landing' in m.basis %}<span class="basis-badge b-landing">Landing</span>{% else %}<span class="basis-badge b-cp">Cost</span>{% endif %} <span class="muted">{{ m.basis }}</span></td>
+          <td>{{ m.compare_label|default:'—' }}</td>
+          <td><span class="mono">{{ m.item }}</span></td>
+          <td>{% if m.gst_discount %}<span class="tagx">GST-margin {{ m.gst_discount }}</span>{% endif %}{% if m.parser %}<span class="tagx">{{ m.parser }} parser</span>{% endif %}{% if not m.gst_discount and not m.parser %}—{% endif %}</td>
+        </tr>
+        {% empty %}<tr><td colspan="7" class="muted">Engine config not available on this host.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="rc-foot">“Item match = <b>from_ean</b>” means the item is resolved by its EAN against the master; “mapping” means a name/SKU map.</p>
+  </div>
+
+  <!-- ── 3. Marketplace-specific exceptions ── -->
+  <div class="rule-card reveal">
+    <div class="rc-head"><span class="rc-no">3</span><h2>Marketplace-specific exceptions <span class="rc-sub">— auto-detected; the engine tags <span class="mono">exception_label</span></span></h2></div>
+    <p class="rc-lead"><b>Not every line follows the flat marketplace margin.</b> The engine recognises these named cases and prices / accepts them correctly — so a "deviation" here is <b>expected</b>, not an error. Don't assume the standard rate always applies.</p>
+    <div class="exc-grid">
+
+      <!-- Reliance: GST-dependent margin (computed live from config) -->
+      {% for m in gst_margin_rules %}
+      <div class="exc-card e-gst">
+        <div class="exc-h">{{ m.name }} · GST-dependent margin</div>
+        <p>{{ m.name }}'s keep% isn't flat — it <b>changes with each item's GST rate</b>: <span class="formula-inline">1 − {{ m.gst_discount }} × (1 + GST)</span>. Lower GST → higher margin. The rules table shows <b>{{ m.margin }}%</b> only because that's the 18% case.</p>
+        <div class="eg"><b>Per-GST margin:</b><br>
+          {% for g in m.gst_margin %}<span class="gpill">{{ g.gst }}% GST → <b>{{ g.pct }}%</b></span>{% endfor %}</div>
+      </div>
+      {% endfor %}
+
+      <!-- Blinkit EPISENSE -->
+      <div class="exc-card e-over">
+        <div class="exc-h">Blinkit · EPISENSE deal</div>
+        <p>Blinkit's <b>EPISENSE</b> promo prices a SKU off a <b>deal MRP</b> at a special landing%, not the master MRP at the flat 70%. Recorded as a price override so the line isn't flagged as a mismatch.</p>
+        <div class="eg">Deal <b>MRP ₹899 @ 76%</b> (a 24% discount) instead of the master's ₹1099 @ 70%. The engine expects the deal figure for that line.</div>
+      </div>
+
+      <!-- Swiggy deal SKUs -->
+      <div class="exc-card e-deal">
+        <div class="exc-h">Swiggy · Deal SKUs</div>
+        <p>Swiggy negotiates <b>per-SKU deal prices</b> that don't follow the default MRP × margin. Loaded from the <span class="mono">Swiggy Deal SKUs</span> sheet, keyed by EAN → the agreed <b>Cost after GST</b> is taken as our CP.</p>
+        <div class="eg">A campaign SKU carries an explicit deal cost; the engine uses that exact figure instead of recomputing from MRP.</div>
+      </div>
+
+      <!-- Myntra Goddess -->
+      <div class="exc-card e-vcp">
+        <div class="exc-h">Myntra · Goddess (Use Vendor CP)</div>
+        <p>For tagged items (e.g. RENEE <b>Goddess</b> perfume) the <b>vendor's stated cost is authoritative</b>: validation accepts it (no mismatch) and the D365 Unit Price is written from the vendor CP.</p>
+        <div class="eg">Myntra's Goddess line ships at the vendor's CP as-is — the engine doesn't force the standard margin.</div>
+      </div>
+
+      <!-- EAN remap (generic) -->
+      <div class="exc-card e-remap">
+        <div class="exc-h">EAN remap <span class="exc-scope">any marketplace</span></div>
+        <p>A punch's EAN is <b>remapped</b> to the correct master item (barcode changed / duplicate EAN) via the central <span class="mono">Master Exceptions</span> file.</p>
+        <div class="eg">Vendor EAN 8906121640885 → master 8906121640885_1 → resolves to the right item so the SO is correct.</div>
+      </div>
+
+    </div>
+    <p class="rc-foot">These live in the engine config (Reliance) or the central <span class="mono">Master Exceptions.xlsx</span> / <span class="mono">Swiggy Deal SKUs</span> overlay — edit one place and every marketplace's output reflects it.</p>
+  </div>
+
+  <!-- ── 4. Your decisions on a mismatch ── -->
+  <div class="rule-card reveal">
+    <div class="rc-head"><span class="rc-no">4</span><h2>Your decisions on a mismatch <span class="rc-sub">— drive the D365 dump</span></h2></div>
+    <p class="rc-lead">When a line is <span class="pill mis">MISMATCH</span>, you pick one on the review screen. The full SO Workbook always keeps every line; only the <b>D365 dump</b> reflects your choice.</p>
+    <div class="dec-grid">
+      <div class="dec-card d-inc">
+        <div class="dec-h">Include <span class="dec-i">as-is</span></div>
+        <p>Ship it with <b>our</b> computed price; you accept the difference.</p>
+        <div class="eg">Our CP ₹147.71, theirs ₹236.69 → D365 line uses <b>₹147.71</b>.</div>
+      </div>
+      <div class="dec-card d-ovr">
+        <div class="dec-h">Override <span class="dec-i">set CP</span></div>
+        <p>Include it, but with <b>the CP you enter</b> (the box pre-fills with vendor's <i>Their CP</i>, editable).</p>
+        <div class="eg">You set CP = ₹236.69 → D365 line Unit Price = <b>₹236.69</b>.</div>
+      </div>
+      <div class="dec-card d-exc">
+        <div class="dec-h">Exclude <span class="dec-i">drop</span></div>
+        <p>Leave the line <b>out</b> of the D365 dump entirely (still in the full workbook for audit).</p>
+        <div class="eg">Vendor price clearly wrong → excluded; ERP never sees it.</div>
+      </div>
+    </div>
+    <p class="rc-foot">The DB keeps the original forever: <span class="mono">status=MISMATCH</span>, <span class="mono">diff</span>, plus your <span class="mono">action / override_cp / remark / decided_at</span> — so you always know it <i>was</i> problematic and what you did.</p>
+  </div>
+
+  {% if locations %}
+  <!-- ── 5. Flipkart location map ── -->
+  <div class="rule-card reveal">
+    <div class="rc-head"><span class="rc-no">5</span><h2>Flipkart · Origin Warehouse → sub-marketplace</h2>
+      <span class="rc-sub">locked map — unknown locations get <b>FK (review)</b>, never blank</span></div>
+    <div class="scroll" style="max-height:340px;">
+    <table class="grid compact rule-tbl">
+      <thead><tr><th>Origin Warehouse code</th><th>Sub-marketplace</th></tr></thead>
+      <tbody>
+        {% for l in locations %}
+        <tr><td class="mono">{{ l.loc }}</td>
+          <td><span class="basis-badge {% if 'Grocery' in l.mkt %}b-cp{% else %}b-landing{% endif %}">{{ l.mkt }}</span></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

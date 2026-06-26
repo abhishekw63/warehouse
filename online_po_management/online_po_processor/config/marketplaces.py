@@ -276,16 +276,18 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
         # config drives both formats. The PDF also injects real PO dates
         # (__po_date__ / __exp_date__) the Excel punch lacks.
         #
-        # v2.4.1: PDF is now the operator's PRIMARY Myntra format, so
-        # ``.pdf`` leads ``accepted_extensions`` (the file picker defaults
-        # to PDF; Excel stays selectable). Each Myntra PO is its own PDF,
-        # so Myntra is treated as MULTI-FILE — pick/drop many PDFs → one
-        # combined SO batch (see ``_supports_multi_file`` in the GUI and
-        # the dual-format branch in ``auto_runner._run_one``). The
-        # single-dump Excel path is unchanged (one xlsx already holds all
-        # POs; multiple xlsx are simply concatenated via process_multi).
+        # 2026-06-25: REVERTED to Excel-primary. The operator now manually
+        # compiles Myntra's PO PDFs into one accurate ``dump.xlsx`` (the PDF
+        # parser occasionally mis-reads the line grid — e.g. two EANs merged on
+        # a page wrap), so ``.xlsx`` LEADS ``accepted_extensions`` (the file
+        # picker defaults to Excel; the compiled dump holds ALL POs in one file).
+        # ``pdf_parser='myntra'`` is KEPT as a still-selectable FALLBACK only —
+        # the same config drives both, since the PDF parser emits the same column
+        # names the Excel carries (GTIN / Quantity / Landing Price / Mrp /
+        # Location). Each PDF is one PO, so Myntra stays multi-file; the
+        # single-dump Excel flows through process_multi unchanged.
         'pdf_parser': 'myntra',
-        'accepted_extensions': ['.pdf', '.xlsx'],
+        'accepted_extensions': ['.xlsx', '.pdf'],
         # v1.8.1: Myntra's dashboard exports have historically varied
         # the case of column headers between dumps. We've seen at
         # least three casings of the PO column header ('PO', 'PO

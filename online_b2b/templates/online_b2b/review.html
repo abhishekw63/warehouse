@@ -1,0 +1,662 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static b2b_extras %}
+{% block title %}Online B2B — Review{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_dashboard' %}"> / Online B2B</a> <span>/ Review</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap">
+  <div class="b2b-head">
+    <div>
+      <h1>Review <span>· {{ meta.marketplace }}</span></h1>
+      <p class="src">Warehouse {{ meta.warehouse }} · margin {{ meta.margin_pct }}% · nothing is written until you confirm.</p>
+    </div>
+    <a href="{% url 'b2b_upload' %}" class="back">← New upload</a>
+  </div>
+
+  {% if not r.ok %}
+    <div class="banner err" style="margin-top:18px;">{{ r.error|default:'Could not process the upload.' }}</div>
+    <form method="post" action="{% url 'b2b_discard' token=token %}" style="margin-top:14px;">{% csrf_token %}
+      <button class="btn-clear" type="submit">Discard upload</button></form>
+  {% else %}
+  {% with s=r.summary %}
+
+  <div class="kpis" style="grid-template-columns:repeat(6,1fr);">
+    <div class="card c1"><span class="ic">{% include 'online_b2b/_icons.html' with i='po' %}</span><div><div class="n">{{ s.pos }}</div><div class="l">POs</div></div></div>
+    <div class="card c3"><span class="ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><div><div class="n">{{ s.lines }}</div><div class="l">Line items</div></div></div>
+    <div class="card c5"><span class="ic">{% include 'online_b2b/_icons.html' with i='hash' %}</span><div><div class="n">{{ s.qty|compact }}</div><div class="l">Qty</div></div></div>
+    <div class="card c4"><span class="ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><div><div class="n">{{ s.value|inr_short }}</div><div class="l">Value</div></div></div>
+    <div class="card c6"><span class="ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><div><div class="n">{{ s.affected }}</div><div class="l">Affected</div></div></div>
+    <div class="card c8"><span class="ic">{% include 'online_b2b/_icons.html' with i='refresh' %}</span><div><div class="n">{{ s.skipped }}</div><div class="l">Already up.</div></div></div>
+  </div>
+
+  {% if exc_count or s.affected %}
+  <div class="exc-poke">
+    <span class="exc-poke-ic">⚠</span>
+    <div class="exc-poke-txt">
+      <b>Heads up — not every line is the flat {{ margin }}% rule.</b>
+      {% if exc_count %}<span class="exc-poke-n">{{ exc_count }}</span> engine exception(s) <span class="muted">(vendor deal / override / EAN remap)</span>{% endif %}{% if exc_count and s.affected %} · {% endif %}{% if s.affected %}<span class="exc-poke-n">{{ s.affected }}</span> mismatch(es) need a decision{% endif %}.
+    </div>
+    <a href="{% url 'b2b_rules' %}" class="exc-poke-link" target="_blank">See the rules →</a>
+  </div>
+  {% endif %}
+
+  {% if auto_fixed %}
+  <!-- TEMP fix alert: a previously-seen wrong EAN auto-resolved -->
+  <div class="ean-temp reveal">
+    <span class="et-ic">🩹</span>
+    <div class="et-txt">
+      <b>{{ auto_fixed|length }} line(s) auto-corrected from a wrong EAN.</b>
+      The vendor sent a barcode we'd already fixed, so it resolved automatically — but <b>this is a temporary fix</b>. The permanent fix is the vendor sending the correct EAN. Escalate the repeats below:
+      <ul class="et-list">
+        {% for l in auto_fixed %}
+        <li><span class="mono et-wrong">{{ l.received_ean }}</span> → <span class="mono">{{ l.ean }}</span> · {{ l.item_no }} <span class="muted">{{ l.description|truncatechars:40 }}</span> — received <b>{{ l.recv_count }}×</b> before</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Discard: a STANDALONE minimal form (csrf only). Discard needs no line
+       data — the token is in the URL — so it must NOT carry the big confirm-form
+       payload (hundreds of decision fields on a large PO → TooManyFieldsSent /
+       slow). The Discard button below lives inside confirm-form but targets THIS
+       form via the HTML5 form= attribute. -->
+  <form id="discard-form" method="post" action="{% url 'b2b_discard' token=token %}">{% csrf_token %}</form>
+
+  <!-- Confirm bar -->
+  <form id="confirm-form" method="post" action="{% url 'b2b_confirm' token=token %}">{% csrf_token %}
+  <div class="confirm-bar{% if locked %} locked{% endif %}" id="confirmBar">
+    <div class="cb-text">
+      {% if locked %}
+        🔒 <b>Decisions locked &amp; recorded</b> (run #{{ run_id }}). Generate the ERP <b>D365 dump</b> (Excludes dropped, Overrides repriced), or download the full SO Workbook.
+      {% else %}
+        {% if s.affected %}<span class="cb-warn">⚠ {{ s.affected }} affected line(s)</span> — decide each (Include / Override / Exclude) in the <b>Affected</b> tab, then{% endif %}
+        lock &amp; record <b>{{ s.pos }} PO(s)</b> · <b>{{ s.lines }} line(s)</b>.
+        {% if s.skipped %}<span class="cb-muted">({{ s.skipped }} already uploaded → will skip)</span>{% endif %}
+      {% endif %}
+    </div>
+    <div class="cb-actions">
+      {% if has_preview %}<a href="{% url 'b2b_review_download' token=token %}" class="btn-ghost">⬇ Download SO Workbook</a>{% endif %}
+      {% if locked %}
+        <a href="{% url 'b2b_run_detail' run_id=run_id %}" class="btn-ghost">View run →</a>
+        <button class="btn-primary" type="submit" formaction="{% url 'b2b_generate_d365' token=token %}" formnovalidate onclick="var b=this;b.innerHTML='<span class=&quot;btn-spin&quot;></span> Generating…';setTimeout(function(){b.innerHTML='⬇ Generate D365 dump';},4500);">⬇ Generate D365 dump</button>
+      {% else %}
+        <button class="btn-discard" type="submit" form="discard-form" formnovalidate>Discard</button>
+        <button class="btn-primary" id="lockBtn" type="button">🔒 Lock &amp; Record</button>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if r.warnings %}
+  <details class="warnbox" style="margin-bottom:16px;">
+    <summary><strong>{{ r.warnings|length }} warning(s)</strong> — click to view</summary>
+    <ul>{% for w in r.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab on" data-tab="lines">Line items <span class="tcount">{{ r.lines|length }}</span></button>
+    <button class="tab" data-tab="orders">Orders <span class="tcount">{{ r.headers|length }}</span></button>
+    <button class="tab" data-tab="affected">Affected <span class="tcount">{{ r.affected|length }}</span></button>
+    <button class="tab" data-tab="skipped">Already uploaded <span class="tcount">{{ r.skipped|length }}</span></button>
+  </div>
+
+  <!-- Line items -->
+  <div class="tabpane on" data-pane="lines">
+    <div class="scroll">
+    <table class="grid">
+      <thead><tr><th>PO</th><th>Item No</th><th>EAN</th><th>Description</th><th class="r">Qty</th>
+        <th class="r">Our MRP</th><th class="r">Their MRP</th>
+        <th class="r">Our Land</th><th class="r">Their Land</th>
+        <th class="r">Our CP</th><th class="r">Their CP</th>
+        <th class="r">Diff</th><th>Basis</th><th>Status</th><th>Decision</th><th>Exception</th></tr></thead>
+      <tbody>
+        {% for l in r.lines %}
+        <tr class="{% if l.decision.action == 'EXCLUDE' %}rexcl{% elif l.status == 'MISMATCH' %}rmis{% elif l.status == 'NOT_IN_MASTER' %}rnim{% endif %}">
+          <td class="mono">{{ l.po }}</td><td class="mono">{{ l.item_no|default:'—' }}</td><td class="mono">{{ l.ean }}</td>
+          <td class="desc" title="{{ l.description }}">{{ l.description }}</td><td class="r">{{ l.qty }}</td>
+          <td class="r">{{ l.our_mrp|default_if_none:'—' }}</td><td class="r">{{ l.vendor_mrp|default_if_none:'—' }}</td>
+          <td class="r {% if l.basis == 'Landing' %}basis-on{% endif %}">{{ l.our_landing|default_if_none:'—' }}</td><td class="r {% if l.basis == 'Landing' %}basis-on{% endif %}">{{ l.vendor_landing|default_if_none:'—' }}</td>
+          <td class="r {% if l.basis == 'CP' %}basis-on{% endif %}">{{ l.our_cp|default_if_none:'—' }}</td><td class="r {% if l.basis == 'CP' %}basis-on{% endif %}">{{ l.vendor_cp|default_if_none:'—' }}</td>
+          <td class="r {% if l.diff %}diff{% endif %}">{{ l.diff|default_if_none:'—' }}</td>
+          <td>{% if l.basis %}<span class="basis-badge b-{{ l.basis|lower }}">{{ l.basis }}</span>{% endif %}</td>
+          <td><span class="st {{ l.status|lower }}">{{ l.status|default:'OK' }}</span></td>
+          <td>
+            {% if l.decision.action == 'EXCLUDE' %}<span class="dec dec-excl" title="dropped from the D365 dump (kept in the SO Workbook)">⊘ Excluded</span>
+            {% elif l.decision.action == 'OVERRIDE' %}<span class="dec dec-ovr" title="included at an operator CP">✎ Override{% if l.decision.override_cp %} @ {{ l.decision.override_cp }}{% endif %}</span>
+            {% elif l.decision.action == 'INCLUDE' %}<span class="dec dec-inc" title="included as-is (flagged)">✓ Included</span>
+            {% elif l.status == 'MISMATCH' or l.status == 'NOT_IN_MASTER' %}<span class="dec dec-need" title="affected — set a decision on the Affected tab">● needs decision</span>
+            {% else %}<span class="dec dec-ok" title="clean — ready to go">ready</span>{% endif %}
+          </td>
+          <td>{% if l.exception_label %}<span class="exc">{{ l.exception_label }}</span>{% endif %}</td>
+        </tr>
+        {% empty %}<tr><td colspan="16" class="muted">No line items.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <!-- Orders -->
+  <div class="tabpane" data-pane="orders" style="display:none;">
+    <table class="grid">
+      <thead><tr><th>PO</th><th>Location</th><th>Type</th><th class="r">Items</th><th class="r">Qty</th><th class="r">Value</th></tr></thead>
+      <tbody>
+        {% for h in r.headers %}
+        <tr><td class="mono">{{ h.po }}</td><td class="loc" title="{{ h.location }}">{{ h.location }}</td>
+          <td><span class="pill {{ h.order_type|lower }}">{{ h.order_type }}</span></td>
+          <td class="r">{{ h.items }}</td><td class="r">{{ h.qty }}</td><td class="r">{{ h.order_value|inr_short }}</td></tr>
+        {% empty %}<tr><td colspan="6" class="muted">No orders.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Affected -->
+  <div class="tabpane" data-pane="affected" style="display:none;">
+    <p class="aff-hint">Decide each flagged line — drives the <b>D365 dump</b>: <b>Include</b> = as-is · <b>Override</b> = include with the CP you set (pre-filled with Their CP) · <b>Exclude</b> = drop from D365. A <b>NOT_IN_MASTER</b> line needs a <b>Correct EAN</b> (typed in its row) → Apply &amp; re-validate. The full SO Workbook keeps every line.</p>
+    {% if nim_lines and not locked %}
+    <div class="aff-eanbar">
+      <span>⛔ <b>{{ nim_lines|length }} line(s) not in master</b> — type the <b>Correct EAN</b> in the row(s) below, then</span>
+      <button type="submit" class="btn-primary" formaction="{% url 'b2b_fix_ean' token=token %}" formnovalidate>Apply EAN fixes &amp; re-validate →</button>
+    </div>
+    {% endif %}
+    {% if not locked %}
+    <!-- Bulk bar: tick rows → apply one decision to all of them at once -->
+    <div class="aff-bulk" id="affBulk">
+      <span class="abk-count"><b id="affCount">0</b> selected</span>
+      <span class="abk-grp">
+        <select id="bulkAction" class="act-sel">
+          <option value="">Action…</option>
+          <option value="INCLUDE">Include (as-is)</option>
+          <option value="OVERRIDE">Override CP</option>
+          <option value="EXCLUDE">Exclude (drop)</option>
+        </select>
+        <input id="bulkOcp" type="number" step="0.01" placeholder="Override CP" class="act-ocp abk-ocp" autocomplete="off">
+        <button type="button" id="bulkApplyAct" class="btn-mini">Apply to selected</button>
+      </span>
+      <span class="abk-sep">or</span>
+      <span class="abk-grp">
+        <input id="bulkEan" type="text" placeholder="Correct EAN / item no (same for all)" class="nim-input abk-ean" autocomplete="off">
+        <button type="button" id="bulkFillEan" class="btn-mini">Fill into selected</button>
+        <span class="abk-hint">then “Apply &amp; re-validate” ↑</span>
+      </span>
+      <span id="affBulkMsg" class="abk-msg" hidden></span>
+    </div>
+    {% endif %}
+    <div class="scroll">
+    <table class="grid">
+      <thead><tr><th class="chk-col">{% if not locked %}<input type="checkbox" id="affAll" title="select all">{% endif %}</th>
+        <th>PO</th><th>Item No</th><th>EAN</th><th>Description</th><th class="r">Qty</th>
+        <th class="r">Our MRP</th><th class="r">Their MRP</th>
+        <th class="r">Our Land</th><th class="r">Their Land</th>
+        <th class="r">Our CP</th><th class="r">Their CP</th>
+        <th class="r">Diff</th><th>Basis</th><th>Status</th>
+        <th>Action</th><th class="r">Override CP</th><th>Remark</th></tr></thead>
+      <tbody>
+        {% for l in r.affected %}
+        <tr class="{% if l.status == 'MISMATCH' %}rmis{% else %}rnim{% endif %}">
+          <td class="chk-col">{% if not locked %}<input type="checkbox" class="aff-chk" data-status="{{ l.status }}">{% endif %}</td>
+          <td class="mono">{{ l.po }}</td><td class="mono">{{ l.item_no|default:'—' }}</td><td class="mono">{{ l.ean }}</td>
+          <td class="desc" title="{{ l.description }}">{{ l.description }}</td><td class="r">{{ l.qty }}</td>
+          <td class="r">{{ l.our_mrp|default_if_none:'—' }}</td><td class="r">{{ l.vendor_mrp|default_if_none:'—' }}</td>
+          <td class="r {% if l.basis == 'Landing' %}basis-on{% endif %}">{{ l.our_landing|default_if_none:'—' }}</td><td class="r {% if l.basis == 'Landing' %}basis-on{% endif %}">{{ l.vendor_landing|default_if_none:'—' }}</td>
+          <td class="r {% if l.basis == 'CP' %}basis-on{% endif %}">{{ l.our_cp|default_if_none:'—' }}</td><td class="r {% if l.basis == 'CP' %}basis-on{% endif %}">{{ l.vendor_cp|default_if_none:'—' }}</td>
+          <td class="r diff">{{ l.diff|default_if_none:'—' }}</td>
+          <td>{% if l.basis %}<span class="basis-badge b-{{ l.basis|lower }}">{{ l.basis }}</span>{% endif %}</td>
+          <td><span class="st {{ l.status|lower }}">{{ l.status }}</span></td>
+          {% if l.status == 'NOT_IN_MASTER' %}
+          <td>
+            <input type="hidden" name="aff_key" value="{{ l.po }}|{{ l.item_no }}|{{ l.ean }}">
+            <select name="aff_action" class="act-sel"{% if locked %} disabled{% endif %}>
+              <option value="" {% if not l.decision.action %}selected{% endif %}>— set —</option>
+              <option value="EXCLUDE" {% if l.decision.action == 'EXCLUDE' %}selected{% endif %}>Exclude (drop)</option>
+            </select>
+            {# keep aff_override_cp / aff_remark present so confirm's index zip stays aligned #}
+            <input type="hidden" name="aff_override_cp" value="">
+            <input type="hidden" name="aff_remark" value="{{ l.decision.remark|default:'' }}">
+          </td>
+          <td colspan="2" class="nim-cell">
+            <input type="hidden" name="nim_ean" value="{{ l.ean }}">
+            <span class="nim-lbl">or Correct EAN:</span>
+            <input type="text" name="nim_fix" class="nim-input" placeholder="correct EAN / item no"{% if locked %} readonly{% endif %} autocomplete="off">
+            <span class="nim-hint">→ Apply &amp; re-validate ↑</span>
+            <span class="dec-saved"{% if not l.decision.action %} hidden{% endif %} title="decision saved">✓ set</span>
+          </td>
+          {% else %}
+          <td>
+            <input type="hidden" name="aff_key" value="{{ l.po }}|{{ l.item_no }}|{{ l.ean }}">
+            <select name="aff_action" class="act-sel"{% if locked %} disabled{% endif %}>
+              <option value="INCLUDE" {% if l.decision.action == 'INCLUDE' %}selected{% endif %}>Include (as-is)</option>
+              <option value="OVERRIDE" {% if l.decision.action == 'OVERRIDE' %}selected{% endif %}>Override CP</option>
+              <option value="EXCLUDE" {% if l.decision.action == 'EXCLUDE' %}selected{% endif %}>Exclude</option>
+            </select>
+          </td>
+          <td class="r"><input type="number" step="0.01" name="aff_override_cp" class="act-ocp"
+                value="{{ l.decision.override_cp|default:'' }}"
+                data-vendorcp="{{ l.vendor_cp|default_if_none:'' }}"
+                placeholder="{{ l.vendor_cp|default_if_none:'—' }}"
+                autocomplete="off"
+                {% if locked %}readonly{% elif l.decision.action != 'OVERRIDE' %}readonly{% endif %}></td>
+          <td><input type="text" name="aff_remark" class="act-rem" value="{{ l.decision.remark|default:'' }}" placeholder="remark…" autocomplete="off" maxlength="255"{% if locked %} readonly{% endif %}>
+            <span class="dec-saved"{% if not l.decision.action %} hidden{% endif %} title="decision saved">✓ set</span></td>
+          {% endif %}
+        </tr>
+        {% empty %}<tr><td colspan="18" class="muted">No affected lines — everything matches. ✓</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <!-- Skipped -->
+  <div class="tabpane" data-pane="skipped" style="display:none;">
+    <table class="grid">
+      <thead><tr><th>PO</th><th>Marketplace</th><th>Location</th><th class="r">Qty</th><th class="r">Value</th></tr></thead>
+      <tbody>
+        {% for sk in r.skipped %}
+        <tr><td class="mono">{{ sk.po }}</td><td>{{ sk.marketplace_label }}</td>
+          <td class="loc" title="{{ sk.location }}">{{ sk.location }}</td>
+          <td class="r">{{ sk.qty }}</td><td class="r">{{ sk.order_value|inr_short }}</td></tr>
+        {% empty %}<tr><td colspan="5" class="muted">Nothing skipped — all POs are new.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  </form>
+
+  {% endwith %}
+  {% endif %}
+</div>
+
+<style>
+  .aff-hint{font-size:12.5px;color:var(--text-2);margin:0 0 12px;background:var(--surface-2);
+    border:1px solid var(--border);border-radius:8px;padding:9px 12px;}
+  .exc-poke{display:flex;align-items:center;gap:12px;margin:0 0 16px;padding:11px 16px;
+    background:#fff8ed;border:1px solid #ffd9a0;border-left:4px solid #f59e0b;border-radius:11px;
+    animation:fadeUp .4s ease both;}
+  .exc-poke-ic{font-size:18px;flex:none;}
+  .exc-poke-txt{font-size:13px;color:#7a4a06;flex:1;line-height:1.5;}
+  .exc-poke-txt b{color:#5b3700;}
+  .exc-poke-n{font-weight:800;color:#b45309;}
+  .exc-poke-link{margin-left:auto;font-size:12.5px;font-weight:700;color:#b45309;
+    text-decoration:none;white-space:nowrap;}
+  .exc-poke-link:hover{text-decoration:underline;}
+  .act-sel{padding:5px 8px;border:1px solid var(--border);border-radius:7px;font-size:12.5px;
+    background:#fff;color:var(--text);font-family:var(--font);}
+  .act-rem{padding:6px 9px;border:1px solid var(--border);border-radius:7px;font-size:12.5px;
+    width:160px;background:#fff;color:var(--text);font-family:var(--font);}
+  .act-ocp{padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12.5px;
+    width:96px;text-align:right;background:#fff;color:var(--text);font-family:var(--font);}
+  .act-ocp[readonly]{background:var(--bg);color:var(--muted);border-style:dashed;}
+  .act-sel:focus,.act-rem:focus,.act-ocp:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+</style>
+
+<!-- ── Lock progress overlay (AJAX; no page reload) ── -->
+<div id="lockOverlay" class="lock-overlay" aria-hidden="true">
+  <div class="lo-card" role="status" aria-live="polite">
+    <div class="lo-lock"><span class="lo-shackle"></span><span class="lo-body"><i class="lo-key"></i></span></div>
+    <div class="lo-title">Locking &amp; recording…</div>
+    <div class="lo-track"><div class="lo-fill" id="loFill"></div></div>
+    <ul class="lo-steps">
+      <li data-s="1"><span class="lo-dot"></span>Recording POs to the database</li>
+      <li data-s="2"><span class="lo-dot"></span>Generating the D365 dump</li>
+      <li data-s="3"><span class="lo-dot"></span>Finalizing &amp; saving</li>
+    </ul>
+    <div class="lo-err" id="loErr"></div>
+  </div>
+</div>
+
+<!-- Re-validate busy overlay (blurs + locks the page during the full reload) -->
+<div id="revalOverlay" class="reval-overlay" aria-hidden="true">
+  <div class="reval-card" role="status" aria-live="polite">
+    <span class="reval-ring"></span>
+    <div class="reval-title">Re-validating against the master…</div>
+    <div class="reval-sub">Applying your EAN fix &amp; re-checking every line.</div>
+    <div class="reval-track"><div class="reval-bar"></div></div>
+    <div class="reval-meta"><span id="revalElapsed">elapsed 0:00</span><span class="reval-est">~ a couple seconds</span></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var tabs = document.querySelectorAll('.tab');
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () {
+      tabs.forEach(function (x) { x.classList.toggle('on', x === t); });
+      var name = t.getAttribute('data-tab');
+      document.querySelectorAll('.tabpane').forEach(function (p) {
+        p.style.display = (p.getAttribute('data-pane') === name) ? '' : 'none';
+      });
+    });
+  });
+
+  // Override CP: enable + pre-fill with Their CP only when "Override" is chosen.
+  document.querySelectorAll('#confirm-form tbody .act-sel').forEach(function (sel) {
+    if (sel.disabled) return;                       // locked → leave as recorded
+    var row = sel.closest('tr');                    // skip the bulk-bar select (not in a row)
+    if (!row) return;
+    var cp = row.querySelector('.act-ocp');
+    if (!cp) return;
+    function sync() {
+      if (sel.value === 'OVERRIDE') {
+        cp.removeAttribute('readonly');
+        if (!cp.value) cp.value = cp.getAttribute('data-vendorcp') || '';
+        cp.focus();
+      } else {
+        cp.value = '';
+        cp.setAttribute('readonly', 'readonly');
+      }
+    }
+    sel.addEventListener('change', sync);
+  });
+
+  // ── Per-line decision auto-save (decide each line, then lock) ──────────
+  var saveUrl = "{% url 'b2b_save_decision' token=token %}";
+  var csrfEl = document.querySelector('#confirm-form [name=csrfmiddlewaretoken]');
+  var csrf = csrfEl ? csrfEl.value : '';
+  function saveDecision(tr) {
+    var keyEl = tr.querySelector('input[name=aff_key]');
+    var sel = tr.querySelector('.act-sel');
+    if (!keyEl || !sel || sel.disabled) return;
+    var ocp = tr.querySelector('.act-ocp'), rem = tr.querySelector('.act-rem');
+    var tick = tr.querySelector('.dec-saved');
+    var body = new URLSearchParams();
+    body.set('key', keyEl.value);
+    body.set('action', sel.value || '');
+    body.set('override_cp', ocp ? ocp.value : '');
+    body.set('remark', rem ? rem.value : '');
+    fetch(saveUrl, { method: 'POST', credentials: 'same-origin',
+      headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest',
+                 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString() })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j.ok && tick) { tick.hidden = false; tick.classList.add('flash');
+          setTimeout(function () { tick.classList.remove('flash'); }, 700); }
+      }).catch(function () {});
+  }
+  document.querySelectorAll('#confirm-form tbody tr').forEach(function (tr) {
+    if (!tr.querySelector('input[name=aff_key]')) return;
+    ['.act-sel', '.act-ocp', '.act-rem'].forEach(function (s) {
+      var el = tr.querySelector(s);
+      if (el && !el.disabled) el.addEventListener('change', function () { saveDecision(tr); });
+    });
+  });
+
+  // ── Bulk decisions — tick rows, apply one action to all of them ────────
+  // (e.g. 10 NOT_IN_MASTER freebie lines → select 5, Exclude; select 5, fix EAN)
+  var affChks = function () {
+    return Array.prototype.slice.call(document.querySelectorAll('.aff-chk'));
+  };
+  var checkedRows = function () {
+    return affChks().filter(function (c) { return c.checked; })
+      .map(function (c) { return c.closest('tr'); });
+  };
+  var affCount = document.getElementById('affCount');
+  function refreshCount() {
+    var n = affChks().filter(function (c) { return c.checked; }).length;
+    if (affCount) affCount.textContent = n;
+    var all = document.getElementById('affAll');
+    var boxes = affChks();
+    if (all) all.checked = boxes.length > 0 && n === boxes.length;
+  }
+  var affAll = document.getElementById('affAll');
+  if (affAll) affAll.addEventListener('change', function () {
+    affChks().forEach(function (c) { c.checked = affAll.checked; });
+    refreshCount();
+  });
+  affChks().forEach(function (c) { c.addEventListener('change', refreshCount); });
+
+  function setSelVal(sel, val) {   // only set if that option exists on the row
+    var ok = Array.prototype.some.call(sel.options, function (o) { return o.value === val; });
+    if (ok) { sel.value = val; return true; }
+    return false;
+  }
+  var bulkApply = document.getElementById('bulkApplyAct');
+  if (bulkApply) bulkApply.addEventListener('click', function () {
+    var act = document.getElementById('bulkAction').value;
+    var ocp = document.getElementById('bulkOcp').value;
+    var rows = checkedRows();
+    if (!act || !rows.length) { return; }
+    var applied = 0, skipped = 0;
+    rows.forEach(function (tr) {
+      var sel = tr.querySelector('[name=aff_action]');
+      if (!sel || sel.disabled) return;
+      if (!setSelVal(sel, act)) { skipped++; return; }   // e.g. INCLUDE on a NOT_IN_MASTER row
+      var rowOcp = tr.querySelector('.act-ocp');
+      if (act === 'OVERRIDE' && rowOcp) {
+        rowOcp.removeAttribute('readonly');
+        if (ocp) rowOcp.value = ocp;
+        else if (!rowOcp.value) rowOcp.value = rowOcp.getAttribute('data-vendorcp') || '';
+      } else if (rowOcp) { rowOcp.value = ''; rowOcp.setAttribute('readonly', 'readonly'); }
+      saveDecision(tr);
+      applied++;
+    });
+    var msg = document.getElementById('affBulkMsg');
+    if (msg) { msg.textContent = '✓ ' + applied + ' set' + (skipped ? ' · ' + skipped + ' skipped (n/a)' : ''); msg.hidden = false;
+      setTimeout(function () { msg.hidden = true; }, 2200); }
+  });
+  var bulkFill = document.getElementById('bulkFillEan');
+  if (bulkFill) bulkFill.addEventListener('click', function () {
+    var ean = document.getElementById('bulkEan').value.trim();
+    if (!ean) { return; }
+    var filled = 0;
+    checkedRows().forEach(function (tr) {
+      var nim = tr.querySelector('.nim-input');
+      if (nim && !nim.readOnly) { nim.value = ean; filled++; }
+    });
+    var msg = document.getElementById('affBulkMsg');
+    if (msg) { msg.textContent = '✓ EAN filled into ' + filled + ' row(s) — now “Apply & re-validate”'; msg.hidden = false;
+      setTimeout(function () { msg.hidden = true; }, 3000); }
+  });
+
+  // ── NOTHING progresses until you click a button ───────────────────────
+  // 1) Block Enter on EVERY field (both forms) so typing/choosing never
+  //    submits. Enter just blurs → which saves that line's decision.
+  document.querySelectorAll('.b2b-wrap input, .b2b-wrap select, .b2b-wrap textarea').forEach(function (el) {
+    el.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
+    });
+  });
+  // 2) Belt-and-suspenders: block IMPLICIT submits (Enter with no button).
+  //    SubmitEvent.submitter is null only for implicit submission; a real
+  //    button click (Lock / Discard / Generate, incl. ones injected after an
+  //    in-place lock) sets it, so they always work.
+  var _cf = document.getElementById('confirm-form');
+  if (_cf) {
+    _cf.addEventListener('submit', function (e) {
+      // Lock is AJAX-ONLY (click → fetch). Block every native submit of this
+      // form EXCEPT the intentional formaction buttons (Discard / Generate):
+      //   • implicit submit (Enter, submitter == null) → blocked
+      //   • the Lock button itself → blocked (so it can never post /confirm/
+      //     natively and "suddenly" lock without the progress overlay)
+      var b = e.submitter;
+      if (b == null || b.id === 'lockBtn' || !b.hasAttribute('formaction')) {
+        e.preventDefault();
+      }
+    });
+  }
+
+  // ── "Apply EAN fixes & re-validate" — show progress (full reload re-runs the
+  //    engine, so without feedback it feels stuck) ──
+  var applyBtn = document.querySelector('.aff-eanbar button[type=submit]');
+  if (applyBtn) {
+    var _applying = false;
+    applyBtn.addEventListener('click', function (e) {
+      if (_applying) { e.preventDefault(); return; }   // ignore double-clicks
+      _applying = true;
+      applyBtn.classList.add('btn-loading');
+      applyBtn.innerHTML = '<span class="btn-spin"></span> Re-validating…';
+      // dim + blur + lock the whole page until the reload completes
+      var ov = document.getElementById('revalOverlay');
+      if (ov) {
+        ov.classList.add('show'); document.body.classList.add('lo-open');
+        var el = document.getElementById('revalElapsed'), t0 = Date.now();
+        setInterval(function () {
+          var s = Math.floor((Date.now() - t0) / 1000);
+          if (el) el.textContent = 'elapsed ' + Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2);
+        }, 250);
+      }
+    });
+  }
+
+  // ── Lock & Record via AJAX — progress bar, no page reload ──────────────
+  var form    = document.getElementById('confirm-form');
+  var lockBtn = document.getElementById('lockBtn');
+  var ov      = document.getElementById('lockOverlay');
+  var fill    = document.getElementById('loFill');
+  var errBox  = document.getElementById('loErr');
+  var steps   = ov ? ov.querySelectorAll('.lo-steps li') : [];
+  var timers  = [];
+
+  function setFill(p) { if (fill) fill.style.width = p + '%'; }
+  function clearTimers() { timers.forEach(clearTimeout); timers = []; }
+
+  function startProgress() {
+    ov.classList.remove('done', 'error');
+    errBox.textContent = '';
+    steps.forEach(function (s) { s.classList.remove('active', 'done'); });
+    ov.classList.add('show');
+    document.body.classList.add('lo-open');
+    setFill(9);
+    var i = 0, marks = [34, 64, 88];
+    (function adv() {
+      if (i > 0) steps[i - 1].classList.add('done');
+      if (i < steps.length) {
+        steps[i].classList.add('active');
+        setFill(marks[i]);
+        i++;
+        timers.push(setTimeout(adv, 640));
+      }
+    })();
+  }
+
+  function finishProgress() {
+    clearTimers();
+    steps.forEach(function (s) { s.classList.remove('active'); s.classList.add('done'); });
+    setFill(100);
+    ov.classList.add('done');
+  }
+
+  function failProgress(msg) {
+    clearTimers();
+    ov.classList.add('error');
+    errBox.textContent = msg || 'Lock failed — nothing was recorded. Please try again.';
+    timers.push(setTimeout(function () {
+      ov.classList.remove('show', 'error');
+      document.body.classList.remove('lo-open');
+      if (lockBtn) lockBtn.disabled = false;
+    }, 2400));
+  }
+
+  function morphLocked(j) {
+    var bar = document.getElementById('confirmBar');
+    if (bar) {
+      bar.classList.add('locked');
+      var txt = bar.querySelector('.cb-text');
+      var act = bar.querySelector('.cb-actions');
+      if (txt) txt.innerHTML = '🔒 <b>Decisions locked &amp; recorded</b> (run #' + j.run_id +
+        '). Generate the ERP <b>D365 dump</b> (Excludes dropped, Overrides repriced), or download the full SO Workbook.';
+      if (act) {
+        var dl = act.querySelector('a.btn-ghost');
+        var keep = dl ? dl.outerHTML : '';
+        act.innerHTML = keep +
+          ' <a href="' + j.run_url + '" class="btn-ghost">View run →</a>' +
+          ' <button class="btn-primary" type="submit" formaction="' + j.d365_url +
+          '" formnovalidate onclick="var b=this;b.innerHTML=\'<span class=&quot;btn-spin&quot;></span> Generating…\';setTimeout(function(){b.innerHTML=\'⬇ Generate D365 dump\';},4500);">⬇ Generate D365 dump</button>';
+      }
+    }
+    document.querySelectorAll('.act-sel').forEach(function (s) { s.disabled = true; });
+    document.querySelectorAll('.act-ocp,.act-rem').forEach(function (x) { x.setAttribute('readonly', 'readonly'); });
+  }
+
+  var HUB_URL = "{% url 'b2b_dashboard' %}";
+  var UPLOAD_URL = "{% url 'b2b_upload' %}";
+
+  function flourish(j) {
+    var f = document.createElement('div');
+    f.className = 'lock-done';
+    var d365 = j.has_d365
+      ? '<a class="ld-btn ld-d365" href="' + j.run_url + 'd365/">⬇ Download D365 dump</a>' : '';
+    f.innerHTML = '<div class="ld-card"><div class="lo-lock locked-glow"><span class="lo-shackle"></span>' +
+      '<span class="lo-body"><i class="lo-key"></i></span></div>' +
+      '<div class="ld-title">Locked &amp; recorded ✓</div>' +
+      '<div class="ld-sub">Run #' + j.run_id + ' · ' + j.pos + ' PO(s) · ' + j.lines + ' line(s) pushed to the DB</div>' +
+      '<div class="ld-actions">' + d365 +
+        '<a class="ld-btn" href="' + j.run_url + '">View run →</a>' +
+        '<a class="ld-btn ld-hub" href="' + HUB_URL + '">⌂ Back to Hub</a>' +
+        '<a class="ld-btn ld-ghost" href="' + UPLOAD_URL + '">＋ New upload</a>' +
+      '</div>' +
+      '<button type="button" class="ld-close">stay on this page ✕</button></div>';
+    var burst = document.createElement('div');
+    burst.className = 'ld-confetti';
+    var cols = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7'];
+    for (var c = 0; c < 28; c++) {
+      var p = document.createElement('i');
+      p.style.left = (40 + Math.random() * 20).toFixed(1) + '%';
+      p.style.background = cols[c % cols.length];
+      p.style.setProperty('--x', (Math.random() * 2 - 1).toFixed(2));
+      p.style.setProperty('--d', (0.7 + Math.random() * 0.7).toFixed(2) + 's');
+      p.style.setProperty('--rot', ((Math.random() * 540) | 0) + 'deg');
+      burst.appendChild(p);
+    }
+    f.appendChild(burst);
+    document.body.appendChild(f);
+    requestAnimationFrame(function () { f.classList.add('show'); });
+    // Confetti fades, but the modal STAYS until the user picks a next step.
+    setTimeout(function () { if (burst.parentNode) burst.parentNode.removeChild(burst); }, 2600);
+    f.querySelector('.ld-close').addEventListener('click', function () {
+      f.classList.remove('show');
+      setTimeout(function () { if (f.parentNode) f.parentNode.removeChild(f); }, 300);
+    });
+  }
+
+  if (lockBtn && form && window.fetch) {
+    lockBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+      if (lockBtn.disabled) return;
+      // Guard: a Correct EAN typed but NOT applied would be silently lost on
+      // lock (the line would lock as NOT_IN_MASTER). Make them apply it first.
+      var typed = Array.prototype.slice.call(document.querySelectorAll('.nim-input'))
+        .filter(function (i) { return (i.value || '').trim(); });
+      if (typed.length && !window.confirm(
+          'You typed a Correct EAN but did NOT click "Apply EAN fixes & re-validate".\n\n' +
+          'If you lock now it will NOT be saved — the line stays NOT_IN_MASTER.\n\n' +
+          'Lock anyway? (Cancel to go back and apply the fix first.)')) {
+        return;
+      }
+      lockBtn.disabled = true;
+      startProgress();
+      var t0 = Date.now();
+      fetch(form.action, {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: new FormData(form),
+        credentials: 'same-origin'
+      }).then(function (r) {
+        return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+      }).then(function (res) {
+        var j = res.j || {};
+        if (!res.ok || !j.ok) { failProgress(j.error); return; }
+        if (j.redirect) { finishProgress(); setTimeout(function () { location.href = j.redirect; }, 500); return; }
+        var wait = Math.max(0, 1150 - (Date.now() - t0));  // min on-screen time
+        setTimeout(function () {
+          finishProgress();
+          setTimeout(function () {
+            ov.classList.remove('show');
+            document.body.classList.remove('lo-open');
+            morphLocked(j);
+            flourish(j);
+          }, 580);
+        }, wait);
+      }).catch(function () {
+        failProgress('Network error — nothing was locked. Try again.');
+      });
+    });
+  }
+})();
+</script>
+{% endblock %}

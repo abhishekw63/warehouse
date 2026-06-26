@@ -1,0 +1,238 @@
+{% extends 'core/base.html' %}
+
+{% block title %}Modern Trade (MT) - Offline - RENEE Warehouse{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <span class="separator">/</span>
+    <a href="{% url 'b2b_offline' %}">Offline</a>
+    <span class="separator">/</span>
+    <span>Modern Trade (MT)</span>
+{% endblock %}
+
+{% block content %}
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700&display=swap');
+    :root {
+        --gt-ink:#0a0a0a; --gt-slate:#3a3a3a; --gt-dim:#7a7a7a; --gt-silver:#b0b0b0;
+        --gt-mist:#f4f4f4; --gt-white:#fff; --gt-accent:#1a237e; --gt-accent-light:#e8eaf6;
+        --gt-green:#1b7a3d; --gt-green-bg:#e6f4ea; --gt-red:#b71c1c; --gt-red-bg:#fce8e6;
+        --gt-amber:#e65100; --gt-amber-bg:#fff3e0; --gt-radius:6px;
+    }
+    .gt-page { max-width: 760px; margin: 40px auto; font-family:'DM Sans',system-ui,sans-serif; }
+    .gt-card { background:var(--gt-white); border:1px solid #e0e0e0; border-radius:var(--gt-radius); overflow:hidden; }
+    .gt-card__header { padding:28px 32px 20px; border-bottom:1px solid #eee; }
+    .gt-card__tag { display:inline-block; font-size:10px; font-weight:600; letter-spacing:1.5px; text-transform:uppercase; color:var(--gt-accent); background:var(--gt-accent-light); padding:3px 10px; border-radius:3px; margin-bottom:10px; }
+    .gt-card__title { font-size:22px; font-weight:700; color:var(--gt-ink); margin:0 0 4px; }
+    .gt-card__subtitle { font-size:13px; color:var(--gt-dim); margin:0; }
+    .gt-card__body { padding:24px 32px 28px; }
+    .ss-row { display:flex; gap:12px; margin-bottom:16px; }
+    .ss-fld { flex:1; display:flex; flex-direction:column; gap:6px; }
+    .ss-fld label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1px; color:var(--gt-silver); }
+    .ss-fld select { padding:9px 11px; border:1px solid #d8d8d8; border-radius:var(--gt-radius); font-family:inherit; font-size:14px; background:#fff; }
+    .gt-dropzone { border:2px dashed #d0d0d0; border-radius:var(--gt-radius); padding:30px 20px; text-align:center; cursor:pointer; transition:all .2s; background:#fafafa; display:block; }
+    .gt-dropzone:hover,.gt-dropzone.drag-over { border-color:var(--gt-accent); background:var(--gt-accent-light); }
+    .gt-dropzone__text { font-size:14px; color:var(--gt-dim); margin:0; }
+    .gt-dropzone__hint { font-size:11px; color:var(--gt-silver); margin:6px 0 0; }
+    .gt-dropzone input[type=file] { display:none; }
+    .gt-file-count { text-align:center; font-size:13px; font-weight:600; color:var(--gt-slate); margin:14px 0 0; min-height:20px; }
+    .gt-file-count span { background:var(--gt-mist); padding:3px 12px; border-radius:3px; }
+    .gt-btn { display:block; width:100%; padding:14px 20px; margin-top:18px; border:none; border-radius:var(--gt-radius); font-family:inherit; font-size:15px; font-weight:600; cursor:pointer; transition:all .15s; }
+    .gt-btn--primary { background:var(--gt-ink); color:var(--gt-white); }
+    .gt-btn--primary:hover { background:#222; }
+    .gt-btn:disabled { background:#ccc; color:#999; cursor:not-allowed; }
+    .gt-btn--dl { background:var(--gt-green); color:#fff; text-decoration:none; text-align:center; }
+    .gt-progress { margin-top:20px; display:none; } .gt-progress.active { display:block; }
+    .gt-progress__track { height:3px; background:#e8e8e8; border-radius:2px; overflow:hidden; }
+    .gt-progress__fill { height:100%; background:var(--gt-accent); border-radius:2px; animation:gt-pulse 1.8s ease-in-out infinite; }
+    @keyframes gt-pulse { 0%{width:0%;margin-left:0;} 50%{width:60%;margin-left:20%;} 100%{width:0%;margin-left:100%;} }
+    .gt-progress__label { font-size:12px; color:var(--gt-dim); margin-top:8px; text-align:center; }
+    .gt-result { margin-top:22px; display:none; } .gt-result.active { display:block; animation:gt-in .4s ease; }
+    @keyframes gt-in { from{opacity:0;transform:translateY(8px);} to{opacity:1;transform:translateY(0);} }
+    .gt-banner { padding:11px 14px; border-radius:var(--gt-radius); font-size:13px; font-weight:500; }
+    .gt-banner--success { background:var(--gt-green-bg); color:var(--gt-green); border:1px solid #a5d6a7; }
+    .gt-banner--warning { background:var(--gt-amber-bg); color:var(--gt-amber); border:1px solid #ffcc80; }
+    .gt-banner--error { background:var(--gt-red-bg); color:var(--gt-red); border:1px solid #ef9a9a; }
+    .gt-stats { display:grid; grid-template-columns:repeat(5,1fr); gap:8px; margin-top:14px; }
+    .gt-stat { background:var(--gt-mist); border:1px solid #e8e8e8; border-radius:var(--gt-radius); padding:13px 8px; text-align:center; }
+    .gt-stat__value { font-size:23px; font-weight:700; color:var(--gt-accent); line-height:1; }
+    .gt-stat__label { font-size:9px; font-weight:600; text-transform:uppercase; letter-spacing:1px; color:var(--gt-silver); margin-top:6px; }
+    .gt-stat--fail .gt-stat__value { color:var(--gt-red); } .gt-stat--warn .gt-stat__value { color:var(--gt-amber); }
+    .gt-stat--green .gt-stat__value { color:var(--gt-green); }
+    .ss-tbl { width:100%; border-collapse:collapse; margin-top:16px; font-size:12px; }
+    .ss-tbl th { text-align:left; padding:7px 9px; background:#f6f6f8; color:var(--gt-slate); font-weight:600; border-bottom:2px solid #e4e4ea; white-space:nowrap; }
+    .ss-tbl td { padding:7px 9px; border-bottom:1px solid #efefef; }
+    .ss-tbl td.r { text-align:right; font-variant-numeric:tabular-nums; }
+    .ss-tbl .mono { font-family:ui-monospace,Menlo,Consolas,monospace; }
+    .ss-st { font-size:10px; font-weight:700; padding:2px 7px; border-radius:10px; }
+    .ss-st.SO { background:var(--gt-green-bg); color:var(--gt-green); }
+    .ss-st.ERROR { background:var(--gt-red-bg); color:var(--gt-red); }
+    .ss-st.SKIP { background:var(--gt-amber-bg); color:var(--gt-amber); }
+    .ss-warn { margin-top:14px; background:var(--gt-amber-bg); border:1px solid #ffcc80; border-radius:var(--gt-radius); padding:10px 14px; }
+    .ss-warn h4 { margin:0 0 6px; font-size:12px; color:var(--gt-amber); text-transform:uppercase; letter-spacing:1px; }
+    .ss-warn ul { margin:0; padding-left:18px; } .ss-warn li { font-size:12px; color:var(--gt-slate); padding:2px 0; }
+</style>
+
+<div class="gt-page">
+    <div class="gt-card">
+        <div class="gt-card__header">
+            <div class="gt-card__tag">Offline · Modern Trade</div>
+            <h1 class="gt-card__title">Modern Trade (MT) — SO Generator</h1>
+            <p class="gt-card__subtitle">Pick the MT channel (Shoppers Stop, Health &amp; Glow, Naturals…) → same 6-sheet SO workbook as the desktop app</p>
+        </div>
+        <div class="gt-card__body">
+            <form id="ssForm">
+                {% csrf_token %}
+                <div class="ss-row">
+                    <div class="ss-fld">
+                        <label>Channel</label>
+                        <select name="channel" id="ssChannel">
+                            {% for code, name in channels %}<option value="{{ code }}">{{ name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="ss-fld">
+                        <label>Warehouse</label>
+                        <select name="warehouse" id="ssWarehouse">
+                            {% for w in warehouses %}<option value="{{ w }}" {% if w == default_warehouse %}selected{% endif %}>{{ w }}</option>{% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <label class="gt-dropzone" id="dropzone" for="fileInput">
+                    <p class="gt-dropzone__text">Click or drag the MT channel PO file(s) here</p>
+                    <p class="gt-dropzone__hint">.xlsx — one or many POs (match the channel selected above)</p>
+                    <input type="file" id="fileInput" name="files" accept=".xlsx,.csv" multiple required>
+                </label>
+                <div class="gt-file-count" id="fileCount"></div>
+                <button type="submit" class="gt-btn gt-btn--primary" id="genBtn">Preview POs</button>
+            </form>
+
+            <div class="gt-progress" id="progressBox">
+                <div class="gt-progress__track"><div class="gt-progress__fill"></div></div>
+                <div class="gt-progress__label" id="progLabel">Validating POs…</div>
+            </div>
+
+            <div class="gt-result" id="resultBox">
+                <div id="bannerSlot"></div>
+                <div class="gt-stats" id="statsSlot"></div>
+                <button class="gt-btn gt-btn--primary" id="confirmBtn" style="display:none;">✓ Confirm &amp; Record to DB</button>
+                <a class="gt-btn gt-btn--dl" id="dlBtn" href="#" style="display:none;">⬇ Download SO Workbook</a>
+                <div id="tableSlot"></div>
+                <div id="warnSlot"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const fileInput=document.getElementById('fileInput'), fileCount=document.getElementById('fileCount'),
+          form=document.getElementById('ssForm'), btn=document.getElementById('genBtn'),
+          dropzone=document.getElementById('dropzone'), progress=document.getElementById('progressBox'),
+          progLabel=document.getElementById('progLabel'),
+          resultBox=document.getElementById('resultBox'), banner=document.getElementById('bannerSlot'),
+          stats=document.getElementById('statsSlot'), tableSlot=document.getElementById('tableSlot'),
+          warnSlot=document.getElementById('warnSlot'), dlBtn=document.getElementById('dlBtn'),
+          confirmBtn=document.getElementById('confirmBtn');
+    let token = null;
+    const csrf = () => document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+    fileInput.addEventListener('change', () => {
+        const n = fileInput.files.length;
+        fileCount.innerHTML = n ? `<span>${n} file${n>1?'s':''} selected</span>` : '';
+        resultBox.classList.remove('active'); token = null;
+    });
+    ['dragenter','dragover'].forEach(e => dropzone.addEventListener(e, ev => { ev.preventDefault(); dropzone.classList.add('drag-over'); }));
+    ['dragleave','drop'].forEach(e => dropzone.addEventListener(e, ev => { ev.preventDefault(); dropzone.classList.remove('drag-over'); }));
+    dropzone.addEventListener('drop', e => { fileInput.files = e.dataTransfer.files; fileInput.dispatchEvent(new Event('change')); });
+
+    // ── Phase 1: Preview (no writes) ──
+    form.addEventListener('submit', async e => {
+        e.preventDefault();
+        if (!fileInput.files.length) { alert('Select PO file(s) first'); return; }
+        progLabel.textContent = 'Validating POs…';
+        progress.classList.add('active'); resultBox.classList.remove('active'); btn.disabled = true;
+        try {
+            const res = await fetch("{% url 'ss_preview' %}", { method:'POST', body:new FormData(form), headers:{'X-CSRFToken':csrf()} });
+            const d = await res.json();
+            progress.classList.remove('active');
+            token = d.token || null;
+            render(d);
+        } catch(ex) { netErr(); } finally { btn.disabled = false; }
+    });
+
+    // ── Phase 2: Confirm → assign SO#, write workbook, record to DB ──
+    confirmBtn.addEventListener('click', async () => {
+        if (!token) return;
+        progLabel.textContent = 'Recording to database…';
+        progress.classList.add('active'); confirmBtn.disabled = true;
+        try {
+            const fd = new FormData(); fd.append('token', token); fd.append('csrfmiddlewaretoken', csrf());
+            const res = await fetch("{% url 'ss_confirm' %}", { method:'POST', body:fd, headers:{'X-CSRFToken':csrf()} });
+            const d = await res.json();
+            progress.classList.remove('active');
+            render(d);
+        } catch(ex) { netErr(); } finally { confirmBtn.disabled = false; }
+    });
+
+    function netErr() {
+        progress.classList.remove('active');
+        banner.innerHTML = `<div class="gt-banner gt-banner--error">❌ Network error</div>`;
+        stats.innerHTML = tableSlot.innerHTML = warnSlot.innerHTML = '';
+        dlBtn.style.display = confirmBtn.style.display = 'none';
+        resultBox.classList.add('active');
+    }
+
+    function render(d) {
+        const isPreview = (d.phase === 'preview');
+        if (!d.ok) {
+            banner.innerHTML = `<div class="gt-banner gt-banner--error">❌ ${esc(d.error || 'Failed')}</div>`;
+            stats.innerHTML = tableSlot.innerHTML = '';
+            dlBtn.style.display = confirmBtn.style.display = 'none';
+            renderWarnings(d.warnings); resultBox.classList.add('active'); return;
+        }
+        const s = d.summary || {};
+        const hasIssues = (s.errors > 0) || (d.warnings && d.warnings.length);
+
+        if (isPreview) {
+            banner.innerHTML = `<div class="gt-banner gt-banner--${hasIssues?'warning':'success'}">${hasIssues
+                ? '⚠️ Validated with warnings — review below, then Confirm' : '✅ Validated — review below, then Confirm to record'}</div>`;
+            confirmBtn.style.display = 'block'; dlBtn.style.display = 'none';
+        } else {
+            const run = d.run_id ? ` — run #${d.run_id}` : '';
+            banner.innerHTML = `<div class="gt-banner gt-banner--${d.recorded?'success':'warning'}">${d.recorded
+                ? '✅ Recorded to database'+run+' — '+esc(d.output_name)+' generated'
+                : '⚠️ Workbook generated but not recorded'+(d.recorded_reason?' ('+esc(d.recorded_reason)+')':'')}</div>`;
+            confirmBtn.style.display = 'none';
+            if (d.download_url) { dlBtn.href = d.download_url; dlBtn.style.display = 'block'; }
+        }
+
+        let st = `<div class="gt-stat"><div class="gt-stat__value">${s.files||0}</div><div class="gt-stat__label">Files</div></div>
+            <div class="gt-stat gt-stat--green"><div class="gt-stat__value">${s.sos||0}</div><div class="gt-stat__label">Sales Orders</div></div>
+            <div class="gt-stat"><div class="gt-stat__value">${s.lines||0}</div><div class="gt-stat__label">Line Items</div></div>
+            <div class="gt-stat"><div class="gt-stat__value">${s.qty||0}</div><div class="gt-stat__label">Total Qty</div></div>`;
+        st += (s.errors>0)
+            ? `<div class="gt-stat gt-stat--fail"><div class="gt-stat__value">${s.errors}</div><div class="gt-stat__label">Errors</div></div>`
+            : `<div class="gt-stat"><div class="gt-stat__value">₹${Math.round(s.value||0).toLocaleString('en-IN')}</div><div class="gt-stat__label">PO Value</div></div>`;
+        stats.innerHTML = st;
+
+        const rows = (d.pos||[]).map(p => `<tr>
+            <td>${esc(p.file)}</td><td class="mono">${esc(p.po)}</td><td>${esc(p.store)}</td>
+            <td class="mono">${esc(p.so_number)||'—'}</td><td class="mono">${esc(p.ship_to)||'—'}</td>
+            <td class="r">${p.lines}</td><td class="r">${p.qty}</td>
+            <td><span class="ss-st ${p.status}">${p.status}</span></td></tr>`).join('');
+        tableSlot.innerHTML = `<table class="ss-tbl"><thead><tr>
+            <th>File</th><th>PO</th><th>Store</th><th>SO No</th><th>Ship-to</th>
+            <th class="r">Lines</th><th class="r">Qty</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`;
+        renderWarnings(d.warnings);
+        resultBox.classList.add('active');
+    }
+    function renderWarnings(w) {
+        if (w && w.length) {
+            warnSlot.innerHTML = `<div class="ss-warn"><h4>Warnings (${w.length}) — nothing dropped silently</h4>
+                <ul>${w.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>`;
+        } else warnSlot.innerHTML = '';
+    }
+});
+</script>
+{% endblock %}

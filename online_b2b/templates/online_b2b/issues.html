@@ -1,0 +1,226 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static %}
+{% block title %}Online B2B — Issue Lines{% endblock %}
+{% block extra_css %}
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_dashboard' %}"> / Online B2B</a> <span>/ Issues</span>
+{% endblock %}
+
+{% block content %}
+<div class="iss-wrap">
+  <div class="iss-head">
+    <div>
+      <h1>Issue Lines</h1>
+      <p class="sub">Flagged SKUs from validation. Set an <b>Action</b> to resolve a line — it then leaves Pending and drops from the dashboard counts.</p>
+    </div>
+    <a href="{% url 'b2b_dashboard' %}" class="back">← Dashboard</a>
+  </div>
+
+  {% if not d.ok %}
+    <div class="banner err">Issues unavailable{% if d.error %} — {{ d.error }}{% endif %}.</div>
+  {% else %}
+
+  <form id="iss-filters" class="filters" onsubmit="return false;">
+    <div class="fg"><label>Resolution</label>
+      <select name="resolution">
+        <option value="pending"  {% if d.resolution == 'pending' %}selected{% endif %}>Pending</option>
+        <option value="resolved" {% if d.resolution == 'resolved' %}selected{% endif %}>Resolved</option>
+        <option value="all"      {% if d.resolution == 'all' %}selected{% endif %}>All</option>
+      </select></div>
+    <div class="fg"><label>Status</label>
+      <select name="status"><option value="">All</option>
+        <option value="MISMATCH">Mismatch</option>
+        <option value="NOT_IN_MASTER">Not in master</option>
+      </select></div>
+    <div class="fg grow"><label>Search PO / item / description</label>
+      <input type="text" name="q" placeholder="search…" autocomplete="off"></div>
+    <span id="iss-spin" class="spin" hidden></span>
+  </form>
+
+  <div class="bulk-bar">
+    <span class="bb-label">Bulk set all shown →</span>
+    <select id="bulk-action" class="act-sel">
+      <option value="">Action…</option>
+      <option value="KEEP">Keep (flag)</option>
+      <option value="OVERRIDE">Override</option>
+      <option value="EXCLUDE">Exclude</option>
+    </select>
+    <input id="bulk-remark" class="act-rem" placeholder="remark for all…" style="width:230px;" autocomplete="off">
+    <button type="button" id="bulk-apply" class="btn-primary">Apply</button>
+    <span id="bulk-msg" class="saved" hidden></span>
+  </div>
+
+  <input type="hidden" id="iss-csrf" value="{{ csrf_token }}">
+  <div id="iss-results">
+    {% include 'online_b2b/_issues_table.html' %}
+  </div>
+
+  {% if eanfix.rows %}
+  <div class="eanfix-panel">
+    <div class="efp-head">
+      <h2>🩹 Wrong EANs received <span class="count">{{ eanfix.distinct }}</span></h2>
+      <span class="efp-sub">{{ eanfix.total_lines }} line(s) arrived with a wrong EAN and were corrected (a temporary fix). <b>Escalate the repeats to the vendor.</b></span>
+    </div>
+    <div class="scroll">
+    <table class="grid compact">
+      <thead><tr><th>Wrong EAN (received)</th><th>Corrected to</th><th>Item</th><th>Description</th><th class="r">Times</th><th>Marketplaces</th><th>Last seen</th></tr></thead>
+      <tbody>
+        {% for r in eanfix.rows %}
+        <tr>
+          <td class="mono ef-wrong">{{ r.received_ean }}</td>
+          <td class="mono">{{ r.correct_ean|default:'—' }}</td>
+          <td class="mono">{{ r.item_no }}</td>
+          <td class="desc" title="{{ r.description }}">{{ r.description }}</td>
+          <td class="r"><span class="ef-count">{{ r.occurrences }}×</span></td>
+          <td class="muted">{{ r.marketplaces }}</td>
+          <td class="muted">{{ r.last_seen|date:"d M · H:i" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% endif %}
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  var form = document.getElementById('iss-filters');
+  if (!form) return;
+  var results = document.getElementById('iss-results');
+  var spin = document.getElementById('iss-spin');
+  var base = "{% url 'b2b_issues' %}";
+  var saveUrl = "{% url 'b2b_issues_save' %}";
+  var bulkUrl = "{% url 'b2b_issues_save_bulk' %}";
+  var fixUrl  = "{% url 'b2b_issues_fix_ean' %}";
+  var csrf = document.getElementById('iss-csrf').value;
+  var hdrs = { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest',
+               'Content-Type': 'application/x-www-form-urlencoded' };
+  var timer = null, ctrl = null;
+
+  function load() {
+    var p = new URLSearchParams();
+    p.set('resolution', form.resolution.value);
+    if (form.status.value) p.set('status', form.status.value);
+    if (form.q.value.trim()) p.set('q', form.q.value.trim());
+    if (ctrl) ctrl.abort(); ctrl = new AbortController();
+    results.classList.add('loading'); spin.hidden = false;
+    p.set('partial', '1');
+    fetch(base + '?' + p.toString(), { headers: { 'X-Requested-With': 'XMLHttpRequest' }, signal: ctrl.signal })
+      .then(function (r) { return r.text(); })
+      .then(function (html) { results.innerHTML = html; results.classList.remove('loading'); spin.hidden = true; bindActions(); })
+      .catch(function (e) { if (e.name !== 'AbortError') { results.classList.remove('loading'); spin.hidden = true; } });
+  }
+
+  function saveRow(line, reload) {
+    var sel = results.querySelector('.act-sel[data-line="' + line + '"]');
+    var rem = results.querySelector('.act-rem[data-line="' + line + '"]');
+    var tick = results.querySelector('.saved[data-line="' + line + '"]');
+    var body = new URLSearchParams();
+    body.set('line_id', line);
+    body.set('action', sel ? sel.value : '');
+    body.set('remark', rem ? rem.value : '');
+    fetch(saveUrl, { method: 'POST', body: body.toString(), headers: hdrs })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) return;
+        if (reload) { load(); }                 // action changed → resolution may change → refresh
+        else if (tick) { tick.hidden = false; setTimeout(function () { tick.hidden = true; }, 1500); }
+      });
+  }
+  function fixEan(line, btn) {
+    var box = results.querySelector('.iss-eanfix[data-line="' + line + '"]');
+    var inp = results.querySelector('.ef-in[data-line="' + line + '"]');
+    var msg = results.querySelector('.ef-msg[data-line="' + line + '"]');
+    var val = (inp ? inp.value : '').trim();
+    if (!val) { if (inp) inp.focus(); return; }
+    if (val === btn.getAttribute('data-ean')) {
+      if (msg) { msg.textContent = 'same as the wrong EAN'; msg.className = 'ef-msg err'; }
+      return;
+    }
+    btn.disabled = true; if (inp) inp.disabled = true;
+    if (msg) { msg.textContent = 'resolving…'; msg.className = 'ef-msg'; }
+    var body = new URLSearchParams();
+    body.set('line_id', line); body.set('correct_ean', val);
+    fetch(fixUrl, { method: 'POST', body: body.toString(), headers: hdrs })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) {
+          btn.disabled = false; if (inp) inp.disabled = false;
+          if (msg) { msg.textContent = j.error || 'failed'; msg.className = 'ef-msg err'; }
+          return;
+        }
+        if (msg) {
+          msg.textContent = '✓ ' + j.status + ' · item ' + j.item_no;
+          msg.className = 'ef-msg ok';
+        }
+        if (box) box.classList.add('done');
+        setTimeout(load, 750);    // refresh → row leaves Pending, lands in Resolved/audit
+      })
+      .catch(function () {
+        btn.disabled = false; if (inp) inp.disabled = false;
+        if (msg) { msg.textContent = 'network error'; msg.className = 'ef-msg err'; }
+      });
+  }
+  function bindActions() {
+    results.querySelectorAll('.ef-go').forEach(function (b) {
+      b.addEventListener('click', function () { fixEan(b.getAttribute('data-line'), b); });
+    });
+    results.querySelectorAll('.ef-in').forEach(function (inp) {
+      inp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          var b = results.querySelector('.ef-go[data-line="' + inp.getAttribute('data-line') + '"]');
+          if (b) fixEan(inp.getAttribute('data-line'), b);
+        }
+      });
+    });
+    results.querySelectorAll('.act-sel').forEach(function (s) {
+      s.addEventListener('change', function () { saveRow(s.getAttribute('data-line'), true); });
+    });
+    results.querySelectorAll('.act-rem').forEach(function (inp) {
+      inp.addEventListener('change', function () { saveRow(inp.getAttribute('data-line'), false); });
+    });
+    // Click a count card to filter (incl. RESOLVED → view resolved lines).
+    results.querySelectorAll('.ik[data-filter]').forEach(function (card) {
+      card.addEventListener('click', function () {
+        var f = card.getAttribute('data-filter').split(':');
+        if (f[0] === 'status') form.status.value = f[1] || '';
+        else if (f[0] === 'resolution') { form.resolution.value = f[1]; form.status.value = ''; }
+        load();
+      });
+    });
+  }
+
+  form.resolution.addEventListener('change', load);
+  form.status.addEventListener('change', load);
+  form.q.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(load, 300); });
+
+  document.getElementById('bulk-apply').addEventListener('click', function () {
+    var act = document.getElementById('bulk-action').value;
+    var rem = document.getElementById('bulk-remark').value;
+    var sels = results.querySelectorAll('.act-sel[data-line]');
+    var msg = document.getElementById('bulk-msg');
+    if (!sels.length || (!act && !rem)) return;
+    var body = new URLSearchParams();
+    body.set('action', act); body.set('remark', rem);
+    sels.forEach(function (s) { body.append('line_ids', s.getAttribute('data-line')); });
+    fetch(bulkUrl, { method: 'POST', body: body.toString(), headers: hdrs })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) return;
+        msg.textContent = '✓ applied to ' + j.updated; msg.hidden = false;
+        setTimeout(function () { msg.hidden = true; load(); }, 700);
+      });
+  });
+
+  bindActions();
+})();
+</script>
+{% endblock %}

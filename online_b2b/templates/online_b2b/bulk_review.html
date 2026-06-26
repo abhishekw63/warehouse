@@ -1,0 +1,78 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static b2b_extras %}
+{% block title %}Online B2B — Bulk Import Review{% endblock %}
+{% block extra_css %}
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_dashboard' %}"> / Online B2B</a>
+    <a href="{% url 'b2b_bulk_upload' %}"> / Bulk Import</a> <span>/ Review</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap">
+  <div class="b2b-head">
+    <div>
+      <h1>Bulk Import <span>· Review</span></h1>
+      <p class="src">Imported as <b>Offline</b> orders. Nothing is written until you confirm.</p>
+    </div>
+    <a href="{% url 'b2b_bulk_upload' %}" class="back">← New file</a>
+  </div>
+
+  {% if not r.ok %}
+    <div class="banner err" style="margin-top:18px;">{{ r.error|default:'Could not read the file.' }}</div>
+  {% else %}
+  {% with s=r.summary %}
+
+  <div class="kpis" style="grid-template-columns:repeat(5,1fr);">
+    <div class="card c1"><span class="ic">{% include 'online_b2b/_icons.html' with i='po' %}</span><div><div class="n">{{ s.total }}</div><div class="l">In file</div></div></div>
+    <div class="card c2"><span class="ic">{% include 'online_b2b/_icons.html' with i='refresh' %}</span><div><div class="n">{{ s.new }}</div><div class="l">New (import)</div></div></div>
+    <div class="card c8"><span class="ic">{% include 'online_b2b/_icons.html' with i='search' %}</span><div><div class="n">{{ s.dup }}</div><div class="l">Already there</div></div></div>
+    <div class="card c5"><span class="ic">{% include 'online_b2b/_icons.html' with i='hash' %}</span><div><div class="n">{{ s.qty|compact }}</div><div class="l">Qty (new)</div></div></div>
+    <div class="card c4"><span class="ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><div><div class="n">{{ s.value|inr_short }}</div><div class="l">Value (new)</div></div></div>
+  </div>
+
+  <div class="confirm-bar">
+    <div class="cb-text">
+      Channel(s): <b>{{ s.channels|join:", " }}</b> · import <b>{{ s.new }}</b> new order(s) as <b>Offline</b>.
+      {% if s.dup %}<span class="cb-muted">({{ s.dup }} already imported → will skip)</span>{% endif %}
+    </div>
+    <div class="cb-actions">
+      <a href="{% url 'b2b_bulk_upload' %}" class="btn-clear">Cancel</a>
+      <form method="post" action="{% url 'b2b_bulk_confirm' token=token %}" onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='Importing…';">{% csrf_token %}
+        <button class="btn-primary" type="submit"{% if not s.new %} disabled{% endif %}>Confirm &amp; Import</button></form>
+    </div>
+  </div>
+
+  <div class="scroll">
+  <table class="grid">
+    <thead><tr><th>SO No.</th><th>External PO</th><th>Channel</th><th>Location</th>
+      <th>Warehouse</th><th>PO Date</th><th>Type</th><th class="r">Qty</th><th class="r">Value</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for l in r.rows %}
+      <tr class="{% if not l.is_new %}rdup{% endif %}">
+        <td class="mono">{{ l.so_no }}</td><td class="mono">{{ l.external_doc|default:'—' }}</td>
+        <td><span class="pill to">{{ l.channel }}</span></td>
+        <td class="loc" title="{{ l.location }}">{{ l.location }}</td>
+        <td>{{ l.warehouse }}</td><td class="nowrap">{% if l.po_date %}{{ l.po_date }}{% else %}—{% endif %}</td>
+        <td><span class="pill {{ l.order_type|lower }}">{{ l.order_type }}</span></td>
+        <td class="r">{{ l.qty }}</td><td class="r">{{ l.order_value|inr_short }}</td>
+        <td>{% if l.is_new %}<span class="st ok">NEW</span>{% else %}<span class="st">imported</span>{% endif %}</td>
+      </tr>
+      {% empty %}<tr><td colspan="10" class="muted">No orders found in the file.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {% endwith %}
+  {% endif %}
+</div>
+
+<style>
+  tr.rdup td{opacity:.5;}
+  .st{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;background:#eef1f6;color:var(--text-2);}
+</style>
+{% endblock %}

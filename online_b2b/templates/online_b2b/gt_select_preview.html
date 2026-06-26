@@ -1,0 +1,97 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static b2b_extras %}
+{% block title %}GT Select — Preview{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_gt_select' %}"> / GT Select</a> <span>/ Preview</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap b2b-wide">
+  <div class="b2b-head">
+    <div>
+      <h1>GT Select <span>· Preview</span></h1>
+      <p class="src">{{ meta.headers_name }} + {{ meta.lines_name }} · nothing is written until you confirm.</p>
+    </div>
+    <a href="{% url 'b2b_gt_select' %}" class="back">← New upload</a>
+  </div>
+
+  <div class="hub-kpis reveal">
+    <div class="hk"><div class="n">{{ r.summary.new }}</div><div class="l">New orders</div></div>
+    <div class="hk"><div class="n">{{ r.summary.new_lines }}</div><div class="l">New lines</div></div>
+    <div class="hk"><div class="n">{{ r.summary.qty|compact }}</div><div class="l">Qty</div></div>
+    <div class="hk"><div class="n">{{ r.summary.value|inr_short }}</div><div class="l">Value</div></div>
+    <div class="hk"><div class="n">{{ r.summary.dup }}</div><div class="l">Already imported</div></div>
+  </div>
+
+  <form method="post" action="{% url 'b2b_gt_select_confirm' token=token %}">
+    {% csrf_token %}
+    <div class="confirm-bar">
+      <div class="cb-text">
+        {% if r.summary.new %}Import <b>{{ r.summary.new }} order(s)</b> · <b>{{ r.summary.new_lines }} line(s)</b> as <b>GT Select · Offline</b>.
+        {% else %}<span class="cb-warn">Nothing new</span> — all {{ r.summary.total }} order(s) were already imported.{% endif %}
+        {% if r.summary.dup %}<span class="cb-muted">({{ r.summary.dup }} already present → skipped)</span>{% endif %}
+      </div>
+      <div class="cb-actions">
+        <button class="btn-discard" type="submit" formaction="{% url 'b2b_gt_select_discard' token=token %}" formnovalidate>Discard</button>
+        <button class="btn-primary" type="submit"{% if not r.summary.new %} disabled{% endif %}>✓ Confirm &amp; import</button>
+      </div>
+    </div>
+  </form>
+
+  {% if r.warnings %}
+  <div class="warnbox" style="margin-top:14px;">
+    <strong>{{ r.warnings|length }} note(s)</strong>
+    <ul>{% for w in r.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+  <div class="im-card reveal">
+    <h2>Orders <span class="count">{{ r.headers|length }}</span></h2>
+    <div class="scroll">
+    <table class="grid compact">
+      <thead><tr><th>SO No</th><th>External Doc</th><th>Customer</th><th>Whse</th><th>Date</th><th class="r">Lines</th><th class="r">Qty</th><th class="r">Value</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for h in r.headers %}
+        <tr class="{% if not h.is_new %}rnim{% endif %}">
+          <td class="mono">{{ h.so_no }}</td>
+          <td class="mono">{{ h.external_doc|default:'—' }}</td>
+          <td class="desc" title="{{ h.location }}">{{ h.location }}</td>
+          <td class="mono">{{ h.warehouse }}</td>
+          <td class="muted">{{ h.po_date|default:'—' }}</td>
+          <td class="r">{{ h.line_count }}</td>
+          <td class="r">{{ h.qty }}</td>
+          <td class="r">{{ h.order_value|inr_short }}</td>
+          <td>{% if h.is_new %}<span class="st ok">NEW</span>{% else %}<span class="st">dup</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="im-card reveal">
+    <h2>Lines <span class="count">sample {{ r.sample_lines|length }} of {{ r.summary.lines }}</span></h2>
+    <div class="scroll">
+    <table class="grid compact">
+      <thead><tr><th>SO No</th><th>Item No</th><th>EAN</th><th>Description</th><th class="r">Qty</th><th class="r">Unit Price</th><th>Whse</th></tr></thead>
+      <tbody>
+        {% for l in r.sample_lines %}
+        <tr>
+          <td class="mono">{{ l.so_no }}</td>
+          <td class="mono">{{ l.item_no }}</td>
+          <td class="mono">{{ l.ean|default:'—' }}</td>
+          <td class="desc" title="{{ l.description }}">{{ l.description }}</td>
+          <td class="r">{{ l.qty }}</td>
+          <td class="r">{{ l.unit_price|default_if_none:'—' }}</td>
+          <td class="mono">{{ l.location }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

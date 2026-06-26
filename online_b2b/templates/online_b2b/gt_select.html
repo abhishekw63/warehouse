@@ -1,0 +1,40 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static b2b_extras %}
+{% block title %}GT Select — Order Management{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_offline' %}"> / Offline</a> <span>/ GT Select</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap">
+  <div class="b2b-head">
+    <div>
+      <h1>GT Select <span>· Offline</span></h1>
+      <p class="src">Orders are finalised in <b>D365</b> — no engine step. Upload the two exports and they're loaded straight into the order DB for the dashboard.</p>
+    </div>
+    <a href="{% url 'b2b_offline' %}" class="back">← Offline</a>
+  </div>
+
+  <div class="im-card reveal">
+    <h2>Import Sales Orders + Lines</h2>
+    <p class="im-sub">Export both from D365 for GT Select. We join lines to headers on <span class="mono">Document No.</span>, dedup on <b>External Document No.</b> (SO No regenerates each export), and tag everything <b>GT Select · Offline</b>.</p>
+    <form method="post" action="{% url 'b2b_gt_select_upload' %}" enctype="multipart/form-data" class="im-up">
+      {% csrf_token %}
+      <label class="im-file">
+        <span class="imf-l">① Sales Orders (headers)</span>
+        <input type="file" name="headers_file" accept=".xlsx,.xls" required>
+        <span class="imf-h">No., External Doc, Ship-to, Total Qty / Amount…</span>
+      </label>
+      <label class="im-file">
+        <span class="imf-l">② Sales Lines</span>
+        <input type="file" name="lines_file" accept=".xlsx,.xls" required>
+        <span class="imf-h">Document No., Item No., GTIN, Qty, Line Amount…</span>
+      </label>
+      <button type="submit" class="btn-primary">Preview &amp; import →</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

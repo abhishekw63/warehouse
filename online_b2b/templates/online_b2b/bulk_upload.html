@@ -1,0 +1,66 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static %}
+{% block title %}Online B2B — Bulk Import{% endblock %}
+{% block extra_css %}
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_dashboard' %}"> / Online B2B</a> <span>/ Bulk Import</span>
+{% endblock %}
+
+{% block content %}
+<div class="up-wrap">
+  <div class="b2b-head">
+    <div>
+      <h1>Bulk Import <span>· ERP Sales Orders</span></h1>
+      <p class="src">Upload the ERP "Sales Orders" header export to bring manually-created orders onto the dashboard. Nothing is written until you review &amp; confirm.</p>
+    </div>
+    <a href="{% url 'b2b_dashboard' %}" class="back">← Overview</a>
+  </div>
+
+  <form method="post" enctype="multipart/form-data" class="up-card" id="up-form">
+    {% csrf_token %}
+    <div class="fld">
+      <label>ERP Sales Orders file</label>
+      <label class="dropzone" id="dz">
+        <span class="dz-ic">{% include 'online_b2b/_icons.html' with i='download' %}</span>
+        <span class="dz-main" id="dz-main">Click to choose the ERP export</span>
+        <span class="dz-sub">Business Central "Sales Orders" · .xlsx</span>
+        <input type="file" name="erp_file" accept=".xlsx" required>
+      </label>
+    </div>
+    <div class="up-actions">
+      <button type="submit" class="btn-primary" id="up-submit">Review</button>
+      <a href="{% url 'b2b_dashboard' %}" class="btn-clear">Cancel</a>
+    </div>
+  </form>
+</div>
+
+<style>
+  .up-wrap{max-width:660px;margin:28px auto 64px;padding:0 20px;color:var(--text);font-family:var(--font);}
+  .up-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:24px;margin-top:20px;}
+  .fld{display:flex;flex-direction:column;gap:6px;margin-bottom:16px;}
+  .fld label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+  .dropzone{display:flex;flex-direction:column;align-items:center;gap:6px;padding:30px;cursor:pointer;border:1.5px dashed var(--border);border-radius:12px;background:var(--surface-2);text-align:center;transition:all .15s;}
+  .dropzone:hover{border-color:var(--accent);background:var(--accent-soft);}
+  .dz-ic{width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:var(--accent-soft);color:var(--accent);}
+  .dz-ic svg{width:18px;height:18px;}
+  .dz-main{font-weight:600;font-size:14px;color:var(--text);}
+  .dz-sub{font-size:12px;color:var(--muted);}
+  .dropzone input[type=file]{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;}
+  .up-actions{display:flex;align-items:center;gap:14px;margin-top:6px;}
+</style>
+<script>
+(function () {
+  var dz = document.getElementById('dz'); if (!dz) return;
+  var input = dz.querySelector('input[type=file]'), main = document.getElementById('dz-main');
+  input.addEventListener('change', function () { main.textContent = input.files.length ? input.files[0].name : 'Click to choose the ERP export'; });
+  document.getElementById('up-form').addEventListener('submit', function () {
+    if (input.files.length) { var b = document.getElementById('up-submit'); b.disabled = true; b.textContent = 'Reading…'; }
+  });
+})();
+</script>
+{% endblock %}

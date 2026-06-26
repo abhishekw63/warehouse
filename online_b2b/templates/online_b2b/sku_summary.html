@@ -1,0 +1,138 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static %}
+{% block title %}SKU Summary — Order Management{% endblock %}
+{% block extra_css %}
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_dashboard' %}"> / Order Management</a> <span>/ SKU Summary</span>
+{% endblock %}
+
+{% block content %}
+<div class="iss-wrap" id="sku-wrap">
+  <div class="iss-head">
+    <div>
+      <h1>SKU Summary</h1>
+      <p class="sub">Every recorded line rolled up <b>per SKU</b> (Item No + EAN) across all POs — how each SKU's quantity landed as <b>OK / Mismatch / Not&nbsp;in&nbsp;Master</b>, with the MRP comparison. Click a SKU to see its individual PO lines.</p>
+    </div>
+    <a href="{% url 'b2b_dashboard' %}" class="back">← Dashboard</a>
+  </div>
+
+  {% if not d.ok %}
+    <div class="banner err">SKU summary unavailable{% if d.error %} — {{ d.error }}{% endif %}.</div>
+  {% else %}
+
+  <div class="iss-kpis">
+    <div class="ik tot"><div class="n">{{ d.totals.qty }}</div><div class="l">Total qty</div></div>
+    <div class="ik res"><div class="n">{{ d.totals.ok }}</div><div class="l">OK qty</div></div>
+    <div class="ik mis"><div class="n">{{ d.totals.mismatch }}</div><div class="l">Mismatch qty</div></div>
+    <div class="ik nim"><div class="n">{{ d.totals.nim }}</div><div class="l">Not-in-master qty</div></div>
+  </div>
+
+  <form id="sku-filters" class="filters" onsubmit="return false;">
+    <div class="fg"><label>Marketplace</label>
+      <select name="marketplace"><option value="">All</option>
+        {% for m in d.marketplaces %}<option value="{{ m }}">{{ m }}</option>{% endfor %}
+      </select></div>
+    <div class="fg"><label>From</label><input type="date" name="from"></div>
+    <div class="fg"><label>To</label><input type="date" name="to"></div>
+    <div class="fg grow"><label>Search item no / EAN / description</label>
+      <input type="text" name="q" placeholder="search…" autocomplete="off"></div>
+    <label class="sku-chk"><input type="checkbox" name="issues"> Issues only</label>
+    <span id="sku-spin" class="spin" hidden></span>
+  </form>
+
+  <div class="sku-bar">
+    <span id="sku-shown" class="sku-shown">Showing {{ d.shown }} of {{ d.total_skus }} SKUs{% if d.capped %} (capped){% endif %}.</span>
+    <span class="sku-toggle">Show:
+      <button type="button" class="sk-tg on" data-mode="qty">Qty</button>
+      <button type="button" class="sk-tg" data-mode="lines">Lines</button>
+    </span>
+  </div>
+
+  <div class="iss-scroll">
+  <table class="grid compact sku-table">
+    <thead><tr>
+      <th>Item No</th><th>EAN</th><th>Description</th>
+      <th class="r">Our MRP</th><th class="r">Their MRP</th>
+      <th class="r">Tot Qty</th>
+      <th class="r ok">OK</th><th class="r mis">Mismatch</th><th class="r nim">Not&nbsp;in&nbsp;Master</th>
+      <th class="r">POs</th><th class="r">Diff</th><th>Marketplaces</th>
+    </tr></thead>
+    <tbody id="sku-tbody">
+      {% include 'online_b2b/_sku_rows.html' %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  var form = document.getElementById('sku-filters');
+  if (!form) return;
+  var tbody = document.getElementById('sku-tbody');
+  var spin = document.getElementById('sku-spin');
+  var shown = document.getElementById('sku-shown');
+  var wrap = document.getElementById('sku-wrap');
+  var base = "{% url 'b2b_sku_summary' %}";
+  var linesUrl = "{% url 'b2b_sku_summary_lines' %}";
+  var timer = null, ctrl = null;
+
+  function load() {
+    var p = new URLSearchParams();
+    if (form.marketplace.value) p.set('marketplace', form.marketplace.value);
+    if (form.from.value) p.set('from', form.from.value);
+    if (form.to.value) p.set('to', form.to.value);
+    if (form.q.value.trim()) p.set('q', form.q.value.trim());
+    if (form.issues.checked) p.set('issues', '1');
+    if (ctrl) ctrl.abort(); ctrl = new AbortController();
+    if (spin) spin.hidden = false;
+    fetch(base + '?' + p.toString(), { headers: { 'X-Requested-With': 'XMLHttpRequest' }, signal: ctrl.signal })
+      .then(function (r) { return r.text(); })
+      .then(function (html) { tbody.innerHTML = html; if (spin) spin.hidden = true; bindRows(); syncShown(); })
+      .catch(function (e) { if (e.name !== 'AbortError' && spin) spin.hidden = true; });
+  }
+  function syncShown() {
+    var n = tbody.querySelectorAll('tr.sku-row').length;
+    if (shown) shown.firstChild ? shown.firstChild.nodeValue = 'Showing ' + n + ' SKUs' : 0;
+  }
+  form.marketplace.addEventListener('change', load);
+  form.from.addEventListener('change', load);
+  form.to.addEventListener('change', load);
+  form.issues.addEventListener('change', load);
+  form.q.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(load, 300); });
+
+  // Qty ↔ Lines toggle (pure CSS via a body-ish class)
+  document.querySelectorAll('.sk-tg').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('.sk-tg').forEach(function (x) { x.classList.remove('on'); });
+      b.classList.add('on');
+      wrap.classList.toggle('show-lines', b.getAttribute('data-mode') === 'lines');
+    });
+  });
+
+  // Drill-down: click a SKU row → load its PO lines under it
+  function bindRows() {
+    tbody.querySelectorAll('tr.sku-row').forEach(function (tr) {
+      tr.addEventListener('click', function () {
+        var nxt = tr.nextElementSibling;
+        if (nxt && nxt.classList.contains('sku-drill')) { nxt.remove(); tr.classList.remove('open'); return; }
+        tr.classList.add('open');
+        var det = document.createElement('tr'); det.className = 'sku-drill';
+        var td = document.createElement('td'); td.colSpan = 12; td.innerHTML = '<div class="muted" style="padding:8px;">loading…</div>';
+        det.appendChild(td); tr.parentNode.insertBefore(det, tr.nextElementSibling);
+        var p = new URLSearchParams({ item_no: tr.getAttribute('data-item'), ean: tr.getAttribute('data-ean') });
+        fetch(linesUrl + '?' + p.toString(), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+          .then(function (r) { return r.text(); })
+          .then(function (html) { td.innerHTML = html; });
+      });
+    });
+  }
+  bindRows();
+})();
+</script>
+{% endblock %}

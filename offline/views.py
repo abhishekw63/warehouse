@@ -10,19 +10,27 @@ Routes:
     GET  /offline/download-template/  → DownloadTemplateView (blank PO template)
 """
 
-from django.views.generic import TemplateView, View
-from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import HttpResponse, JsonResponse
+import json
+import os
+import uuid
 from datetime import datetime
+from pathlib import Path
 
+from django.conf import settings
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
+from django.urls import reverse
+from django.views.generic import TemplateView, View
+
+from .services import mt_bridge
 from .utils import (
-    GTMassAutomation,
+    EMAIL_CONFIG,
     D365Exporter,
     EmailSender,
-    EMAIL_CONFIG,
+    GTMassAutomation,
     TemplateGenerator,
-    result_to_session,
     result_from_session,
+    result_to_session,
 )
 
 
@@ -220,3 +228,87 @@ class DownloadTemplateView(LoginRequiredMixin, View):
         response['Content-Disposition'] = 'attachment; filename="GT-Mass_PO_Template.xlsx"'
 
         return response
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  MT Select — Shoppers Stop (and future MT channels)
+#
+#  Wraps the FROZEN desktop automation via offline.services.mt_bridge, which
+#  runs the EXACT desktop pipeline headlessly → same ss_so_*.xlsx workbook.
+# ─────────────────────────────────────────────────────────────────────────
+
+class ShoppersStopView(LoginRequiredMixin, TemplateView):
+    """Upload + generate page for the MT-Select Shoppers Stop channel."""
+    template_name = 'offline/shoppers_stop.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['channels'] = mt_bridge.channel_choices()
+        ctx['warehouses'] = mt_bridge.warehouse_choices()
+        ctx['default_warehouse'] = mt_bridge.default_warehouse()
+        return ctx
+
+
+class SSPreviewView(LoginRequiredMixin, View):
+    """Phase 1: save uploaded PO file(s) under a token, run a NO-WRITE preview
+    (parse + resolve + validate). Nothing is recorded and no SO number is burned —
+    same as the online review step."""
+
+    def post(self, request, *args, **kwargs):
+        files = request.FILES.getlist('files')
+        if not files:
+            return JsonResponse({'ok': False, 'error': 'No files selected'},
+                                status=400)
+        channel = request.POST.get('channel', 'SS')
+        warehouse = (request.POST.get('warehouse', '')
+                     or mt_bridge.default_warehouse())
+
+        token = uuid.uuid4().hex[:12]
+        up_dir = Path(settings.MEDIA_ROOT) / 'mt_uploads' / token
+        up_dir.mkdir(parents=True, exist_ok=True)
+        paths = []
+        for f in files:
+            dest = up_dir / Path(f.name).name
+            with open(dest, 'wb') as out:
+                for chunk in f.chunks():
+                    out.write(chunk)
+            paths.append(str(dest))
+        (up_dir / 'meta.json').write_text(
+            json.dumps({'channel': channel, 'warehouse': warehouse,
+                        'files': paths}), encoding='utf-8')
+
+        result = mt_bridge.preview(channel, paths, warehouse)
+        result['token'] = token
+        return JsonResponse(result, status=200 if result.get('ok') else 400)
+
+
+class SSConfirmView(LoginRequiredMixin, View):
+    """Phase 2: assign SO numbers, write the workbook, and record into the shared
+    renee_orders DB — so SS appears on the online dashboard."""
+
+    def post(self, request, *args, **kwargs):
+        token = request.POST.get('token', '')
+        up_dir = Path(settings.MEDIA_ROOT) / 'mt_uploads' / token
+        meta_p = up_dir / 'meta.json'
+        if not token or not meta_p.exists():
+            return JsonResponse(
+                {'ok': False, 'error': 'Upload expired — please re-upload.'},
+                status=400)
+        meta = json.loads(meta_p.read_text(encoding='utf-8'))
+        result = mt_bridge.confirm(meta['channel'], meta['files'],
+                                   meta['warehouse'])
+        if result.get('ok') and result.get('output_path'):
+            request.session[f'ss_out_{token}'] = result['output_path']
+            result['download_url'] = reverse('ss_download', args=[token])
+        return JsonResponse(result, status=200 if result.get('ok') else 400)
+
+
+class SSDownloadView(LoginRequiredMixin, View):
+    """GET: serve the generated workbook for a processed token."""
+
+    def get(self, request, token, *args, **kwargs):
+        path = request.session.get(f'ss_out_{token}')
+        if not path or not os.path.exists(path):
+            raise Http404('Generated workbook not found or expired.')
+        return FileResponse(open(path, 'rb'), as_attachment=True,
+                            filename=os.path.basename(path))

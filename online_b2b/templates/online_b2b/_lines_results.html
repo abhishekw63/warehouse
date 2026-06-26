@@ -1,0 +1,29 @@
+{% load b2b_extras %}
+<div class="kpis" style="grid-template-columns:repeat(3,minmax(150px,1fr));max-width:560px;">
+  <div class="card c3"><span class="ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><div><div class="n">{{ d.kpis.lines }}</div><div class="l">Line items</div></div></div>
+  <div class="card c5"><span class="ic">{% include 'online_b2b/_icons.html' with i='hash' %}</span><div><div class="n">{{ d.kpis.qty|compact }}</div><div class="l">Total Qty</div></div></div>
+  <div class="card c1"><span class="ic">{% include 'online_b2b/_icons.html' with i='po' %}</span><div><div class="n">{{ d.kpis.pos }}</div><div class="l">POs</div></div></div>
+</div>
+
+<div class="orders-panel">
+  <div class="sec-head"><h2>Line Items <span class="count">{{ d.total }}</span></h2></div>
+  <div class="iss-scroll" style="max-height:600px;overflow:auto;">
+  <table class="grid compact">
+    <thead><tr><th>MP</th><th>PO</th><th>Item</th><th>EAN</th><th title="wrong EAN as received, if corrected">Recv EAN</th><th>Description</th><th class="r">Qty</th>
+      <th class="r">Unit Price</th>
+      <th class="r">Our MRP</th><th class="r">Their MRP</th>
+      <th class="r">Our Land</th><th class="r">Their Land</th>
+      <th class="r">Our CP</th><th class="r">Their CP</th>
+      <th class="r">Diff</th><th>Basis</th><th>Status</th><th>Action</th><th>Run</th></tr></thead>
+    <tbody id="lines-body">
+      {% include 'online_b2b/_lines_rows.html' with rows=d.rows %}
+      {% if not d.rows %}<tr><td colspan="20" class="muted">No line items match{% if not d.total %} — line items exist only for web-confirmed runs (Process PO → Confirm).{% endif %}</td></tr>{% endif %}
+    </tbody>
+  </table>
+  </div>
+  {% if d.total > d.rows|length %}
+    <button type="button" id="lines-more" class="btn-more"
+            data-offset="{{ d.rows|length }}" data-total="{{ d.total }}"
+            data-limit="{{ d.limit }}">Load more ({{ d.rows|length }} of {{ d.total }})</button>
+  {% endif %}
+</div>

@@ -1,0 +1,113 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static b2b_extras %}
+{% block title %}Online B2B — Line Items{% endblock %}
+{% block extra_css %}
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_dashboard' %}"> / Online B2B</a> <span>/ Line Items</span>
+{% endblock %}
+
+{% block content %}
+<div class="iss-wrap">
+  <div class="iss-head">
+    <div>
+      <h1>Line Items</h1>
+      <p class="sub">Every SO line across confirmed runs — vendor vs our MRP/CP, status, action. Click a PO to open its run.</p>
+    </div>
+    <div class="head-actions">
+      <a href="{% url 'b2b_orders' %}" class="btn-ghost">Orders →</a>
+      <a href="{% url 'b2b_dashboard' %}" class="back">← Dashboard</a>
+    </div>
+  </div>
+
+  {% if not d.ok %}
+    <div class="banner err">Line items unavailable{% if d.error %} — {{ d.error }}{% endif %}.</div>
+  {% else %}
+
+  <form id="ln-filters" class="filters" onsubmit="return false;">
+    <div class="fg"><label>Marketplace</label>
+      <select name="marketplace"><option value="">All</option>
+        {% for m in d.marketplace_options %}<option value="{{ m }}" {% if m == d.filters.marketplace %}selected{% endif %}>{{ m }}</option>{% endfor %}
+      </select></div>
+    <div class="fg"><label>Status</label>
+      <select name="status"><option value="">All</option>
+        {% for s in d.status_options %}<option value="{{ s }}" {% if s == d.filters.status %}selected{% endif %}>{{ s }}</option>{% endfor %}
+      </select></div>
+    <div class="fg"><label>PO</label><input type="text" name="po" value="{{ d.filters.po }}" placeholder="exact PO…" autocomplete="off"></div>
+    <div class="fg grow"><label>Search item / EAN / description</label>
+      <input type="text" name="q" value="{{ d.filters.q }}" placeholder="search…" autocomplete="off"></div>
+    <span id="ln-spin" class="spin" hidden></span>
+    <a href="{% url 'b2b_lines' %}" id="ln-reset" class="btn-clear">Reset</a>
+  </form>
+
+  <div id="ln-results">
+    {% include 'online_b2b/_lines_results.html' %}
+  </div>
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  var form = document.getElementById('ln-filters');
+  if (!form) return;
+  var results = document.getElementById('ln-results');
+  var spin = document.getElementById('ln-spin');
+  var base = "{% url 'b2b_lines' %}";
+  var moreUrl = "{% url 'b2b_lines_more' %}";
+  var timer = null, ctrl = null;
+
+  function params(extra) {
+    var p = new URLSearchParams();
+    if (form.marketplace.value) p.set('marketplace', form.marketplace.value);
+    if (form.status.value) p.set('status', form.status.value);
+    if (form.po.value.trim()) p.set('po', form.po.value.trim());
+    if (form.q.value.trim()) p.set('q', form.q.value.trim());
+    if (extra) for (var k in extra) p.set(k, extra[k]);
+    return p;
+  }
+  function load(push) {
+    var p = params(); var qs = p.toString();
+    if (ctrl) ctrl.abort(); ctrl = new AbortController();
+    results.classList.add('loading'); spin.hidden = false;
+    p.set('partial', '1');
+    fetch(base + '?' + p.toString(), { headers: { 'X-Requested-With': 'XMLHttpRequest' }, signal: ctrl.signal })
+      .then(function (r) { return r.text(); })
+      .then(function (html) { results.innerHTML = html; results.classList.remove('loading'); spin.hidden = true; bindMore();
+        if (push) history.pushState({}, '', qs ? '?' + qs : base); })
+      .catch(function (e) { if (e.name !== 'AbortError') { results.classList.remove('loading'); spin.hidden = true; } });
+  }
+  function bindMore() {
+    var more = document.getElementById('lines-more');
+    if (!more) return;
+    more.addEventListener('click', function () {
+      var off = parseInt(more.getAttribute('data-offset'), 10);
+      var total = parseInt(more.getAttribute('data-total'), 10);
+      var lim = parseInt(more.getAttribute('data-limit'), 10);
+      more.disabled = true; more.textContent = 'Loading…';
+      fetch(moreUrl + '?' + params({ offset: off }).toString(),
+            { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (r) { return r.text(); })
+        .then(function (html) {
+          document.getElementById('lines-body').insertAdjacentHTML('beforeend', html);
+          var got = (html.match(/<tr/g) || []).length, now = off + got;
+          if (now >= total || got < lim) { more.remove(); }
+          else { more.disabled = false; more.setAttribute('data-offset', now);
+                 more.textContent = 'Load more (' + now + ' of ' + total + ')'; }
+        });
+    });
+  }
+  form.marketplace.addEventListener('change', function () { load(true); });
+  form.status.addEventListener('change', function () { load(true); });
+  form.po.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(function () { load(true); }, 350); });
+  form.q.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(function () { load(true); }, 350); });
+  document.getElementById('ln-reset').addEventListener('click', function (e) {
+    e.preventDefault(); form.marketplace.value = ''; form.status.value = ''; form.po.value = ''; form.q.value = ''; load(true);
+  });
+  bindMore();
+})();
+</script>
+{% endblock %}

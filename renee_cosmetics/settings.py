@@ -10,22 +10,39 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
+import sys
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# ── Online PO engine (Phase 0) ──────────────────────────────────────────
+# Option A: import the existing `online_po_processor` package as a LIBRARY
+# (no fork, no copy). The Tkinter app keeps using the same source untouched.
+# online_po_management/ is a sibling of this settings package at the repo root.
+ENGINE_ROOT = BASE_DIR / 'online_po_management'
+if ENGINE_ROOT.is_dir() and str(ENGINE_ROOT) not in sys.path:
+    sys.path.insert(0, str(ENGINE_ROOT))
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = "django-insecure-p&*^wtu2w@s_w_a)ei_#h5-f4#qknjc1hqb&t7-=(4!zs3m4$("
+# Override via env (DJANGO_SECRET_KEY) when hosting; falls back to dev key.
+SECRET_KEY = os.environ.get(
+    'DJANGO_SECRET_KEY',
+    "django-insecure-p&*^wtu2w@s_w_a)ei_#h5-f4#qknjc1hqb&t7-=(4!zs3m4$(")
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Hosting sets DJANGO_DEBUG=0 (see serve.bat / HOSTING.md). Default = dev (on).
+DEBUG = os.environ.get('DJANGO_DEBUG', '1') != '0'
 
-ALLOWED_HOSTS = ['*']
+# LAN hosting: allow the office subnet by default; override with DJANGO_ALLOWED_HOSTS
+# (comma-separated). '*' is fine for a trusted internal network.
+ALLOWED_HOSTS = [h.strip() for h in
+                 os.environ.get('DJANGO_ALLOWED_HOSTS', '*').split(',') if h.strip()]
 
 
 # Application definition
@@ -48,6 +65,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    # WhiteNoise serves collected static files directly from the WSGI app
+    # (waitress) — no nginx needed for LAN hosting. Must sit right after Security.
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -58,18 +78,25 @@ MIDDLEWARE = [
 
 ROOT_URLCONF = "renee_cosmetics.urls"
 
-import os
-
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
         "DIRS": [os.path.join(BASE_DIR, 'core', 'templates')],
-        "APP_DIRS": True,
+        # NB: APP_DIRS must be omitted when 'loaders' is set (mutually exclusive).
         "OPTIONS": {
             "context_processors": [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "online_b2b.context_processors.build_info",
+            ],
+            # Explicit UNCACHED loaders → template/HTML/chart edits go live on the
+            # prod server (DEBUG=0) with just a browser refresh, no restart. The
+            # per-request read cost is microseconds (fine for a LAN pilot).
+            # (Python/view/settings changes still need a waitress restart.)
+            "loaders": [
+                "django.template.loaders.filesystem.Loader",
+                "django.template.loaders.app_directories.Loader",
             ],
         },
     },
@@ -87,6 +114,55 @@ DATABASES = {
         "NAME": BASE_DIR / "db.sqlite3",
     }
 }
+
+# ── Order DB (MySQL renee_orders) for admin CRUD ────────────────────────
+# Same credentials the engine uses (db_config.json, kept OUT of the repo).
+# The read-only dashboards use raw pymysql; this Django ORM 'orders' connection
+# powers the admin CRUD on managed=False models. A router (OrdersRouter) keeps
+# ALL migrations OFF this connection — Django never creates/alters/drops the
+# engine-owned tables, so the schema + data are never reset. Admin edits/deletes
+# only the specific rows an admin acts on.
+def _load_orders_db():
+    import json
+    import os as _os
+    from pathlib import Path as _P
+    env = _os.environ.get('ONLINE_PO_DB_CONFIG')
+    p = (_P(env) if env else
+         _P(_os.environ.get('LOCALAPPDATA') or _os.path.expanduser('~'))
+         / 'OnlinePOProcessor' / 'db_config.json')
+    if not p.exists():
+        return None
+    try:
+        cfg = json.loads(p.read_text(encoding='utf-8-sig'))
+    except Exception:
+        return None
+    if str(cfg.get('backend', '')).lower() != 'mysql':
+        return None
+    return {
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': cfg.get('database', 'renee_orders'),
+        'USER': cfg.get('user', 'root'),
+        'PASSWORD': cfg.get('password', ''),
+        'HOST': cfg.get('host', '127.0.0.1'),
+        'PORT': str(cfg.get('port', 3306)),
+        'OPTIONS': {'charset': 'utf8mb4'},
+        'TIME_ZONE': 'UTC',
+    }
+
+
+try:
+    import pymysql
+    # Django 6's mysql backend gates on mysqlclient >= (2, 2, 1). pymysql's own
+    # version_info is lower, so advertise a compatible one before the shim.
+    pymysql.version_info = (2, 2, 8, 'final', 0)
+    pymysql.install_as_MySQLdb()
+except Exception:
+    pass
+
+_ORDERS_DB = _load_orders_db()
+if _ORDERS_DB:
+    DATABASES['orders'] = _ORDERS_DB
+    DATABASE_ROUTERS = ['online_b2b.db_router.OrdersRouter']
 
 
 # Password validation
@@ -124,8 +200,31 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = "static/"
-import os
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+# WhiteNoise: compress + hash static files at collectstatic time and serve them
+# with far-future caching. Falls back gracefully if a referenced file is missing.
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+    },
+}
+
+# Media — uploaded PO files + generated workbooks (Phase 0). Disk cache only;
+# the system of record for orders is MySQL `renee_orders` (the engine's store).
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
+# A large PO's review form carries 4 decision fields per FLAGGED line
+# (aff_key / aff_action / aff_override_cp / aff_remark). A few hundred affected
+# lines exceeds Django's default 1000-field cap (a DoS guard) → TooManyFieldsSent
+# on Lock / Discard / Generate. This is a trusted internal LAN tool processing
+# genuinely large POs, so raise the cap generously. File-upload size guards are
+# unaffected (DATA_UPLOAD_MAX_MEMORY_SIZE stays default).
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 100000
 
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'departments'
+
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

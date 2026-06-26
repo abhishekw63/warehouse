@@ -372,6 +372,454 @@ instead of a single number that lies for rule-based marketplaces.
 
 ## 10. Changelog (append one line per development)
 
+- **2026-06-26** — **SKU Summary (SKU-wise validation pivot)**: new page
+  `/b2b/sku-summary/` (sidebar ▸ Data) — every recorded line rolled up per
+  **(Item No + EAN)** across all POs: qty + line-count per status (OK / Mismatch /
+  Not-in-master, with a Qty↔Lines toggle), Our vs Their MRP (⚠ when vendor MRP
+  varies across a SKU's POs), #POs, worst diff, marketplaces; filters (marketplace
+  / date / search / issues-only) and **click-to-expand drill-down** to the SKU's
+  individual PO-lines. **READ-ONLY** aggregation over `order_lines_full`
+  (`order_db.sku_summary` / `sku_lines`) — NO DB changes, nothing existing touched.
+  Nothing hidden (all SKUs + 3 statuses; "showing N of M" if ever capped). Also
+  **appends a per-run `SKU Summary` sheet to the SO Workbook** via web post-process
+  (`Processor._append_sku_sheet`) — engine + its other sheets untouched.
+- **2026-06-26** — **Reliance integrated (web)**: added to `PILOT_MARKETPLACES` +
+  an Online "live" chip. PDF (`pdf_parser='reliance'`, multi-file via base
+  `Processor.process_multi`), `from_ean`, cost basis, **GST-dependent margin**
+  (`gst_margin_discount=0.31` → keep% = 1 − 0.31×(1+GST), in-engine). Order value
+  grossed up by each line's PDF GST rate. Verified on the 26-06 batch: 5 POs · 71
+  lines · ₹291,091 (69 OK / 2 MISMATCH), margins 63.42% (18% GST) + 67.45% (5% GST)
+  applied correctly. Also added **`DB_STRUCTURE.md`** (graphical DB map for review).
+- **2026-06-26** — **Unified exceptions table**: merged `item_swiggy_deals` INTO
+  `item_exceptions` — ONE table for every per-code override, with a `kind` column
+  (`exception` = EAN remap / CP override / vendor-CP; `swiggy_deal` = deal SKU).
+  `build_overlay_workbook` splits by `kind` to regenerate the engine's two sheets,
+  so parity stays byte-identical (re-verified: exceptions / price_overrides /
+  vendor_cp / 5 deals all match). Dropped the separate table + its admin model;
+  `ItemException` admin now filters by kind. Cleaner single source for exceptions.
+- **2026-06-26** — **Ship-To Mapping dedicated page** (`/b2b/ship-to/`, sidebar under
+  Data): status KPIs (rows/parties/last-updated), **upload→preview→replace** the
+  Ship-To B2B Excel (manual rows preserved), one-click **re-seed from bundled**,
+  party filter + as-you-type search, and inline **CRUD** (add / edit / delete;
+  UI-added rows are durable `source='manual'`). Mirrors the Item Master page.
+  Backed by `mapping_store`. Verified: page + search + add/edit/delete all green.
+- **2026-06-25** — **Bundled data Excels fully retired from the web (single source
+  of truth = DB)**: the last two Excel-sourced overlays moved to DB via new
+  `overrides_store` — `item_exceptions` (Master Exceptions: Firstcry remap / Blink
+  EPISENSE / Myntra Goddess) + `item_swiggy_deals` (Swiggy deal SKUs). Parity is
+  guaranteed by storing each sheet's RAW cells and regenerating a tiny workbook fed
+  to the engine's OWN parsers (`load_exceptions` / `_load_swiggy_sheets`) →
+  byte-identical (verified: exceptions / price_overrides / vendor_cp / 5 deals all
+  match). `DBMasterLoader.load_from_db` now sources overlays from the DB (no
+  `overlay_master_path`); `engine_bridge._run` is **DB-ONLY** — no bundled Excel for
+  item master, Ship-To mapping, OR overrides (empty table → clear "seed it" error,
+  never a silent Excel fallback). Desktop app keeps its Excel; only the web is
+  retired off it. **Admin**: all DB-master tables registered (`ItemMaster`,
+  `ItemSwiggyMap`, `ShipToMapping`, `ItemException`, `ItemSwiggyDeal`) + router
+  updated so they read the `orders` MySQL DB.
+- **2026-06-25** — **Ship-To B2B mapping → DB (addresses retired off Excel)**:
+  new web-owned table `ship_to_mapping` (party / del_location / cust_no / ship_to +
+  address fields + `source`); `mapping_store` parses/replaces it from the bundled
+  `Ship to B2B.xlsx` and `DBMappingLoader(MappingLoader)` overrides only `load()` to
+  fill the SAME `self.mappings`/`self.by_shipto` from the table — every lookup tier
+  inherited untouched. `engine_bridge._run` is DB-first with Excel fallback.
+  Seeded 736 rows / 25 parties; **parity verified byte-identical vs the Excel for
+  all 25 parties**. **CRUD** (add/edit/delete a single mapping from the UI) with a
+  durable `source='manual'` overlay that survives an Excel re-upload (like
+  `item_master_manual`). Engine untouched. (Mapping UI page still pending.)
+- **2026-06-25** — **Myntra reverted to Excel-primary (off the PDF parser)**: the
+  operator now manually compiles the PO PDFs into one accurate `dump.xlsx`, so
+  `accepted_extensions` leads with `.xlsx` (PDF kept as a selectable fallback). The
+  config already drove both formats (same column names); no parser/wiring change.
+  Verified on the day's `dump.xlsx`: 5 POs · 222 lines · ₹17.9L · **0 malformed
+  EANs** (vs the PDF's 11 NOT_IN_MASTER from merged-EAN page wraps). Web upload hint
+  updated; web preview confirmed.
+- **2026-06-25** — **Bug: `TooManyFieldsSent` on large POs (Lock/Discard/Generate)**:
+  a big PO's review form carries 4 decision fields per flagged line
+  (`aff_key`/`aff_action`/`aff_override_cp`/`aff_remark`); a few hundred affected
+  lines exceeded Django's default 1000-field cap (`DATA_UPLOAD_MAX_NUMBER_FIELDS`,
+  a DoS guard) → POST rejected before the view ran. Raised the cap to 100000 in
+  settings (trusted internal LAN tool). File-size guard
+  (`DATA_UPLOAD_MAX_MEMORY_SIZE`) unchanged. Also made **Discard** a standalone
+  csrf-only form (`#discard-form`, button targets it via HTML5 `form=`) so it no
+  longer carries the big confirm-form payload — instant + safe at any PO size.
+- **2026-06-25** — **Import UX + speed: AJAX upload, cached preview, real "✓
+  Imported" completion**: the upload page now submits via AJAX and runs the engine
+  import server-side, showing a progress overlay with real elapsed time that snaps
+  to a definitive **"✓ Imported: N PO(s) · M line(s) · K to review"** before
+  navigating (operators previously had no clear "done" signal). The preview result
+  is **cached per token** (`<token>/preview.json`, keyed on files + EAN-fixes via
+  `_preview_sig`) so the review page — and every reload — renders from cache:
+  measured **8.3s → 0.002s** (engine ran once). `review()` reads the cache;
+  `_cached_preview` re-runs only when the signature changes (new files / EAN-fix
+  re-validate). Non-JS clients fall back to the plain redirect (review runs the same
+  cached preview). Engine untouched.
+- **2026-06-25** — **Myntra integrated (web)**: added to `PILOT_MARKETPLACES` + an
+  Online "live" chip. SO, `from_ean`, landing basis, margin 70, PDF (`pdf_parser=
+  myntra` → base `Processor.process_multi`); Goddess exception in-engine; order
+  value from the dump (`amount_col`). Verified on the day's 5 POs: 222 lines ·
+  ₹17.71 L (163 OK / 48 MISMATCH / 11 NOT_IN_MASTER). **Robustness fix**: a PDF
+  parser can emit a malformed over-long EAN (two EANs merged on a page wrap); the
+  `ean` column is VARCHAR(20) so one bad row crashed the WHOLE lock (DataError 1406).
+  `Processor._lines()` now caps the EAN to 20 + warns (deduped; never silent) — the
+  line is NOT_IN_MASTER for operator correction. Lock now records all 222 lines.
+- **2026-06-25** — **Myntra PDF parser: header-band widened 45→60pt**: some POs
+  (PO-MYNJ-RNEE240626-2/-4) failed with "line-item grid not recognised · Mapped
+  columns: []". Root cause: `_map_columns` searched for column headers only 45pt
+  above the first SKU; when the first line-item's NAME wraps tall, its SKU (col-0
+  anchor) sits ~50pt below the header → header fell outside the band → 0 columns
+  mapped. Widened the band to 60pt (safe — `_map_columns` only assigns on a header
+  needle match; emails/long-digits already filtered). Verified all 5 of the day's
+  Myntra POs parse with complete data (was 3/5). Engine-internal heuristic — the
+  desktop app benefits too.
+- **2026-06-25** — **Flipkart location→marketplace map: +4 warehouses**: added
+  `che_gsh_wh_nl_01nl`/`guw_gsh_wh_nl_01nl`/`jai_sh_wh_nl_01nl` → FK Hyperlocal and
+  `coi_app_wh_g_01` → FK Grocery to `flipkart_tracker.LOCATION_MARKETPLACE` (were
+  falling through to "FK (review)"). 21 codes mapped; all warehouses in the
+  current tracker now classify. NB: this is the sub-marketplace classification map
+  — separate from the Flipkart-TO `warehouse_aliases` (Transfer-to Code resolution)
+  in `config/marketplaces.py`.
+- **2026-06-25** — **Bug-fix follow-up: "Download SO Workbook" 404**: the earlier
+  export redirect sent ALL workbooks to a shared `MEDIA_ROOT/b2b_exports/`, but
+  `review_download` reads from the **per-token** `b2b_uploads/<token>/output/` →
+  404 (and a shared dir risked one upload's workbook masking another's). Fixed:
+  `Processor._export()` now redirects **only when the input is OUTSIDE
+  `MEDIA_ROOT`** (direct/script runs against source); web uploads stay under their
+  token dir so the engine writes `output/` there and the download finds it.
+  Verified both paths.
+- **2026-06-25** — **Bulk decisions on the review Affected tab**: per-row
+  checkboxes + select-all + a bulk bar — tick a subset → set one Action
+  (Include / Override(+CP) / Exclude) → "Apply to selected"; or tick rows → type
+  one Correct EAN → "Fill into selected" → Apply & re-validate. Lets the operator
+  split a batch (e.g. 10 lines → 5 Exclude, 5 fix-EAN) without touching every
+  field. **NOT_IN_MASTER lines are now Exclude-able** pre-lock (needed for freebie
+  POs whose placeholder EAN has no real item): every affected row now emits
+  `aff_key/aff_action/aff_override_cp/aff_remark` (NIM rows use hidden
+  override/remark to keep `confirm`'s index-zip aligned) + the Correct-EAN input.
+  Verified: 19 freebie NIM lines bulk-Excluded → recorded `NOT_IN_MASTER`+`EXCLUDE`
+  + dropped from the D365 dump. Template/CSS only — no restart needed.
+- **2026-06-25** — **Nykaa integrated (web)**: added to `PILOT_MARKETPLACES` + an
+  Online "live" chip. Standard SO, `from_ean`, cost basis; **per-line margin by
+  category** (`margin_rules`: Perfume/Fragrance 69%, Cosmetics 66% default, `hair`
+  excluded from perfume, HSN cross-check) is applied **inside the engine**, so no
+  per-marketplace web code. Order value from `Unit Cost × Qty` (`PO Amount` per-PO
+  total). Verified on the 19-06 PO: 19 POs · 980 lines · ₹1.40 Cr (864 OK, 116
+  real MISMATCH); both margins 66/69 confirmed in the DB. (A freebie PO with
+  placeholder EAN `RENEE00001301` @ ₹0.01 correctly flags NOT_IN_MASTER.)
+- **2026-06-25** — **Bug: web exports no longer land next to the source files**:
+  the engine's `SOExporter` writes the workbook to `input_file_path.parent/output`
+  (correct for the desktop app, wrong for web — it dropped `…/output/*.xlsx` next
+  to the operator's picked files). `input_file_path` is used ONLY to locate that
+  folder (never embedded in the workbook), so `Processor._export()` now redirects
+  it to a web-owned `MEDIA_ROOT/b2b_exports/` for the export call and restores it
+  after — engine untouched. Verified: workbook lands in
+  `media/b2b_exports/output/`, source folder gets zero new files.
+- **2026-06-25** — **Swiggy integrated (web)**: added to `PILOT_MARKETPLACES`
+  + an Online "live" chip. Flat `PO_<id>.csv`; `item_resolution='from_swiggy_sku'`
+  (SkuCode→EAN) resolves via the **DB master's Swiggy map** (`item_swiggy_map`,
+  loaded by `DBMasterLoader`), so no per-marketplace web code. Cost basis, STRAIGHT
+  80%; order value from the dump's `PoLineValueWithTax` (inc-GST). Verified on the
+  24-06 sample `PO_1782289205468.csv`: 5 POs · 42 lines · ₹180,238.40 (all OK,
+  SkuCode→item resolution confirmed).
+- **2026-06-25** — **Purplle integrated (web)**: added to `PILOT_MARKETPLACES`
+  + an Online "live" chip. Standard SO marketplace — `file_parser='purplle'`
+  (tab-separated `.XLS`), `from_ean`, cost basis, margin 70%; the base
+  `Processor` already routes file_parser configs through `process_multi`, so no
+  per-marketplace code. Order value comes from the dump itself
+  (`amount_col: Price × Qty`, inc-GST), so no zero-amount handling. Verified on
+  the 24-06 sample `EXECL_ATTACHED.XLS`: 13 POs · 145 lines · ₹414,722.34
+  (142 OK, 3 real price MISMATCH).
+- **2026-06-24** — **Flipkart Branch (Flipkart-TO) integrated (web)**: added to
+  `PILOT_MARKETPLACES` with friendly label **"Flipkart Branch"** (`pilot_choices()`
+  drives the upload dropdown). New **`FlipkartTOProcessor`** routes the per-PO
+  `Consignment_Details_<PO>_<date>.csv` files to the engine's
+  `process_consignments` (PO from filename, optional `Consignment_Visibility_Report`
+  for destination Locations) via a new `Processor.run_engine` hook; falls back to a
+  single consolidated dump. **Zero-amount fix**: a TO dump carries no price, so the
+  inc-GST transfer value is **computed from our master pricing** (Landing × qty =
+  calculated CP inc-GST) — filled on the headers in `_headers()` (preview/summary)
+  and **locked** into `order_headers.order_value` + `runs.total_value` via
+  `lines_store.set_order_value()` after insert (engine untouched). Never silent: a
+  warning states the value is COMPUTED, not received. Verified on the 09-06 sample
+  (2 POs, 39 lines, **₹60,556.20** total = 36,927.60 + 23,628.60).
+- **2026-06-24** — **Review-page Line Items tab = final ready-to-go view**: each
+  line in the Line Items tab now carries a **Decision** column reflecting the
+  operator's action on the affected ones — **ready** (clean/OK), **✓ Included**,
+  **✎ Override @CP**, **⊘ Excluded** (struck-through, dropped from D365 but kept
+  in the SO Workbook), or **● needs decision** (affected, not yet actioned). The
+  review view attaches `decisions[po|item|ean]` to `res['lines']`, so the
+  pre-lock Line Items tab shows the same disposition the post-lock Issues page
+  does — just earlier. Lock button is also AJAX-click-ONLY now (`type=button` +
+  hardened submit guard) so Enter/Tab can never "suddenly" lock.
+- **2026-06-24** — **Post-lock EAN resolution on the Issues page (lock-first ops
+  model)**: a NOT_IN_MASTER line can now be resolved *after* lock, on
+  `/b2b/issues/`, matching how ops actually work — lock first (record the
+  problem), then work the resolution. Each pending NOT_IN_MASTER row carries an
+  inline **"correct EAN → Fix & resolve"** box. `lines_store.apply_issue_ean_fix(
+  line_id, correct_ean)` re-resolves the item against the DB master, **recomputes
+  OUR pricing with the engine's own helpers** (`MasterLoader.calc_landing_price`
+  / `calc_cost_price` — engine untouched), updates the facts (`ean`/`item_no`/
+  `description`) and the validation row (`our_*`, `diff`, `status` decided on the
+  marketplace's `status_basis`, `exception_label='EAN remap'`), and keeps the
+  **wrong EAN as `received_ean`**. Result: the line flips to OK/MISMATCH, leaves
+  **Pending**, lands in **Resolved** + the **"Wrong EANs received"** escalation
+  audit. View `issues_fix_ean` (JSON) at `issues/fix-ean/`. Verified end-to-end
+  on a DMart line (MRP 750 × 45% ÷ 1.18 = 286.02 CP → diff 0 → OK).
+- **2026-06-24** — **`order_lines` split into facts + validation (scalable model) +
+  EAN-fix audit**: web-owned `order_lines` now holds **immutable order FACTS only**;
+  the comparison/decision layer moved to a new **`order_line_validation`** (1:1 by
+  `line_id`, FK `ON DELETE CASCADE`, only for validated lines). Reads go through a
+  join **VIEW `order_lines_full`** (so query sites only swapped the table name).
+  Migrated 2446 existing lines with 100% parity (0 diffs), all pages 200. New
+  **`received_ean`** column on the validation table: on the review page a
+  NOT_IN_MASTER line gets a **"Correct EAN"** field → re-validates against the DB
+  master → `order_lines` ships the **correct** EAN while the **wrong** one is kept
+  as `received_ean` (audit). A repeat wrong EAN **auto-resolves** via a map derived
+  from `received_ean` (no alias table) — flagged on review as a **temporary fix**,
+  and counted on the Issues page (**"Wrong EANs received N×"**) for vendor
+  escalation. Engine + Tkinter untouched.
+- **2026-06-24** — **DMart + Zepto + GT Select integrated; Item Master moved to DB**
+  (see [[item-master-in-db]]): Item master now built from two ERP exports into
+  `item_master`/`item_swiggy_map`/`item_master_manual`; engine reads it via
+  `DBMasterLoader`. GT Select = D365-finalised headers+lines import (offline).
+- **2026-06-24** — **Decision-driven D365: Include / Override(CP) / Exclude → Lock →
+  Generate**: each affected review line now has **Include** (as-is), **Override**
+  (include with an operator CP, pre-filled with vendor's *Their CP*, editable), or
+  **Exclude** (drop). Flow: **🔒 Lock & Record** (push to DB + freeze decisions on the
+  token) → **⬇ Generate D365** (enabled only after lock). The D365 dump reflects the
+  decisions — Excludes dropped, Overrides repriced via the engine's own
+  `forced_unit_price` (read as the D365 Unit Price). `engine_bridge.generate_d365()` +
+  `_apply_decisions()` build a *copy* of the result (originals never mutated;
+  `_run(skip_dedup=True)` so the ERP file carries the full upload). **Full SO Workbook
+  stays 100% intact.** `order_lines` gains **`override_cp`** + **`decided_at`**;
+  `status`/`diff`/`exception_label` remain the permanent engine snapshot (MISMATCH stays
+  MISMATCH forever). Engine frozen; verified end-to-end on a real Flipkart upload.
+
+- **2026-06-24** — **Analytics: animated tree-branch + any-date filter**: the breakdown
+  is now an **interactive collapsible tree** (segment → marketplace → child) with branch
+  connectors, rotating carets, **value-share bars** (animated grow-in), and per-node
+  **POs · qty · value**; nodes stagger-slide in on expand. Added a **date picker** (check
+  any single day) alongside the 7/30/90 range toggle — `intake_hierarchy(days, date)` now
+  scopes to a specific `created_at` day. MT children roll up under the MT parent (and
+  Flipkart→FK Hyperlocal/Grocery, EKA→its children). Tree JS-free (native `<details>`),
+  so no load cost. NOTE: minor stray indent in `flipkart_tracker.py:56` (harmless).
+
+- **2026-06-24** — **Management Analytics page (daily intake + segment→mkt→child)**:
+  new class-based `AnalyticsView` at `/b2b/analytics/` — a **daily stacked bar chart**
+  (orders received per day by `created_at`, stacked by segment, Value/Orders/Items
+  toggle) + a **date-range toggle (7d/30d/90d)** + period totals + a **breakdown table
+  segment → parent marketplace → child** (so Flipkart shows FK Hyperlocal/Grocery, EKA
+  shows its children, MT shows its channels). Data via `order_db.daily_intake()` +
+  `intake_hierarchy()`. Linked from hub (📊 Analytics) + sidebar. Chart JS
+  balance-verified. Animations: chart render, breakdown-card staggered fadeUp.
+
+- **2026-06-24** — **Orders scoped by segment (Online / Offline / All) + micro-motion**:
+  the Orders page now has a **Segment selector** (All / Online B2B / Offline) that scopes
+  the orders AND the Marketplace dropdown to that segment (backend already segment-aware;
+  re-surfaced the UI). Online shows only online marketplaces, Offline only offline, All =
+  everything; title reflects the scope. Branch "View orders" links pre-scope to their
+  segment. Added subtle **micro-interactions** (card hover-lift, button/chip transitions,
+  table-row + focus-ring states, staggered KPI fade-in, `prefers-reduced-motion` guard).
+  NEXT refinement: roll Offline's MT children up under an "MT" parent in the dropdown.
+
+- **2026-06-24** — **Pro pass #2: collapsible sidebar, 12-KPI hub, Departments =
+  OM+GRN, MT parent/child**: sidebar now **collapses to icons** (toggle, persisted in
+  localStorage) with a **smooth cubic-bezier transition** (width/padding/labels
+  animate). Hub KPI strip expanded to **12 cards, 4×3 equally allocated** (added Avg
+  PO Value, Received·7d, Line Items, Resolved via `order_db.hub_extra_kpis`).
+  **Departments** consolidated to **Order Management** (all online + offline inside it)
+  + **GRN (coming soon)**. **Offline MT aligned to parent→child**: the old "Shoppers
+  Stop" page is now **Modern Trade (MT)** with a child-channel selector (Shoppers Stop /
+  Health & Glow / Naturals / Apollo / Lulu) — `mt_bridge.WEB_CHANNELS` = MT children,
+  testers now config-driven (`tester_qty_divisor`); GT Mass stays a separate parent.
+  (SS verified end-to-end; other MT children share the generic pipeline — test before
+  production.)
+
+- **2026-06-24** — **Pro dashboard pass #1: wider layout + left sidebar nav**:
+  content widened 1180→**1560px** (fills the side gutters). Added a persistent
+  **left sidebar** (Hub / Online / Offline / Orders / Line Items / Issues / Process)
+  with active-route highlighting — `core/base.html` got harmless `{% block body_class %}`
+  + `{% block sidebar %}` hooks; new `online_b2b/base_b2b.html` injects the rail and
+  all 11 b2b pages now extend it; `_sidebar.html` partial. Sidebar is scoped to
+  `.b2b-app` (other departments unaffected). Header made sticky on b2b pages; content
+  + footer shift right of the rail; collapses on ≤980px. (Remaining pro-pass items:
+  per-KPI sparklines, date-range control, full visual polish.)
+
+- **2026-06-23** — **Chart syntax-error fix + hub recent-activity feed + serve.bat
+  clean restart**: the overview charts were dead due to a **stray `}`** (89 `{` vs 90
+  `}`) — a JS syntax error that discarded the whole chart `<script>`, leaving it stuck
+  on "Loading…". Rewrote the chart init clean + **balance-verified** (66/66 braces);
+  it renders on DOM-ready, per-chart try/catch, visible empty/error states. Hub: KPI
+  grid balanced to 4×2 and a **Recent activity** feed (`order_db.recent_orders`) added
+  to fill the page elegantly. `serve.bat` now **kills any stale process on port 8000**
+  before starting (stale processes were serving old code, masking every fix). NOTE on
+  offline taxonomy: orders ARE stored parent/child (`marketplace`=MT/EKA/GT Mass vs
+  `marketplace_label`=Naturals/SS/Airport…) — the Offline view still groups by child
+  label; rolling MT sub-channels up under "MT" is the next step.
+
+- **2026-06-23** — **'Received Today' hub card + uncached templates on prod**:
+  new `order_db.today_intake()` counts orders **received today** (filtered by
+  `order_headers.created_at`, not PO date) — total POs + value, split by segment.
+  The hub's KPI strip now has a **Received Today** card (replacing Updated·2d) whose
+  **hover popup shows the Online vs Offline distribution** (e.g. Online 54 ·
+  ₹1.0Cr / Offline 10 · ₹1.72L). Also switched Django to **explicit uncached
+  template loaders** (removed `APP_DIRS`) so template/HTML/chart edits go live on the
+  prod server (DEBUG=0) with just a browser refresh — no restart (Python/settings
+  changes still need a waitress restart). Chart init also hardened to wait for real
+  container width (ResizeObserver + load fallback) so charts never paint at 0-width.
+
+- **2026-06-23** — **Offline branch = same rich dashboard + chart render fix +
+  hub KPIs**: the **overview template is now shared** by both branches via a
+  `branch` context ({kind, label}) — `/b2b/offline/` (`OfflineBranchView`) renders
+  the SAME KPIs + charts + marketplace-mix as `/b2b/online/`, scoped to
+  `segment=Offline`, with offline-appropriate header actions (Shoppers Stop / GT
+  Mass). **Chart-empty bug fixed**: charts were rendering into `.reveal`
+  animating containers and measuring 0 width → blank on prod; init now **defers a
+  frame** (double `requestAnimationFrame`), wraps each chart in try/catch, and
+  shows an empty-state instead of a blank box. Hub KPI strip enriched to **8 cards
+  with trend deltas** (POs/Value ▲%, Channels, Updated·2d, Expiring, Needs
+  attention, Issue Lines). RK confirmed live in the online Process-PO flow. All
+  web/template layer — core logic untouched. ruff/check/18 tests green.
+
+- **2026-06-23** — **Central Order-Mgmt hub + 3 trees (hub counts / RK / SS line
+  audit)**: `/b2b/` is now a **central hub** (class-based `CentralHubView`) — compact
+  overall KPIs + two group cards **Online B2B** (`/b2b/online/`, the existing rich
+  dashboard scoped to `segment=OnlineB2B`) and **Offline** (`/b2b/offline/`,
+  `OfflineBranchView`). Channels differ a lot, so the two worlds stay distinct
+  branches; the hub stays uncongested. Then, tree by tree: **(hub)** per-group
+  POs/value/qty via `order_db.segment_kpis()`; **(online)** **RK enabled** —
+  `PILOT_MARKETPLACES += 'RK'` (margin 70, generic bridge handles it); **(offline)**
+  **SS line-item audit** — `mt_bridge._record_lines()` maps each resolved SS POLine →
+  web-owned `order_lines` (Our MRP, Our Landing = MRP×0.6106; Vendor blank since the SS
+  file has no cost), so SS now gets the same **Line Items** view as online. All web
+  layer — engine + frozen Tkinter + DB schema untouched. ruff/check/18 tests green.
+
+- **2026-06-23** — **SS unified into the online dashboard + DB; segment switch
+  removed**: Shoppers Stop now follows the online **preview → confirm** flow.
+  `mt_bridge.preview()` parses/validates with NO side effects (no SO number burned,
+  no workbook, no DB); `mt_bridge.confirm()` assigns SO numbers (once), writes the
+  workbook, and records order headers into the shared **renee_orders** DB via the
+  desktop's own `record_offline_batch` (segment Offline, `marketplace_label='Shoppers
+  Stop'`). New `SSPreviewView`/`SSConfirmView` + `shoppers-stop/preview|confirm/`
+  routes; the SS page is now 2-step (Preview POs → Confirm & Record to DB → Download).
+  **Dashboard unified** — the Segment switch (Online B2B / Offline) is removed from
+  `overview.html` + `orders.html`; `order_db.SEGMENT=''` (no segment filter) so ALL
+  orders (online marketplaces + SS + CSD) show together, distinguished by Marketplace.
+  Verified end-to-end on a real SS file (run #55: SO/SS/06/230629, 541 qty, ₹200,870.25
+  → shows on `/b2b/`). NOTE: SS records HEADERS only (line-item audit/order_lines is a
+  possible follow-up). Desktop MT tool untouched.
+
+- **2026-06-23** — **Shoppers Stop (MT Select) integrated into the web app +
+  Flipkart 77% default**: (1) **Offline SS** — new headless bridge
+  `offline/services/mt_bridge.py` imports the FROZEN
+  `standalone_mt_select_automation.py` as a library (Tkinter is lazy-imported, so
+  module load is headless) and runs the EXACT desktop Generate sequence
+  (`load_all_masters → read_channel_csv_batch → assign_so_numbers →
+  write_so_workbook`) → identical 6-sheet `ss_so_*.xlsx`. Masters load from the
+  SAME source the desktop uses (saved `master_path` in `mt_select_config.json` →
+  OneDrive dump, snapshotted read-only) and SO numbers share `mt_select_seq.json`.
+  New views `ShoppersStopView`/`SSProcessView`/`SSDownloadView` + `shoppers-stop/`
+  routes + `offline/shoppers_stop.html` (upload → verification table of per-PO SO
+  numbers + Warnings panel + download). Linked from the Offline dashboard. Desktop
+  tool untouched. (2) **Flipkart 77% default** — the upload form hardcoded the
+  margin to Blink's 70; now `engine_bridge.margin_defaults()` feeds a per-marketplace
+  auto-fill (Flipkart 77 / Blink 70) and the field is optional → blank falls back to
+  the marketplace's configured default landing rate server-side (Tkinter-like).
+
+- **2026-06-23** — **LAN hosting + Flipkart sub-marketplace mapping + order→line
+  cascade**: (1) **Hosting** — `renee_cosmetics` now serves on the office LAN via
+  **waitress** + **WhiteNoise** (env-driven `DEBUG`/`SECRET_KEY`/`ALLOWED_HOSTS`,
+  `STORAGES`, `serve.bat`, `requirements.txt`, **HOSTING.md** walkthrough incl.
+  dev-server vs hosted-server). (2) **Flipkart location map refreshed** to latest
+  operator mapping in `engine/flipkart_tracker.py`: `bhu_men_wh_g_01` → **FK
+  Grocery** (was Hyperlocal), added missing `lud_gsh_wh_nl_01nl` → FK Hyperlocal.
+  (3) **Dashboard sub-marketplace** — `FlipkartProcessor` now stamps each order's
+  `marketplace_label` with the per-PO tracker class (FK Hyperlocal / FK Grocery)
+  instead of the blanket 'Flipkart Alpha' — overrides preview `_headers()` + a
+  post-confirm UPDATE on the web-owned label column (only when the header CSV is
+  present). (4) **Relation order→lines** — `lines_store.ensure_cascade_trigger()`
+  adds an `AFTER DELETE` trigger on `order_headers` that auto-deletes matching
+  `order_lines` (web-owned cascade; engine inserts untouched). (5) Removed today's
+  mistakenly-uploaded Flipkart runs (39/43/53) — backed up to
+  `backups/flipkart_removed_20260623_135511.json` first (reversible).
+
+- **2026-06-23** — **Comparison-basis columns (Our/Their MRP·Landing·CP) + donut chart
+  fix**: every line table (review Line Items + Affected tabs, Issues, Line Items explorer,
+  Run detail Line Items + Affected) now shows the full **Our MRP / Their MRP · Our Landing /
+  Their Landing · Our CP / Their CP** pairs with the **validation basis highlighted**
+  (`.basis-on`) + a `Basis` badge. `lines_store.build_lines` tags each line `basis` =
+  `CP` (cost) or `Landing`; `order_db._tag_basis` re-derives it on read from which vendor
+  rate is present; reads now SELECT `vendor_mrp/vendor_landing/our_landing` everywhere
+  (`issues`, `line_items`, `line_items_page`, `run_detail`). This explains the **"empty
+  vendor CP" on Flipkart** — Flipkart validates on **Landing** (77% rule), so vendor CP is
+  legitimately blank and the Landing pair is highlighted instead; Blink highlights the CP
+  pair. Overview **donut** center now formats the hovered-slice value (`value` formatter →
+  `inrShort`) instead of showing a raw number; **Discard** button restyled (`.btn-discard`).
+  ruff + 18 tests green; Flipkart Landing / Blink CP basis verified on live data.
+
+- **2026-06-23** — **Flipkart integrated (class-based bridge) + Tkinter↔Django parity**:
+  refactored `engine_bridge` from functions to **classes** — `Processor` (base: load
+  masters → run engine single/**multi-file** → dedup → preview/confirm) + `FlipkartProcessor`
+  (always multi-file `purchase_order_*.xlsx`; optional `purchase-orders-*.csv` header →
+  `result.flipkart_tracker_rows`; FK Grocery / hyperlocal ship-to is master-driven, engine
+  unchanged). `processor_for()` factory; module `preview`/`confirm` delegate (views
+  unchanged). `PILOT_MARKETPLACES = ['Blink','Flipkart']`. **Verified full parity** on 24
+  real PO files: Django output == engine (Tkinter) — 328 lines / 24 POs / 30,060 qty /
+  ₹80.39 L, per-PO qty diffs NONE; Blink single-file regression intact. ruff + 18 tests green.
+
+- **2026-06-23** — **Line Items explorer + clickable issue cards**: new **Line Items**
+  page (`/b2b/lines/`, `order_db.line_items`/`line_items_page`) — browsable view of the
+  full `order_lines` audit with marketplace/status/PO filters, search, KPIs and
+  load-more pagination; each PO links to its run. Linked from the Overview + Orders
+  pages ("Line Items →"). Also made the Issues count cards **clickable** (the RESOLVED
+  card jumps to the Resolved view; Mismatch/Not-in-master/Shown set the status filter).
+
+- **2026-06-23** — **Per-line Action + Remark on affected (mismatch) lines + Process
+  progress overlay**: on the Review screen's **Affected** tab each flagged line now has
+  an **Action** dropdown (Keep / Override / Exclude) + a **Remark** field; these post
+  with Confirm (single form, `formaction` buttons — no nested forms) and are stored
+  against the line in **`order_lines`** (new web-owned `action`/`remark` columns, added
+  additively in `lines_store.ensure_table`). `build_lines(actions=…)` maps them by
+  `po|item_no|ean`; run-detail shows the recorded Action/Remark. It's a recorded
+  *decision* (does NOT mutate the engine workbook). **The Issues page (`/b2b/issues/`)
+  also has the editor** — each flagged line has an Action dropdown + Remark that
+  **auto-save** to the DB after upload (`lines_store.update_action` + `issues_save`
+  AJAX endpoint, `order_db.issues` returns `line_id`/`action`/`remark`).
+  **Resolution model**: any action set ⇒ the line is RESOLVED — it leaves the Issues
+  page's default **Pending** view and stops counting in the dashboard's *Needs
+  attention* / *Issue Lines* KPIs (`order_db.issues` gains a `resolution`
+  pending/resolved/all filter; `_kpis` counts only `action IS NULL/''`). Added a
+  **bulk-set** bar (one Action+Remark applied to all shown lines via
+  `update_action_bulk` + `issues_save_bulk`), a Resolution filter, and refitted the
+  Issues table (wider page, horizontal-scroll container, compact grid). Also: the
+  Process-PO page shows a staged **progress overlay** (percent bar + stage labels +
+  live elapsed/ETA) while the request runs — purely client-side; and the web download
+  now always serves the **FULL** workbook (Summary/Validation/Raw Data) with a `_full_`
+  name, never the headers-only `*_d365.xlsx` sibling (`_full_workbook`/`_full_name`).
+  Engine untouched throughout.
+- **2026-06-23** — **Bulk import of ERP "Sales Orders" + Segment switch**: new
+  `online_b2b/services/erp_import.py` parses the Business Central "Sales Orders"
+  header export and imports each row into `order_headers` as **Offline** orders so
+  manually-created (non-package) orders reflect on the dashboard — channel derived
+  from the SO No prefix (`SO/CSD/06/…` → `CSD`), `po`=SO No, plus a new nullable
+  **`external_doc`** column (added web-side, additive; the engine's inserts omit it
+  → NULL) carrying the customer PO. Dedup on SO No; `mode='MANUAL'` (the runs/headers
+  `mode` ENUM only allows AUTO/MANUAL). UI: **Bulk Import** page (upload → review →
+  confirm, `bulk_upload`/`bulk_review`) + a **Segment switch** (Online B2B / Offline /
+  All) on the overview and Orders pages — `order_db` reads are now segment-parameterized
+  (`_seg`/`_kpis`/`_trends`/`_mp_sparklines`/`_where`/`overview`/`dashboard`). Engine
+  untouched (web owns the import + the new column); ruff + 18 tests green.
+- **2026-06-23** — **Frontend "magnificent" pass (server-rendered, no React)**: split the
+  single dashboard into **Overview** (`/b2b/`) and **Orders** (`/b2b/orders/`) pages —
+  the landing shows KPIs + charts + marketplace summary; the full filter/sort/paginate
+  table lives on Orders. Replaced the hand-drawn SVG chart with **ApexCharts** (vendored
+  to `static/online_b2b/vendor/`, offline-safe): animated gradient **area** chart with a
+  Value⇄POs toggle + a **donut** of marketplace mix (data via `order_db.overview()` →
+  `charts` payload + `json_script`). Added **Inter** font, **count-up** KPI numbers, and
+  staggered **entrance animations**. Stays 100% Django templates + small vanilla JS (no
+  React/Node) — fully maintainable. New `overview()` service, `overview.html`/`orders.html`/
+  `_orders_results.html`; dead `dashboard.html`/`_dashboard_results.html` removed. Engine
+  untouched; ruff + 18 tests green.
 - **2026-06-22** — **Freeze backup engine + dev-tooling foundation (web only)**: the
   Tkinter `online_po_management` (engine) and `offline_po_management` are the FROZEN
   backup — reverted the `order_lines` additions I'd briefly made to engine

@@ -1,0 +1,49 @@
+# Tooling config for the Django WEB project only (renee_cosmetics + its apps).
+# The Tkinter engine (online_po_management) and offline_po_management are the
+# frozen backup — they are EXCLUDED from lint/type/test tooling here.
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+# Only lint/format the web project; never touch the backup engine/offline code.
+include = [
+    "renee_cosmetics/**/*.py",
+    "core/**/*.py",
+    "online_b2b/**/*.py",
+]
+extend-exclude = [
+    "online_po_management",
+    "offline_po_management",
+    ".venv", "build", "dist", "staticfiles", "**/migrations/**",
+    "renee_cosmetics/settings.py",      # has intentional late imports / shims
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]     # pyflakes, pycodestyle, isort, pyupgrade, bugbear
+ignore = [
+    "E501",   # line length — handled by formatter
+    "E702",   # compact one-liners (where.append(...); params.append(...))
+    "E741",   # `l` as a line-loop variable is clear in context
+    "B905",   # zip() strict= — our zips are equal-length by construction
+]
+
+[tool.ruff.lint.per-file-ignores]
+"online_b2b/migrations/*" = ["ALL"]
+
+[tool.mypy]
+python_version = "3.13"
+plugins = ["mypy_django_plugin.main"]
+ignore_missing_imports = true
+# Gradual typing — start lenient, tighten over time.
+check_untyped_defs = true
+warn_unused_ignores = true
+exclude = "(online_po_management|offline_po_management|migrations|\\.venv)"
+
+[tool.django-stubs]
+django_settings_module = "renee_cosmetics.settings"
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "renee_cosmetics.settings_test"
+python_files = ["test_*.py"]
+testpaths = ["tests"]
+addopts = "-q"
