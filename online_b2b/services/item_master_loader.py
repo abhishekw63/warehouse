@@ -19,9 +19,13 @@ Build rule (confirmed with the operator):
   * **Effective MRP = the period whose [Start, End] covers *today*** (the upload
     day). Older periods are discarded. → one MRP per item.
   * Join to Items by item No. for the rest of the attributes.
-  * ``swiggy_sku_code`` is carried from the durable :data:`_SWIGGY_TABLE`
-    (seeded once from the legacy master's curated 'Swiggy Code' column), since
-    the ERP source files don't carry it. It survives every rebuild.
+
+Per-channel SKU codes (Swiggy / Health & Glow / …) live in their OWN table now —
+``channel_sku_map`` (see :mod:`channel_map`) — so item_master no longer carries a
+``swiggy_sku_code`` column (that was duplicated data). Hand-added items are kept
+durably IN ``item_master`` itself, flagged ``batch_id='manual'`` (no separate
+overlay table); a full ERP rebuild preserves them and the source wins once the
+ERP export starts carrying that item.
 
 Never-skip-silently: items with no MRP window covering today, or an MRP row with
 no matching Items row, are returned as **warnings** (not dropped quietly).
@@ -51,11 +55,13 @@ def _s(x) -> str:
     return '' if s.lower() == 'nan' else s
 
 _MASTER_TABLE = 'item_master'
-_SWIGGY_TABLE = 'item_swiggy_map'
 
-# Insert column order for item_master.
+# Insert column order for item_master. Per-channel SKU codes (Swiggy/HG/…) are
+# NOT stored here — they live in channel_sku_map (the single source of truth).
+# Hand-added rows are flagged batch_id='manual' (durable; survive a full ERP
+# rebuild) — no separate overlay table.
 _COLS = ['item_no', 'ean', 'description', 'gst_code', 'hsn', 'mrp',
-         'mrp_start', 'mrp_end', 'swiggy_sku_code', 'base_uom', 'brand',
+         'mrp_start', 'mrp_end', 'base_uom', 'brand',
          'category', 'batch_id', 'updated_at']
 
 _MYSQL_MASTER = """
@@ -68,7 +74,6 @@ CREATE TABLE IF NOT EXISTS item_master (
     mrp              DECIMAL(14,2),
     mrp_start        DATE,
     mrp_end          DATE,
-    swiggy_sku_code  VARCHAR(50),
     base_uom         VARCHAR(20),
     brand            VARCHAR(60),
     category         VARCHAR(100),
@@ -87,7 +92,6 @@ CREATE TABLE IF NOT EXISTS item_master (
     mrp              REAL,
     mrp_start        TEXT,
     mrp_end          TEXT,
-    swiggy_sku_code  TEXT,
     base_uom         TEXT,
     brand            TEXT,
     category         TEXT,
@@ -95,65 +99,19 @@ CREATE TABLE IF NOT EXISTS item_master (
     updated_at       TEXT
 )
 """
-_MYSQL_SWIGGY = """
-CREATE TABLE IF NOT EXISTS item_swiggy_map (
-    item_no          VARCHAR(50) PRIMARY KEY,
-    swiggy_sku_code  VARCHAR(50),
-    updated_at       DATETIME
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-"""
-_SQLITE_SWIGGY = """
-CREATE TABLE IF NOT EXISTS item_swiggy_map (
-    item_no          TEXT PRIMARY KEY,
-    swiggy_sku_code  TEXT,
-    updated_at       TEXT
-)
-"""
-# Durable overlay for hand-added SKUs not yet in the ERP exports. Re-applied
-# after every full rebuild for any item_no the source files don't carry, so a
-# manual add survives until the ERP export includes it (then source wins).
-_MANUAL_TABLE = 'item_master_manual'
-_MYSQL_MANUAL = """
-CREATE TABLE IF NOT EXISTS item_master_manual (
-    item_no          VARCHAR(50) PRIMARY KEY,
-    ean              VARCHAR(32),
-    description      VARCHAR(512),
-    gst_code         VARCHAR(20),
-    hsn              VARCHAR(20),
-    mrp              DECIMAL(14,2),
-    mrp_start        DATE,
-    mrp_end          DATE,
-    swiggy_sku_code  VARCHAR(50),
-    updated_at       DATETIME
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-"""
-_SQLITE_MANUAL = """
-CREATE TABLE IF NOT EXISTS item_master_manual (
-    item_no          TEXT PRIMARY KEY,
-    ean              TEXT,
-    description      TEXT,
-    gst_code         TEXT,
-    hsn              TEXT,
-    mrp              REAL,
-    mrp_start        TEXT,
-    mrp_end          TEXT,
-    swiggy_sku_code  TEXT,
-    updated_at       TEXT
-)
-"""
-_MANUAL_COLS = ['item_no', 'ean', 'description', 'gst_code', 'hsn', 'mrp',
-                'mrp_start', 'mrp_end', 'swiggy_sku_code', 'updated_at']
 
 
 def ensure_tables() -> None:
-    """Create item_master + item_swiggy_map + item_master_manual if absent
-    (idempotent). Web owns these tables; the engine's schema is untouched."""
+    """Create item_master if absent (idempotent) + the channel SKU map
+    (Swiggy/HG/…). Hand-added items live IN item_master (batch_id='manual') — no
+    separate overlay table; the old item_swiggy_map / item_master_manual are
+    retired. Web owns these tables; the engine's schema is untouched."""
     with _conn() as (cur, d):
         mysql = d['kind'] == 'mysql'
         cur.execute(_MYSQL_MASTER if mysql else _SQLITE_MASTER)
-        cur.execute(_MYSQL_SWIGGY if mysql else _SQLITE_SWIGGY)
-        cur.execute(_MYSQL_MANUAL if mysql else _SQLITE_MANUAL)
         cur.connection.commit()
+    from . import channel_map
+    channel_map.ensure_table()
 
 
 def _num(x):
@@ -189,8 +147,11 @@ def _upsert(cur, d, table, cols, values) -> None:
 
 
 def upsert_manual_item(data: dict) -> dict:
-    """Add/overwrite ONE item by hand — writes the durable overlay row AND the
-    live ``item_master`` row immediately. ``item_no`` is required."""
+    """Add/overwrite ONE item by hand — writes the live ``item_master`` row
+    flagged ``batch_id='manual'`` so it survives a full ERP rebuild (until the
+    ERP export carries it, then the source row wins). A typed Swiggy SKU is
+    routed to ``channel_sku_map`` (the per-channel source of truth), not an
+    item_master column. ``item_no`` is required."""
     ensure_tables()
     item_no = _clean(data.get('item_no'))
     if not item_no:
@@ -204,19 +165,20 @@ def upsert_manual_item(data: dict) -> dict:
         'mrp': _num(data.get('mrp')),
         'mrp_start': _date(data.get('mrp_start')),
         'mrp_end': _date(data.get('mrp_end')),
-        'swiggy_sku_code': _s(data.get('swiggy_sku_code'))[:50] or None,
     }
+    swiggy_code = _s(data.get('swiggy_sku_code'))[:80]
     now = _dt.datetime.now()
     with _conn() as (cur, d):
-        _upsert(cur, d, _MANUAL_TABLE, _MANUAL_COLS,
-                (rec['item_no'], rec['ean'], rec['description'], rec['gst_code'],
-                 rec['hsn'], rec['mrp'], rec['mrp_start'], rec['mrp_end'],
-                 rec['swiggy_sku_code'], now))
         _upsert(cur, d, _MASTER_TABLE, _COLS,
                 (rec['item_no'], rec['ean'], rec['description'], rec['gst_code'],
                  rec['hsn'], rec['mrp'], rec['mrp_start'], rec['mrp_end'],
-                 rec['swiggy_sku_code'], '', '', '', 'manual', now))
+                 '', '', '', 'manual', now))
         cur.connection.commit()
+    # Swiggy SKU code lives in channel_sku_map now (per-channel source of truth).
+    if swiggy_code:
+        from . import channel_map
+        channel_map.upsert_code('Swiggy', swiggy_code, item_no=item_no,
+                                ean=rec['ean'], source='manual')
     return {'ok': True, 'item_no': item_no}
 
 
@@ -312,6 +274,8 @@ def build_rows(items_path: str, mrp_path: str, as_of: _dt.date | None = None):
     as_of = as_of or _dt.date.today()
     items = _read_items(items_path)
     effective, warnings = _read_effective_mrp(mrp_path, as_of)
+    # {item_no: sku} from channel_sku_map (channel='Swiggy') — for the count stat
+    # only; the codes themselves live in channel_sku_map, not an item_master col.
     swiggy = load_swiggy_map()
 
     rows = []
@@ -331,7 +295,6 @@ def build_rows(items_path: str, mrp_path: str, as_of: _dt.date | None = None):
             'mrp': None if pd.isna(mi['mrp']) else round(float(mi['mrp']), 2),
             'mrp_start': mi['start'],
             'mrp_end': mi['end'],
-            'swiggy_sku_code': swiggy.get(item_no),
             'base_uom': _s(it['base_uom'])[:20],
             'brand': _s(it['brand'])[:60],
             'category': _s(it['category'])[:100],
@@ -349,7 +312,7 @@ def build_rows(items_path: str, mrp_path: str, as_of: _dt.date | None = None):
         'as_of': str(as_of),
         'items': len(rows),
         'with_ean': sum(1 for r in rows if r['ean']),
-        'swiggy_mapped': sum(1 for r in rows if r['swiggy_sku_code']),
+        'swiggy_mapped': sum(1 for r in rows if swiggy.get(r['item_no'])),
         'no_mrp_window': sum('no MRP period' in w for w in warnings),
         'gst_spread': gst_spread,
     }
@@ -359,11 +322,14 @@ def build_rows(items_path: str, mrp_path: str, as_of: _dt.date | None = None):
 # ── Swiggy map (durable; seeded once from the legacy master) ─────────────────
 
 def load_swiggy_map() -> dict:
-    """``{item_no: swiggy_sku_code}`` from the durable map table (empty if not
-    seeded yet)."""
+    """``{item_no: swiggy_sku_code}`` for the Swiggy channel. The durable source
+    is now ``channel_sku_map`` (channel='Swiggy') — the old ``item_swiggy_map`` is
+    retired. Empty if not seeded yet."""
     try:
         with _conn() as (cur, d):
-            cur.execute(f"SELECT item_no, swiggy_sku_code FROM {_SWIGGY_TABLE}")
+            ph = d['ph']
+            cur.execute("SELECT item_no, sku_code FROM channel_sku_map "
+                        f"WHERE channel={ph}", ('Swiggy',))
             return {_clean(i): (s or '').strip()
                     for i, s in cur.fetchall() if s and str(s).strip()}
     except Exception:  # noqa: BLE001 — table may not exist yet
@@ -371,9 +337,9 @@ def load_swiggy_map() -> dict:
 
 
 def seed_swiggy_from_excel(master_xlsx: str) -> dict:
-    """One-time seed of ``item_swiggy_map`` from the legacy master's curated
-    'Item Master' sheet 'Swiggy Code' column (``No.`` → ``Swiggy Code``).
-    Idempotent upsert; safe to re-run. Returns ``{'seeded': n}``."""
+    """One-time seed of the Swiggy channel in ``channel_sku_map`` from the legacy
+    master's curated 'Item Master' sheet 'Swiggy Code' column (``No.`` → ``Swiggy
+    Code``). Idempotent (manual rows kept); safe to re-run. Returns ``{'seeded': n}``."""
     ensure_tables()
     try:
         xl = pd.ExcelFile(master_xlsx)
@@ -393,17 +359,16 @@ def seed_swiggy_from_excel(master_xlsx: str) -> dict:
         sku = _clean(r.get(c_sw))
         if ino and sku and sku.lower() != 'nan':
             pairs.append((ino, sku))
+    # Seed the Swiggy channel into channel_sku_map (the durable code→item source).
     now = _dt.datetime.now()
     with _conn() as (cur, d):
         ph = d['ph']
-        if d['kind'] == 'mysql':
-            sql = (f"INSERT INTO {_SWIGGY_TABLE} (item_no, swiggy_sku_code, updated_at) "
-                   f"VALUES ({ph},{ph},{ph}) ON DUPLICATE KEY UPDATE "
-                   "swiggy_sku_code=VALUES(swiggy_sku_code), updated_at=VALUES(updated_at)")
-        else:
-            sql = (f"INSERT OR REPLACE INTO {_SWIGGY_TABLE} "
-                   f"(item_no, swiggy_sku_code, updated_at) VALUES ({ph},{ph},{ph})")
-        cur.executemany(sql, [(i, s, now) for i, s in pairs])
+        cur.execute("DELETE FROM channel_sku_map WHERE channel='Swiggy' AND "
+                    "COALESCE(source,'excel') <> 'manual'")
+        cur.executemany(
+            "INSERT INTO channel_sku_map (channel, sku_code, item_no, source, "
+            f"updated_at) VALUES ('Swiggy',{ph},{ph},'excel',{ph})",
+            [(s, i, now) for i, s in pairs])
         cur.connection.commit()
     return {'seeded': len(pairs)}
 
@@ -411,42 +376,44 @@ def seed_swiggy_from_excel(master_xlsx: str) -> dict:
 # ── Write (full replace, transactional) ─────────────────────────────────────
 
 def replace_item_master(rows: list) -> dict:
-    """Wipe and rebuild ``item_master`` from ``rows`` in one transaction. The
-    table always exactly mirrors the latest upload (Swiggy codes come from the
-    durable map, so they're preserved across rebuilds)."""
+    """Rebuild ``item_master`` from ``rows`` (one ERP upload) in a transaction,
+    PRESERVING hand-added rows (``batch_id='manual'``): only the previous ERP rows
+    are cleared — manual rows stay in place. If the ERP export now carries a
+    manual item_no, the upsert overwrites it (source wins once it appears).
+    Per-channel SKU codes are NOT here — they live in channel_sku_map."""
     ensure_tables()
     batch = _dt.datetime.now().strftime('%Y%m%d%H%M%S')
     now = _dt.datetime.now()
     payload = [(
         r['item_no'], r['ean'], r['description'], r['gst_code'], r['hsn'],
-        r['mrp'], r['mrp_start'], r['mrp_end'], r['swiggy_sku_code'],
+        r['mrp'], r['mrp_start'], r['mrp_end'],
         r['base_uom'], r['brand'], r['category'], batch, now,
     ) for r in rows]
-    overlaid = 0
+    cols = ', '.join(_COLS)
     with _conn() as (cur, d):
         ph = d['ph']
-        cols = ', '.join(_COLS)
         marks = ', '.join([ph] * len(_COLS))
-        cur.execute(f"DELETE FROM {_MASTER_TABLE}")
-        cur.executemany(
-            f"INSERT INTO {_MASTER_TABLE} ({cols}) VALUES ({marks})", payload)
-        # Re-apply durable manual SKUs that the source files don't carry, so a
-        # hand-added item survives the full replace (source wins once it appears).
-        src_nos = {r['item_no'] for r in rows}
+        # Clear only previous ERP rows; manual rows (batch_id='manual') survive.
         cur.execute(
-            f"SELECT item_no, ean, description, gst_code, hsn, mrp, mrp_start, "
-            f"mrp_end, swiggy_sku_code FROM {_MANUAL_TABLE}")
-        for m in cur.fetchall():
-            if _clean(m[0]) in src_nos:
-                continue
-            cur.execute(
-                f"INSERT INTO {_MASTER_TABLE} ({cols}) VALUES ({marks})",
-                (m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7], m[8],
-                 '', '', '', 'manual', now))
-            overlaid += 1
+            f"DELETE FROM {_MASTER_TABLE} WHERE COALESCE(batch_id,'') <> 'manual'")
+        # Upsert so an ERP row overwrites a surviving manual row of the same
+        # item_no (source wins once the export carries it).
+        if d['kind'] == 'mysql':
+            sets = ', '.join(f"{c}=VALUES({c})" for c in _COLS[1:])
+            sql = (f"INSERT INTO {_MASTER_TABLE} ({cols}) VALUES ({marks}) "
+                   f"ON DUPLICATE KEY UPDATE {sets}")
+        else:
+            sql = (f"INSERT OR REPLACE INTO {_MASTER_TABLE} ({cols}) "
+                   f"VALUES ({marks})")
+        cur.executemany(sql, payload)
+        cur.execute(f"SELECT COUNT(*) FROM {_MASTER_TABLE}")
+        total = int(cur.fetchone()[0] or 0)
+        cur.execute(f"SELECT COUNT(*) FROM {_MASTER_TABLE} WHERE "
+                    f"COALESCE(batch_id,'')='manual'")
+        manual = int(cur.fetchone()[0] or 0)
         cur.connection.commit()
-    return {'ok': True, 'rows': len(payload) + overlaid, 'batch_id': batch,
-            'manual_overlaid': overlaid}
+    return {'ok': True, 'rows': total, 'batch_id': batch,
+            'manual_overlaid': manual}
 
 
 def status() -> dict:
@@ -455,14 +422,15 @@ def status() -> dict:
     try:
         ensure_tables()
         with _conn() as (cur, d):
-            cur.execute(f"SELECT COUNT(*), MAX(updated_at), "
-                        f"SUM(CASE WHEN swiggy_sku_code IS NOT NULL AND "
-                        f"swiggy_sku_code<>'' THEN 1 ELSE 0 END) FROM {_MASTER_TABLE}")
-            n, last, sw = cur.fetchone()
-            cur.execute(f"SELECT COUNT(*) FROM {_SWIGGY_TABLE}")
-            smap = cur.fetchone()[0]
+            cur.execute(f"SELECT COUNT(*), MAX(updated_at) FROM {_MASTER_TABLE}")
+            n, last = cur.fetchone()
+            # Swiggy-mapped count comes from the per-channel map now (the
+            # item_master.swiggy_sku_code column is gone).
+            cur.execute("SELECT COUNT(*) FROM channel_sku_map "
+                        "WHERE channel='Swiggy'")
+            smap = int(cur.fetchone()[0] or 0)
         return {'ok': True, 'count': int(n or 0), 'last_updated': last,
-                'swiggy_mapped': int(sw or 0), 'swiggy_map_rows': int(smap or 0)}
+                'swiggy_mapped': smap, 'swiggy_map_rows': smap}
     except Exception as e:  # noqa: BLE001
         return {'ok': False, 'error': f"{type(e).__name__}: {e}",
                 'count': 0, 'last_updated': None, 'swiggy_mapped': 0}
@@ -470,10 +438,10 @@ def status() -> dict:
 
 def list_items(q: str = '', limit: int = 100) -> dict:
     """Browsable overview of item_master: optional search across item_no / EAN /
-    description / swiggy code. Returns ``{rows, total, shown, q}``. Read-only."""
+    description. Returns ``{rows, total, shown, q}``. Read-only."""
     q = (q or '').strip()
     cols = ['item_no', 'ean', 'description', 'mrp', 'gst_code', 'hsn',
-            'swiggy_sku_code', 'mrp_start', 'mrp_end']
+            'mrp_start', 'mrp_end']
     try:
         with _conn() as (cur, d):
             ph = d['ph']
@@ -481,8 +449,8 @@ def list_items(q: str = '', limit: int = 100) -> dict:
             if q:
                 like = f"%{q}%"
                 where = (f"WHERE item_no LIKE {ph} OR ean LIKE {ph} OR "
-                         f"description LIKE {ph} OR swiggy_sku_code LIKE {ph}")
-                args = [like, like, like, like]
+                         f"description LIKE {ph}")
+                args = [like, like, like]
             cur.execute(f"SELECT COUNT(*) FROM {_MASTER_TABLE} {where}", args)
             total = int(cur.fetchone()[0] or 0)
             cur.execute(
@@ -541,9 +509,9 @@ class DBMasterLoader(MasterLoader):
         self.swiggy_sku = {}
         with _conn() as (cur, d):
             cur.execute(
-                f"SELECT item_no, ean, description, gst_code, hsn, mrp, "
-                f"swiggy_sku_code FROM {_MASTER_TABLE}")
-            for item_no, ean, desc, gst, hsn, mrp, sku in cur.fetchall():
+                f"SELECT item_no, ean, description, gst_code, hsn, mrp "
+                f"FROM {_MASTER_TABLE}")
+            for item_no, ean, desc, gst, hsn, mrp in cur.fetchall():
                 ino = _clean(item_no)
                 entry = {
                     'item_no': ino,
@@ -556,8 +524,16 @@ class DBMasterLoader(MasterLoader):
                     self.master[_clean(ean)] = entry
                 if ino and ino not in self.master:
                     self.master[ino] = entry
-                if sku and ean:
-                    self.swiggy_sku.setdefault(_clean(sku), _clean(ean))
+
+        # Per-channel SkuCode→EAN (Swiggy today, HG/others tomorrow) comes WHOLLY
+        # from channel_sku_map now — the item_master swiggy_sku_code column is
+        # gone. The EAN is resolved live from item_master via item_no inside
+        # channel_codes(), so a rebuilt master's fresh EANs flow through.
+        try:
+            from . import channel_map
+            self.swiggy_sku = channel_map.channel_codes('Swiggy')
+        except Exception:  # noqa: BLE001 — leave swiggy_sku empty on any error
+            pass
 
         # Pricing-override overlays (Master Exceptions + Swiggy deal SKUs) now
         # come from the DB too (overrides_store) — NO bundled Excel. We regenerate

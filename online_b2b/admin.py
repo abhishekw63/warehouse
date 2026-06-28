@@ -1,9 +1,9 @@
 from django.contrib import admin
 
 from .models import (
+    ChannelSkuMap,
     ItemException,
     ItemMaster,
-    ItemSwiggyMap,
     OrderHeader,
     OrderLine,
     Run,
@@ -62,19 +62,21 @@ class OrderLineAdmin(admin.ModelAdmin):
 @admin.register(ItemMaster)
 class ItemMasterAdmin(admin.ModelAdmin):
     list_display = ('item_no', 'ean', 'description', 'mrp', 'gst_code', 'hsn',
-                    'swiggy_sku_code', 'brand', 'mrp_start', 'mrp_end', 'updated_at')
+                    'brand', 'mrp_start', 'mrp_end', 'updated_at')
     list_filter = ('gst_code', 'brand', 'batch_id')
-    search_fields = ('item_no', 'ean', 'description', 'swiggy_sku_code')
+    search_fields = ('item_no', 'ean', 'description')
     ordering = ('item_no',)
     list_per_page = 50
 
 
-@admin.register(ItemSwiggyMap)
-class ItemSwiggyMapAdmin(admin.ModelAdmin):
-    list_display = ('item_no', 'swiggy_sku_code', 'updated_at')
-    search_fields = ('item_no', 'swiggy_sku_code')
-    ordering = ('item_no',)
-    list_per_page = 50
+@admin.register(ChannelSkuMap)
+class ChannelSkuMapAdmin(admin.ModelAdmin):
+    list_display = ('id', 'channel', 'sku_code', 'ean', 'item_no', 'source',
+                    'updated_at')
+    list_filter = ('channel', 'source')
+    search_fields = ('sku_code', 'ean', 'item_no')
+    ordering = ('channel', 'sku_code')
+    list_per_page = 100
 
 
 @admin.register(ShipToMapping)

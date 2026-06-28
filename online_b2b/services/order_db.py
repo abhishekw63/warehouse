@@ -4,16 +4,17 @@ online_b2b.services.order_db
 
 Read-only access to the **order history DB** for the web dashboard.
 
-This is the SAME store the Tkinter app writes to: MySQL ``renee_orders``
-(tables ``runs`` / ``order_headers`` / ``order_issue_lines``) when a
-``db_config.json`` selects ``backend=mysql``, otherwise the local SQLite
-``history.db`` (tables ``runs`` / ``orders`` / ``order_issue_lines``).
+The web app is now the OWNER of the order store: MySQL ``renee_orders``
+(tables ``runs`` / ``order_headers`` + the 2-table line split
+``order_lines`` / ``order_line_validation`` read via the ``order_lines_full``
+view). Writes go through ``services.lines_store`` (``record_run_headers`` +
+``insert_lines``) — web-owned replicas of the engine's ``record_manual`` /
+``apply_dedup``, so the engine's history store is never invoked and the legacy
+desktop ``order_issue_lines`` table is gone.
 
-We open our own short-lived connection here and only ever ``SELECT`` — the
-engine remains the sole writer (via ``auto.history_db.record_manual``), so the
-web app never migrates or mutates the production DB. The backend choice and
-credentials come from the engine's own ``load_db_config`` (a local file kept
-out of the repo), so nothing is duplicated or hard-coded.
+We open our own short-lived connection here and only ever ``SELECT``. The
+backend choice and credentials come from the engine's own ``load_db_config``
+(a local file kept out of the repo), so nothing is duplicated or hard-coded.
 """
 
 from __future__ import annotations
@@ -306,6 +307,36 @@ def recent_orders(limit: int = 8) -> list:
                     'value': float(r[4] or 0),
                     'run_id': r[5],
                     'when': r[6],
+                })
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def recent_runs(limit: int = 8) -> list:
+    """Latest N upload RUNS (batches) across all channels — when it was uploaded,
+    which marketplace(s), and what was uploaded amount-wise (#POs, qty, value).
+    One row per run_id. Read-only; never raises."""
+    out: list = []
+    try:
+        with _conn() as (cur, d):
+            ot = d['orders']
+            cur.execute(
+                f"SELECT run_id, MAX(run_ts), GROUP_CONCAT(DISTINCT marketplace_label), "
+                f"MAX(segment), COUNT(DISTINCT po), COALESCE(SUM(qty),0), "
+                f"COALESCE(SUM(order_value),0) FROM {ot} "
+                f"GROUP BY run_id ORDER BY run_id DESC LIMIT {int(limit)}")
+            for r in cur.fetchall():
+                mps = [m for m in (r[2] or '').split(',') if m]
+                label = (mps[0] if len(mps) <= 1 else f"{mps[0]} +{len(mps) - 1}")
+                out.append({
+                    'run_id': r[0], 'when': r[1],
+                    'marketplace': label or (r[3] or ''),
+                    'marketplaces': r[2] or '',
+                    'segment': r[3] or '',
+                    'pos': int(r[4] or 0),
+                    'qty': int(r[5] or 0),
+                    'value': float(r[6] or 0),
                 })
     except Exception:  # noqa: BLE001
         pass
@@ -767,13 +798,16 @@ _FIXED_EAN_SQL = "(received_ean IS NOT NULL AND received_ean <> '')"
 
 
 def issues(marketplace='', q='', status='', resolution='pending',
-           limit=300) -> dict:
+           date_from='', date_to='', limit=300) -> dict:
     """Affected lines for the Issues page — price MISMATCH, NOT_IN_MASTER, AND
     EAN-corrected lines (now OK but were NOT_IN_MASTER, with the fix as the
-    resolution). ``resolution`` = 'pending' / 'resolved' / 'all'."""
+    resolution). ``resolution`` = 'pending' / 'resolved' / 'all'.
+    ``date_from`` / ``date_to`` (``YYYY-MM-DD``) filter by upload date (run_ts).
+    ``limit`` caps rows (pass a large value / 0 for export = no cap)."""
     res_sql = {'pending': _PENDING_SQL, 'resolved': _RESOLVED_SQL}.get(
         resolution, '1=1')
-    out = {'ok': False, 'rows': [], 'counts': {}, 'resolution': resolution}
+    out = {'ok': False, 'rows': [], 'counts': {}, 'resolution': resolution,
+           'date_from': date_from, 'date_to': date_to}
     try:
         with _conn() as (cur, d):
             ph = d['ph']
@@ -793,26 +827,35 @@ def issues(marketplace='', q='', status='', resolution='pending',
                 where.append(f"(po LIKE {ph} OR item_no LIKE {ph} "
                              f"OR description LIKE {ph})")
                 params += [f"%{q}%", f"%{q}%", f"%{q}%"]
-            wsql = " AND ".join(where)
+            # Upload-date window (on run_ts). Same fragment reused for the counts.
+            date_sql = ''
+            date_params: list = []
+            if date_from:
+                date_sql += f" AND DATE(run_ts) >= {ph}"; date_params.append(date_from)
+            if date_to:
+                date_sql += f" AND DATE(run_ts) <= {ph}"; date_params.append(date_to)
+            wsql = " AND ".join(where) + date_sql
             cols = ['line_id', 'run_ts', 'marketplace', 'po', 'item_no', 'ean',
                     'received_ean', 'exception_label', 'description', 'qty',
                     'vendor_mrp', 'our_mrp', 'vendor_cp', 'our_cp',
                     'vendor_landing', 'our_landing', 'diff', 'status', 'action',
                     'remark']
+            lim_sql = f" LIMIT {int(limit)}" if limit and int(limit) > 0 else ''
             cur.execute(
                 f"SELECT {', '.join(cols)} FROM order_lines_full WHERE {wsql} "
-                f"ORDER BY line_id DESC LIMIT {int(limit)}", tuple(params))
+                f"ORDER BY line_id DESC{lim_sql}", tuple(params) + tuple(date_params))
             out['rows'] = _tag_basis(_rows(cur, cols))
-            # headline counts within the chosen resolution scope.
+            # headline counts within the chosen resolution scope (+ same date window).
             cur.execute(
                 f"SELECT SUM(CASE WHEN status='MISMATCH' THEN 1 ELSE 0 END), "
                 f"SUM(CASE WHEN status='NOT_IN_MASTER' OR {_FIXED_EAN_SQL} "
                 f"THEN 1 ELSE 0 END) FROM order_lines_full "
-                f"WHERE {_AFFECTED_SQL} AND {res_sql}")
+                f"WHERE {_AFFECTED_SQL} AND {res_sql}{date_sql}", tuple(date_params))
             mm, nim = cur.fetchone()
             out['counts'] = {'MISMATCH': int(mm or 0), 'NOT_IN_MASTER': int(nim or 0)}
             cur.execute(f"SELECT COUNT(*) FROM order_lines_full "
-                        f"WHERE {_AFFECTED_SQL} AND {_RESOLVED_SQL}")
+                        f"WHERE {_AFFECTED_SQL} AND {_RESOLVED_SQL}{date_sql}",
+                        tuple(date_params))
             out['resolved_total'] = cur.fetchone()[0]
         out['ok'] = True
     except Exception as e:  # noqa: BLE001
@@ -858,13 +901,14 @@ _SKU_AGG = """
     SUM(CASE WHEN status='MISMATCH' THEN 1 ELSE 0 END)        AS mis_n,
     SUM(CASE WHEN status='NOT_IN_MASTER' THEN 1 ELSE 0 END)   AS nim_n,
     COUNT(DISTINCT po) AS pos, MIN(diff) AS min_diff, MAX(diff) AS max_diff,
-    GROUP_CONCAT(DISTINCT marketplace) AS marketplaces
+    GROUP_CONCAT(DISTINCT marketplace) AS marketplaces,
+    COUNT(DISTINCT marketplace) AS mp_count
   FROM order_lines_full {wsql}
   GROUP BY item_no, ean
 """
 _SKU_COLS = ['item_no', 'ean', 'description', 'our_mrp', 'vmrp_max', 'vmrp_min',
              'tot_qty', 'ok_qty', 'mis_qty', 'nim_qty', 'ok_n', 'mis_n', 'nim_n',
-             'pos', 'min_diff', 'max_diff', 'marketplaces']
+             'pos', 'min_diff', 'max_diff', 'marketplaces', 'mp_count']
 
 
 def sku_summary(marketplace='', q='', date_from='', date_to='',

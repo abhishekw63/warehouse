@@ -16,7 +16,7 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import FileResponse, Http404, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
@@ -42,12 +42,23 @@ ONLINE_CHANNELS = [
     {'name': 'Nykaa', 'tag': 'live'},
     {'name': 'Myntra', 'tag': 'live'},
     {'name': 'Reliance', 'tag': 'live'},
+    {'name': 'Meesho Branch', 'tag': 'live'},
+    # ── TO-DO · pending web integration (shown as "coming soon") ──
     {'name': 'BlinkMP', 'tag': 'soon'},
+    {'name': 'Big Basket', 'tag': 'soon'},
+    {'name': 'First Cry', 'tag': 'soon'},
+    {'name': 'Smytten', 'tag': 'soon'},
 ]
 OFFLINE_CHANNELS = [
     {'name': 'MT (Modern Trade)', 'tag': 'live', 'url': '/offline/shoppers-stop/'},
     {'name': 'GT Mass', 'tag': 'live', 'url': '/offline/gt-mass-dump/'},
     {'name': 'GT Select', 'tag': 'live', 'url': '/b2b/gt-select/'},
+    # ── TO-DO · pending web integration (shown as "coming soon") ──
+    {'name': 'EKA', 'tag': 'soon'},
+    {'name': 'CSD', 'tag': 'soon'},
+    {'name': 'Off-Institutional', 'tag': 'soon'},
+    {'name': 'Airport', 'tag': 'soon'},
+    {'name': 'EBO / Kiosk', 'tag': 'soon'},
 ]
 
 
@@ -65,10 +76,20 @@ class CentralHubView(LoginRequiredMixin, TemplateView):
         ctx['issue_count'] = data.get('issue_count', 0)
         ctx['online_channels'] = ONLINE_CHANNELS
         ctx['offline_channels'] = OFFLINE_CHANNELS
+        # Collapse the pending ones into a single "+N coming soon" chip (tooltip
+        # lists them) so the hub card stays compact.
+        ctx['online_soon'] = [c['name'] for c in ONLINE_CHANNELS if c.get('tag') == 'soon']
+        ctx['offline_soon'] = [c['name'] for c in OFFLINE_CHANNELS if c.get('tag') == 'soon']
         ctx['online_kpis'] = order_db.segment_kpis('OnlineB2B')
         ctx['offline_kpis'] = order_db.segment_kpis('Offline')
         ctx['today'] = order_db.today_intake()
         ctx['recent'] = order_db.recent_orders(8)
+        ctx['recent_runs'] = order_db.recent_runs(8)
+        from .services import tat_store
+        tat_total = tat_store.breach_count()          # all TAT breaches
+        total_pos = (data.get('kpis') or {}).get('pos') or 0
+        ctx['tat_total'] = tat_total
+        ctx['tat_rate'] = round(tat_total / total_pos * 100, 1) if total_pos else 0
         ctx['extra'] = order_db.hub_extra_kpis()
         return ctx
 
@@ -91,7 +112,15 @@ class RulesView(LoginRequiredMixin, TemplateView):
         # Marketplaces whose margin is GST-dependent (Reliance) — for the
         # elaborated exceptions section.
         ctx['gst_margin_rules'] = [r for r in rules if r.get('gst_margin')]
+        ctx['formats'] = engine_bridge.marketplace_formats()
         ctx['locations'] = engine_bridge.location_rules()
+        # Actual Swiggy deal SKUs (name + agreed prices) for accuracy on the card.
+        try:
+            from .services import overrides_store
+            ctx['swiggy_deals'] = [r for r in overrides_store.list_all()
+                                   if r.get('kind') == 'swiggy_deal']
+        except Exception:  # noqa: BLE001
+            ctx['swiggy_deals'] = []
         return ctx
 
 
@@ -272,18 +301,73 @@ def lines_more(request):
                   {'rows': page['rows']})
 
 
+def _issue_filters(request) -> dict:
+    """Shared Issues filters (used by the page + the export)."""
+    return {
+        'marketplace': request.GET.get('marketplace', '').strip(),
+        'q': request.GET.get('q', '').strip(),
+        'status': request.GET.get('status', '').strip(),
+        'resolution': request.GET.get('resolution', 'pending').strip() or 'pending',
+        'date_from': request.GET.get('date_from', '').strip(),
+        'date_to': request.GET.get('date_to', '').strip(),
+    }
+
+
 @login_required
 def issues(request):
-    data = order_db.issues(
-        marketplace=request.GET.get('marketplace', '').strip(),
-        q=request.GET.get('q', '').strip(),
-        status=request.GET.get('status', '').strip(),
-        resolution=request.GET.get('resolution', 'pending').strip() or 'pending',
-    )
+    data = order_db.issues(**_issue_filters(request))
     if _is_ajax(request):
         return render(request, 'online_b2b/_issues_table.html', {'d': data})
     return render(request, 'online_b2b/issues.html',
                   {'d': data, 'eanfix': order_db.ean_corrections()})
+
+
+@login_required
+def issues_export(request):
+    """Download the currently-filtered issue lines as .xlsx (respects every
+    filter, including the upload-date window). No row cap on the export."""
+    import datetime as _dt
+    import io as _io
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    data = order_db.issues(limit=0, **_issue_filters(request))
+    rows = data.get('rows', []) if data.get('ok') else []
+    cols = [('run_ts', 'Upload Date'), ('marketplace', 'Marketplace'),
+            ('po', 'PO'), ('item_no', 'Item No'), ('ean', 'EAN'),
+            ('received_ean', 'Received EAN'), ('description', 'Description'),
+            ('qty', 'Qty'), ('vendor_mrp', 'Vendor MRP'), ('our_mrp', 'Our MRP'),
+            ('vendor_cp', 'Vendor CP'), ('our_cp', 'Our CP'),
+            ('vendor_landing', 'Vendor Landing'), ('our_landing', 'Our Landing'),
+            ('diff', 'Diff'), ('status', 'Status'),
+            ('exception_label', 'Exception'), ('action', 'Action'),
+            ('remark', 'Remark')]
+    wb = Workbook(); ws = wb.active; ws.title = 'Issues'
+    hf = Font(bold=True, color='FFFFFF'); navy = PatternFill('solid', fgColor='1A237E')
+    for c, (_k, h) in enumerate(cols, 1):
+        cell = ws.cell(1, c, h)
+        cell.font = hf; cell.fill = navy
+        cell.alignment = Alignment(horizontal='center')
+    for r, row in enumerate(rows, 2):
+        for c, (k, _h) in enumerate(cols, 1):
+            v = row.get(k)
+            ws.cell(r, c, str(v) if k == 'run_ts' and v is not None else v)
+    for col in ws.columns:
+        L = col[0].column_letter
+        w = max((len(str(c.value or '')) for c in col), default=8)
+        ws.column_dimensions[L].width = min(w + 2, 48)
+    buf = _io.BytesIO(); wb.save(buf); buf.seek(0)
+    f = _issue_filters(request)
+    scope = f['date_from'] or 'all'
+    if f['date_to'] and f['date_to'] != f['date_from']:
+        scope = f"{f['date_from'] or 'start'}_to_{f['date_to']}"
+    stamp = _dt.datetime.now().strftime('%Y%m%d_%H%M%S')
+    fname = f"issues_{f['resolution']}_{scope}_{stamp}.xlsx"
+    resp = HttpResponse(
+        buf.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = f'attachment; filename="{fname}"'
+    return resp
 
 
 @login_required
@@ -325,6 +409,88 @@ def issues_fix_ean(request):
         request.POST.get('line_id'),
         (request.POST.get('correct_ean', '') or '').strip())
     return JsonResponse(res, status=200 if res.get('ok') else 400)
+
+
+# ── TAT (24h SLA) — breaches + reasons ──────────────────────────────────────
+
+def _tat_filters(request) -> dict:
+    return {
+        'marketplace': request.GET.get('marketplace', '').strip(),
+        'segment': request.GET.get('segment', '').strip(),
+        'q': request.GET.get('q', '').strip(),
+        'status': request.GET.get('status', 'pending').strip() or 'pending',
+        'date_from': request.GET.get('date_from', '').strip(),
+        'date_to': request.GET.get('date_to', '').strip(),
+        'run': request.GET.get('run', '').strip(),
+    }
+
+
+@login_required
+def tat(request):
+    """TAT / SLA page — orders uploaded later than 1 working day after the PO
+    date. Operator records a breach reason here (reactive). Filterable run-wise."""
+    from .services import tat_store
+    data = tat_store.breaches(**_tat_filters(request))
+    data['reasons'] = tat_store.REASONS
+    if _is_ajax(request):
+        return render(request, 'online_b2b/_tat_rows.html', {'d': data})
+    data['runs'] = order_db.recent_runs(50)
+    return render(request, 'online_b2b/tat.html', {'d': data})
+
+
+@login_required
+@require_POST
+def tat_save(request):
+    """Set / clear the TAT breach reason for one order."""
+    from .services import tat_store
+    res = tat_store.set_reason(
+        request.POST.get('order_id'),
+        request.POST.get('reason_code', ''),
+        request.POST.get('note', ''),
+        by=getattr(request.user, 'username', ''))
+    return JsonResponse(res, status=200 if res.get('ok') else 400)
+
+
+@login_required
+def tat_export(request):
+    """Download the filtered TAT breaches as .xlsx (respects all filters)."""
+    import datetime as _dt
+    import io as _io
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    from .services import tat_store
+    f = _tat_filters(request)
+    data = tat_store.breaches(limit=100000, **f)
+    rows = data.get('rows', []) if data.get('ok') else []
+    cols = [('po_date', 'PO Date'), ('run_ts', 'Uploaded'),
+            ('segment', 'Segment'), ('marketplace', 'Channel'), ('po', 'PO / SO'),
+            ('location', 'Location'), ('qty', 'Qty'), ('order_value', 'Value'),
+            ('wd_late', 'Working days taken'), ('days_over', 'Days over TAT'),
+            ('reason_code', 'Reason'), ('note', 'Note'),
+            ('reason_by', 'By'), ('reason_at', 'Reason at')]
+    wb = Workbook(); ws = wb.active; ws.title = 'TAT breaches'
+    hf = Font(bold=True, color='FFFFFF'); navy = PatternFill('solid', fgColor='1A237E')
+    for c, (_k, h) in enumerate(cols, 1):
+        cell = ws.cell(1, c, h)
+        cell.font = hf; cell.fill = navy; cell.alignment = Alignment(horizontal='center')
+    for r, row in enumerate(rows, 2):
+        for c, (k, _h) in enumerate(cols, 1):
+            v = row.get(k)
+            ws.cell(r, c, str(v) if k in ('run_ts', 'po_date', 'reason_at') and v is not None else v)
+    for col in ws.columns:
+        L = col[0].column_letter
+        w = max((len(str(c.value or '')) for c in col), default=8)
+        ws.column_dimensions[L].width = min(w + 2, 48)
+    buf = _io.BytesIO(); wb.save(buf); buf.seek(0)
+    stamp = _dt.datetime.now().strftime('%Y%m%d_%H%M%S')
+    fname = f"tat_breaches_{f['status']}_{stamp}.xlsx"
+    resp = HttpResponse(
+        buf.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = f'attachment; filename="{fname}"'
+    return resp
 
 
 @login_required
@@ -1007,7 +1173,6 @@ def _im_row_json(r: dict) -> dict:
         'description': s(r.get('description')), 'gst_code': s(r.get('gst_code')),
         'hsn': s(r.get('hsn')),
         'mrp': None if r.get('mrp') is None else float(r['mrp']),
-        'swiggy_sku_code': s(r.get('swiggy_sku_code')),
         'mrp_start': s(r.get('mrp_start')), 'mrp_end': s(r.get('mrp_end')),
     }
 
@@ -1166,7 +1331,9 @@ def gt_select_discard(request, token):
 @login_required
 @require_POST
 def item_master_add(request):
-    """Add/overwrite ONE item by hand (durable overlay + live master)."""
+    """Add/overwrite ONE item by hand — written to item_master (flagged
+    batch_id='manual', durable across rebuilds); a typed Swiggy SKU goes to
+    channel_sku_map."""
     from .services import item_master_loader as iml
     res = iml.upsert_manual_item({
         'item_no': request.POST.get('item_no', ''),

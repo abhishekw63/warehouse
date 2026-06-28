@@ -5,6 +5,31 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<style>
+  .gst-by{ display:inline-block; margin-top:2px; font-size:10px; font-weight:700; letter-spacing:.3px;
+    color:#e65100; background:#fff3e0; border:1px solid #ffcc80; border-radius:5px; padding:1px 6px; cursor:help; }
+  /* keep the card compact — scroll the deal list inside the card */
+  .deal-list{ margin-top:8px; border-top:1px solid #eee; max-height:150px; overflow-y:auto;
+    padding-right:4px; }
+  .deal-list::-webkit-scrollbar{ width:6px; }
+  .deal-list::-webkit-scrollbar-thumb{ background:#d4d4dc; border-radius:3px; }
+  .deal-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px solid #f1f1f4; font-size:12px; }
+  .deal-name{ font-weight:600; color:#222; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1; }
+  .deal-px{ white-space:nowrap; font-variant-numeric:tabular-nums; color:#1b7a3d; font-weight:600; }
+  .deal-more{ font-size:11px; color:#888; padding-top:6px; }
+  /* per-marketplace file-format cards */
+  .fmt-card{ border:1px solid var(--border); border-radius:10px; padding:13px 16px; margin-top:12px; background:var(--surface-2); }
+  .fmt-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+  .fmt-name{ font-weight:700; font-size:14px; color:var(--text); }
+  .fmt-type{ font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
+    color:var(--accent); background:var(--accent-soft); border-radius:20px; padding:3px 11px; white-space:nowrap; }
+  .fmt-note{ font-size:12.5px; color:var(--text-2); margin:7px 0 10px; line-height:1.5; }
+  .fmt-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px 16px; }
+  @media (max-width:680px){ .fmt-grid{ grid-template-columns:1fr 1fr; } }
+  .fmt-grid > div{ display:flex; flex-direction:column; gap:2px; min-width:0; }
+  .fmt-k{ font-size:9.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+  .fmt-v{ font-size:12.5px; color:var(--text); font-family:ui-monospace,Menlo,Consolas,monospace; overflow:hidden; text-overflow:ellipsis; }
+</style>
 {% endblock %}
 
 {% block breadcrumb %}
@@ -63,7 +88,7 @@
         <tr>
           <td><b>{{ m.name }}</b>{% if m.pilot %} <span class="pill live">live</span>{% endif %}</td>
           <td class="mono">{{ m.party }}</td>
-          <td class="r"><b>{{ m.margin }}%</b></td>
+          <td class="r"><b>{{ m.margin_label }}</b>{% if m.gst_margin %}<br><span class="gst-by" title="Margin varies by GST rate — {% for g in m.gst_margin %}{{ g.gst }}% GST → {{ g.pct }}%{% if not forloop.last %}, {% endif %}{% endfor %}">by GST · not flat</span>{% endif %}</td>
           <td>{% if 'Landing' in m.basis %}<span class="basis-badge b-landing">Landing</span>{% else %}<span class="basis-badge b-cp">Cost</span>{% endif %} <span class="muted">{{ m.basis }}</span></td>
           <td>{{ m.compare_label|default:'—' }}</td>
           <td><span class="mono">{{ m.item }}</span></td>
@@ -76,9 +101,33 @@
     <p class="rc-foot">“Item match = <b>from_ean</b>” means the item is resolved by its EAN against the master; “mapping” means a name/SKU map.</p>
   </div>
 
-  <!-- ── 3. Marketplace-specific exceptions ── -->
+  <!-- ── 3. What each marketplace sends & how it's read ── -->
   <div class="rule-card reveal">
-    <div class="rc-head"><span class="rc-no">3</span><h2>Marketplace-specific exceptions <span class="rc-sub">— auto-detected; the engine tags <span class="mono">exception_label</span></span></h2></div>
+    <div class="rc-head"><span class="rc-no">3</span><h2>What each marketplace sends &amp; how it's read <span class="rc-sub">— file type + the columns the engine extracts</span></h2></div>
+    <p class="rc-lead">Each marketplace ships its PO in its own shape — Excel, a PDF, CSVs, sometimes several files. The engine reads each one's specific columns to find the <b>PO</b>, <b>destination</b>, <b>item</b>, <b>quantity</b> and the <b>vendor cost / MRP</b>. Pulled live from the engine config, so it never drifts.</p>
+    {% for f in formats %}
+    <div class="fmt-card">
+      <div class="fmt-head">
+        <span class="fmt-name">{{ f.name }}{% if f.pilot %} <span class="pill live">live</span>{% endif %}</span>
+        <span class="fmt-type">{{ f.file_type }}</span>
+      </div>
+      {% if f.note %}<p class="fmt-note">{{ f.note }}</p>{% endif %}
+      <div class="fmt-grid">
+        <div><span class="fmt-k">PO</span><span class="fmt-v">{{ f.po_by }}</span></div>
+        <div><span class="fmt-k">Location</span><span class="fmt-v">{{ f.loc_by }}</span></div>
+        <div><span class="fmt-k">Item</span><span class="fmt-v">{{ f.item_by }}</span></div>
+        <div><span class="fmt-k">Qty</span><span class="fmt-v">{{ f.qty_by }}</span></div>
+        <div><span class="fmt-k">Vendor cost</span><span class="fmt-v">{{ f.cost_by }}</span></div>
+        <div><span class="fmt-k">Vendor MRP</span><span class="fmt-v">{{ f.mrp_by }}</span></div>
+      </div>
+    </div>
+    {% empty %}<p class="muted">Engine config not available on this host.</p>{% endfor %}
+    <p class="rc-foot">Columns are read by name (case/spacing-tolerant). “(from the file)” = the engine derives it from the PDF/filename, not a named column.</p>
+  </div>
+
+  <!-- ── 4. Marketplace-specific exceptions ── -->
+  <div class="rule-card reveal">
+    <div class="rc-head"><span class="rc-no">4</span><h2>Marketplace-specific exceptions <span class="rc-sub">— auto-detected; the engine tags <span class="mono">exception_label</span></span></h2></div>
     <p class="rc-lead"><b>Not every line follows the flat marketplace margin.</b> The engine recognises these named cases and prices / accepts them correctly — so a "deviation" here is <b>expected</b>, not an error. Don't assume the standard rate always applies.</p>
     <div class="exc-grid">
 
@@ -86,7 +135,7 @@
       {% for m in gst_margin_rules %}
       <div class="exc-card e-gst">
         <div class="exc-h">{{ m.name }} · GST-dependent margin</div>
-        <p>{{ m.name }}'s keep% isn't flat — it <b>changes with each item's GST rate</b>: <span class="formula-inline">1 − {{ m.gst_discount }} × (1 + GST)</span>. Lower GST → higher margin. The rules table shows <b>{{ m.margin }}%</b> only because that's the 18% case.</p>
+        <p>{{ m.name }}'s keep% isn't flat — it <b>changes with each item's GST rate</b>: <span class="formula-inline">1 − {{ m.gst_discount }} × (1 + GST)</span>. Lower GST → higher margin. The rules table shows the range <b>{{ m.margin_label }}</b> (marked <i>by GST</i>); <b>{{ m.margin }}%</b> is just the 18% case.</p>
         <div class="eg"><b>Per-GST margin:</b><br>
           {% for g in m.gst_margin %}<span class="gpill">{{ g.gst }}% GST → <b>{{ g.pct }}%</b></span>{% endfor %}</div>
       </div>
@@ -101,9 +150,20 @@
 
       <!-- Swiggy deal SKUs -->
       <div class="exc-card e-deal">
-        <div class="exc-h">Swiggy · Deal SKUs</div>
+        <div class="exc-h">Swiggy · Deal SKUs{% if swiggy_deals %} <span class="count">{{ swiggy_deals|length }}</span>{% endif %}</div>
         <p>Swiggy negotiates <b>per-SKU deal prices</b> that don't follow the default MRP × margin. Loaded from the <span class="mono">Swiggy Deal SKUs</span> sheet, keyed by EAN → the agreed <b>Cost after GST</b> is taken as our CP.</p>
+        {% if swiggy_deals %}
+        <div class="deal-list">
+          {% for s in swiggy_deals %}
+          <div class="deal-row">
+            <span class="deal-name" title="{{ s.note|default:s.source_code }} · EAN {{ s.source_code }}{% if s.correct_gst %} · GST {{ s.correct_gst }}{% endif %}">{{ s.note|default:s.source_code }}</span>
+            <span class="deal-px">MRP ₹{{ s.override_mrp|default:'—' }} → CP ₹{{ s.cost_after_gst|default:'—' }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
         <div class="eg">A campaign SKU carries an explicit deal cost; the engine uses that exact figure instead of recomputing from MRP.</div>
+        {% endif %}
       </div>
 
       <!-- Myntra Goddess -->
@@ -126,7 +186,7 @@
 
   <!-- ── 4. Your decisions on a mismatch ── -->
   <div class="rule-card reveal">
-    <div class="rc-head"><span class="rc-no">4</span><h2>Your decisions on a mismatch <span class="rc-sub">— drive the D365 dump</span></h2></div>
+    <div class="rc-head"><span class="rc-no">5</span><h2>Your decisions on a mismatch <span class="rc-sub">— drive the D365 dump</span></h2></div>
     <p class="rc-lead">When a line is <span class="pill mis">MISMATCH</span>, you pick one on the review screen. The full SO Workbook always keeps every line; only the <b>D365 dump</b> reflects your choice.</p>
     <div class="dec-grid">
       <div class="dec-card d-inc">
@@ -151,7 +211,7 @@
   {% if locations %}
   <!-- ── 5. Flipkart location map ── -->
   <div class="rule-card reveal">
-    <div class="rc-head"><span class="rc-no">5</span><h2>Flipkart · Origin Warehouse → sub-marketplace</h2>
+    <div class="rc-head"><span class="rc-no">6</span><h2>Flipkart · Origin Warehouse → sub-marketplace</h2>
       <span class="rc-sub">locked map — unknown locations get <b>FK (review)</b>, never blank</span></div>
     <div class="scroll" style="max-height:340px;">
     <table class="grid compact rule-tbl">

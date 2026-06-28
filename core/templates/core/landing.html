@@ -1,0 +1,159 @@
+{% load static %}
+<!DOCTYPE HTML>
+<!--
+    Landing built on "Paradigm Shift" by HTML5 UP (html5up.net | @ajlkn),
+    free under the CCA 3.0 licence. Re-themed for RENÉE Order Management and
+    wired to Django auth. Attribution retained in the footer per the licence.
+-->
+<html lang="en">
+<head>
+    <title>RENÉE · Order Management</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+    <link rel="stylesheet" href="{% static 'paradigm/assets/css/main.css' %}" />
+    <style>
+        /* light RENÉE re-theme on top of the template */
+        :root{ }
+        #wrapper > .intro:before{ background:linear-gradient(120deg,#1A237E 0%, #12163a 100%) !important; }
+        .rn-eyebrow{ letter-spacing:5px; font-size:13px; opacity:.8; text-transform:uppercase; }
+        .rn-stats{ display:flex; flex-wrap:wrap; gap:14px; }
+        .rn-stat{ flex:1 1 150px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.14);
+            border-radius:10px; padding:16px 18px; }
+        .rn-stat b{ display:block; font-size:30px; line-height:1; }
+        .rn-stat span{ display:block; margin-top:8px; font-size:11px; letter-spacing:1px; text-transform:uppercase; opacity:.7; }
+        .rn-err{ background:rgba(183,38,30,.15); border:1px solid rgba(239,154,154,.5); color:#ffd5d2;
+            border-radius:8px; padding:10px 12px; margin-bottom:14px; font-size:14px; }
+        .rn-toasts{ position:fixed; top:18px; right:18px; z-index:9999; display:flex; flex-direction:column; gap:8px; }
+        .rn-toast{ font-family:'DM Sans',system-ui,sans-serif; font-size:14px; color:#fff; padding:11px 16px;
+            border-radius:8px; box-shadow:0 10px 24px -8px rgba(0,0,0,.4); animation:rn-in .25s ease; min-width:200px; }
+        .rn-toast.success{ background:#1b7a3d; } .rn-toast.error{ background:#b3261e; }
+        .rn-toast.info, .rn-toast{ background:#1A237E; }
+        @keyframes rn-in{ from{opacity:0; transform:translateY(-8px);} to{opacity:1; transform:none;} }
+    </style>
+</head>
+<body class="is-preload">
+
+    {% if messages %}
+    <div class="rn-toasts" id="rnToasts">
+        {% for m in messages %}<div class="rn-toast {{ m.tags }}">{{ m }}</div>{% endfor %}
+    </div>
+    <script>setTimeout(function(){var t=document.getElementById('rnToasts'); if(t) t.style.display='none';}, 4000);</script>
+    {% endif %}
+
+    <div id="wrapper">
+
+        <!-- Intro / hero -->
+        <section class="intro">
+            <header>
+                <p class="rn-eyebrow">RENÉE Cosmetics</p>
+                <h1>Order Management</h1>
+                <p>One desk for every marketplace — raw PO dump → validated Sales Order in D365 → live tracker, owned end-to-end.</p>
+                <ul class="actions">
+                    <li><a href="#signin" class="arrow scrolly"><span class="label">Sign in</span></a></li>
+                </ul>
+            </header>
+            <div class="content">
+                <span class="image fill" data-position="center"><img src="{% static 'paradigm/images/order-mgmt.svg' %}" alt="Order Management" /></span>
+            </div>
+        </section>
+
+        <!-- What it does -->
+        <section id="about">
+            <header>
+                <h2>One source of truth, every channel</h2>
+            </header>
+            <div class="content">
+                <p><strong>From fragmented to a single accountable desk.</strong> Every marketplace PO — online &amp; offline — flows through one pipeline: parsed, price-validated against the master, and pushed to D365, with the live status visible to every stakeholder.</p>
+                <ul class="feature-icons">
+                    <li class="icon solid fa-store">12 live marketplaces</li>
+                    <li class="icon solid fa-bolt">GT-Mass automation · 85m → 15m</li>
+                    <li class="icon solid fa-check-circle">GST-aware price validation</li>
+                    <li class="icon solid fa-file-export">D365 Sales-Order export</li>
+                    <li class="icon solid fa-layer-group">Online + Offline · one desk</li>
+                    <li class="icon solid fa-chart-line">Live dashboards &amp; analytics</li>
+                </ul>
+            </div>
+        </section>
+
+        {% if stats.pos or stats.lines %}
+        <!-- Live numbers -->
+        <section>
+            <header><h2>Live in the system</h2></header>
+            <div class="content">
+                <div class="rn-stats">
+                    {% if stats.pos %}<div class="rn-stat"><b>{{ stats.pos }}</b><span>POs recorded</span></div>{% endif %}
+                    {% if stats.marketplaces %}<div class="rn-stat"><b>{{ stats.marketplaces }}</b><span>Marketplaces</span></div>{% endif %}
+                    {% if stats.lines %}<div class="rn-stat"><b>{{ stats.lines }}</b><span>Line items</span></div>{% endif %}
+                    {% if stats.value_disp %}<div class="rn-stat"><b>{{ stats.value_disp }}</b><span>Order value</span></div>{% endif %}
+                </div>
+            </div>
+        </section>
+        {% endif %}
+
+        <!-- Sign in -->
+        <section id="signin">
+            <header>
+                <h2>{% if user.is_authenticated %}Welcome back{% else %}Sign in{% endif %}</h2>
+            </header>
+            <div class="content">
+            {% if user.is_authenticated %}
+                <p>You're signed in as <strong>{{ user.username }}</strong>.</p>
+                <ul class="actions">
+                    <li><a href="{% url 'departments' %}" class="button primary large">Go to Departments</a></li>
+                    <li>
+                        <form action="{% url 'logout' %}" method="post" style="display:inline;">{% csrf_token %}
+                            <button type="submit" class="button large">Log out</button>
+                        </form>
+                    </li>
+                </ul>
+            {% else %}
+                <p><strong>Sign in to the order desk.</strong> Use your RENÉE warehouse credentials.</p>
+                {% if form.username.errors or form.password.errors or form.non_field_errors %}
+                    <div class="rn-err">Invalid username or password.</div>
+                {% endif %}
+                <form action="{% url 'login' %}" method="post">
+                    {% csrf_token %}
+                    <div class="fields">
+                        <div class="field half">
+                            <input type="text" name="username" id="username" placeholder="Username" required />
+                        </div>
+                        <div class="field half">
+                            <input type="password" name="password" id="password" placeholder="Password" required />
+                        </div>
+                    </div>
+                    <ul class="actions">
+                        <li><input type="submit" value="Sign In" class="button primary" /></li>
+                        <li><a href="{% url 'signup' %}" class="button">Create account</a></li>
+                    </ul>
+                </form>
+            {% endif %}
+            </div>
+            <footer>
+                <ul class="items">
+                    <li>
+                        <h3>Segments</h3>
+                        <span>Online B2B · Offline (MT / GT)</span>
+                    </li>
+                    <li>
+                        <h3>Pipeline</h3>
+                        <span>Dump → D365 → Live tracker</span>
+                    </li>
+                </ul>
+            </footer>
+        </section>
+
+        <!-- Copyright (HTML5 UP attribution retained per CCA licence) -->
+        <div class="copyright">&copy; RENÉE Cosmetics Private Limited. Design: <a href="https://html5up.net">HTML5 UP</a>.</div>
+
+    </div>
+
+    <!-- Scripts -->
+    <script src="{% static 'paradigm/assets/js/jquery.min.js' %}"></script>
+    <script src="{% static 'paradigm/assets/js/jquery.scrolly.min.js' %}"></script>
+    <script src="{% static 'paradigm/assets/js/browser.min.js' %}"></script>
+    <script src="{% static 'paradigm/assets/js/breakpoints.min.js' %}"></script>
+    <script src="{% static 'paradigm/assets/js/util.js' %}"></script>
+    <script src="{% static 'paradigm/assets/js/main.js' %}"></script>
+
+</body>
+</html>

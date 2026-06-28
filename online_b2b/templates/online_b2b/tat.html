@@ -1,0 +1,162 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static %}
+{% block title %}Order Management — TAT / SLA{% endblock %}
+{% block extra_css %}
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<style>
+  #tat-filters{ align-items:flex-end; gap:12px 14px; padding:16px 18px; }
+  #tat-filters .fg label{ font-size:10.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:#8a8a96; }
+  #tat-filters .fg select, #tat-filters .fg input{ box-sizing:border-box; height:38px; }
+  #tat-filters input[type=date]{ padding:0 10px; border:1px solid #dcdce6; border-radius:8px; font:inherit; background:#fff; }
+  .tat-daterow{ display:flex; align-items:center; gap:8px; } .tat-dash{ color:#aab; font-weight:600; }
+  #tat-filters .tat-actions{ flex-direction:row; align-items:flex-end; gap:8px; margin-left:auto; }
+  .tat-today,.tat-reset{ height:38px; padding:0 15px; border:1px solid #dcdce6; background:#fff; color:#333; border-radius:8px; cursor:pointer; font:inherit; font-weight:600; }
+  .tat-reset{ color:#b3261e; } .tat-reset:hover{ background:#fdecea; }
+  .tat-export{ height:38px; display:inline-flex; align-items:center; gap:7px; padding:0 17px; background:#1b7a3d; color:#fff; border-radius:8px; text-decoration:none; font-weight:600; }
+  .tat-export:hover{ background:#176a35; } .tat-export svg{ width:15px; height:15px; }
+  .tat-over{ font-weight:700; color:#b3261e; background:#fdecea; border:1px solid #f3b4ad; border-radius:6px; padding:1px 7px; }
+  .tat-reason{ padding:5px 8px; border:1px solid #d8d8e2; border-radius:7px; font:inherit; font-size:12px; background:#fff; }
+  .tat-note{ padding:5px 8px; border:1px solid #d8d8e2; border-radius:7px; font:inherit; font-size:12px; width:170px; }
+  .tat-saved{ color:#1b7a3d; font-size:11px; font-weight:700; margin-left:6px; }
+  /* colourful progress: reasons given / total breaches */
+  .tat-prog{ margin-top:14px; background:var(--surface); border:1px solid var(--border);
+    border-radius:12px; padding:13px 18px; box-shadow:var(--shadow); }
+  .tat-prog__top{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:9px; font-size:13px; color:var(--text-2); }
+  .tat-prog__lbl{ font-weight:600; text-transform:uppercase; letter-spacing:.04em; font-size:11px; color:#8a8a96; }
+  .tat-prog__val b{ font-size:18px; color:var(--text); }
+  .tat-prog__pend{ color:#b3261e; font-weight:700; } .tat-prog__done{ color:#1b7a3d; font-weight:700; }
+  .tat-prog__track{ height:12px; background:#ececf3; border-radius:20px; overflow:hidden; }
+  .tat-prog__track span{ display:block; height:100%; border-radius:20px; min-width:2px;
+    background:linear-gradient(90deg,#ed1b72,#fcb12b,#f2d40d,#90d36b,#09b7bf,#754fa0);
+    transition:width .6s cubic-bezier(.2,.7,.2,1); }
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_dashboard' %}"> / Order Management</a> <span>/ TAT · SLA</span>
+{% endblock %}
+
+{% block content %}
+<div class="iss-wrap">
+  <div class="iss-head">
+    <div>
+      <h1>TAT · SLA</h1>
+      <p class="sub">Every PO must be uploaded within <b>1 working day</b> of its PO date (Sundays &amp; holidays excluded). Breaches are listed here — record a <b>reason</b> for each.</p>
+    </div>
+    <a href="{% url 'b2b_dashboard' %}" class="back">← Dashboard</a>
+  </div>
+
+  <form id="tat-filters" class="filters" onsubmit="return false;">
+    <div class="fg"><label>Reason</label>
+      <select name="status">
+        <option value="pending" {% if d.status == 'pending' %}selected{% endif %}>Pending</option>
+        <option value="resolved" {% if d.status == 'resolved' %}selected{% endif %}>Given</option>
+        <option value="all" {% if d.status == 'all' %}selected{% endif %}>All</option>
+      </select></div>
+    <div class="fg"><label>Segment</label>
+      <select name="segment"><option value="">All</option>
+        <option value="OnlineB2B">Online B2B</option>
+        <option value="Offline">Offline</option>
+      </select></div>
+    <div class="fg"><label>Run (upload)</label>
+      <select name="run">
+        <option value="">All runs</option>
+        {% for r in d.runs %}<option value="{{ r.run_id }}">#{{ r.run_id }} · {{ r.marketplace }} · {{ r.when|date:"d M, H:i" }}</option>{% endfor %}
+      </select></div>
+    <div class="fg grow"><label>Search PO / location</label>
+      <input type="text" name="q" placeholder="search…" autocomplete="off"></div>
+    <div class="fg"><label>Upload date</label>
+      <div class="tat-daterow">
+        <input type="date" name="date_from" aria-label="From">
+        <span class="tat-dash">–</span>
+        <input type="date" name="date_to" aria-label="To">
+      </div></div>
+    <div class="fg tat-actions">
+      <button type="button" id="tat-today" class="tat-today">Today</button>
+      <button type="button" id="tat-reset" class="tat-reset">Reset</button>
+      <a id="tat-export" class="tat-export" href="{% url 'b2b_tat_export' %}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export
+      </a>
+    </div>
+    <span id="tat-spin" class="spin" hidden></span>
+  </form>
+
+  <input type="hidden" id="tat-csrf" value="{{ csrf_token }}">
+  <div id="tat-results">
+    {% include 'online_b2b/_tat_rows.html' %}
+  </div>
+</div>
+
+<script>
+(function () {
+  var form = document.getElementById('tat-filters'); if (!form) return;
+  var results = document.getElementById('tat-results');
+  var spin = document.getElementById('tat-spin');
+  var base = "{% url 'b2b_tat' %}", saveUrl = "{% url 'b2b_tat_save' %}";
+  var exportLink = document.getElementById('tat-export'), exportBase = "{% url 'b2b_tat_export' %}";
+  var csrf = document.getElementById('tat-csrf').value;
+  var hdrs = { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded' };
+  var timer = null, ctrl = null;
+
+  function params() {
+    var p = new URLSearchParams();
+    p.set('status', form.status.value);
+    if (form.segment.value) p.set('segment', form.segment.value);
+    if (form.run.value) p.set('run', form.run.value);
+    if (form.q.value.trim()) p.set('q', form.q.value.trim());
+    if (form.date_from.value) p.set('date_from', form.date_from.value);
+    if (form.date_to.value) p.set('date_to', form.date_to.value);
+    return p;
+  }
+  function updateExport() { if (exportLink) exportLink.href = exportBase + '?' + params().toString(); }
+  function load() {
+    var p = params(); if (ctrl) ctrl.abort(); ctrl = new AbortController();
+    results.classList.add('loading'); spin.hidden = false; p.set('partial', '1');
+    fetch(base + '?' + p.toString(), { headers: { 'X-Requested-With': 'XMLHttpRequest' }, signal: ctrl.signal })
+      .then(function (r) { return r.text(); })
+      .then(function (html) { results.innerHTML = html; results.classList.remove('loading'); spin.hidden = true; bind(); updateExport(); })
+      .catch(function (e) { if (e.name !== 'AbortError') { results.classList.remove('loading'); spin.hidden = true; } });
+  }
+  function save(order) {
+    var sel = results.querySelector('.tat-reason[data-order="' + order + '"]');
+    var note = results.querySelector('.tat-note[data-order="' + order + '"]');
+    var body = new URLSearchParams();
+    body.set('order_id', order);
+    body.set('reason_code', sel ? sel.value : '');
+    body.set('note', note ? note.value : '');
+    fetch(saveUrl, { method: 'POST', body: body.toString(), headers: hdrs })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) return;
+        // if filtering by pending and a reason was just set, refresh so it leaves the view
+        if (form.status.value === 'pending' && sel && sel.value) { load(); return; }
+        if (sel) { var t = document.createElement('span'); t.className = 'tat-saved'; t.textContent = '✓'; sel.parentNode.appendChild(t); setTimeout(function () { t.remove(); }, 1200); }
+      });
+  }
+  function bind() {
+    results.querySelectorAll('.tat-reason').forEach(function (s) { s.addEventListener('change', function () { save(s.getAttribute('data-order')); }); });
+    results.querySelectorAll('.tat-note').forEach(function (i) { i.addEventListener('change', function () { save(i.getAttribute('data-order')); }); });
+    results.querySelectorAll('.ik[data-filter]').forEach(function (card) {
+      card.addEventListener('click', function () { var f = card.getAttribute('data-filter').split(':'); if (f[0] === 'status') form.status.value = f[1]; load(); });
+    });
+  }
+  form.status.addEventListener('change', load);
+  form.segment.addEventListener('change', load);
+  form.run.addEventListener('change', load);
+  form.q.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(load, 300); });
+  form.date_from.addEventListener('change', load);
+  form.date_to.addEventListener('change', load);
+  document.getElementById('tat-today').addEventListener('click', function () {
+    var t = new Date(); var iso = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
+    form.date_from.value = iso; form.date_to.value = iso; load();
+  });
+  document.getElementById('tat-reset').addEventListener('click', function () {
+    form.status.value = 'pending'; form.segment.value = ''; form.run.value = ''; form.q.value = ''; form.date_from.value = ''; form.date_to.value = ''; load();
+  });
+  updateExport(); bind();
+})();
+</script>
+{% endblock %}

@@ -22,7 +22,7 @@ from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.urls import reverse
 from django.views.generic import TemplateView, View
 
-from .services import mt_bridge
+from .services import gt_mass_bridge, mt_bridge
 from .utils import (
     EMAIL_CONFIG,
     D365Exporter,
@@ -310,5 +310,86 @@ class SSDownloadView(LoginRequiredMixin, View):
         path = request.session.get(f'ss_out_{token}')
         if not path or not os.path.exists(path):
             raise Http404('Generated workbook not found or expired.')
+        return FileResponse(open(path, 'rb'), as_attachment=True,
+                            filename=os.path.basename(path))
+
+
+# ─────────────────────────────────────────────────────────────────────────
+#  GT Mass — Dashboard recorder (preview → confirm → record to renee_orders)
+#
+#  ADDITIVE: the existing "GT Mass Dump Generator" page (IndexView /
+#  ProcessFilesView) and the frozen Tkinter standalone are untouched and remain
+#  the fallback. This flow records GT Mass into the shared dashboard (Orders +
+#  Line Items) with real value read from each file's own TOTAL column, via
+#  offline.services.gt_mass_bridge.
+# ─────────────────────────────────────────────────────────────────────────
+
+class GTMassRecorderView(LoginRequiredMixin, TemplateView):
+    """Upload + preview/confirm page that records GT Mass to the dashboard."""
+    template_name = 'offline/gt_mass_recorder.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['warehouses'] = gt_mass_bridge.warehouse_choices()
+        ctx['default_warehouse'] = gt_mass_bridge.default_warehouse()
+        return ctx
+
+
+class GTMPreviewView(LoginRequiredMixin, View):
+    """Phase 1: save uploaded file(s) under a token, run a NO-WRITE preview
+    (parse + price + per-SO summary). Nothing recorded."""
+
+    def post(self, request, *args, **kwargs):
+        files = request.FILES.getlist('files')
+        if not files:
+            return JsonResponse({'ok': False, 'error': 'No files selected'},
+                                status=400)
+        warehouse = (request.POST.get('warehouse', '')
+                     or gt_mass_bridge.default_warehouse())
+        token = uuid.uuid4().hex[:12]
+        up_dir = Path(settings.MEDIA_ROOT) / 'gt_mass_uploads' / token
+        up_dir.mkdir(parents=True, exist_ok=True)
+        paths = []
+        for f in files:
+            dest = up_dir / Path(f.name).name
+            with open(dest, 'wb') as out:
+                for chunk in f.chunks():
+                    out.write(chunk)
+            paths.append(str(dest))
+        (up_dir / 'meta.json').write_text(
+            json.dumps({'warehouse': warehouse, 'files': paths}),
+            encoding='utf-8')
+        result = gt_mass_bridge.preview(paths, warehouse)
+        result['token'] = token
+        return JsonResponse(result, status=200 if result.get('ok') else 400)
+
+
+class GTMConfirmView(LoginRequiredMixin, View):
+    """Phase 2: record runs + order_headers + order_lines into renee_orders
+    (dedup) and produce the 7-sheet dump for download."""
+
+    def post(self, request, *args, **kwargs):
+        token = request.POST.get('token', '')
+        up_dir = Path(settings.MEDIA_ROOT) / 'gt_mass_uploads' / token
+        meta_p = up_dir / 'meta.json'
+        if not token or not meta_p.exists():
+            return JsonResponse(
+                {'ok': False, 'error': 'Upload expired — please re-upload.'},
+                status=400)
+        meta = json.loads(meta_p.read_text(encoding='utf-8'))
+        result = gt_mass_bridge.confirm(meta['files'], meta['warehouse'])
+        if result.get('ok') and result.get('output_path'):
+            request.session[f'gtm_out_{token}'] = result['output_path']
+            result['download_url'] = reverse('gtm_download', args=[token])
+        return JsonResponse(result, status=200 if result.get('ok') else 400)
+
+
+class GTMDownloadView(LoginRequiredMixin, View):
+    """GET: serve the generated dump workbook for a processed token."""
+
+    def get(self, request, token, *args, **kwargs):
+        path = request.session.get(f'gtm_out_{token}')
+        if not path or not os.path.exists(path):
+            raise Http404('Generated dump not found or expired.')
         return FileResponse(open(path, 'rb'), as_attachment=True,
                             filename=os.path.basename(path))

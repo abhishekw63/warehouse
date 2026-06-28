@@ -4,6 +4,12 @@
 {% block extra_css %}
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<style>
+  /* keep the "Issues only" checkbox + label tight together (was spread out) */
+  .sku-chk{ display:inline-flex; align-items:center; gap:7px; white-space:nowrap;
+    font-size:12px; font-weight:600; color:var(--text-2); cursor:pointer; align-self:center; }
+  .sku-chk input{ width:16px; height:16px; margin:0; cursor:pointer; }
+</style>
 {% endblock %}
 
 {% block breadcrumb %}
@@ -60,7 +66,7 @@
       <th class="r">Our MRP</th><th class="r">Their MRP</th>
       <th class="r">Tot Qty</th>
       <th class="r ok">OK</th><th class="r mis">Mismatch</th><th class="r nim">Not&nbsp;in&nbsp;Master</th>
-      <th class="r">POs</th><th class="r">Diff</th><th>Marketplaces</th>
+      <th class="r">POs</th><th class="r">Diff</th><th class="r" title="Number of distinct marketplaces this SKU appears in (hover a cell for names)">Marketplaces</th>
     </tr></thead>
     <tbody id="sku-tbody">
       {% include 'online_b2b/_sku_rows.html' %}

@@ -54,7 +54,7 @@
     <h2>Sample <span class="count">first {{ sample|length }}</span></h2>
     <div class="scroll">
     <table class="grid compact">
-      <thead><tr><th>Item No</th><th>EAN</th><th>Description</th><th class="r">MRP</th><th>GST</th><th>HSN</th><th>Swiggy</th><th>MRP window</th></tr></thead>
+      <thead><tr><th>Item No</th><th>EAN</th><th>Description</th><th class="r">MRP</th><th>GST</th><th>HSN</th><th>MRP window</th></tr></thead>
       <tbody>
         {% for r in sample %}
         <tr>
@@ -64,7 +64,6 @@
           <td class="r">{{ r.mrp|default_if_none:'—' }}</td>
           <td>{{ r.gst_code }}</td>
           <td class="mono">{{ r.hsn|default:'—' }}</td>
-          <td class="mono">{{ r.swiggy_sku_code|default:'—' }}</td>
           <td class="muted">{% if r.mrp_start %}{{ r.mrp_start }} → {{ r.mrp_end }}{% endif %}</td>
         </tr>
         {% endfor %}

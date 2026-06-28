@@ -4,6 +4,27 @@
 {% block extra_css %}
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<style>
+  /* Polished filter / export bar (frontend only) */
+  #iss-filters{ align-items:flex-end; gap:12px 14px; padding:16px 18px; }
+  #iss-filters .fg label{ font-size:10.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:#8a8a96; }
+  #iss-filters .fg select, #iss-filters .fg input{ box-sizing:border-box; height:38px; }
+  #iss-filters input[type=date]{ padding:0 10px; border:1px solid #dcdce6; border-radius:8px; font:inherit; background:#fff; color:#333; }
+  #iss-filters select:focus, #iss-filters input:focus{ outline:none; border-color:#1A237E; box-shadow:0 0 0 3px rgba(26,35,126,.1); }
+  .iss-daterow{ display:flex; align-items:center; gap:8px; }
+  .iss-dash{ color:#aab; font-weight:600; }
+  /* keep the action buttons on ONE horizontal row (override .filters .fg column) */
+  #iss-filters .iss-actions{ flex-direction:row; align-items:flex-end; gap:8px; margin-left:auto; }
+  .iss-today, .iss-reset{ height:38px; padding:0 15px; border:1px solid #dcdce6; background:#fff; color:#333; border-radius:8px;
+    cursor:pointer; font:inherit; font-weight:600; transition:.15s; }
+  .iss-today:hover, .iss-reset:hover{ background:#f4f4f8; border-color:#c2c2d4; }
+  .iss-reset{ color:#b3261e; }
+  .iss-reset:hover{ background:#fdecea; border-color:#f3b4ad; }
+  .iss-export{ height:38px; display:inline-flex; align-items:center; gap:7px; padding:0 17px; background:#1b7a3d; color:#fff;
+    border-radius:8px; text-decoration:none; font-weight:600; white-space:nowrap; box-shadow:0 7px 15px -7px rgba(27,122,61,.65); transition:.15s; }
+  .iss-export:hover{ background:#176a35; transform:translateY(-1px); }
+  .iss-export svg{ width:15px; height:15px; }
+</style>
 {% endblock %}
 
 {% block breadcrumb %}
@@ -39,6 +60,20 @@
       </select></div>
     <div class="fg grow"><label>Search PO / item / description</label>
       <input type="text" name="q" placeholder="search…" autocomplete="off"></div>
+    <div class="fg"><label>Upload date</label>
+      <div class="iss-daterow">
+        <input type="date" name="date_from" autocomplete="off" aria-label="From date">
+        <span class="iss-dash">–</span>
+        <input type="date" name="date_to" autocomplete="off" aria-label="To date">
+      </div></div>
+    <div class="fg iss-actions">
+      <button type="button" id="iss-today" class="iss-today" title="Show issues uploaded today">Today</button>
+      <button type="button" id="iss-reset" class="iss-reset" title="Clear all filters — show everything">Reset</button>
+      <a id="iss-export" class="iss-export" href="{% url 'b2b_issues_export' %}" title="Download the filtered issues to Excel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export
+      </a>
+    </div>
     <span id="iss-spin" class="spin" hidden></span>
   </form>
 
@@ -59,33 +94,6 @@
   <div id="iss-results">
     {% include 'online_b2b/_issues_table.html' %}
   </div>
-
-  {% if eanfix.rows %}
-  <div class="eanfix-panel">
-    <div class="efp-head">
-      <h2>🩹 Wrong EANs received <span class="count">{{ eanfix.distinct }}</span></h2>
-      <span class="efp-sub">{{ eanfix.total_lines }} line(s) arrived with a wrong EAN and were corrected (a temporary fix). <b>Escalate the repeats to the vendor.</b></span>
-    </div>
-    <div class="scroll">
-    <table class="grid compact">
-      <thead><tr><th>Wrong EAN (received)</th><th>Corrected to</th><th>Item</th><th>Description</th><th class="r">Times</th><th>Marketplaces</th><th>Last seen</th></tr></thead>
-      <tbody>
-        {% for r in eanfix.rows %}
-        <tr>
-          <td class="mono ef-wrong">{{ r.received_ean }}</td>
-          <td class="mono">{{ r.correct_ean|default:'—' }}</td>
-          <td class="mono">{{ r.item_no }}</td>
-          <td class="desc" title="{{ r.description }}">{{ r.description }}</td>
-          <td class="r"><span class="ef-count">{{ r.occurrences }}×</span></td>
-          <td class="muted">{{ r.marketplaces }}</td>
-          <td class="muted">{{ r.last_seen|date:"d M · H:i" }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    </div>
-  </div>
-  {% endif %}
   {% endif %}
 </div>
 
@@ -104,17 +112,27 @@
                'Content-Type': 'application/x-www-form-urlencoded' };
   var timer = null, ctrl = null;
 
-  function load() {
+  var exportLink = document.getElementById('iss-export');
+  var exportBase = "{% url 'b2b_issues_export' %}";
+  function filterParams() {
     var p = new URLSearchParams();
     p.set('resolution', form.resolution.value);
     if (form.status.value) p.set('status', form.status.value);
     if (form.q.value.trim()) p.set('q', form.q.value.trim());
+    if (form.date_from.value) p.set('date_from', form.date_from.value);
+    if (form.date_to.value) p.set('date_to', form.date_to.value);
+    return p;
+  }
+  function updateExport() { if (exportLink) exportLink.href = exportBase + '?' + filterParams().toString(); }
+
+  function load() {
+    var p = filterParams();
     if (ctrl) ctrl.abort(); ctrl = new AbortController();
     results.classList.add('loading'); spin.hidden = false;
     p.set('partial', '1');
     fetch(base + '?' + p.toString(), { headers: { 'X-Requested-With': 'XMLHttpRequest' }, signal: ctrl.signal })
       .then(function (r) { return r.text(); })
-      .then(function (html) { results.innerHTML = html; results.classList.remove('loading'); spin.hidden = true; bindActions(); })
+      .then(function (html) { results.innerHTML = html; results.classList.remove('loading'); spin.hidden = true; bindActions(); updateExport(); })
       .catch(function (e) { if (e.name !== 'AbortError') { results.classList.remove('loading'); spin.hidden = true; } });
   }
 
@@ -201,6 +219,19 @@
   form.resolution.addEventListener('change', load);
   form.status.addEventListener('change', load);
   form.q.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(load, 300); });
+  form.date_from.addEventListener('change', load);
+  form.date_to.addEventListener('change', load);
+  document.getElementById('iss-today').addEventListener('click', function () {
+    var t = new Date();
+    var iso = t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0') + '-' + String(t.getDate()).padStart(2, '0');
+    form.date_from.value = iso; form.date_to.value = iso; load();
+  });
+  document.getElementById('iss-reset').addEventListener('click', function () {
+    form.resolution.value = 'pending'; form.status.value = '';
+    form.q.value = ''; form.date_from.value = ''; form.date_to.value = '';
+    load();
+  });
+  updateExport();
 
   document.getElementById('bulk-apply').addEventListener('click', function () {
     var act = document.getElementById('bulk-action').value;

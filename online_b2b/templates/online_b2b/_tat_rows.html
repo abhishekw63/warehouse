@@ -1,0 +1,52 @@
+{% load b2b_extras %}
+{% if not d.ok %}
+  <div class="banner err">TAT unavailable{% if d.error %} — {{ d.error }}{% endif %}.</div>
+{% else %}
+<div class="iss-kpis">
+  <div class="ik mis" data-filter="status:pending" title="Breaches still needing a reason"><div class="n">{{ d.counts.pending }}</div><div class="l">Reason pending</div></div>
+  <div class="ik res" data-filter="status:resolved" title="Breaches with a reason"><div class="n">{{ d.counts.resolved }}</div><div class="l">Reason given →</div></div>
+  <div class="ik tot" data-filter="status:all" title="All TAT breaches"><div class="n">{{ d.counts.total }}</div><div class="l">Total breaches</div></div>
+  <div class="ik"><div class="n">{{ d.shown }}</div><div class="l">Shown</div></div>
+</div>
+
+<div class="tat-prog">
+  <div class="tat-prog__top">
+    <span class="tat-prog__lbl">SLA breach reasons given</span>
+    <span class="tat-prog__val"><b>{{ d.counts.resolved }}</b> / {{ d.counts.total }}{% if d.counts.pending %} · <span class="tat-prog__pend">{{ d.counts.pending }} pending</span>{% else %} · <span class="tat-prog__done">all done ✓</span>{% endif %}</span>
+  </div>
+  <div class="tat-prog__track"><span style="width:{{ d.pct }}%"></span></div>
+</div>
+
+<div class="scroll" style="margin-top:14px;">
+<table class="grid compact tat-tbl">
+  <thead><tr>
+    <th>PO Date</th><th>Uploaded</th><th>Channel</th><th>Segment</th><th>PO / SO</th>
+    <th class="r">Qty</th><th class="r">Value</th><th class="r">Days over</th>
+    <th>Reason</th><th>Note</th>
+  </tr></thead>
+  <tbody>
+    {% for r in d.rows %}
+    <tr>
+      <td class="muted">{{ r.po_date|date:"d M Y" }}</td>
+      <td class="muted">{{ r.run_ts|date:"d M, H:i" }}</td>
+      <td class="mp">{{ r.marketplace }}</td>
+      <td><span class="seg-tag {% if r.segment == 'Offline' %}off{% else %}on{% endif %}">{{ r.segment }}</span></td>
+      <td class="mono">{{ r.po }}</td>
+      <td class="r">{{ r.qty }}</td>
+      <td class="r">{{ r.order_value|inr_short }}</td>
+      <td class="r"><span class="tat-over">{{ r.days_over }}d</span></td>
+      <td>
+        <select class="tat-reason act-sel" data-order="{{ r.order_id }}">
+          <option value="">— set reason —</option>
+          {% for rs in d.reasons %}<option value="{{ rs }}" {% if r.reason_code == rs %}selected{% endif %}>{{ rs }}</option>{% endfor %}
+        </select>
+      </td>
+      <td><input class="tat-note act-rem" data-order="{{ r.order_id }}" value="{{ r.note|default:'' }}" placeholder="note…" autocomplete="off"></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="10" class="muted">No TAT breaches in this view — all within the 1-working-day SLA. ✓</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}

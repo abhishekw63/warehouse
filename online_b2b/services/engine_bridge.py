@@ -24,10 +24,11 @@ import time
 from pathlib import Path
 
 PILOT_MARKETPLACES = ['Blink', 'Flipkart', 'RK', 'Dmart', 'Zepto', 'Flipkart-TO',
-                      'Purplle', 'Swiggy', 'Nykaa', 'Myntra', 'Reliance']
+                      'Purplle', 'Swiggy', 'Nykaa', 'Myntra', 'Reliance',
+                      'Meesho-TO']
 # Friendly labels for the upload dropdown where the engine key isn't operator-
 # facing. The engine key (value) is unchanged — only the shown text differs.
-PILOT_LABELS = {'Flipkart-TO': 'Flipkart Branch'}
+PILOT_LABELS = {'Flipkart-TO': 'Flipkart Branch', 'Meesho-TO': 'Meesho Branch'}
 _ISSUE_STATUSES = {'MISMATCH', 'NOT_IN_MASTER'}
 
 
@@ -108,10 +109,19 @@ def marketplace_rules() -> list:
             if gmd is not None:
                 gst_margin = [{'gst': g, 'pct': round((1 - gmd * (1 + g / 100.0)) * 100, 2)}
                               for g in (18, 12, 5, 0)]
+            # Honest margin label: a flat "70%" for normal channels, but a RANGE
+            # ("63.42–69% · by GST") for GST-dependent ones (Reliance) so the
+            # table never reads as a single flat rate.
+            if gst_margin:
+                _p = [g['pct'] for g in gst_margin]
+                margin_label = f"{min(_p):g}–{max(_p):g}%"
+            else:
+                margin_label = f"{c.get('default_margin', 70)}%"
             out.append({
                 'name': name,
                 'party': c.get('party_name', ''),
                 'margin': c.get('default_margin', 70),
+                'margin_label': margin_label,
                 'basis': ('Landing — MRP × margin% (pre-GST)' if basis == 'landing'
                           else 'Cost — MRP × margin% ÷ GST (post-GST)'),
                 'compare_label': c.get('compare_label', ''),
@@ -119,6 +129,90 @@ def marketplace_rules() -> list:
                 'gst_discount': gmd,
                 'gst_margin': gst_margin,
                 'parser': parser,
+                'pilot': name in PILOT_MARKETPLACES,
+            })
+        out.sort(key=lambda x: (not x['pilot'], x['name']))
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+# Curated, operator-facing note on each marketplace's FILE SHAPE (what the team
+# actually uploads). The columns themselves come from the engine config below, so
+# only the shape (multi-file / extra report / how PO+location are found) is here.
+_FMT_NOTES = {
+    'Blink': 'One consolidated punch Excel — one row per ordered line.',
+    'Flipkart': 'Many purchase_order_*.xlsx (one per PO) + an optional header .csv '
+                'that classifies each PO as FK Hyperlocal / FK Grocery.',
+    'Flipkart-TO': 'Per-PO Consignment_Details_<PO>.csv files + an optional '
+                   'Consignment Visibility Report .csv for the destinations.',
+    'Meesho-TO': 'One order-line-items-<PO>[_<city>].csv per order; the destination '
+                 'comes from a city token in the filename (MS_BLR → Bengaluru…).',
+    'Dmart': 'One or more Avenue/DMart PO PDFs; PO & store read from the PDF.',
+    'Reliance': 'One or more Reliance PO PDFs; GST rate is read per line.',
+    'Firstcry': 'A FirstCry PO PDF (bordered line-item table).',
+    'Swiggy': 'A Swiggy consignment .csv; items arrive as a Swiggy SKU code that '
+              'is resolved to an EAN via the channel map.',
+    'Myntra': 'A compiled dump .xlsx (a Myntra PO PDF is a fallback).',
+    'Purplle': 'A tab-separated .xls / .csv export.',
+    'Bigbasket': 'A custom-layout BigBasket Excel.',
+    'Nykaa': 'A Nykaa PO Excel (.xlsx).',
+    'RK': 'An RK PO Excel (.xlsx).',
+    'Zepto': 'A Zepto PO Excel (.xlsx).',
+}
+
+
+def marketplace_formats() -> list:
+    """Per-marketplace **file format** reference for the Rules page — the file
+    type, how the PO / location / item are found, and the key columns read.
+    Columns come straight from the engine config (so they never drift); the
+    file-shape note is curated (``_FMT_NOTES``). Read-only; never raises."""
+    out = []
+    try:
+        cfgs = _engine_imports()['MARKETPLACE_CONFIGS']
+
+        def _col(v):
+            if isinstance(v, list):
+                return ' / '.join(str(x) for x in v)
+            if isinstance(v, dict):
+                m = v.get('multiply')
+                return ('computed (' + ' × '.join(m) + ')') if m else 'computed'
+            if v and str(v).startswith('__'):
+                return '(from the file)'
+            return v or '—'
+
+        for name, c in cfgs.items():
+            ir = c.get('item_resolution', '')
+            if ir == 'from_ean':
+                item_by = f"EAN → master · col “{c.get('ean_col', '')}”"
+            elif ir == 'from_swiggy_sku':
+                item_by = f"Swiggy SKU → EAN → master · col “{c.get('sku_col') or c.get('ean_col') or 'SkuCode'}”"
+            elif ir == 'from_column':
+                item_by = f"Item No · col “{c.get('item_col', '')}”"
+            else:
+                item_by = _col(c.get('ean_col') or c.get('item_col'))
+            exts = c.get('accepted_extensions')
+            if not exts:                      # some (Flipkart-TO/Meesho) nest it
+                for v in c.values():
+                    if isinstance(v, dict) and v.get('accepted_extensions'):
+                        exts = v['accepted_extensions']
+                        break
+            if c.get('source_format') == 'pdf':
+                ftype = 'PDF'
+            elif exts:
+                ftype = ' / '.join(exts)
+            else:
+                ftype = '.xlsx'
+            out.append({
+                'name': name,
+                'file_type': ftype,
+                'note': _FMT_NOTES.get(name, ''),
+                'po_by': _col(c.get('po_col')),
+                'loc_by': _col(c.get('loc_col')),
+                'item_by': item_by,
+                'qty_by': _col(c.get('qty_col')),
+                'cost_by': _col(c.get('fob_col')),
+                'mrp_by': _col(c.get('mrp_col')) if c.get('mrp_col') else '—',
                 'pilot': name in PILOT_MARKETPLACES,
             })
         out.sort(key=lambda x: (not x['pilot'], x['name']))
@@ -260,8 +354,8 @@ class Processor:
 
         if not skip_dedup:
             try:
-                from online_po_processor.auto.history_db import apply_dedup
-                self.skipped = apply_dedup(result) or []
+                from . import lines_store
+                self.skipped = lines_store.web_dedup(result, self.marketplace) or []
             except Exception as e:  # noqa: BLE001
                 self.warnings.append(f"Dedup check skipped ({type(e).__name__}: {e}).")
 
@@ -545,10 +639,12 @@ class Processor:
             'summary': self._summary(lines, self._headers()),
         }
         try:
-            from online_po_processor.auto.history_db import record_manual
-
             from . import lines_store
-            rec = record_manual(self.result, output_file=str(output_path))
+            # Web-owned write of runs + order_headers (replaces the engine's
+            # record_manual → no engine history store, so order_issue_lines is
+            # never recreated). Byte-identical to the old path (parity-verified).
+            rec = lines_store.record_run_headers(
+                self.result, self.marketplace, self.warehouse, str(output_path))
             out['run_id'] = rec.get('run_id')
             out['new_orders'] = rec.get('new_orders', 0)
             # via _lines() so EAN fixes are applied (correct ean on the line +
@@ -564,10 +660,27 @@ class Processor:
                 upd = lines_store.set_order_value(
                     out['run_id'], self._to_value_by_po(rows))
                 out['value_backfilled'] = upd.get('updated', 0)
+            # Tracker dates: PDF marketplaces (e.g. DMart) carry PO Date / validity
+            # in the PDF header but not as a row column, so the engine leaves
+            # po_date/exp_date blank → they'd never show on the TAT page. Backfill
+            # the real dates from the source (fills blanks only). See
+            # ``_source_dates_by_po`` (no-op for marketplaces the engine already
+            # dates via po_date_col).
+            dts = self._source_dates_by_po()
+            if dts and out.get('run_id'):
+                out['dates_backfilled'] = lines_store.set_po_dates(
+                    out['run_id'], dts).get('updated', 0)
         except Exception as e:  # noqa: BLE001
             out['ok'] = False
             out['error'] = f"DB push failed: {type(e).__name__}: {e}"
         return out
+
+    def _source_dates_by_po(self) -> dict:
+        """``{po: {'po_date': date, 'exp_date': date}}`` from the source file(s),
+        for marketplaces whose parser carries the dates in the header (not a row
+        column). Base = none; PDF processors override. Used to backfill the
+        tracker (po_date/exp_date) so TAT works for them."""
+        return {}
 
 
 # ── Flipkart ────────────────────────────────────────────────────────────
@@ -685,9 +798,81 @@ class FlipkartTOProcessor(Processor):
         return engine.process(files[0], config, margin_pct=self.margin_pct)
 
 
+# ── Meesho Branch (Meesho-TO) ───────────────────────────────────────────
+
+class MeeshoTOProcessor(Processor):
+    """Meesho Branch (Transfer Orders). Bulk-consignment-ONLY: Meesho exports one
+    CSV per order, ``order-line-items-<PO>[_<city>].csv`` (no consolidated dump,
+    no visibility report). PO comes from the filename; Location from a city token
+    in the filename (config ``filename_loc_from_shipto``: ``MS_BLR`` → 'blr', …),
+    resolved to the Transfer-to Code via Ship-To B2B. The CSV carries no order
+    amount (``sellingPricePerUnit`` is a selling price, deliberately ignored), so
+    the inc-GST transfer value is derived from OUR master pricing (Landing × qty)
+    in ``_headers`` / ``confirm`` — see ``Processor._amountless_to``."""
+
+    _ITEMS_RE = re.compile(r'order-line-items', re.I)
+
+    def use_multi(self, config) -> bool:
+        return True
+
+    def run_engine(self, engine, files, config):
+        csvs = [p for p in self.po_paths if p.lower().endswith('.csv')]
+        if not csvs:                      # tolerate any uploaded csv naming
+            csvs = [p for p in files if str(p).lower().endswith('.csv')] or files
+        # Location is filename-token driven for Meesho → no visibility report.
+        return engine.process_consignments(
+            csvs, config, margin_pct=self.margin_pct,
+            visibility_report_path=None)
+
+
+# ── DMart (Avenue) — PDF dates for the tracker ──────────────────────────
+
+def _parse_ddmmyyyy(s):
+    """'17.06.2026' / '17-06-2026' / '17/06/2026' → date, else None."""
+    import datetime as _d
+    s = (s or '').strip()
+    for fmt in ('%d.%m.%Y', '%d-%m-%Y', '%d/%m/%Y'):
+        try:
+            return _d.datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+class DmartProcessor(Processor):
+    """DMart (Avenue PO PDFs). Processing is the base flow — this subclass only
+    adds the tracker dates: the avenue parser reads ``Purchase Order Date`` and
+    ``PO Validity`` from each PDF header (not a row column), so we backfill
+    po_date/exp_date per PO after recording (so DMart shows on the TAT page)."""
+
+    def _source_dates_by_po(self) -> dict:
+        try:
+            from online_po_processor.engine.avenue_pdf_parser import (
+                parse_avenue_pdf,
+            )
+        except Exception:  # noqa: BLE001
+            return {}
+        out: dict = {}
+        for p in self.po_paths:
+            if not str(p).lower().endswith('.pdf'):
+                continue
+            try:
+                po = parse_avenue_pdf(p)
+                h = po.header
+                if h.po_number:
+                    out[str(h.po_number)] = {
+                        'po_date': _parse_ddmmyyyy(h.po_date),
+                        'exp_date': _parse_ddmmyyyy(h.validity_to),
+                    }
+            except Exception:  # noqa: BLE001 — never block on date extraction
+                continue
+        return out
+
+
 # ── Factory + module entry points (views call these) ────────────────────
 
-_PROCESSORS = {'Flipkart': FlipkartProcessor, 'Flipkart-TO': FlipkartTOProcessor}
+_PROCESSORS = {'Flipkart': FlipkartProcessor, 'Flipkart-TO': FlipkartTOProcessor,
+               'Meesho-TO': MeeshoTOProcessor, 'Dmart': DmartProcessor}
 
 
 def processor_for(marketplace, po_paths, warehouse=None, margin_pct=None,

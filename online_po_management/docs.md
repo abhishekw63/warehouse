@@ -6,7 +6,7 @@
 > bottom. Keep the diagrams honest; if a diagram and the code disagree, the
 > code is right and the diagram must be fixed.
 
-Last updated: 2026-06-16 · Covers: Manual + Auto modes, history DB (SQLite→MySQL), DB-sourced tracker, central exceptions overlay, pricing-rule banner, 18 marketplaces.
+Last updated: 2026-06-27 · Covers: Manual + Auto modes, web-only order store (web-owned lock/dedup, no order_issue_lines), DB-sourced tracker, channel_sku_map, unified exceptions overlay, pricing-rule banner, 18 marketplaces.
 
 ---
 
@@ -372,6 +372,90 @@ instead of a single number that lies for rule-based marketplaces.
 
 ## 10. Changelog (append one line per development)
 
+- **2026-06-28** — **Tracker dates for PDF marketplaces → TAT works for them.**
+  PDF channels (DMart/Avenue) carry **PO Date** + **PO Validity** in the PDF
+  *header*, not as a row column, so the engine left `po_date`/`exp_date` blank →
+  those orders never showed on the TAT page. Added a web-side **date backfill**:
+  `Processor._source_dates_by_po()` (no-op by default; `DmartProcessor` reads the
+  dates via the avenue parser) → `lines_store.set_po_dates(run_id, …)` fills the
+  blanks on `order_headers` (COALESCE — never overwrites engine-set dates). DMart
+  now shows in TAT (verified: PO 4502194340 = 17-Jun → 8 working days over). The
+  framework is reusable for the other PDF channels (Reliance/FirstCry) — Excel
+  channels already date via `po_date_col`. Existing DMart rows backfilled one-off.
+  **Thumb-rule:** whenever a marketplace's date capture changes, update this
+  changelog + the Rules “file format” section. See [DB_STRUCTURE.md](DB_STRUCTURE.md).
+
+- **2026-06-27** — **Meesho Branch (Meesho-TO) integrated (web).** Added to
+  `PILOT_MARKETPLACES` + a "Meesho Branch" Online chip, with a new
+  `MeeshoTOProcessor` (bulk-consignment-only: Meesho exports one
+  `order-line-items-<PO>[_<city>].csv` per order → `engine.process_consignments`,
+  no visibility report). PO from filename; **Location from the filename city
+  token** (`MS_BLR`/`MS_GGN`/`MS_KOL` → Transfer-to Code via Ship-To B2B). It's a
+  **Transfer Order with no amount in the source** (Meesho's `sellingPricePerUnit`
+  is a selling price, deliberately ignored), so — like Flipkart Branch — the
+  **inc-GST value is computed from OUR master** (Landing × qty), never zero:
+  verified on the 23-06 batch (3 POs · 40 lines · ₹275,854.20; per-PO ₹34,201 /
+  ₹166,221 / ₹75,432), label `Meesho-SB`, locations resolved, dedup + web-owned
+  writes (no `order_issue_lines`). **Margin = 60% is a PLACEHOLDER** (per the
+  engine config) — confirm the real Meesho TO margin; the value scales with it
+  (overridable per run). 23 tests green.
+- **2026-06-27** — **GT Mass fully integrated into the web app (dashboard
+  recorder).** New `offline/services/gt_mass_bridge.py` + page `/offline/gt-mass/`
+  (preview → confirm) records GT Mass into the shared `renee_orders` (segment
+  `Offline`, marketplace `GT Mass`) with the **order_lines audit** the desktop
+  never wrote, so GT Mass now shows on the dashboard with Orders **and** Line
+  Items. **Value is read from the raw file itself** — the GT Mass Excel carries
+  `Basic Price` (unit, ex-GST), `CLP` (line ex-GST), `GST` (flat 18%) and `TOTAL`
+  (line inc-GST); `order_value` = Σ `TOTAL` (inc-GST, matches the online
+  channels), line `unit_price` = `Basic Price` — no margin guesswork (the per-SKU
+  margin is already baked into Basic Price via the file's Retailer/Scheme/Ullage/
+  DB-margin stack). qty = Order Qty (ERP auto-adds testers); tester qty captured
+  in the line `remark`. **Web-owned writes** (runs+headers direct, lines via
+  `lines_store`) — the engine history store is never opened, so `order_issue_lines`
+  isn't resurrected; **PO-level dedup** skips SOs already recorded (incl. the
+  desktop's). **EAN-only fallback**: files missing the `BC Code` column (e.g. the
+  Indian-Secrets "Pack of 3" format) are rescued by resolving Item No from the
+  item master via EAN; EANs absent from the master become explicit warnings, never
+  a silent drop. The **frozen Tkinter standalone + the existing "Generate Dump"
+  page are untouched** and remain the fallback. Verified E2E on real 27.06 files
+  (record + value + lines + dedup + cleanup); 23 tests green.
+- **2026-06-27** — **Item Master de-duplication (2 more redundancies removed;
+  no backend break).** **(1) Dropped `item_master.swiggy_sku_code`** — it
+  duplicated `channel_sku_map`. `DBMasterLoader` now builds the engine's
+  `swiggy_sku` map wholly from `channel_sku_map` (EAN resolved live via item_no);
+  the Item Master add/edit form routes a typed Swiggy code into `channel_sku_map`
+  (new `channel_map.upsert_code`) instead of the column; status/search/admin/
+  templates updated. Parity byte-identical: Swiggy resolution 272 == 272 before/
+  after the `ALTER … DROP COLUMN`. **(2) Folded `item_master_manual` into
+  `item_master`** via the `batch_id='manual'` source-flag pattern (same as
+  `ship_to_mapping`): `replace_item_master` clears only `batch_id<>'manual'` and
+  upserts the ERP rows, so hand-added items survive a full rebuild and the ERP
+  source wins once it carries the item — verified on a scratch table (manual
+  survives when absent from the ERP set; batch flips when present). Table dropped.
+  **Design note:** kept `channel_sku_map` as channels-as-**rows** (not a column
+  per marketplace) — a new code-only channel (HG/Natural/…) is an INSERT, never an
+  `ALTER TABLE`, and each mapping keeps its own source/ean/updated_at. 23 tests +
+  dashboard smoke green. See [DB_STRUCTURE.md](DB_STRUCTURE.md) §7.
+- **2026-06-27** — **DB restructuring — web-only, de-duplicated** (no backend
+  break; full end-to-end checks). Two redundant tables removed: **(1)
+  `item_swiggy_map` → `channel_sku_map`** — generalised, keyed by `channel`, so
+  Swiggy (272) and future code-only channels (Health & Glow, which has no EAN)
+  share one map; EAN is resolved LIVE from `item_master` via `item_no` (stored
+  `ean` is the fallback), `item_master.swiggy_sku_code` kept as a fast derived
+  copy. Loader (`item_master_loader`), `channel_map` service, admin, router all
+  repointed; parity byte-identical (272==272 swiggy_sku; 42 Swiggy lines OK after
+  the drop). **(2) `order_issue_lines` DROPPED** — the desktop-only issue table
+  the web double-wrote via the engine's `record_manual`/`apply_dedup`. Both lock
+  and dedup are now **web-owned** (`lines_store.record_run_headers` + `web_dedup`),
+  so the engine's history store is never invoked. Parity-verified byte-identical
+  (runs + order_headers) before the switch; E2E re-tested on Reliance (3 POs · 65
+  lines): runs/headers/lines/validation all written, `order_issue_lines` NOT
+  recreated, re-preview deduped all 3 POs. Order store is now 100% web-owned.
+  Kept (deliberate, not redundant): denormalised `run_ts/mode/marketplace`
+  columns (avoid dashboard joins), `runs.consolidated_path/tracker_path` (empty
+  legacy cols, referenced by 3 INSERT sites — dropping buys nothing), and empty
+  `item_master_manual` (durable manual-add overlay). 23 tests green; `DB_STRUCTURE.md`
+  refreshed. See [DB_STRUCTURE.md](DB_STRUCTURE.md).
 - **2026-06-26** — **SKU Summary (SKU-wise validation pivot)**: new page
   `/b2b/sku-summary/` (sidebar ▸ Data) — every recorded line rolled up per
   **(Item No + EAN)** across all POs: qty + line-count per status (OK / Mismatch /

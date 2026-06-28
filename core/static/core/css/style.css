@@ -1,5 +1,18 @@
 /* Base styling for RENEE Warehouse */
 
+/* Page-turn/flip transition between pages (cross-document View Transitions).
+   Matches the Order-Mgmt section so navigation feels consistent app-wide.
+   Graceful no-op where unsupported. */
+@view-transition { navigation: auto; }
+::view-transition-old(root){ animation: rn-flip-out .36s ease-in both; transform-origin:left center; }
+::view-transition-new(root){ animation: rn-flip-in .58s cubic-bezier(.2,.7,.2,1) both; transform-origin:left center; }
+@keyframes rn-flip-out{ to{ opacity:0; transform:perspective(1400px) rotateY(-12deg) translateX(-26px); } }
+@keyframes rn-flip-in{ from{ opacity:0; transform:perspective(1400px) rotateY(14deg) translateX(40px); } to{ opacity:1; transform:none; } }
+@media (prefers-reduced-motion: reduce){
+  ::view-transition-old(root), ::view-transition-new(root){ animation:none; }
+}
+
+
 html, body {
     height: 100%;
     margin: 0;

@@ -62,7 +62,7 @@
       <div class="im-tools">
         <div class="im-search">
           <span class="ims-ic">{% include 'online_b2b/_icons.html' with i='search' %}</span>
-          <input type="text" id="imq" value="{{ overview.q }}" placeholder="Search item no / EAN / description / Swiggy…" autocomplete="off">
+          <input type="text" id="imq" value="{{ overview.q }}" placeholder="Search item no / EAN / description…" autocomplete="off">
           <span class="ims-spin" id="imspin" hidden></span>
         </div>
         <button type="button" class="btn-primary" id="im-addbtn">＋ Add item</button>
@@ -84,7 +84,7 @@
             <option>G-5</option><option>G-12</option><option>G-3</option><option>0-G</option>
           </select></label>
         <label><span>HSN</span><input type="text" name="hsn" placeholder="8-digit"></label>
-        <label><span>Swiggy SKU</span><input type="text" name="swiggy_sku_code" placeholder="optional"></label>
+        <label><span>Swiggy SKU</span><input type="text" name="swiggy_sku_code" placeholder="optional → channel map" title="Stored in the channel SKU map (channel=Swiggy), not on the item master row."></label>
         <label><span>MRP start</span><input type="date" name="mrp_start"></label>
         <label><span>MRP end</span><input type="date" name="mrp_end"></label>
       </div>
@@ -100,7 +100,7 @@
     <p class="im-sub" id="im-shown">Showing {{ overview.shown }} of {{ overview.total }}{% if overview.q %} matching “{{ overview.q }}”{% endif %}.</p>
     <div class="scroll im-tablewrap">
     <table class="grid compact im-table">
-      <thead><tr><th>Item No</th><th>EAN</th><th>Description</th><th class="r">MRP</th><th>GST</th><th>HSN</th><th>Swiggy SKU</th><th>MRP window</th></tr></thead>
+      <thead><tr><th>Item No</th><th>EAN</th><th>Description</th><th class="r">MRP</th><th>GST</th><th>HSN</th><th>MRP window</th></tr></thead>
       <tbody id="im-tbody">
         {% for r in overview.rows %}
         <tr>
@@ -110,10 +110,9 @@
           <td class="r">{{ r.mrp|default_if_none:'—' }}</td>
           <td>{{ r.gst_code|default:'—' }}</td>
           <td class="mono">{{ r.hsn|default:'—' }}</td>
-          <td class="mono">{{ r.swiggy_sku_code|default:'—' }}</td>
           <td class="muted">{% if r.mrp_start %}{{ r.mrp_start }} → {{ r.mrp_end }}{% else %}—{% endif %}</td>
         </tr>
-        {% empty %}<tr><td colspan="8" class="muted">{% if status.count %}No items match.{% else %}Master is empty — upload the two files above to build it.{% endif %}</td></tr>{% endfor %}
+        {% empty %}<tr><td colspan="7" class="muted">{% if status.count %}No items match.{% else %}Master is empty — upload the two files above to build it.{% endif %}</td></tr>{% endfor %}
       </tbody>
     </table>
     </div>
@@ -148,7 +147,7 @@
   function esc(s) { var d = document.createElement('div'); d.textContent = (s == null ? '' : s); return d.innerHTML; }
   function render(data) {
     if (!data.rows.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="muted">No items match.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="muted">No items match.</td></tr>';
     } else {
       tbody.innerHTML = data.rows.map(function (r) {
         var win = r.mrp_start ? (esc(r.mrp_start) + ' → ' + esc(r.mrp_end)) : '—';
@@ -159,7 +158,6 @@
           '<td class="r">' + mrp + '</td>' +
           '<td>' + (esc(r.gst_code) || '—') + '</td>' +
           '<td class="mono">' + (esc(r.hsn) || '—') + '</td>' +
-          '<td class="mono">' + (esc(r.swiggy_sku_code) || '—') + '</td>' +
           '<td class="muted">' + win + '</td></tr>';
       }).join('');
     }

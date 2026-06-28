@@ -5,6 +5,11 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<style>
+  /* uniform alignment across BOTH recent tables — every header + cell centered
+     (overrides the default .r right-align so columns look balanced full-width). */
+  .hub-recent th, .hub-recent td{ text-align:center !important; }
+</style>
 {% endblock %}
 
 {% block breadcrumb %}
@@ -59,6 +64,7 @@
     <div class="hk"><div class="n">{{ kpis.expiring_soon|default:0 }}</div><div class="l">Expiring ≤7d</div></div>
     <a class="hk warn" href="{% url 'b2b_issues' %}"><div class="n">{{ kpis.needs_attention|default:0 }}</div><div class="l">Needs attention</div></a>
     <a class="hk warn" href="{% url 'b2b_issues' %}"><div class="n">{{ issue_count }}</div><div class="l">Issue Lines</div></a>
+    <a class="hk warn" href="{% url 'b2b_tat' %}" title="TAT breaches ({{ tat_total }}) ÷ total POs ({{ kpis.pos }}) = {{ tat_rate }}% uploaded later than 1 working day"><div class="n">{{ tat_total|default:0 }}/{{ kpis.pos|default:0 }}</div><div class="l">TAT breaches · {{ tat_rate }}%</div></a>
     <a class="hk good" href="{% url 'b2b_issues' %}?resolution=resolved"><div class="n">{{ extra.resolved }}</div><div class="l">Resolved</div></a>
   </div>
 
@@ -69,7 +75,8 @@
       <p class="gc-sub">Marketplace POs → SO / D365 · validation &amp; issues</p>
       <div class="gc-stat"><b>{{ online_kpis.pos }}</b> POs · <b>{{ online_kpis.value|inr_short }}</b> · {{ online_kpis.qty|compact }} qty</div>
       <div class="gc-chips">
-        {% for c in online_channels %}<span class="chip {{ c.tag }}">{{ c.name }}{% if c.tag == 'soon' %} · soon{% endif %}</span>{% endfor %}
+        {% for c in online_channels %}{% if c.tag != 'soon' %}<span class="chip live">{{ c.name }}</span>{% endif %}{% endfor %}
+        {% if online_soon %}<span class="chip soon" title="Coming soon — {{ online_soon|join:' · ' }}">+{{ online_soon|length }} coming soon</span>{% endif %}
       </div>
     </a>
     <a class="group-card gc-offline" href="{% url 'b2b_offline' %}">
@@ -77,29 +84,51 @@
       <p class="gc-sub">MT / GT channels → SO generation · recorded to the same DB</p>
       <div class="gc-stat"><b>{{ offline_kpis.pos }}</b> POs · <b>{{ offline_kpis.value|inr_short }}</b> · {{ offline_kpis.qty|compact }} qty</div>
       <div class="gc-chips">
-        {% for c in offline_channels %}<span class="chip {{ c.tag }}">{{ c.name }}</span>{% endfor %}
+        {% for c in offline_channels %}{% if c.tag != 'soon' %}<span class="chip live">{{ c.name }}</span>{% endif %}{% endfor %}
+        {% if offline_soon %}<span class="chip soon" title="Coming soon — {{ offline_soon|join:' · ' }}">+{{ offline_soon|length }} coming soon</span>{% endif %}
       </div>
     </a>
+  </div>
+
+  <!-- recent uploads (run/batch level) — when it was last uploaded + what & how much -->
+  <div class="hub-recent reveal">
+    <div class="hr-head"><h2>Recent uploads</h2><span style="font-size:12.5px;color:var(--muted);font-weight:500;">last {{ recent_runs|length }} run(s)</span></div>
+    <table class="grid compact">
+      <thead><tr><th>Uploaded</th><th>Channel</th><th>Segment</th><th class="r">POs</th><th class="r">Qty</th><th class="r">Value</th></tr></thead>
+      <tbody>
+        {% for r in recent_runs %}
+        <tr>
+          <td class="muted">{{ r.when|date:"d M, H:i" }}</td>
+          <td>{% if r.run_id %}<a href="{% url 'b2b_run_detail' run_id=r.run_id %}" class="mp" title="{{ r.marketplaces }}">{{ r.marketplace }}</a>{% else %}{{ r.marketplace }}{% endif %}</td>
+          <td><span class="seg-tag {% if r.segment == 'Offline' %}off{% else %}on{% endif %}">{{ r.segment }}</span></td>
+          <td class="r">{{ r.pos }}</td>
+          <td class="r">{{ r.qty }}</td>
+          <td class="r">{{ r.value|inr_short }}</td>
+        </tr>
+        {% empty %}<tr><td colspan="6" class="muted">No uploads yet.</td></tr>{% endfor %}
+      </tbody>
+    </table>
   </div>
 
   <!-- recent activity — fills the page, gives an at-a-glance live feed -->
   <div class="hub-recent reveal">
     <div class="hr-head"><h2>Recent activity</h2><a href="{% url 'b2b_orders' %}" class="seelink">All orders →</a></div>
     <table class="grid compact">
-      <thead><tr><th>Channel</th><th>Segment</th><th>PO / SO</th><th class="r">Qty</th><th class="r">Value</th><th>Recorded</th></tr></thead>
+      <thead><tr><th>Recorded</th><th>Channel</th><th>Segment</th><th>PO / SO</th><th class="r">Qty</th><th class="r">Value</th></tr></thead>
       <tbody>
         {% for r in recent %}
         <tr>
+          <td class="muted">{{ r.when|date:"d M, H:i" }}</td>
           <td><a href="{% url 'b2b_orders' %}?marketplace={{ r.marketplace|urlencode }}" class="mp">{{ r.marketplace }}</a></td>
           <td><span class="seg-tag {% if r.segment == 'Offline' %}off{% else %}on{% endif %}">{{ r.segment }}</span></td>
           <td class="mono">{% if r.run_id %}<a href="{% url 'b2b_run_detail' run_id=r.run_id %}" class="po">{{ r.po }}</a>{% else %}{{ r.po }}{% endif %}</td>
           <td class="r">{{ r.qty }}</td>
           <td class="r">{{ r.value|inr_short }}</td>
-          <td class="muted">{{ r.when|date:"d M · g:i a" }}</td>
         </tr>
         {% empty %}<tr><td colspan="6" class="muted">No orders yet.</td></tr>{% endfor %}
       </tbody>
     </table>
+  </div>
   </div>
 
   {% endif %}

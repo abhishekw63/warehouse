@@ -1,4 +1,5 @@
 from django.urls import path
+
 from . import views
 
 urlpatterns = [
@@ -13,4 +14,10 @@ urlpatterns = [
     path('shoppers-stop/preview/', views.SSPreviewView.as_view(), name='ss_preview'),
     path('shoppers-stop/confirm/', views.SSConfirmView.as_view(), name='ss_confirm'),
     path('shoppers-stop/download/<str:token>/', views.SSDownloadView.as_view(), name='ss_download'),
+    # GT Mass — Dashboard recorder (preview → confirm → records to renee_orders).
+    # The dump generator above (gt-mass-dump/) stays as the untouched fallback.
+    path('gt-mass/', views.GTMassRecorderView.as_view(), name='gt_mass_recorder'),
+    path('gt-mass/preview/', views.GTMPreviewView.as_view(), name='gtm_preview'),
+    path('gt-mass/confirm/', views.GTMConfirmView.as_view(), name='gtm_confirm'),
+    path('gt-mass/download/<str:token>/', views.GTMDownloadView.as_view(), name='gtm_download'),
 ]

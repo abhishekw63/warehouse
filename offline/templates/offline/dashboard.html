@@ -14,9 +14,14 @@
         <p style="margin-bottom: 30px;">Select an application feature.</p>
 
         <div class="departments-grid">
+            <a href="{% url 'gt_mass_recorder' %}" class="department-card">
+                <h2>GT Mass → Dashboard</h2>
+                <span style="font-size: 12px; color: #777; margin-top: 10px; text-transform: uppercase; letter-spacing: 1px;">Record to Orders</span>
+            </a>
+
             <a href="{% url 'index' %}" class="department-card">
                 <h2>GT Mass Dump Generator</h2>
-                <span style="font-size: 12px; color: #777; margin-top: 10px; text-transform: uppercase; letter-spacing: 1px;">Excel Tool</span>
+                <span style="font-size: 12px; color: #777; margin-top: 10px; text-transform: uppercase; letter-spacing: 1px;">Excel Tool (fallback)</span>
             </a>
 
             <a href="{% url 'shoppers_stop' %}" class="department-card">

@@ -117,7 +117,7 @@ class ItemMaster(models.Model):
     mrp = models.DecimalField(max_digits=14, decimal_places=2, null=True, blank=True)
     mrp_start = models.DateField(null=True, blank=True)
     mrp_end = models.DateField(null=True, blank=True)
-    swiggy_sku_code = models.CharField(max_length=50, blank=True, null=True)
+    # Per-channel SKU codes (Swiggy/HG/…) live in ChannelSkuMap, not here.
     base_uom = models.CharField(max_length=20, blank=True, null=True)
     brand = models.CharField(max_length=60, blank=True, null=True)
     category = models.CharField(max_length=100, blank=True, null=True)
@@ -133,18 +133,24 @@ class ItemMaster(models.Model):
         return f"{self.item_no} · {self.description}"
 
 
-class ItemSwiggyMap(models.Model):
-    item_no = models.CharField(max_length=50, primary_key=True)
-    swiggy_sku_code = models.CharField(max_length=50, blank=True, null=True)
+class ChannelSkuMap(models.Model):
+    """Per-channel SKU-code -> item/EAN map (Swiggy / Health & Glow / future
+    code-only channels). Generalises the old item_swiggy_map."""
+    id = models.BigAutoField(primary_key=True)
+    channel = models.CharField(max_length=40, blank=True, null=True)
+    sku_code = models.CharField(max_length=80, blank=True, null=True)
+    ean = models.CharField(max_length=32, blank=True, null=True)
+    item_no = models.CharField(max_length=50, blank=True, null=True)
+    source = models.CharField(max_length=10, blank=True, null=True)
     updated_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         managed = False
-        db_table = 'item_swiggy_map'
-        verbose_name = 'Swiggy SKU map'
+        db_table = 'channel_sku_map'
+        verbose_name = 'Channel SKU map'
 
     def __str__(self):
-        return f"{self.item_no} → {self.swiggy_sku_code}"
+        return f"[{self.channel}] {self.sku_code} → {self.item_no or self.ean}"
 
 
 class ShipToMapping(models.Model):

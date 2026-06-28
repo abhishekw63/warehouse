@@ -1,3 +1,21 @@
+/* Smooth, polished page-to-page transitions (Hub ⇄ Online B2B ⇄ Process PO …).
+   Cross-document View Transitions — a subtle PAGE-TURN/FLIP: the old page hinges
+   out to the left, the new page swings in from the right. Supported browsers
+   animate; others just navigate normally (graceful no-op). */
+@view-transition { navigation: auto; }
+::view-transition-old(root){ animation: b2b-flip-out .36s ease-in both; transform-origin:left center; }
+::view-transition-new(root){ animation: b2b-flip-in .58s cubic-bezier(.2,.7,.2,1) both; transform-origin:left center; }
+@keyframes b2b-flip-out{
+  to{ opacity:0; transform:perspective(1400px) rotateY(-12deg) translateX(-26px); }
+}
+@keyframes b2b-flip-in{
+  from{ opacity:0; transform:perspective(1400px) rotateY(14deg) translateX(40px); }
+  to{ opacity:1; transform:none; }
+}
+@media (prefers-reduced-motion: reduce){
+  ::view-transition-old(root), ::view-transition-new(root){ animation:none; }
+}
+
 /* ============================================================
    RENEE · Online B2B — clean & corporate design system
    One accent (indigo), white surfaces, soft borders, airy.

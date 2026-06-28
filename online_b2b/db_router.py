@@ -10,7 +10,7 @@ ORDER_DB = 'orders'
 # model_name (lowercase) → these live in MySQL renee_orders (order tables +
 # the DB-sourced master data that retired the bundled Excels).
 ORDER_MODELS = {'run', 'orderheader', 'orderline',
-                'itemmaster', 'itemswiggymap', 'shiptomapping',
+                'itemmaster', 'channelskumap', 'shiptomapping',
                 'itemexception'}
 
 

@@ -32,6 +32,8 @@
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='store' %}</span><span class="side-label">Ship-To Mapping</span></a>
     <a href="{% url 'b2b_issues' %}" class="sn{% if '/issues' in request.path %} on{% endif %}" title="Issues">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><span class="side-label">Issues</span></a>
+    <a href="{% url 'b2b_tat' %}" class="sn{% if '/tat' in request.path %} on{% endif %}" title="TAT · SLA">
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='clock' %}</span><span class="side-label">TAT · SLA</span></a>
 
     <div class="side-sep">Process</div>
     <a href="{% url 'b2b_upload' %}" class="sn{% if '/upload' in request.path or '/review' in request.path %} on{% endif %}" title="Process PO">

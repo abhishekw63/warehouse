@@ -11,6 +11,6 @@
   <td class="r sk-nim">{% if r.nim_qty or r.nim_n %}<span class="m-qty">{{ r.nim_qty }}</span><span class="m-line">{{ r.nim_n }}</span>{% else %}<span class="m0">0</span>{% endif %}</td>
   <td class="r">{{ r.pos }}</td>
   <td class="r {% if r.diff and r.diff != 0 %}diff{% endif %}">{{ r.diff|default_if_none:'—' }}</td>
-  <td class="muted mp-cell" title="{{ r.marketplaces }}">{{ r.marketplaces|default:'—' }}</td>
+  <td class="r mp-cell" title="{{ r.marketplaces }}">{{ r.mp_count|default:0 }}</td>
 </tr>
 {% empty %}<tr><td colspan="12" class="muted">No SKUs{% if d.totals.qty %} match the filters.{% else %} recorded yet.{% endif %}</td></tr>{% endfor %}

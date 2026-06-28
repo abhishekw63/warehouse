@@ -233,6 +233,136 @@ def set_order_value(run_id, value_by_po: dict) -> dict:
     return {'updated': updated}
 
 
+def set_po_dates(run_id, dates_by_po: dict) -> dict:
+    """Backfill ``po_date`` / ``exp_date`` on ``order_headers`` for a run, per PO
+    — only where the engine left them blank (PDF marketplaces whose parser carries
+    the date in the header, not a row column). ``COALESCE`` so engine-provided
+    dates are never overwritten. Powers the TAT tracker for those channels."""
+    if run_id is None or not dates_by_po:
+        return {'updated': 0}
+    updated = 0
+    with _conn() as (cur, d):
+        ph = d['ph']
+        for po, dd in dates_by_po.items():
+            sets, args = [], []
+            if dd.get('po_date'):
+                sets.append(f"po_date=COALESCE(po_date,{ph})"); args.append(dd['po_date'])
+            if dd.get('exp_date'):
+                sets.append(f"exp_date=COALESCE(exp_date,{ph})"); args.append(dd['exp_date'])
+            if not sets:
+                continue
+            cur.execute(
+                f"UPDATE order_headers SET {', '.join(sets)} "
+                f"WHERE run_id={ph} AND po={ph}", tuple(args) + (run_id, str(po)))
+            updated += cur.rowcount or 0
+        cur.connection.commit()
+    return {'updated': updated}
+
+
+def web_dedup(result, marketplace) -> list:
+    """Web-owned replica of the engine's ``apply_dedup`` — drop POs already in
+    ``order_headers`` for this marketplace from ``result.rows`` (so a re-upload
+    isn't recorded twice) and summarise them on ``result.skipped_orders``. Reuses
+    the engine's PURE ``build_tracker_rows`` for the summary. DB is only READ here
+    — no engine history store is opened (so no desktop tables get recreated)."""
+    result.skipped_orders = []
+    rows = getattr(result, 'rows', None) or []
+    if not rows:
+        return []
+    try:
+        from online_po_processor.auto.history_db import (
+            DEDUP_SKIP_ENABLED,
+            ORDER_SEGMENT,
+            build_tracker_rows,
+        )
+    except Exception:  # noqa: BLE001
+        return []
+    if not DEDUP_SKIP_ENABLED:
+        return []
+    existing = set()
+    try:
+        with _conn() as (cur, d):
+            ph = d['ph']
+            cur.execute(f"SELECT DISTINCT po FROM order_headers WHERE "
+                        f"marketplace={ph}", (marketplace,))
+            existing = {str(r[0]) for r in cur.fetchall()}
+    except Exception:  # noqa: BLE001
+        return []
+    dup = {str(so.po_number) for so in rows if str(so.po_number) in existing}
+    if not dup:
+        return []
+    trk = {str(t['po']): t for t in build_tracker_rows(result)}
+    skipped = []
+    for po in dup:
+        t = trk.get(po, {})
+        skipped.append({
+            'segment': ORDER_SEGMENT, 'marketplace': marketplace,
+            'marketplace_label': t.get('market_place', marketplace), 'po': po,
+            'location': t.get('location', '') or '',
+            'po_date': t.get('po_date', ''), 'exp_date': t.get('exp_date', ''),
+            'qty': int(t.get('order_qty') or 0),
+            'order_value': float(t.get('order_value') or 0.0),
+        })
+    result.rows = [so for so in rows if str(so.po_number) not in dup]
+    result.skipped_orders = skipped
+    return skipped
+
+
+def record_run_headers(result, marketplace, warehouse, output_file='') -> dict:
+    """Web-owned replica of the engine's ``record_manual`` — write ``runs`` +
+    ``order_headers`` DIRECTLY (no engine history store, so ``order_issue_lines``
+    is never recreated). Reuses the engine's PURE ``order_rows_from_result`` for
+    header derivation, so the rows are byte-identical to the old path. Returns
+    ``{run_id, new_orders}``."""
+    import datetime as _dt2
+    import os as _os
+
+    from online_po_processor.auto.history_db import (
+        ORDER_SEGMENT,
+        _to_date,
+        order_rows_from_result,
+    )
+    rows = order_rows_from_result(result, marketplace, warehouse or '', output_file)
+    if not rows:
+        return {'run_id': None, 'new_orders': 0}
+    run_ts = _dt2.datetime.now()
+    source = (f"MANUAL: {_os.path.basename(output_file)}" if output_file
+              else 'MANUAL')
+    meta = {
+        'marketplaces': 1,
+        'total_pos': len({(o['marketplace'], o['po']) for o in rows}),
+        # total_items = LINE-item count (matches the engine's record_manual),
+        # not the header/PO count.
+        'total_items': len(getattr(result, 'rows', []) or []),
+        'total_qty': sum(int(o['qty'] or 0) for o in rows),
+        'total_value': sum(float(o['order_value'] or 0) for o in rows),
+    }
+    with _conn() as (cur, d):
+        ph = d['ph']
+        cur.execute(
+            f"INSERT INTO runs (run_ts, mode, source, marketplaces, total_pos, "
+            f"total_items, total_qty, total_value, consolidated_path, "
+            f"tracker_path) VALUES ({ph},'MANUAL',{ph},{ph},{ph},{ph},{ph},{ph},"
+            f"'','')",
+            (run_ts, source, meta['marketplaces'], meta['total_pos'],
+             meta['total_items'], meta['total_qty'], meta['total_value']))
+        run_id = cur.lastrowid
+        hcols = ('run_id, run_ts, mode, segment, marketplace, marketplace_label, '
+                 'po, location, warehouse, po_date, exp_date, order_type, items, '
+                 'qty, order_value, output_file')
+        marks = ', '.join([ph] * 16)
+        for o in rows:
+            cur.execute(
+                f"INSERT INTO order_headers ({hcols}) VALUES ({marks})",
+                (run_id, run_ts, 'MANUAL', o.get('segment', ORDER_SEGMENT),
+                 o['marketplace'], o['marketplace_label'], o['po'], o['location'],
+                 o['warehouse'], _to_date(o['po_date']), _to_date(o['exp_date']),
+                 o['order_type'], o['items'], o['qty'], o['order_value'],
+                 o['output_file']))
+        cur.connection.commit()
+    return {'run_id': run_id, 'new_orders': len(rows)}
+
+
 def apply_issue_ean_fix(line_id, correct_ean) -> dict:
     """Post-lock EAN correction (Issues page) for a NOT_IN_MASTER line: resolve
     the correct item, recompute OUR pricing with the ENGINE's own helpers, and

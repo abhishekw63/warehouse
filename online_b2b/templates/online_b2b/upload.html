@@ -43,6 +43,7 @@
       <label>PO file(s)</label>
       <label class="dropzone" id="dz">
         <span class="dz-ic">{% include 'online_b2b/_icons.html' with i='download' %}</span>
+        <span class="dz-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
         <span class="dz-main" id="dz-main">Click to choose PO file(s)</span>
         <span class="dz-sub">.xlsx / .pdf · Blink = one punch file · Flipkart = all purchase_order_*.xlsx (+ optional header .csv) · DMart = PO PDF(s) · Myntra = compiled dump.xlsx</span>
         {{ form.po_files }}
@@ -68,7 +69,7 @@
 
   <div class="proc-overlay" id="proc-overlay" hidden>
     <div class="proc-card">
-      <div class="proc-spin"></div>
+      <div class="proc-spin"><div class="b1"></div><div class="b2"></div><div class="b3"></div><div class="b4"></div><div class="b5"></div><div class="b6"></div></div>
       <div class="proc-title">Processing PO</div>
       <div class="proc-stage" id="proc-stage">Starting…</div>
       <div class="proc-bar"><span id="proc-fill"></span></div>
@@ -96,6 +97,16 @@
   .dz-ic svg{width:18px;height:18px;}
   .dz-main{font-weight:600;font-size:14px;color:var(--text);}
   .dz-sub{font-size:12px;color:var(--muted);}
+  /* file-import feedback: colourful bars while reading, green ✓ tint when ready */
+  .dz-bars{display:none;justify-content:center;align-items:flex-end;gap:3px;width:54px;height:24px;}
+  .dz-bars i{width:6px;height:100%;border-radius:3px;transform-origin:bottom;animation:proc-bars .8s infinite ease-in-out;}
+  .dz-bars i:nth-child(1){background:#754fa0;} .dz-bars i:nth-child(2){background:#09b7bf;animation-delay:-.7s;}
+  .dz-bars i:nth-child(3){background:#90d36b;animation-delay:-.6s;} .dz-bars i:nth-child(4){background:#f2d40d;animation-delay:-.5s;}
+  .dz-bars i:nth-child(5){background:#fcb12b;animation-delay:-.4s;} .dz-bars i:nth-child(6){background:#ed1b72;animation-delay:-.3s;}
+  .dz-loading .dz-ic{display:none;} .dz-loading .dz-bars{display:flex;}
+  .dz-loading{border-color:var(--accent);background:var(--accent-soft);}
+  .dz-ready .dz-ic{background:#e6f4ea;color:#1b7a3d;}
+  #up-submit:disabled{opacity:.5;cursor:not-allowed;}
   .dropzone input[type=file]{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;}
   .up-actions{display:flex;align-items:center;gap:14px;margin-top:6px;}
   .err-t{color:var(--red);font-size:12px;}
@@ -105,8 +116,15 @@
   .proc-overlay[hidden]{display:none;}   /* hidden attr must beat .proc-overlay display:flex */
   .proc-card{background:var(--surface);border-radius:16px;box-shadow:var(--shadow-lg);
     padding:30px 34px;width:340px;max-width:90vw;text-align:center;font-family:var(--font);}
-  .proc-spin{width:34px;height:34px;border:3px solid var(--accent-soft);border-top-color:var(--accent);
-    border-radius:50%;margin:0 auto 16px;animation:spin .7s linear infinite;}
+  /* colourful bouncing-bars loader (replaces the plain ring) */
+  .proc-spin{display:flex;justify-content:center;align-items:flex-end;gap:3px;
+    width:64px;height:42px;margin:0 auto 18px;}
+  .proc-spin > div{width:7px;height:100%;border-radius:3px;
+    animation:proc-bars .8s infinite ease-in-out;transform-origin:center bottom;}
+  .proc-spin .b1{background:#754fa0;} .proc-spin .b2{background:#09b7bf;animation-delay:-.7s;}
+  .proc-spin .b3{background:#90d36b;animation-delay:-.6s;} .proc-spin .b4{background:#f2d40d;animation-delay:-.5s;}
+  .proc-spin .b5{background:#fcb12b;animation-delay:-.4s;} .proc-spin .b6{background:#ed1b72;animation-delay:-.3s;}
+  @keyframes proc-bars{0%,40%,100%{transform:scaleY(.18);}20%{transform:scaleY(1);}}
   .proc-title{font-size:17px;font-weight:700;color:var(--text);}
   .proc-stage{font-size:13px;color:var(--text-2);margin:6px 0 16px;min-height:18px;}
   .proc-bar{height:9px;background:var(--border-2);border-radius:20px;overflow:hidden;}
@@ -144,12 +162,27 @@
   if (!dz) return;
   var input = dz.querySelector('input[type=file]');
   var main = document.getElementById('dz-main');
-  input.addEventListener('change', function () {
-    if (input.files.length === 1) main.textContent = input.files[0].name;
-    else if (input.files.length > 1) main.textContent = input.files.length + ' files selected';
-    else main.textContent = 'Click to choose PO file(s)';
-  });
   var form = document.getElementById('up-form'), btn = document.getElementById('up-submit');
+  // Process stays disabled until a file is chosen AND the "import" feedback finishes,
+  // so the operator clearly sees the click registered + the file loading.
+  btn.disabled = true;
+  input.addEventListener('change', function () {
+    if (!input.files.length) {
+      main.textContent = 'Click to choose PO file(s)';
+      dz.classList.remove('dz-loading', 'dz-ready'); btn.disabled = true; return;
+    }
+    var name = input.files.length === 1 ? input.files[0].name
+                                        : input.files.length + ' files selected';
+    dz.classList.remove('dz-ready'); dz.classList.add('dz-loading');
+    main.textContent = 'Importing ' + name + '…';
+    btn.disabled = true; btn.textContent = 'Importing…';
+    // brief read/import feedback (min visible time so it's seen even for small files)
+    setTimeout(function () {
+      dz.classList.remove('dz-loading'); dz.classList.add('dz-ready');
+      main.textContent = '✓ ' + name;
+      btn.disabled = false; btn.textContent = 'Process';
+    }, 850);
+  });
   var overlay = document.getElementById('proc-overlay');
   var fill = document.getElementById('proc-fill'), pctEl = document.getElementById('proc-pct'),
       stageEl = document.getElementById('proc-stage'), timeEl = document.getElementById('proc-time');
