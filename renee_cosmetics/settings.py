@@ -74,6 +74,9 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Dev · Health perf capture — innermost, times the view + DB. Additive;
+    # appends to logs/perf.jsonl, never alters the response or the business DB.
+    "core.observability.PerfMiddleware",
 ]
 
 ROOT_URLCONF = "renee_cosmetics.urls"

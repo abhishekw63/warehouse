@@ -8,6 +8,8 @@ urlpatterns = [
     path('offline/', views.OfflineBranchView.as_view(), name='b2b_offline'),
     path('analytics/', views.AnalyticsView.as_view(), name='b2b_analytics'),
     path('rules/', views.RulesView.as_view(), name='b2b_rules'),
+    path('rules/template/<str:slug>/', views.MarketplaceTemplateView.as_view(),
+         name='b2b_template'),
     path('orders/', views.orders, name='b2b_orders'),
     path('orders/more/', views.orders_more, name='b2b_orders_more'),
     path('lines/', views.lines, name='b2b_lines'),

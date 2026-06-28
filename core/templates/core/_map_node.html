@@ -1,0 +1,12 @@
+<li class="mn">
+{% if node.type == 'dir' %}
+  <details{% if node.frozen %} class="frozen-dir"{% endif %}>
+    <summary><span class="mn-dir">{{ node.name }}/</span><span class="mn-cnt">{{ node.count }}</span>{% if node.frozen %}<span class="mn-frozen">frozen engine · do not modify</span>{% endif %}</summary>
+    <ul class="mn-ul">
+      {% for c in node.children %}{% include 'core/_map_node.html' with node=c %}{% endfor %}
+    </ul>
+  </details>
+{% else %}
+  <span class="mn-file k-{{ node.kind }}">{{ node.name }}</span><span class="mn-ln">{{ node.lines }}</span>
+{% endif %}
+</li>

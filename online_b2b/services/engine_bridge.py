@@ -221,6 +221,97 @@ def marketplace_formats() -> list:
     return out
 
 
+_TEMPLATES_PATH = Path(__file__).with_name('template_samples.json')
+# config key → (role label shown in the UI, CSS role class for colour)
+_ROLE_KEYS = [
+    ('po_col', 'PO', 'po'), ('loc_col', 'Destination', 'loc'),
+    ('ean_col', 'Item · EAN', 'item'), ('item_col', 'Item', 'item'),
+    ('sku_col', 'Item · SKU', 'item'), ('qty_col', 'Quantity', 'qty'),
+    ('fob_col', 'Vendor cost', 'cost'), ('mrp_col', 'MRP', 'mrp'),
+    ('po_date_col', 'PO date', 'date'), ('exp_date_col', 'Expiry', 'exp'),
+    ('hsn_col', 'HSN', 'hsn'), ('amount_col', 'Amount', 'amt'),
+]
+
+
+def _role_names(v) -> list:
+    """Real column name(s) from a config value (str / list); skip synthetic
+    ``__…__`` keys and computed dicts."""
+    if isinstance(v, str) and not v.startswith('__'):
+        return [v]
+    if isinstance(v, list):
+        return [x for x in v if isinstance(x, str) and not x.startswith('__')]
+    return []
+
+
+def _role_map(cfg: dict) -> dict:
+    """``{lower-cased header → (role label, role class)}`` for every column the
+    engine actually reads — including columns nested in sub-configs
+    (Flipkart-TO / Meesho-TO)."""
+    out: dict = {}
+    dicts = [cfg] + [v for v in cfg.values() if isinstance(v, dict)]
+    for d in dicts:
+        for key, role, cls in _ROLE_KEYS:
+            for nm in _role_names(d.get(key)):
+                out.setdefault(nm.strip().lower(), (role, cls))
+    return out
+
+
+def marketplace_templates() -> dict[str, dict]:
+    """Per-marketplace **full file template** for the Rules “See full template”
+    page: every column of a real sample file plus a few sample rows, each column
+    tagged with the role the engine reads it as (``role`` / ``role_class``) or
+    left blank (unused → dulled in the UI). Columns and sample rows are a frozen
+    fixture (``template_samples.json``, captured from real files); the used/role
+    tagging is computed **live** from the engine config so highlighting never
+    drifts from what the parser actually reads. Read-only; never raises."""
+    import json
+    out: dict = {}
+    try:
+        samples = json.loads(_TEMPLATES_PATH.read_text(encoding='utf-8'))
+    except Exception:  # noqa: BLE001
+        return out
+    try:
+        cfgs = _engine_imports()['MARKETPLACE_CONFIGS']
+    except Exception:  # noqa: BLE001
+        cfgs = {}
+    for name, s in samples.items():
+        roles = _role_map(cfgs.get(name, {}))
+        cols = []
+        for col in s.get('columns', []):
+            role, cls = roles.get(str(col).strip().lower(), ('', ''))
+            cols.append({'name': col, 'role': role, 'role_class': cls,
+                         'used': bool(role)})
+        # Pre-align sample rows to the column order as cell dicts, so the template
+        # can render + style each cell without dynamic dict-key lookup.
+        grid = [
+            [{'value': r.get(c['name'], ''), 'used': c['used'],
+              'role_class': c['role_class']} for c in cols]
+            for r in s.get('rows', [])
+        ]
+        legend, seen = [], set()
+        for c in cols:
+            if c['used'] and c['role'] not in seen:
+                seen.add(c['role'])
+                legend.append({'role': c['role'], 'role_class': c['role_class']})
+        out[name] = {
+            'name': name,
+            'file_type': s.get('file_type', ''),
+            'sample_file': s.get('sample_file', ''),
+            'columns': cols,
+            'grid': grid,
+            'legend': legend,
+            'used': sum(1 for c in cols if c['used']),
+            'total': len(cols),
+            'pilot': name in PILOT_MARKETPLACES,
+        }
+    return out
+
+
+def marketplace_template(name: str):
+    """Single marketplace template by engine key, or ``None`` if unknown."""
+    return marketplace_templates().get(name)
+
+
 def location_rules() -> list:
     """Flipkart Origin-Warehouse → sub-marketplace (FK Hyperlocal / FK Grocery)
     locked map — for the Rules page. Read-only."""

@@ -40,13 +40,17 @@
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='download' %}</span><span class="side-label">Process PO</span></a>
     <a href="/offline/shoppers-stop/" class="sn" title="Modern Trade (MT)">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><span class="side-label">MT Select</span></a>
-    <a href="/offline/gt-mass-dump/" class="sn" title="GT Mass">
+    <a href="/offline/gt-mass-flow/" class="sn" title="GT Mass">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><span class="side-label">GT Mass</span></a>
     <a href="{% url 'b2b_gt_select' %}" class="sn{% if '/gt-select' in request.path %} on{% endif %}" title="GT Select">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><span class="side-label">GT Select</span></a>
   </nav>
 
   <div class="side-foot">
+    {% if user.is_staff %}
+    <a href="{% url 'dev_dashboard' %}" class="sn sn-dim{% if '/dev/' in request.path %} on{% endif %}" title="Dev · Health">
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><span class="side-label">Dev · Health</span></a>
+    {% endif %}
     <a href="{% url 'departments' %}" class="sn sn-dim" title="Departments">
       <span class="sn-ic">←</span><span class="side-label">Departments</span></a>
     <div class="side-build side-label">{{ build_info }}</div>

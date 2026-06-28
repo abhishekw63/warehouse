@@ -91,6 +91,9 @@ class CentralHubView(LoginRequiredMixin, TemplateView):
         ctx['tat_total'] = tat_total
         ctx['tat_rate'] = round(tat_total / total_pos * 100, 1) if total_pos else 0
         ctx['extra'] = order_db.hub_extra_kpis()
+        # Item-master staleness — 15-day refresh reminder.
+        from .services import item_master_loader as iml
+        ctx['im_status'] = iml.last_updated()
         return ctx
 
 
@@ -113,6 +116,8 @@ class RulesView(LoginRequiredMixin, TemplateView):
         # elaborated exceptions section.
         ctx['gst_margin_rules'] = [r for r in rules if r.get('gst_margin')]
         ctx['formats'] = engine_bridge.marketplace_formats()
+        # Marketplaces that have a full "See full template" preview available.
+        ctx['template_names'] = list(engine_bridge.marketplace_templates().keys())
         ctx['locations'] = engine_bridge.location_rules()
         # Actual Swiggy deal SKUs (name + agreed prices) for accuracy on the card.
         try:
@@ -121,6 +126,23 @@ class RulesView(LoginRequiredMixin, TemplateView):
                                    if r.get('kind') == 'swiggy_deal']
         except Exception:  # noqa: BLE001
             ctx['swiggy_deals'] = []
+        return ctx
+
+
+class MarketplaceTemplateView(LoginRequiredMixin, TemplateView):
+    """Rules → "See full template": the full column list + a few real sample rows
+    for one marketplace, with the columns the engine actually reads highlighted
+    (by role) and the rest dulled — a visual, drift-proof successor to the desktop
+    "download template"."""
+    template_name = 'online_b2b/template.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        name = self.kwargs.get('slug', '')
+        tpl = engine_bridge.marketplace_template(name)
+        if tpl is None:
+            raise Http404(f'No template captured for “{name}”.')
+        ctx['tpl'] = tpl
         return ctx
 
 
@@ -1120,6 +1142,7 @@ def item_master_preview(request, token):
     return render(request, 'online_b2b/item_master_preview.html', {
         'token': token, 'meta': meta, 'stats': stats, 'warnings': warnings,
         'sample': rows[:15], 'current': iml.status(),
+        'diff': iml.diff_against_current(rows),
     })
 
 

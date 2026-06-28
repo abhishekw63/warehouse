@@ -585,3 +585,79 @@ class DBMasterLoader(MasterLoader):
 
     def count(self) -> int:
         return len(self.master)
+
+
+# ── update diff + staleness (for the upload preview + Hub reminder) ───────
+def diff_against_current(rows: list) -> dict:
+    """Compare incoming item rows vs the LIVE item_master → what will actually
+    change: **new** items (item_no absent), **mrp_changed** (MRP differs, old →
+    new), **removed** (a current non-manual item not in the new file). Read-only;
+    never raises. So the operator sees exactly what an update touches — and a
+    clear 'nothing to update' when nothing differs."""
+    cur_map: dict = {}
+    try:
+        ensure_tables()
+        with _conn() as (cur, _d):
+            cur.execute(f"SELECT item_no, mrp, description, "
+                        f"COALESCE(batch_id,'') FROM {_MASTER_TABLE}")
+            for item_no, mrp, desc, batch in cur.fetchall():
+                cur_map[str(item_no)] = {
+                    'mrp': None if mrp is None else round(float(mrp), 2),
+                    'description': desc or '', 'manual': batch == 'manual'}
+    except Exception:  # noqa: BLE001
+        return {'ok': False, 'new': [], 'mrp_changed': [], 'removed': [],
+                'counts': {'new': 0, 'mrp_changed': 0, 'removed': 0,
+                           'unchanged': 0}, 'any': False}
+    new, changed, seen = [], [], set()
+    for r in rows:
+        ino = str(r.get('item_no') or '')
+        if not ino:
+            continue
+        seen.add(ino)
+        nm = None if r.get('mrp') is None else round(float(r['mrp']), 2)
+        cur_row = cur_map.get(ino)
+        if cur_row is None:
+            new.append({'item_no': ino, 'new_mrp': nm,
+                        'description': (r.get('description') or '')[:80]})
+        elif cur_row['mrp'] != nm:
+            changed.append({'item_no': ino, 'old_mrp': cur_row['mrp'],
+                            'new_mrp': nm,
+                            'description': (r.get('description') or '')[:80]})
+    removed = [{'item_no': k, 'old_mrp': v['mrp'],
+                'description': v['description'][:80]}
+               for k, v in cur_map.items() if k not in seen and not v['manual']]
+    unchanged = max(0, len(seen) - len(new) - len(changed))
+    counts = {'new': len(new), 'mrp_changed': len(changed),
+              'removed': len(removed), 'unchanged': unchanged}
+    return {'ok': True, 'new': new[:500], 'mrp_changed': changed[:500],
+            'removed': removed[:500], 'counts': counts,
+            'any': bool(new or changed or removed)}
+
+
+def last_updated() -> dict:
+    """``{'when', 'days', 'due'}`` from ``MAX(updated_at)`` — powers the Hub
+    '15-day refresh' reminder. ``due`` is True at ≥ 15 days. Never raises."""
+    import datetime as _d
+    try:
+        ensure_tables()
+        with _conn() as (cur, _d2):
+            cur.execute(f"SELECT MAX(updated_at) FROM {_MASTER_TABLE}")
+            last = cur.fetchone()[0]
+    except Exception:  # noqa: BLE001
+        return {'when': None, 'days': None, 'due': False}
+    if not last:
+        return {'when': None, 'days': None, 'due': True}
+    if isinstance(last, str):
+        dt = None
+        for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d'):
+            try:
+                dt = _d.datetime.strptime(last[:19], fmt)
+                break
+            except ValueError:
+                continue
+        if dt is None:
+            return {'when': str(last)[:10], 'days': None, 'due': False}
+    else:
+        dt = last
+    days = (_d.datetime.now() - dt).days
+    return {'when': dt.strftime('%d %b %Y'), 'days': days, 'due': days >= 15}

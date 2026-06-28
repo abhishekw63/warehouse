@@ -19,9 +19,13 @@ from pathlib import Path
 from django.conf import settings
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
+from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.generic import TemplateView, View
 
+from online_b2b.services import po_flow
+
+from .flows import GT_MASS_SPEC
 from .services import gt_mass_bridge, mt_bridge
 from .utils import (
     EMAIL_CONFIG,
@@ -393,3 +397,113 @@ class GTMDownloadView(LoginRequiredMixin, View):
             raise Http404('Generated dump not found or expired.')
         return FileResponse(open(path, 'rb'), as_attachment=True,
                             filename=os.path.basename(path))
+
+
+# ── GT Mass on the shared PO-flow scaffold (upload → review → confirm) ───────
+# Thin CBVs: all logic lives in online_b2b.services.po_flow, driven by
+# GT_MASS_SPEC. A new offline channel = a processor adapter + a FlowSpec + these
+# six one-line views (or a shared base later). The Tkinter-style recorder above
+# stays untouched as a fallback.
+_GTM = GT_MASS_SPEC
+
+
+def _flow_upload_ctx(spec):
+    return {
+        'spec': spec, 'title': spec.title, 'segment': spec.segment,
+        'base_template': spec.base_template, 'intro': spec.intro,
+        'caps': spec.caps_map(), 'slots': spec.slot_map(),
+        'warehouses': spec.warehouses,
+        'marketplaces': spec.marketplaces, 'default_margin': spec.default_margin,
+        'accept': spec.accept,
+        'u_upload': spec.urls['upload'], 'u_back': spec.urls['back'],
+        'u_dashboard': spec.urls['dashboard'],
+    }
+
+
+def _is_ajax(request):
+    return request.headers.get('x-requested-with') == 'XMLHttpRequest'
+
+
+class GTMFlowUploadView(LoginRequiredMixin, View):
+    def get(self, request):
+        return render(request, 'po_flow/upload.html', _flow_upload_ctx(_GTM))
+
+    def post(self, request):
+        files = request.FILES.getlist('po_files')
+        if not files:
+            return JsonResponse({'ok': False, 'error': 'Choose at least one file.'})
+        extra = {}
+        if 'warehouse' in _GTM.caps:
+            extra['warehouse'] = (request.POST.get('warehouse')
+                                  or (_GTM.warehouses[0][0] if _GTM.warehouses else ''))
+        if 'margin' in _GTM.caps:
+            extra['margin_pct'] = request.POST.get('margin_pct') or _GTM.default_margin
+        if 'marketplace' in _GTM.caps:
+            extra['marketplace'] = request.POST.get('marketplace')
+        token = po_flow.save_upload(_GTM, files, extra)
+        meta = po_flow.load_meta(_GTM, token)
+        payload = po_flow.preview(_GTM, token, meta)
+        s = payload.get('summary', {})
+        return JsonResponse({
+            'ok': True, 'review_url': reverse(_GTM.urls['review'], args=[token]),
+            'pos': s.get('pos', 0), 'lines': s.get('lines', 0),
+            'affected': s.get('affected', 0),
+            'issues': len(payload.get('file_issues', [])),
+            'warnings': len(payload.get('warnings', [])),
+        })
+
+
+class GTMFlowReviewView(LoginRequiredMixin, View):
+    def get(self, request, token):
+        meta = po_flow.load_meta(_GTM, token)
+        if meta is None:
+            raise Http404('Upload not found or expired.')
+        return render(request, 'po_flow/review.html',
+                      po_flow.review_context(_GTM, token, meta))
+
+
+class GTMFlowConfirmView(LoginRequiredMixin, View):
+    def post(self, request, token):
+        meta = po_flow.load_meta(_GTM, token)
+        if meta is None:
+            return JsonResponse({'ok': False, 'error': 'Upload expired.'}, status=404)
+        review_url = reverse(_GTM.urls['review'], args=[token])
+        if meta.get('locked'):
+            return JsonResponse({'ok': True, 'run_id': meta.get('run_id'),
+                                 'review_url': review_url, 'already': True})
+        # Record ONLY on an explicit Confirm click (the AJAX button sends
+        # confirm=1). A stray / native / implicit form submit must never record.
+        if request.POST.get('confirm') != '1':
+            if _is_ajax(request):
+                return JsonResponse(
+                    {'ok': False, 'error': 'Confirm intent missing — click '
+                     'Confirm & Record.'}, status=400)
+            return redirect(review_url)
+        result = po_flow.confirm(_GTM, token, meta)
+        result['review_url'] = review_url
+        if not _is_ajax(request):
+            return redirect(review_url)
+        return JsonResponse(result)
+
+
+class GTMFlowDecisionView(LoginRequiredMixin, View):
+    def post(self, request, token):
+        n = po_flow.set_decision(_GTM, token, request.POST.get('key', ''),
+                                 request.POST.get('action', ''),
+                                 request.POST.get('override_cp', ''),
+                                 request.POST.get('remark', ''))
+        return JsonResponse({'ok': True, 'saved': n})
+
+
+class GTMFlowDiscardView(LoginRequiredMixin, View):
+    def post(self, request, token):
+        po_flow.discard(_GTM, token)
+        return redirect(reverse(_GTM.urls['dashboard']))
+
+
+class GTMFlowDownloadView(LoginRequiredMixin, View):
+    def get(self, request, token):
+        p = po_flow.download_path(_GTM, token)
+        if not p:
+            raise Http404('No workbook available.')
+        return FileResponse(open(p, 'rb'), as_attachment=True, filename=p.name)

@@ -42,3 +42,5 @@ media/
 .ruff_cache/
 .mypy_cache/
 .pytest_cache/
+# Dev observability perf/audit logs
+logs/

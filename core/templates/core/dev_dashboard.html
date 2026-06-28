@@ -1,0 +1,166 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static %}
+{% block title %}Dev · Health{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a> <span>/ Dev · Health</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap b2b-wide">
+  <div class="b2b-head">
+    <div>
+      <h1>Dev · Health <span>· internal</span></h1>
+      <p class="src">Live request performance (captured on every request) + an all-angles code audit. Staff-only · read-only.</p>
+    </div>
+    <div class="head-actions">
+      <a href="{% url 'dev_map' %}" class="btn-ghost">🗺 Project Map</a>
+      <form method="post" action="{% url 'dev_audit' %}" style="display:inline;">{% csrf_token %}
+        <button class="btn-primary" type="submit">⟳ Run code audit</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ── Perf KPIs ── -->
+  <div class="kpis" style="grid-template-columns:repeat(5,1fr);">
+    <div class="card c1"><div><div class="n">{{ kpi.requests }}</div><div class="l">Requests logged</div></div></div>
+    <div class="card c3"><div><div class="n">{{ kpi.avg_ms }}<span class="u">ms</span></div><div class="l">Avg latency</div></div></div>
+    <div class="card c6"><div><div class="n">{{ kpi.max_ms }}<span class="u">ms</span></div><div class="l">Slowest</div></div></div>
+    <div class="card c5"><div><div class="n">{{ kpi.queries }}</div><div class="l">SQL queries</div></div></div>
+    <div class="card c8"><div><div class="n">{{ kpi.errors }}</div><div class="l">4xx/5xx</div></div></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab on" data-tab="routes">Endpoints <span class="tcount">{{ agg|length }}</span></button>
+    <button class="tab" data-tab="recent">Recent <span class="tcount">{{ recent|length }}</span></button>
+    <button class="tab" data-tab="audit">Code audit{% if audit.ruff %} <span class="tcount">{{ audit.ruff.count }}</span>{% endif %}</button>
+  </div>
+
+  <!-- ── Endpoints (aggregated, slowest first) ── -->
+  <div class="tabpane on" data-pane="routes">
+    <div class="scroll">
+    <table class="grid">
+      <thead><tr><th>Method</th><th>Route</th><th class="r">Hits</th><th class="r">Avg ms</th>
+        <th class="r">p95 ms</th><th class="r">Max ms</th><th class="r">Avg q</th><th class="r">Max q</th>
+        <th class="r">Avg KB</th><th class="r">Errors</th><th>Flags</th></tr></thead>
+      <tbody>
+        {% for a in agg %}
+        <tr class="{% if 'slow' in a.flags %}rmis{% endif %}">
+          <td class="mono">{{ a.method }}</td><td class="mono" title="{{ a.route }}">{{ a.route }}</td>
+          <td class="r">{{ a.hits }}</td><td class="r">{{ a.avg_ms }}</td><td class="r">{{ a.p95_ms }}</td>
+          <td class="r"><b>{{ a.max_ms }}</b></td><td class="r">{{ a.avg_q }}</td><td class="r">{{ a.max_q }}</td>
+          <td class="r">{{ a.avg_kb }}</td><td class="r">{{ a.errors }}</td>
+          <td>{% for f in a.flags %}<span class="st {% if f == 'slow' %}mismatch{% else %}not_in_master{% endif %}">{{ f }}</span> {% endfor %}</td>
+        </tr>
+        {% empty %}<tr><td colspan="11" class="muted">No requests captured yet — browse the app, then refresh.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <!-- ── Recent requests ── -->
+  <div class="tabpane" data-pane="recent" style="display:none;">
+    <div class="scroll">
+    <table class="grid">
+      <thead><tr><th>Time</th><th>Method</th><th>Path</th><th class="r">Status</th><th class="r">ms</th><th class="r">q</th><th class="r">q ms</th><th class="r">KB</th><th>User</th></tr></thead>
+      <tbody>
+        {% for r in recent %}
+        <tr class="{% if r.status >= 400 %}rmis{% elif r.ms > 1000 %}rnim{% endif %}">
+          <td class="mono">{{ r.ts }}</td><td class="mono">{{ r.method }}</td>
+          <td class="mono" title="{{ r.path }}">{{ r.path }}</td>
+          <td class="r"><span class="st {% if r.status >= 400 %}not_in_master{% else %}ok{% endif %}">{{ r.status }}</span></td>
+          <td class="r"><b>{{ r.ms }}</b></td><td class="r">{{ r.q }}</td><td class="r">{{ r.qms }}</td>
+          <td class="r">{{ r.bytes|filesizeformat }}</td><td>{{ r.user|default:'—' }}</td>
+        </tr>
+        {% empty %}<tr><td colspan="9" class="muted">No requests captured yet.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <!-- ── Code audit ── -->
+  <div class="tabpane" data-pane="audit" style="display:none;">
+    {% if not audit %}
+      <p class="muted" style="padding:18px;">No audit yet — click <b>Run code audit</b> above.</p>
+    {% else %}
+    <p class="aud-meta">Last run <b>{{ audit.ts }}</b> · {{ audit.metrics.files }} files · {{ audit.metrics.total_lines }} lines.</p>
+
+    {% if audit.security %}
+    <div class="aud-sec">
+      <h3>🔒 Security <span class="cnt">{{ audit.security|length }}</span></h3>
+      <div class="scroll"><table class="grid">
+        <thead><tr><th>Sev</th><th>Issue</th><th>File:line</th><th>Code</th></tr></thead>
+        <tbody>{% for h in audit.security %}
+          <tr class="{% if h.sev == 'high' %}rmis{% endif %}"><td><span class="st {% if h.sev == 'high' %}not_in_master{% else %}mismatch{% endif %}">{{ h.sev }}</span></td>
+          <td>{{ h.issue }}</td><td class="mono">{{ h.file }}:{{ h.line }}</td><td class="mono desc" title="{{ h.code }}">{{ h.code }}</td></tr>
+        {% endfor %}</tbody></table></div>
+    </div>
+    {% endif %}
+
+    <div class="aud-sec">
+      <h3>📏 Standards (ruff) <span class="cnt">{{ audit.ruff.count }}</span></h3>
+      {% if not audit.ruff.available %}<p class="muted">ruff not available: {{ audit.ruff.error }}</p>
+      {% elif audit.ruff.count == 0 %}<p class="ok-line">✓ Clean — no lint findings.</p>
+      {% else %}
+        <p class="aud-rule">{% for code, n in audit.ruff.by_rule %}<span class="rulechip">{{ code }} · {{ n }}</span>{% endfor %}</p>
+        <div class="scroll"><table class="grid">
+          <thead><tr><th>Rule</th><th>File:line</th><th>Message</th></tr></thead>
+          <tbody>{% for f in audit.ruff.findings %}
+            <tr><td class="mono">{{ f.code }}</td><td class="mono">{{ f.file }}:{{ f.line }}</td><td class="desc" title="{{ f.msg }}">{{ f.msg }}</td></tr>
+          {% endfor %}</tbody></table></div>
+      {% endif %}
+    </div>
+
+    <div class="aud-grid2">
+      <div class="aud-sec">
+        <h3>🧱 Big files <span class="cnt">{{ audit.metrics.big_files|length }}</span></h3>
+        <table class="grid"><thead><tr><th>File</th><th class="r">Lines</th></tr></thead>
+          <tbody>{% for b in audit.metrics.big_files %}<tr><td class="mono">{{ b.file }}</td><td class="r">{{ b.lines }}</td></tr>
+          {% empty %}<tr><td colspan="2" class="ok-line">✓ None over 600 lines.</td></tr>{% endfor %}</tbody></table>
+      </div>
+      <div class="aud-sec">
+        <h3>🔧 Big functions <span class="cnt">{{ audit.metrics.big_funcs|length }}</span></h3>
+        <table class="grid"><thead><tr><th>Function</th><th>File:line</th><th class="r">Lines</th></tr></thead>
+          <tbody>{% for b in audit.metrics.big_funcs %}<tr><td class="mono">{{ b.func }}</td><td class="mono">{{ b.file }}:{{ b.line }}</td><td class="r">{{ b.lines }}</td></tr>
+          {% empty %}<tr><td colspan="3" class="ok-line">✓ None over 80 lines.</td></tr>{% endfor %}</tbody></table>
+      </div>
+    </div>
+
+    <div class="aud-sec">
+      <h3>📑 Duplication <span class="cnt">{{ audit.duplication|length }}</span> · TODO/FIXME <span class="cnt">{{ audit.metrics.todos }}</span></h3>
+      <div class="scroll"><table class="grid">
+        <thead><tr><th class="r">×</th><th>Sample</th><th>Locations</th></tr></thead>
+        <tbody>{% for d in audit.duplication %}
+          <tr><td class="r"><b>{{ d.count }}</b></td><td class="mono desc" title="{{ d.sample }}">{{ d.sample }}</td>
+          <td class="mono">{% for l in d.locations %}{{ l }}{% if not forloop.last %} · {% endif %}{% endfor %}</td></tr>
+        {% empty %}<tr><td colspan="3" class="ok-line">✓ No significant duplicated blocks.</td></tr>{% endfor %}</tbody></table></div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+  .card .n .u{font-size:13px;color:var(--muted);font-weight:600;margin-left:2px;}
+  .aud-meta{font-size:12.5px;color:var(--text-2);margin:4px 0 14px;}
+  .aud-sec{margin:0 0 22px;} .aud-sec h3{font-size:14px;margin:0 0 10px;display:flex;align-items:center;gap:8px;}
+  .aud-sec h3 .cnt{font-size:11px;font-weight:800;background:var(--accent-soft);color:var(--accent);border-radius:20px;padding:2px 9px;}
+  .aud-grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+  @media(max-width:820px){.aud-grid2{grid-template-columns:1fr;}}
+  .ok-line{color:#0a9d6e;font-weight:600;font-size:13px;padding:8px 2px;}
+  .rulechip{display:inline-block;font-size:11px;font-weight:700;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:2px 9px;margin:0 6px 6px 0;color:var(--text-2);}
+  .aud-rule{margin:0 0 10px;}
+</style>
+
+<script>
+(function () {
+  var tabs = document.querySelectorAll('.tab');
+  tabs.forEach(function (t) { t.addEventListener('click', function () {
+    tabs.forEach(function (x) { x.classList.toggle('on', x === t); });
+    var name = t.getAttribute('data-tab');
+    document.querySelectorAll('.tabpane').forEach(function (p) {
+      p.style.display = (p.getAttribute('data-pane') === name) ? '' : 'none'; });
+  }); });
+})();
+</script>
+{% endblock %}

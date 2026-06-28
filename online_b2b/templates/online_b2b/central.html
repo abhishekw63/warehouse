@@ -33,6 +33,23 @@
     </div>
   </div>
 
+  {% if im_status.due %}
+  <a href="{% url 'b2b_item_master' %}" class="im-reminder">
+    <span class="imr-ic">🗓️</span>
+    <span class="imr-txt"><b>Items &amp; MRP refresh due.</b>
+      {% if im_status.when %}Last updated {{ im_status.when }} ({{ im_status.days }} day{{ im_status.days|pluralize }} ago) — the 15-day window has passed.{% else %}No item-master update on record yet.{% endif %}</span>
+    <span class="imr-go">Update now →</span>
+  </a>
+  <style>
+    .im-reminder{display:flex;align-items:center;gap:12px;margin:0 0 16px;padding:12px 16px;text-decoration:none;
+      background:#fff8ed;border:1px solid #ffd9a0;border-left:4px solid #f59e0b;border-radius:11px;transition:transform .15s,box-shadow .15s;}
+    .im-reminder:hover{transform:translateY(-1px);box-shadow:0 6px 18px -8px #f59e0b;}
+    .imr-ic{font-size:20px;}
+    .imr-txt{flex:1;font-size:13px;color:#7a4a06;line-height:1.5;} .imr-txt b{color:#5b3700;}
+    .imr-go{font-size:12.5px;font-weight:800;color:#b45309;white-space:nowrap;}
+  </style>
+  {% endif %}
+
   {% if not ok %}
     <div class="banner err">Order DB unavailable{% if error %} — {{ error }}{% endif %}.</div>
   {% else %}

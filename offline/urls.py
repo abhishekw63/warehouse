@@ -20,4 +20,13 @@ urlpatterns = [
     path('gt-mass/preview/', views.GTMPreviewView.as_view(), name='gtm_preview'),
     path('gt-mass/confirm/', views.GTMConfirmView.as_view(), name='gtm_confirm'),
     path('gt-mass/download/<str:token>/', views.GTMDownloadView.as_view(), name='gtm_download'),
+    # GT Mass on the shared PO-flow scaffold (upload → review → confirm), the new
+    # standard reused across segments. The single-page recorder above stays as a
+    # fallback.
+    path('gt-mass-flow/', views.GTMFlowUploadView.as_view(), name='gtm_flow_upload'),
+    path('gt-mass-flow/<str:token>/', views.GTMFlowReviewView.as_view(), name='gtm_flow_review'),
+    path('gt-mass-flow/<str:token>/confirm/', views.GTMFlowConfirmView.as_view(), name='gtm_flow_confirm'),
+    path('gt-mass-flow/<str:token>/decision/', views.GTMFlowDecisionView.as_view(), name='gtm_flow_decision'),
+    path('gt-mass-flow/<str:token>/discard/', views.GTMFlowDiscardView.as_view(), name='gtm_flow_discard'),
+    path('gt-mass-flow/<str:token>/download/', views.GTMFlowDownloadView.as_view(), name='gtm_flow_download'),
 ]

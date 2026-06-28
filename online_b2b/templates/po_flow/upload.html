@@ -1,0 +1,182 @@
+{% extends base_template %}
+{% load static %}
+{% block title %}{{ title }} — Process PO{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url u_dashboard %}"> / {{ segment }}</a> <span>/ {{ title }}</span>
+{% endblock %}
+
+{% block content %}
+<div class="up-wrap">
+  <div class="b2b-head">
+    <div>
+      <h1>{{ title }} · Process PO</h1>
+      <p class="src">{{ intro }}</p>
+    </div>
+    <a href="{% url u_back %}" class="back">← Back</a>
+  </div>
+
+  <form method="post" enctype="multipart/form-data" class="up-card" id="up-form"
+        action="{% url u_upload %}">
+    {% csrf_token %}
+
+    {% if caps.marketplace or caps.warehouse or caps.margin %}
+    <div class="up-grid">
+      {% if caps.marketplace %}
+      <div class="fld"><label>Marketplace</label>
+        <select name="marketplace" id="id_marketplace">
+          {% for v, l in marketplaces %}<option value="{{ v }}">{{ l }}</option>{% endfor %}
+        </select></div>
+      {% endif %}
+      {% if caps.warehouse %}
+      <div class="fld"><label>Warehouse</label>
+        <select name="warehouse" id="id_warehouse">
+          {% for v, l in warehouses %}<option value="{{ v }}">{{ l }}</option>{% endfor %}
+        </select></div>
+      {% endif %}
+      {% if caps.margin %}
+      <div class="fld"><label>Margin %</label>
+        <input type="number" step="0.01" name="margin_pct" id="id_margin_pct"
+               value="{{ default_margin|default:'' }}"></div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {# ── channel-specific extra upload fields ── #}
+    {% if slots.fields %}{% include slots.fields %}{% endif %}
+
+    <div class="fld">
+      <label>PO file(s)</label>
+      <label class="dropzone" id="dz">
+        <span class="dz-ic">{% include 'online_b2b/_icons.html' with i='download' %}</span>
+        <span class="dz-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+        <span class="dz-main" id="dz-main">Click to choose PO file(s)</span>
+        <span class="dz-sub">{{ accept }}</span>
+        <input type="file" name="po_files" multiple accept="{{ accept }}">
+      </label>
+    </div>
+
+    <div class="up-actions">
+      <button type="submit" class="btn-primary" id="up-submit">Process</button>
+      <a href="{% url u_back %}" class="btn-clear">Cancel</a>
+    </div>
+  </form>
+
+  <div class="proc-overlay" id="proc-overlay" hidden>
+    <div class="proc-card">
+      <div class="proc-spin"><div class="b1"></div><div class="b2"></div><div class="b3"></div><div class="b4"></div><div class="b5"></div><div class="b6"></div></div>
+      <div class="proc-title">Processing PO</div>
+      <div class="proc-stage" id="proc-stage">Starting…</div>
+      <div class="proc-bar"><span id="proc-fill"></span></div>
+      <div class="proc-meta"><span id="proc-pct">0%</span><span id="proc-time">elapsed 0:00</span></div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .up-wrap{max-width:660px;margin:28px auto 64px;padding:0 20px;color:var(--text);}
+  .up-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:24px;margin-top:20px;}
+  .up-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:16px;margin-bottom:18px;}
+  .fld{display:flex;flex-direction:column;gap:6px;margin-bottom:16px;}
+  .fld label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+  .fld select,.fld input[type=number]{padding:10px 12px;border:1px solid var(--border);
+    border-radius:9px;font-size:14px;background:var(--surface-2);color:var(--text);width:100%;box-sizing:border-box;}
+  .fld select:focus,.fld input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);background:#fff;}
+  .dropzone{display:flex;flex-direction:column;align-items:center;gap:6px;padding:26px;cursor:pointer;
+    border:1.5px dashed var(--border);border-radius:12px;background:var(--surface-2);text-align:center;transition:all .15s;}
+  .dropzone:hover{border-color:var(--accent);background:var(--accent-soft);}
+  .dz-ic{width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:var(--accent-soft);color:var(--accent);}
+  .dz-ic svg{width:18px;height:18px;} .dz-main{font-weight:600;font-size:14px;color:var(--text);} .dz-sub{font-size:12px;color:var(--muted);}
+  .dz-bars{display:none;justify-content:center;align-items:flex-end;gap:3px;width:54px;height:24px;}
+  .dz-bars i{width:6px;height:100%;border-radius:3px;transform-origin:bottom;animation:proc-bars .8s infinite ease-in-out;}
+  .dz-bars i:nth-child(1){background:#754fa0;} .dz-bars i:nth-child(2){background:#09b7bf;animation-delay:-.7s;}
+  .dz-bars i:nth-child(3){background:#90d36b;animation-delay:-.6s;} .dz-bars i:nth-child(4){background:#f2d40d;animation-delay:-.5s;}
+  .dz-bars i:nth-child(5){background:#fcb12b;animation-delay:-.4s;} .dz-bars i:nth-child(6){background:#ed1b72;animation-delay:-.3s;}
+  .dz-loading .dz-ic{display:none;} .dz-loading .dz-bars{display:flex;} .dz-loading{border-color:var(--accent);background:var(--accent-soft);}
+  .dz-ready .dz-ic{background:#e6f4ea;color:#1b7a3d;}
+  #up-submit:disabled{opacity:.5;cursor:not-allowed;}
+  .dropzone input[type=file]{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;}
+  .up-actions{display:flex;align-items:center;gap:14px;margin-top:6px;}
+  .proc-overlay{position:fixed;inset:0;background:rgba(20,24,40,.45);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:999;}
+  .proc-overlay[hidden]{display:none;}
+  .proc-card{background:var(--surface);border-radius:16px;box-shadow:var(--shadow-lg);padding:30px 34px;width:340px;max-width:90vw;text-align:center;font-family:var(--font);}
+  .proc-spin{display:flex;justify-content:center;align-items:flex-end;gap:3px;width:64px;height:42px;margin:0 auto 18px;}
+  .proc-spin > div{width:7px;height:100%;border-radius:3px;animation:proc-bars .8s infinite ease-in-out;transform-origin:center bottom;}
+  .proc-spin .b1{background:#754fa0;} .proc-spin .b2{background:#09b7bf;animation-delay:-.7s;}
+  .proc-spin .b3{background:#90d36b;animation-delay:-.6s;} .proc-spin .b4{background:#f2d40d;animation-delay:-.5s;}
+  .proc-spin .b5{background:#fcb12b;animation-delay:-.4s;} .proc-spin .b6{background:#ed1b72;animation-delay:-.3s;}
+  @keyframes proc-bars{0%,40%,100%{transform:scaleY(.18);}20%{transform:scaleY(1);}}
+  .proc-title{font-size:17px;font-weight:700;color:var(--text);} .proc-stage{font-size:13px;color:var(--text-2);margin:6px 0 16px;min-height:18px;}
+  .proc-bar{height:9px;background:var(--border-2,#e5e7eb);border-radius:20px;overflow:hidden;}
+  .proc-bar span{display:block;height:100%;width:0;border-radius:20px;background:linear-gradient(90deg,var(--accent),#8b94f7);transition:width .25s ease;}
+  .proc-meta{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-top:9px;font-variant-numeric:tabular-nums;}
+  #proc-pct{font-weight:700;color:var(--accent);}
+  .proc-done .proc-title{color:#0a9d6e;font-size:22px;} .proc-done .proc-bar span{background:#10b981;} .proc-done #proc-pct{color:#0a9d6e;}
+  .proc-err .proc-title{color:var(--red,#dc2626);} .proc-err .proc-bar span{background:var(--red,#dc2626);} .proc-err .proc-stage{color:var(--red,#dc2626);}
+  .proc-close{background:var(--red,#dc2626);color:#fff;border:none;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer;}
+</style>
+
+<script>
+(function () {
+  var dz = document.getElementById('dz');
+  if (!dz) return;
+  var input = dz.querySelector('input[type=file]');
+  var main = document.getElementById('dz-main');
+  var form = document.getElementById('up-form'), btn = document.getElementById('up-submit');
+  btn.disabled = true;
+  input.addEventListener('change', function () {
+    if (!input.files.length) { main.textContent = 'Click to choose PO file(s)';
+      dz.classList.remove('dz-loading', 'dz-ready'); btn.disabled = true; return; }
+    var name = input.files.length === 1 ? input.files[0].name : input.files.length + ' files selected';
+    dz.classList.remove('dz-ready'); dz.classList.add('dz-loading');
+    main.textContent = 'Importing ' + name + '…'; btn.disabled = true; btn.textContent = 'Importing…';
+    setTimeout(function () { dz.classList.remove('dz-loading'); dz.classList.add('dz-ready');
+      main.textContent = '✓ ' + name; btn.disabled = false; btn.textContent = 'Process'; }, 850);
+  });
+  var overlay = document.getElementById('proc-overlay');
+  var fill = document.getElementById('proc-fill'), pctEl = document.getElementById('proc-pct'),
+      stageEl = document.getElementById('proc-stage'), timeEl = document.getElementById('proc-time');
+  var STAGES = [{p:0,t:'Loading master…'},{p:42,t:'Reading & processing PO file…'},
+    {p:68,t:'Validating against master…'},{p:86,t:'Building preview & workbook…'},{p:95,t:'Finalizing…'}];
+  function clock(ms){var s=Math.floor(ms/1000);return Math.floor(s/60)+':'+('0'+(s%60)).slice(-2);}
+  var card = overlay.querySelector('.proc-card'), titleEl = overlay.querySelector('.proc-title'), spin = overlay.querySelector('.proc-spin');
+  form.addEventListener('submit', function (e) {
+    if (!input.files.length) return;
+    e.preventDefault(); btn.disabled = true; btn.textContent = 'Processing…'; overlay.hidden = false;
+    var start = Date.now(), EST = 14000, pct = 0, done = false;
+    var tick = setInterval(function () {
+      if (done) return; var el = Date.now() - start;
+      pct = Math.max(pct, 96 * (1 - Math.exp(-el / (EST * 0.55))));
+      fill.style.width = pct.toFixed(0) + '%'; pctEl.textContent = pct.toFixed(0) + '%';
+      var st = STAGES[0]; for (var i = 0; i < STAGES.length; i++) { if (pct >= STAGES[i].p) st = STAGES[i]; }
+      stageEl.textContent = st.t; timeEl.textContent = 'elapsed ' + clock(el);
+    }, 150);
+    function fail(msg) { done = true; clearInterval(tick); card.classList.add('proc-err');
+      if (spin) spin.style.display = 'none'; titleEl.textContent = 'Import failed';
+      stageEl.textContent = msg || 'Something went wrong — please try again.';
+      fill.style.width = '100%'; pctEl.textContent = '';
+      timeEl.innerHTML = '<button type="button" id="proc-close" class="proc-close">Close</button>';
+      var c = document.getElementById('proc-close');
+      if (c) c.addEventListener('click', function () { overlay.hidden = true; card.classList.remove('proc-err');
+        if (spin) spin.style.display = ''; titleEl.textContent = 'Processing PO'; btn.disabled = false; btn.textContent = 'Process'; }); }
+    fetch(form.action, { method: 'POST', body: new FormData(form),
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' })
+      .then(function (r) { return r.json(); }).then(function (j) {
+        if (!j.ok) { fail(j.error); return; }
+        done = true; clearInterval(tick); card.classList.add('proc-done');
+        if (spin) spin.style.display = 'none'; fill.style.width = '100%'; pctEl.textContent = '100%';
+        titleEl.innerHTML = '✓ Imported';
+        stageEl.textContent = j.pos + ' PO(s) · ' + j.lines + ' line(s)' +
+          (j.affected ? ' · ' + j.affected + ' to review' : '') +
+          (j.issues ? ' · ' + j.issues + ' file issue(s)' : '') +
+          (j.warnings ? ' · ' + j.warnings + ' warning(s)' : '');
+        timeEl.textContent = 'opening review…';
+        setTimeout(function () { window.location = j.review_url; }, 1100);
+      }).catch(function () { fail('Network error — please retry.'); });
+  });
+})();
+</script>
+{% endblock %}

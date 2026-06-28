@@ -1,12 +1,12 @@
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.forms import UserCreationForm
-from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.auth.models import User
 from django.contrib.auth.views import LoginView, LogoutView, PasswordChangeView
 from django.shortcuts import redirect
 from django.urls import reverse_lazy
-from django.views.generic import CreateView, TemplateView, UpdateView
+from django.views.generic import CreateView, TemplateView, UpdateView, View
 
 
 class CustomLogoutView(LogoutView):
@@ -102,3 +102,56 @@ class CustomPasswordChangeView(LoginRequiredMixin, PasswordChangeView):
     def form_valid(self, form):
         messages.success(self.request, 'Your password was successfully updated.')
         return super().form_valid(form)
+
+
+class _StaffOnly(LoginRequiredMixin, UserPassesTestMixin):
+    """Gate dev tooling to staff users."""
+    def test_func(self):
+        return bool(getattr(self.request.user, 'is_staff', False))
+
+
+class DevDashboardView(_StaffOnly, TemplateView):
+    """Dev · Health — live request perf (from the timing middleware) + an
+    on-demand all-angles code audit. Staff-only; read-only; never touches the
+    business backend."""
+    template_name = 'core/dev_dashboard.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        from . import code_audit
+        from . import observability as obs
+        rows = obs.recent(800)
+        ctx['kpi'] = obs.kpis(rows)
+        ctx['agg'] = obs.aggregate(rows)
+        ctx['recent'] = list(reversed(rows))[:60]
+        ctx['audit'] = code_audit.last_audit()
+        return ctx
+
+
+class DevAuditView(_StaffOnly, View):
+    """Run the code audit now (POST), then back to the dashboard."""
+    def post(self, request, *args, **kwargs):
+        from . import code_audit
+        try:
+            code_audit.run_audit()
+            messages.success(request, 'Code audit complete.')
+        except Exception as e:  # noqa: BLE001
+            messages.error(request, f'Audit failed: {e}')
+        return redirect('dev_dashboard')
+
+
+class ProjectMapView(_StaffOnly, TemplateView):
+    """Project Map — a graphical, always-current map of the whole system: the
+    file tree (apps → modules → templates), the real URL→view routes, the DB
+    models/tables, and the upload→review→confirm→record data flow. Auto-generated
+    from the live codebase, so it updates whenever the code changes. Staff-only."""
+    template_name = 'core/project_map.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        from . import project_map as pm
+        ctx['tree'] = pm.app_tree()
+        ctx['routes'] = pm.routes()
+        ctx['models'] = pm.models()
+        ctx['summary'] = pm.summary()
+        return ctx

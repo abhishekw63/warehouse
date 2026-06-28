@@ -1,0 +1,202 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static %}
+{% block title %}{{ tpl.name }} template — Order Management{% endblock %}
+{% block extra_css %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<style>
+  /* ── role palette ── */
+  .tpl-page{
+    --r-po:#4f46e5;   --r-loc:#0d9488; --r-item:#7c3aed; --r-qty:#d97706;
+    --r-cost:#e11d48; --r-mrp:#059669; --r-date:#2563eb; --r-exp:#475569;
+    --r-hsn:#0891b2;  --r-amt:#c026d3;
+  }
+  .r-po{--rc:var(--r-po);}    .r-loc{--rc:var(--r-loc);}  .r-item{--rc:var(--r-item);}
+  .r-qty{--rc:var(--r-qty);}  .r-cost{--rc:var(--r-cost);} .r-mrp{--rc:var(--r-mrp);}
+  .r-date{--rc:var(--r-date);} .r-exp{--rc:var(--r-exp);}  .r-hsn{--rc:var(--r-hsn);}
+  .r-amt{--rc:var(--r-amt);}
+
+  /* ── header ── */
+  .tpl-hero{ display:flex; align-items:flex-start; justify-content:space-between; gap:18px; flex-wrap:wrap; }
+  .tpl-id h1{ margin:0; font-size:24px; font-weight:800; letter-spacing:-.02em; color:var(--text); display:flex; align-items:center; gap:10px; }
+  .tpl-ftype{ font-size:11px; font-weight:800; letter-spacing:.05em; text-transform:uppercase;
+    color:var(--accent); background:var(--accent-soft); border-radius:20px; padding:4px 12px; }
+  .tpl-sub{ margin:7px 0 0; font-size:13px; color:var(--text-2); }
+  .tpl-sub .mono{ font-family:ui-monospace,Menlo,Consolas,monospace; color:var(--text); }
+  .tpl-stat{ display:flex; align-items:center; gap:12px; background:var(--surface-2); border:1px solid var(--border);
+    border-radius:14px; padding:12px 18px; }
+  .tpl-stat .big{ font-size:26px; font-weight:800; color:var(--accent); line-height:1; }
+  .tpl-stat .lbl{ font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.05em; margin-top:3px; }
+  .tpl-stat .bar{ width:90px; height:7px; border-radius:6px; background:var(--border); overflow:hidden; margin-top:7px; }
+  .tpl-stat .bar i{ display:block; height:100%; border-radius:6px; width:0;
+    background:linear-gradient(90deg,var(--accent),#7c3aed); animation: fill 1.1s cubic-bezier(.2,.8,.2,1) .25s forwards; }
+  @keyframes fill{ to{ width:var(--pct); } }
+
+  /* ── legend ── */
+  .tpl-legend{ display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:16px 0 4px; }
+  .tpl-legend .lead{ font-size:12.5px; color:var(--text-2); margin-right:4px; }
+  .lg-chip{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:700;
+    color:var(--rc); background:color-mix(in srgb, var(--rc) 11%, transparent);
+    border:1px solid color-mix(in srgb, var(--rc) 32%, transparent); border-radius:20px; padding:3px 10px; }
+  .lg-chip .dot{ width:8px; height:8px; border-radius:50%; background:var(--rc); }
+  .lg-dull{ display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:600; color:var(--muted);
+    border:1px dashed var(--border); border-radius:20px; padding:3px 10px; }
+  .lg-dull .dot{ width:8px; height:8px; border-radius:50%; background:var(--border); }
+
+  /* ── table ── */
+  .tpl-tablewrap{ margin-top:14px; border:1px solid var(--border); border-radius:14px; overflow:auto;
+    background:var(--surface); box-shadow:0 1px 3px rgba(15,23,42,.04); }
+  .tpl-tablewrap::-webkit-scrollbar{ height:9px; }
+  .tpl-tablewrap::-webkit-scrollbar-thumb{ background:#cbd1dc; border-radius:5px; }
+  table.tpl-table{ border-collapse:separate; border-spacing:0; width:max-content; min-width:100%; font-size:12.5px; }
+  .tpl-table th, .tpl-table td{ padding:11px 14px; text-align:left; white-space:nowrap;
+    border-bottom:1px solid var(--border); border-right:1px solid color-mix(in srgb,var(--border) 60%, transparent); }
+  .tpl-table th:last-child, .tpl-table td:last-child{ border-right:none; }
+
+  /* header cells reveal — staggered */
+  .tpl-table thead th{ position:sticky; top:0; z-index:2; background:var(--surface-2);
+    opacity:0; transform:translateY(12px); animation: colIn .52s cubic-bezier(.2,.8,.2,1) forwards;
+    animation-delay: calc(var(--i,0) * 22ms); }
+  @keyframes colIn{ to{ opacity:1; transform:translateY(0); } }
+  .th-in{ display:flex; flex-direction:column; gap:5px; }
+  .th-name{ font-weight:700; }
+  .th-badge{ align-self:flex-start; font-size:9.5px; font-weight:800; letter-spacing:.04em; text-transform:uppercase;
+    color:#fff; background:var(--rc); border-radius:5px; padding:2px 7px; }
+
+  /* used vs dull */
+  .tpl-table .used{ }
+  .tpl-table thead th.used{ background:color-mix(in srgb, var(--rc) 9%, var(--surface-2)); box-shadow: inset 0 -2.5px 0 var(--rc); }
+  .tpl-table thead th.used .th-name{ color:var(--rc); }
+  .tpl-table td.used{ background:color-mix(in srgb, var(--rc) 5%, transparent); color:var(--text); font-weight:600;
+    font-family:ui-monospace,Menlo,Consolas,monospace; }
+  .tpl-table th.dull .th-name{ color:var(--muted); font-weight:600; }
+  .tpl-table td.dull{ color:var(--muted); opacity:.62; transition:opacity .2s ease; }
+  .tpl-table tbody tr:hover td.dull{ opacity:.9; }
+  .tpl-table tbody{ opacity:0; animation: fadeUp .6s ease forwards .42s; }
+  @keyframes fadeUp{ from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);} }
+  .tpl-table tbody tr:hover td{ background:color-mix(in srgb, var(--accent) 5%, transparent); }
+  .tpl-table tbody tr:hover td.used{ background:color-mix(in srgb, var(--rc) 11%, transparent); }
+
+  /* one-time sheen sweep across used headers after reveal */
+  .tpl-table thead th.used::after{ content:""; position:absolute; inset:0; pointer-events:none; border-radius:inherit;
+    background:linear-gradient(105deg, transparent 35%, color-mix(in srgb,var(--rc) 28%, transparent) 50%, transparent 65%);
+    background-size:280% 100%; background-position:160% 0; animation: sheen 1.1s ease 1s 1; }
+  @keyframes sheen{ to{ background-position:-60% 0; } }
+
+  /* column hover — JS adds .col-hot to every cell in the column */
+  .tpl-table .col-hot{ box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--rc, var(--accent)) 55%, transparent); }
+  .tpl-table th.col-hot{ transform:translateY(-2px); }
+  .tpl-rowtag{ color:var(--muted); font-weight:700; font-family:inherit; }
+
+  @media (prefers-reduced-motion: reduce){
+    .tpl-table thead th, .tpl-table tbody, .tpl-stat .bar i{ animation:none !important; opacity:1 !important; transform:none !important; width:var(--pct) !important; }
+    .tpl-table thead th.used::after{ animation:none; }
+  }
+</style>
+{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_dashboard' %}"> / Order Management</a>
+    <a href="{% url 'b2b_rules' %}"> / Rules &amp; Exceptions</a>
+    <span>/ {{ tpl.name }} template</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap b2b-wide tpl-page">
+
+  <div class="b2b-head" style="margin-bottom:6px;">
+    <div class="head-actions" style="margin-left:auto;">
+      <a href="{% url 'b2b_rules' %}" class="btn-ghost">← Rules</a>
+      <a href="{% url 'b2b_upload' %}" class="btn-primary">＋ Process PO</a>
+    </div>
+  </div>
+
+  <div class="tpl-hero">
+    <div class="tpl-id">
+      <h1>{{ tpl.name }}
+        {% if tpl.pilot %}<span class="pill live">live</span>{% endif %}
+        <span class="tpl-ftype">{{ tpl.file_type }}</span>
+      </h1>
+      <p class="tpl-sub">
+        The full file the engine receives — every column, with the ones it actually reads
+        <b>highlighted</b> and the rest <b>dulled</b>.
+        {% if tpl.sample_file %}<br>Sample: <span class="mono">{{ tpl.sample_file }}</span>{% endif %}
+      </p>
+    </div>
+    <div class="tpl-stat">
+      <div>
+        <div class="big">{{ tpl.used }}<span style="color:var(--muted);font-size:15px;font-weight:600;"> / {{ tpl.total }}</span></div>
+        <div class="lbl">columns read</div>
+        <div class="bar"><i style="--pct: {% widthratio tpl.used tpl.total 100 %}%;"></i></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tpl-legend">
+    <span class="lead">Read by the engine:</span>
+    {% for l in tpl.legend %}
+      <span class="lg-chip r-{{ l.role_class }}"><span class="dot"></span>{{ l.role }}</span>
+    {% endfor %}
+    <span class="lg-dull"><span class="dot"></span>Ignored — present in the file, not used</span>
+  </div>
+
+  <div class="tpl-tablewrap">
+    <table class="tpl-table">
+      <thead>
+        <tr>
+          <th class="dull" style="--i:0;"><div class="th-in"><span class="th-name">#</span></div></th>
+          {% for c in tpl.columns %}
+          <th data-col="{{ forloop.counter }}" style="--i:{{ forloop.counter }};"
+              class="{% if c.used %}used r-{{ c.role_class }}{% else %}dull{% endif %}">
+            <div class="th-in">
+              <span class="th-name">{{ c.name }}</span>
+              {% if c.used %}<span class="th-badge">{{ c.role }}</span>{% endif %}
+            </div>
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in tpl.grid %}
+        <tr>
+          <td class="dull"><span class="tpl-rowtag">{{ forloop.counter }}</span></td>
+          {% for cell in row %}
+          <td data-col="{{ forloop.counter }}"
+              class="{% if cell.used %}used r-{{ cell.role_class }}{% else %}dull{% endif %}">{{ cell.value|default:"—" }}</td>
+          {% endfor %}
+        </tr>
+        {% empty %}
+        <tr><td class="dull" colspan="{{ tpl.total }}">No sample rows captured.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <p class="rc-foot" style="margin-top:12px;">
+    Columns and sample rows are a frozen snapshot of a real file; the
+    <b>highlighting is computed live from the engine config</b>, so it always reflects
+    exactly what the parser reads. Hover a column to trace it down the rows.
+  </p>
+</div>
+
+<script>
+  (function () {
+    var table = document.querySelector('.tpl-table');
+    if (!table) return;
+    var hot = [];
+    function clear() { hot.forEach(function (el) { el.classList.remove('col-hot'); }); hot = []; }
+    table.addEventListener('pointerover', function (e) {
+      var cell = e.target.closest('[data-col]');
+      if (!cell) { return; }
+      var col = cell.getAttribute('data-col');
+      if (hot.length && hot[0].getAttribute('data-col') === col) { return; }
+      clear();
+      hot = Array.prototype.slice.call(table.querySelectorAll('[data-col="' + col + '"]'));
+      hot.forEach(function (el) { el.classList.add('col-hot'); });
+    });
+    table.addEventListener('pointerleave', clear);
+  })();
+</script>
+{% endblock %}

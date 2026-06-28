@@ -372,6 +372,69 @@ instead of a single number that lies for rule-based marketplaces.
 
 ## 10. Changelog (append one line per development)
 
+- **2026-06-28** — **Item-master update diff + 15-day refresh reminder.** Item
+  Master upload **preview** now shows a "What will change" section
+  (`iml.diff_against_current(rows)`): **new** items, **MRP changed** (old → new),
+  **removed** (live non-manual item absent from the file), unchanged — with a
+  clear "**Nothing to update**" when new=0 & MRP-changed=0, so the operator sees
+  exactly what the update touches before confirming. Plus `iml.last_updated()`
+  (`MAX(updated_at)`) drives a **Hub reminder** banner ("Items & MRP refresh due
+  · last updated N days ago") that appears at **≥ 15 days**. Additive — reads/
+  compares around the existing upload; the rebuild logic is unchanged.
+
+- **2026-06-28** — **Project Map page (graphical, auto-generated).** Staff-only
+  `/dev/map/` (`ProjectMapView`, linked from Dev · Health). `core.project_map`
+  introspects the LIVE codebase each load — so it updates whenever code changes —
+  to render: a collapsible **file tree** (apps → modules → templates, colour-coded
+  by type, frozen engine flagged), the real **URL→view routes** (from Django's
+  resolver, grouped by app), the **DB models/tables** (app registry; managed vs
+  external), and a graphical **data-flow** diagram (Upload → Process → Review →
+  Confirm → renee_orders → Dashboards; who-feeds-the-pipeline; architecture
+  layers). Read-only; additive.
+
+- **2026-06-28** — **Dev · Health page (observability + code audit).** Additive
+  perf capture + a staff-only dashboard at `/dev/` (`DevDashboardView`,
+  `user.is_staff`). `core.observability.PerfMiddleware` (registered last in
+  MIDDLEWARE) times **every** request and appends a JSON line to `logs/perf.jsonl`
+  (path, status, ms, SQL count + time via `execute_wrapper`, bytes, user) — never
+  touches the business DB, never alters a response. The page shows perf KPIs,
+  per-endpoint aggregates (avg/p95/max ms, queries, flags: slow / N+1? / large),
+  recent requests, and an on-demand **all-angles code audit**
+  (`core.code_audit`): ruff (standards), AST metrics (big files/functions),
+  duplication scan, TODO/FIXME, and a high-signal **security** scan (eval/exec/
+  shell=True/pickle/verify=False/mark_safe/SQL-string-building). `logs/`
+  git-ignored. Sidebar shows a staff-only "Dev · Health" link; GT Mass sidebar
+  link now points to the new `/offline/gt-mass-flow/`.
+
+- **2026-06-28** — **Shared PO-flow scaffold; GT Mass migrated onto it.** New
+  reusable `online_b2b/services/po_flow.py` (`FlowSpec` + token store + cached
+  preview + decisions + confirm + discard/download) and shared templates
+  `po_flow/upload.html` + `po_flow/review.html` give every segment ONE
+  import→review→confirm flow. **Capability flags** (`warehouse/margin/marketplace/
+  vendor_cols/override/ean_fix/exclude/d365`) + a **null `extra_partial` slot**
+  keep one template working across mismatched channels (online has vendor-compare
+  + Override + D365; GT Mass has none but has file-level exceptions). GT Mass now
+  uses it (`offline/flows.py:GT_MASS_SPEC`, `offline/services/gt_mass_flow.py:
+  GTMassProcessor` wrapping the frozen `GTMassRecorder` — additive, recorder
+  untouched): import → review (Lines/Orders/Affected/Skipped + a GT-Mass
+  **file-exceptions** panel for PO-missing/template-mismatch/rescued) → per-line
+  **Exclude** → confirm records to renee_orders + downloadable dump. URLs under
+  `/offline/gt-mass-flow/`; the old single-page recorder + dump generator stay as
+  fallbacks. **Next:** migrate Online B2B onto the same scaffold (fast-follow), so
+  there's a single flow new channels plug into via a Processor + a FlowSpec.
+
+- **2026-06-28** — **Rules → "See full template" (visual format preview).** Each
+  marketplace card on Rules §3 now has a **See full template** link →
+  `/b2b/rules/template/<name>/` (`MarketplaceTemplateView`). The page shows the
+  **full column list + a few real sample rows** of that channel's file, with the
+  columns the engine actually reads **highlighted by role** (PO / Destination /
+  Item / Qty / Vendor cost / MRP / …) and the rest **dulled**. Columns + sample
+  rows are a frozen fixture (`online_b2b/services/template_samples.json`, captured
+  from real files); the **used/role tagging is computed live from
+  `MARKETPLACE_CONFIGS`** so it never drifts. Backend:
+  `engine_bridge.marketplace_templates()` / `marketplace_template()`. Web-native,
+  animated successor to the desktop "download template".
+
 - **2026-06-28** — **Tracker dates for PDF marketplaces → TAT works for them.**
   PDF channels (DMart/Avenue) carry **PO Date** + **PO Validity** in the PDF
   *header*, not as a row column, so the engine left `po_date`/`exp_date` blank →

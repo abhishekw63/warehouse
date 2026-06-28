@@ -1,0 +1,296 @@
+{% extends base_template %}
+{% load static b2b_extras %}
+{% block title %}{{ title }} — Review{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url u_dashboard %}"> / {{ segment }}</a> <span>/ {{ title }} · Review</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap">
+  <div class="b2b-head">
+    <div>
+      <h1>Review <span>· {{ title }}</span></h1>
+      <p class="src">{% if caps.warehouse %}Warehouse {{ meta.warehouse }} · {% endif %}nothing is written until you confirm.</p>
+    </div>
+    <a href="{% url u_upload %}" class="back">← New upload</a>
+  </div>
+
+  {% if not r.ok and not r.headers %}
+    <div class="banner err" style="margin-top:16px;">{{ r.error|default:'Could not process the upload.' }}</div>
+  {% endif %}
+
+  {% with s=s %}
+  {% if slots.top %}{% include slots.top %}{% endif %}
+  <div class="kpis" style="grid-template-columns:repeat(6,1fr);">
+    <div class="card c1"><span class="ic">{% include 'online_b2b/_icons.html' with i='po' %}</span><div><div class="n">{{ s.pos|default:0 }}</div><div class="l">POs</div></div></div>
+    <div class="card c3"><span class="ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><div><div class="n">{{ s.lines|default:0 }}</div><div class="l">Line items</div></div></div>
+    <div class="card c5"><span class="ic">{% include 'online_b2b/_icons.html' with i='hash' %}</span><div><div class="n">{{ s.qty|default:0|compact }}</div><div class="l">Qty</div></div></div>
+    <div class="card c4"><span class="ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><div><div class="n">{{ s.value|default:0|inr_short }}</div><div class="l">Value</div></div></div>
+    <div class="card c6"><span class="ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><div><div class="n">{{ s.affected|default:0 }}</div><div class="l">Affected</div></div></div>
+    <div class="card c8"><span class="ic">{% include 'online_b2b/_icons.html' with i='refresh' %}</span><div><div class="n">{{ s.skipped|default:0 }}</div><div class="l">Already up.</div></div></div>
+  </div>
+
+  {# ── channel-specific slot (under KPIs): dark for channels that don't set it ── #}
+  {% if slots.after_kpis %}{% include slots.after_kpis %}{% endif %}
+
+  {% if r.warnings %}
+  <details class="warnbox" style="margin:0 0 16px;">
+    <summary><strong>{{ r.warnings|length }} warning(s)</strong> — click to view</summary>
+    <ul>{% for w in r.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+
+  <form id="discard-form" method="post" action="{% url u_discard token %}">{% csrf_token %}</form>
+  <form id="confirm-form" method="post" action="{% url u_confirm token %}">{% csrf_token %}
+  <div class="confirm-bar{% if locked %} locked{% endif %}" id="confirmBar">
+    <div class="cb-text">
+      {% if locked %}
+        🔒 <b>Recorded</b> (run #{{ run_id }}) — pushed to the dashboard.
+      {% else %}
+        Record <b>{{ s.pos|default:0 }} PO(s)</b> · <b>{{ s.lines|default:0 }} line(s)</b> to the dashboard.
+        {% if s.skipped %}<span class="cb-muted">({{ s.skipped }} already uploaded → will skip)</span>{% endif %}
+      {% endif %}
+    </div>
+    <div class="cb-actions">
+      {% if slots.actions %}{% include slots.actions %}{% endif %}
+      {% if has_download or caps.download %}<a href="{% url u_download token %}" class="btn-ghost">⬇ Download SO Workbook</a>{% endif %}
+      {% if locked %}
+        {% if run_id %}<a href="{% url 'b2b_run_detail' run_id=run_id %}" class="btn-ghost">View run →</a>{% endif %}
+      {% else %}
+        <button class="btn-discard" type="submit" form="discard-form" formnovalidate>Discard</button>
+        {% if r.headers %}<button class="btn-primary" id="lockBtn" type="button">🔒 Confirm &amp; Record</button>{% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab on" data-tab="lines">Line items <span class="tcount">{{ r.lines|length }}</span></button>
+    <button class="tab" data-tab="orders">Orders <span class="tcount">{{ r.headers|length }}</span></button>
+    {% if r.affected or r.file_issues %}<button class="tab" data-tab="affected">Affected <span class="tcount">{{ s.affected|default:0 }}</span></button>{% endif %}
+    <button class="tab" data-tab="skipped">Already uploaded <span class="tcount">{{ r.skipped|length }}</span></button>
+    {% if slots.tabs %}{% include slots.tabs %}{% endif %}
+  </div>
+
+  <!-- Line items -->
+  <div class="tabpane on" data-pane="lines">
+    <div class="scroll">
+    <table class="grid">
+      <thead><tr><th>PO</th><th>Item No</th><th>EAN</th><th>Description</th><th class="r">Qty</th>
+        <th class="r">Unit price</th><th class="r">MRP</th>
+        {% if caps.vendor_cols %}<th class="r">Their MRP</th><th class="r">Diff</th>{% endif %}
+        <th>Status</th><th>Exception</th>
+        {% if caps.exclude or caps.override or caps.include %}<th>Decision</th>{% endif %}</tr></thead>
+      <tbody>
+        {% for l in r.lines %}
+        <tr class="{% if l.decision.action == 'EXCLUDE' %}rexcl{% elif l.status != 'OK' %}rmis{% endif %}">
+          <td class="mono">{{ l.po }}</td><td class="mono">{{ l.item_no|default:'—' }}</td><td class="mono">{{ l.ean }}</td>
+          <td class="desc" title="{{ l.description }}">{{ l.description }}</td><td class="r">{{ l.qty }}</td>
+          <td class="r">{{ l.unit_price|default_if_none:'—' }}</td><td class="r">{{ l.our_mrp|default_if_none:'—' }}</td>
+          {% if caps.vendor_cols %}<td class="r">{{ l.vendor_mrp|default_if_none:'—' }}</td><td class="r {% if l.diff %}diff{% endif %}">{{ l.diff|default_if_none:'—' }}</td>{% endif %}
+          <td><span class="st {{ l.status|lower }}">{{ l.status|default:'OK' }}</span></td>
+          <td>{% if l.exception_label %}<span class="exc">{{ l.exception_label }}</span>{% endif %}</td>
+          {% if caps.exclude or caps.override or caps.include %}
+          <td>
+            {% if locked %}
+              {% if l.decision.action %}<span class="dec dec-excl">{{ l.decision.action|title }}</span>{% else %}<span class="dec dec-ok">ready</span>{% endif %}
+            {% else %}
+              <select class="act-sel" data-key="{{ l.key }}">
+                <option value="">keep</option>
+                {% if caps.include %}<option value="INCLUDE" {% if l.decision.action == 'INCLUDE' %}selected{% endif %}>Include</option>{% endif %}
+                {% if caps.override %}<option value="OVERRIDE" {% if l.decision.action == 'OVERRIDE' %}selected{% endif %}>Override</option>{% endif %}
+                {% if caps.exclude %}<option value="EXCLUDE" {% if l.decision.action == 'EXCLUDE' %}selected{% endif %}>Exclude</option>{% endif %}
+              </select>
+              <span class="dec-saved" {% if not l.decision.action %}hidden{% endif %} title="saved">✓</span>
+            {% endif %}
+          </td>
+          {% endif %}
+        </tr>
+        {% empty %}<tr><td colspan="12" class="muted">No line items.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <!-- Orders -->
+  <div class="tabpane" data-pane="orders" style="display:none;">
+    <table class="grid">
+      <thead><tr><th>PO</th><th>Location</th><th>Type</th><th class="r">Items</th><th class="r">Qty</th><th class="r">Value</th></tr></thead>
+      <tbody>
+        {% for h in r.headers %}
+        <tr><td class="mono">{{ h.po }}</td><td class="loc" title="{{ h.location }}">{{ h.location|default:'—' }}</td>
+          <td><span class="pill {{ h.order_type|lower }}">{{ h.order_type }}</span></td>
+          <td class="r">{{ h.items }}</td><td class="r">{{ h.qty }}</td><td class="r">{{ h.order_value|inr_short }}</td></tr>
+        {% empty %}<tr><td colspan="6" class="muted">No orders.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if r.affected or r.file_issues %}
+  <!-- Affected — line-level issues + channel file/PO-level exceptions -->
+  <div class="tabpane" data-pane="affected" style="display:none;">
+    {% if r.file_issues %}
+    <div class="aff-exc">
+      <div class="aff-exc-h">⚠ <b>{{ r.file_issues|length }} file / PO exception(s)</b> — couldn't be read the standard way (skipped or rescued). Fix the source file &amp; re-upload, or record the rest.</div>
+      <div class="scroll">
+      <table class="grid">
+        <thead><tr><th>File</th><th>Problem</th><th>Detail</th></tr></thead>
+        <tbody>
+          {% for f in r.file_issues %}
+          <tr class="{% if f.kind == 'error' %}rmis{% endif %}">
+            <td class="mono">{{ f.file }}</td>
+            <td><span class="st {% if f.kind == 'error' %}not_in_master{% else %}mismatch{% endif %}">{{ f.problem }}</span></td>
+            <td class="desc" title="{{ f.detail }}">{{ f.detail }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+    {% endif %}
+    {% if r.affected %}
+    <div class="scroll">
+    <table class="grid">
+      <thead><tr><th>PO</th><th>Item No</th><th>EAN</th><th>Description</th><th class="r">Qty</th><th>Status</th>
+        {% if not locked %}<th>Decision</th>{% endif %}</tr></thead>
+      <tbody>
+        {% for l in r.affected %}
+        <tr class="rmis">
+          <td class="mono">{{ l.po }}</td><td class="mono">{{ l.item_no|default:'—' }}</td><td class="mono">{{ l.ean }}</td>
+          <td class="desc" title="{{ l.description }}">{{ l.description }}</td><td class="r">{{ l.qty }}</td>
+          <td><span class="st {{ l.status|lower }}">{{ l.status }}</span></td>
+          {% if not locked %}<td>
+            <select class="act-sel" data-key="{{ l.key }}">
+              <option value="">keep</option>
+              {% if caps.exclude %}<option value="EXCLUDE" {% if l.decision.action == 'EXCLUDE' %}selected{% endif %}>Exclude</option>{% endif %}
+            </select>
+            <span class="dec-saved" {% if not l.decision.action %}hidden{% endif %}>✓</span>
+          </td>{% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <!-- Skipped -->
+  <div class="tabpane" data-pane="skipped" style="display:none;">
+    <table class="grid">
+      <thead><tr><th>PO</th><th>Location</th><th class="r">Qty</th><th class="r">Value</th></tr></thead>
+      <tbody>
+        {% for sk in r.skipped %}
+        <tr><td class="mono">{{ sk.po }}</td><td class="loc" title="{{ sk.location }}">{{ sk.location|default:'—' }}</td>
+          <td class="r">{{ sk.qty }}</td><td class="r">{{ sk.order_value|inr_short }}</td></tr>
+        {% empty %}<tr><td colspan="4" class="muted">Nothing skipped — all POs are new.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {# ── channel-specific extra tab pane(s) ── #}
+  {% if slots.panes %}{% include slots.panes %}{% endif %}
+  </form>
+  {% endwith %}
+</div>
+
+<style>
+  .dec{font-size:11.5px;font-weight:700;border-radius:6px;padding:2px 8px;}
+  .dec-excl{color:#b91c1c;background:#fee2e2;} .dec-ok{color:var(--muted);}
+  .act-sel{padding:5px 8px;border:1px solid var(--border);border-radius:7px;font-size:12.5px;background:#fff;color:var(--text);}
+  .act-sel:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+  .dec-saved{color:#0a9d6e;font-weight:800;margin-left:5px;}
+  tr.rexcl{opacity:.5;} .exc{font-size:11px;font-weight:700;color:#7a4a06;background:#fff3e0;border-radius:5px;padding:1px 7px;}
+  .aff-exc{margin:0 0 16px;border:1px solid #ffd9a0;border-left:4px solid #f59e0b;border-radius:11px;background:#fff8ed;padding:12px 14px;}
+  .aff-exc-h{font-size:13px;color:#7a4a06;margin-bottom:9px;line-height:1.5;}
+</style>
+
+<div id="lockOverlay" class="lock-overlay" aria-hidden="true">
+  <div class="lo-card" role="status" aria-live="polite">
+    <div class="lo-lock"><span class="lo-shackle"></span><span class="lo-body"><i class="lo-key"></i></span></div>
+    <div class="lo-title">Recording…</div>
+    <div class="lo-track"><div class="lo-fill" id="loFill"></div></div>
+    <div class="lo-err" id="loErr"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var tabs = document.querySelectorAll('.tab');
+  tabs.forEach(function (t) { t.addEventListener('click', function () {
+    tabs.forEach(function (x) { x.classList.toggle('on', x === t); });
+    var name = t.getAttribute('data-tab');
+    document.querySelectorAll('.tabpane').forEach(function (p) {
+      p.style.display = (p.getAttribute('data-pane') === name) ? '' : 'none'; });
+  }); });
+
+  var csrfEl = document.querySelector('#confirm-form [name=csrfmiddlewaretoken]');
+  var csrf = csrfEl ? csrfEl.value : '';
+  var decUrl = "{% url u_decision token %}";
+  document.querySelectorAll('.act-sel').forEach(function (sel) {
+    sel.addEventListener('change', function () {
+      var tr = sel.closest('tr');
+      var ocp = tr ? tr.querySelector('.act-ocp') : null;
+      var tick = tr ? tr.querySelector('.dec-saved') : null;
+      var body = new URLSearchParams();
+      body.set('key', sel.getAttribute('data-key') || '');
+      body.set('action', sel.value || '');
+      body.set('override_cp', ocp ? ocp.value : '');
+      body.set('remark', '');
+      fetch(decUrl, { method: 'POST', credentials: 'same-origin',
+        headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest',
+                   'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString() })
+        .then(function (r) { return r.json(); })
+        .then(function (j) { if (j.ok && tick) tick.hidden = !sel.value; })
+        .catch(function () {});
+      if (tr) tr.classList.toggle('rexcl', sel.value === 'EXCLUDE');
+    });
+  });
+
+  // Confirm & Record — AJAX with a small progress overlay.
+  var form = document.getElementById('confirm-form'), lockBtn = document.getElementById('lockBtn');
+
+  // ── Nothing records until you click Confirm & Record ──────────────────
+  // The confirm-form wraps the whole page, so a stray Enter / implicit submit
+  // would natively POST /confirm/ and record without the button. Block it:
+  if (form) {
+    form.querySelectorAll('input, select, textarea').forEach(function (el) {
+      el.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); el.blur(); }
+      });
+    });
+    form.addEventListener('submit', function (e) {
+      // Confirm is AJAX-only (button click → fetch). Allow ONLY intentional
+      // formaction buttons (e.g. a future D365 dump); block everything else
+      // (implicit submit, the Confirm button itself).
+      var b = e.submitter;
+      if (!b || !b.hasAttribute('formaction')) { e.preventDefault(); }
+    });
+  }
+  var ov = document.getElementById('lockOverlay'), fill = document.getElementById('loFill'), errBox = document.getElementById('loErr');
+  function setFill(p){ if (fill) fill.style.width = p + '%'; }
+  if (lockBtn && form && window.fetch) {
+    lockBtn.addEventListener('click', function () {
+      if (lockBtn.disabled) return; lockBtn.disabled = true;
+      ov.classList.add('show'); document.body.classList.add('lo-open'); errBox.textContent = '';
+      setFill(12); var grow = setInterval(function(){ var w=(parseFloat(fill.style.width)||12); if(w<88) setFill(w+7); }, 220);
+      var fd = new FormData(form); fd.append('confirm', '1');   // explicit intent
+      fetch(form.action, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: fd, credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          clearInterval(grow); setFill(100);
+          if (!j.ok) { errBox.textContent = j.error || 'Nothing recorded.';
+            setTimeout(function(){ ov.classList.remove('show'); document.body.classList.remove('lo-open'); lockBtn.disabled = false; }, 2200); return; }
+          setTimeout(function () { window.location = j.review_url || window.location.href; }, 650);
+        }).catch(function () { clearInterval(grow); errBox.textContent = 'Network error — nothing recorded.';
+          setTimeout(function(){ ov.classList.remove('show'); document.body.classList.remove('lo-open'); lockBtn.disabled = false; }, 2200); });
+    });
+  }
+})();
+</script>
+{% endblock %}

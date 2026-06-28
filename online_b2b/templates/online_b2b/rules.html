@@ -29,6 +29,13 @@
   .fmt-grid > div{ display:flex; flex-direction:column; gap:2px; min-width:0; }
   .fmt-k{ font-size:9.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
   .fmt-v{ font-size:12.5px; color:var(--text); font-family:ui-monospace,Menlo,Consolas,monospace; overflow:hidden; text-overflow:ellipsis; }
+  .fmt-foot{ margin-top:11px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:flex-end; }
+  .fmt-tpl{ display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:var(--accent);
+    text-decoration:none; padding:5px 11px; border-radius:8px; border:1px solid var(--accent-soft); background:var(--accent-soft);
+    transition:transform .18s ease, box-shadow .18s ease, gap .18s ease; }
+  .fmt-tpl:hover{ transform:translateY(-1px); box-shadow:0 4px 14px -6px var(--accent); gap:9px; }
+  .fmt-tpl .arw{ transition:transform .18s ease; }
+  .fmt-tpl:hover .arw{ transform:translateX(3px); }
 </style>
 {% endblock %}
 
@@ -120,6 +127,11 @@
         <div><span class="fmt-k">Vendor cost</span><span class="fmt-v">{{ f.cost_by }}</span></div>
         <div><span class="fmt-k">Vendor MRP</span><span class="fmt-v">{{ f.mrp_by }}</span></div>
       </div>
+      {% if f.name in template_names %}
+      <div class="fmt-foot">
+        <a class="fmt-tpl" href="{% url 'b2b_template' f.name %}">See full template <span class="arw">→</span></a>
+      </div>
+      {% endif %}
     </div>
     {% empty %}<p class="muted">Engine config not available on this host.</p>{% endfor %}
     <p class="rc-foot">Columns are read by name (case/spacing-tolerant). “(from the file)” = the engine derives it from the PDF/filename, not a named column.</p>

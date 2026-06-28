@@ -43,6 +43,68 @@
   </div>
   {% endif %}
 
+  <!-- ── What will actually change (not all items update) ── -->
+  <div class="im-card reveal" style="margin-top:16px;">
+    <h2>What will change</h2>
+    {% if not diff.any %}
+      <p class="im-nochange">✓ <b>Nothing to update</b> — every item already matches the live master (same MRP). Confirming will simply re-stamp the existing {{ current.count }} items.</p>
+    {% else %}
+      <div class="chg-chips">
+        <span class="chg-chip c-new">🆕 {{ diff.counts.new }} new</span>
+        <span class="chg-chip c-mrp">✎ {{ diff.counts.mrp_changed }} MRP changed</span>
+        <span class="chg-chip c-rem">⊘ {{ diff.counts.removed }} removed</span>
+        <span class="chg-chip c-same">= {{ diff.counts.unchanged }} unchanged</span>
+      </div>
+
+      {% if diff.mrp_changed %}
+      <h3 class="chg-h">✎ MRP changes <span class="count">{{ diff.counts.mrp_changed }}</span></h3>
+      <div class="scroll"><table class="grid compact">
+        <thead><tr><th>Item No</th><th>Description</th><th class="r">Old MRP</th><th></th><th class="r">New MRP</th></tr></thead>
+        <tbody>{% for r in diff.mrp_changed %}
+          <tr><td class="mono">{{ r.item_no }}</td><td class="desc" title="{{ r.description }}">{{ r.description }}</td>
+            <td class="r old">{{ r.old_mrp|default_if_none:'—' }}</td><td class="r">→</td>
+            <td class="r new"><b>{{ r.new_mrp|default_if_none:'—' }}</b></td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+      {% endif %}
+
+      {% if diff.new %}
+      <h3 class="chg-h">🆕 New items <span class="count">{{ diff.counts.new }}</span></h3>
+      <div class="scroll"><table class="grid compact">
+        <thead><tr><th>Item No</th><th>Description</th><th class="r">MRP</th></tr></thead>
+        <tbody>{% for r in diff.new %}
+          <tr><td class="mono">{{ r.item_no }}</td><td class="desc" title="{{ r.description }}">{{ r.description }}</td>
+            <td class="r new"><b>{{ r.new_mrp|default_if_none:'—' }}</b></td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+      {% endif %}
+
+      {% if diff.removed %}
+      <h3 class="chg-h">⊘ Removed <span class="count">{{ diff.counts.removed }}</span> <span class="muted" style="font-weight:400;">— in the live master, not in this file (manual rows are kept)</span></h3>
+      <div class="scroll"><table class="grid compact">
+        <thead><tr><th>Item No</th><th>Description</th><th class="r">MRP</th></tr></thead>
+        <tbody>{% for r in diff.removed %}
+          <tr class="rexcl"><td class="mono">{{ r.item_no }}</td><td class="desc" title="{{ r.description }}">{{ r.description }}</td>
+            <td class="r">{{ r.old_mrp|default_if_none:'—' }}</td></tr>
+        {% endfor %}</tbody>
+      </table></div>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  <style>
+    .im-nochange{font-size:13.5px;color:#0a7c4a;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 14px;margin:0;}
+    .chg-chips{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 6px;}
+    .chg-chip{font-size:12px;font-weight:700;border-radius:20px;padding:4px 11px;border:1px solid var(--border);}
+    .c-new{color:#1b7a3d;background:#e6f4ea;border-color:#a7e0bd;}
+    .c-mrp{color:#92600a;background:#fff3e0;border-color:#ffcc80;}
+    .c-rem{color:#b91c1c;background:#fee2e2;border-color:#fca5a5;}
+    .c-same{color:var(--muted);background:var(--surface-2);}
+    .chg-h{font-size:13px;margin:16px 0 8px;display:flex;align-items:center;gap:8px;}
+    .chg-h .count{font-size:11px;font-weight:800;background:var(--accent-soft);color:var(--accent);border-radius:20px;padding:1px 9px;}
+    td.old{color:var(--muted);text-decoration:line-through;} td.new{color:#0a7c4a;}
+  </style>
+
   <div class="im-card reveal" style="margin-top:16px;">
     <h2>GST spread</h2>
     <div class="im-gst">
