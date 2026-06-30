@@ -6,17 +6,25 @@ never CREATE/ALTER/DROP them. Admin CRUD only issues INSERT/UPDATE/DELETE on
 rows, never DDL.
 """
 
-ORDER_DB = 'orders'
+ORDER_DB = "orders"
 # model_name (lowercase) → these live in MySQL renee_orders (order tables +
 # the DB-sourced master data that retired the bundled Excels).
-ORDER_MODELS = {'run', 'orderheader', 'orderline',
-                'itemmaster', 'channelskumap', 'shiptomapping',
-                'itemexception'}
+ORDER_MODELS = {
+    "run",
+    "orderheader",
+    "orderline",
+    "itemmaster",
+    "channelskumap",
+    "shiptomapping",
+    "itemexception",
+}
 
 
 def _is_order(model) -> bool:
-    return (getattr(model._meta, 'app_label', '') == 'online_b2b'
-            and model._meta.model_name in ORDER_MODELS)
+    return (
+        getattr(model._meta, "app_label", "") == "online_b2b"
+        and model._meta.model_name in ORDER_MODELS
+    )
 
 
 class OrdersRouter:

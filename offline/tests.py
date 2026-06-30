@@ -1,14 +1,14 @@
 from django.test import TestCase, Client
 from django.urls import reverse
-from .utils import SOFormatter, ExcelParser, OrderRow, DumpExporter, GTMassAutomation
+from .utils import SONumberFormatter, ExcelParser, OrderRow, DumpExporter, GTMassAutomation, ProcessResult
 import pandas as pd
 import io
 
 class UtilsTestCase(TestCase):
     def test_so_formatter(self):
-        self.assertEqual(SOFormatter.from_filename("SOGTM5985.xlsx"), "SO/GTM/5985")
-        self.assertEqual(SOFormatter.from_filename("SOGTM5985"), "SO/GTM/5985")
-        self.assertIsNone(SOFormatter.from_filename("NoNumbersHere.xlsx"))
+        self.assertEqual(SONumberFormatter.from_filename("SOGTM5985.xlsx"), "SO/GTM/5985")
+        self.assertEqual(SONumberFormatter.from_filename("SOGTM5985"), "SO/GTM/5985")
+        self.assertIsNone(SONumberFormatter.from_filename("NoNumbersHere.xlsx"))
 
     def test_clean_qty(self):
         self.assertEqual(ExcelParser._clean_qty("1,000"), 1000)
@@ -31,7 +31,7 @@ class UtilsTestCase(TestCase):
         output.seek(0)
 
         parser = ExcelParser()
-        rows = parser.parse(output, "SOGTM5985.xlsx")
+        rows, warnings = parser.parse(output, "SOGTM5985.xlsx")
 
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].item_no, "200453")
@@ -40,16 +40,33 @@ class UtilsTestCase(TestCase):
 
     def test_dump_exporter(self):
         exporter = DumpExporter()
-        rows = [OrderRow(so_number="SO/GTM/5985", item_no="200453", qty=1000)]
-        output = exporter.export_to_memory(rows)
+        rows = [
+            OrderRow(
+                so_number="SO/GTM/5985",
+                item_no="200453",
+                ean="890123456789",
+                category="Cosmetics",
+                description="Sample Product",
+                qty=1000,
+                tester_qty=0,
+                distributor="Sample Dist",
+                city="Sample City",
+                state="Sample State",
+                location="Sample Location",
+                location_code="SL",
+                source_file="SOGTM5985.xlsx"
+            )
+        ]
+        result = ProcessResult(rows=rows, attempted_files=["SOGTM5985.xlsx"])
+        output = exporter.export_to_memory(result)
         self.assertIsNotNone(output)
 
-        # Read it back
-        df = pd.read_excel(output)
+        # Read it back (the 3rd sheet 'Sales Lines' has the flat data)
+        df = pd.read_excel(output, sheet_name="Sales Lines")
         self.assertEqual(len(df), 1)
         self.assertEqual(df.iloc[0]["SO Number"], "SO/GTM/5985")
-        self.assertEqual(str(df.iloc[0]["Item No"]), "200453")
-        self.assertEqual(df.iloc[0]["Qty"], 1000)
+        self.assertEqual(str(df.iloc[0]["BC Code"]), "200453")
+        self.assertEqual(df.iloc[0]["Order Qty"], 1000)
 
 from django.contrib.auth.models import User
 

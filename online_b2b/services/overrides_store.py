@@ -30,28 +30,48 @@ import pandas as pd
 
 from .order_db import _conn
 
-_TABLE = 'item_exceptions'
-KIND_EXC = 'exception'      # Master Exceptions row (remap / price / vendor_cp)
-KIND_DEAL = 'swiggy_deal'   # Swiggy Deal SKUs row
+_TABLE = "item_exceptions"
+KIND_EXC = "exception"  # Master Exceptions row (remap / price / vendor_cp)
+KIND_DEAL = "swiggy_deal"  # Swiggy Deal SKUs row
 
 # Unified columns. source_code = 'Source Code' (exception) OR 'EAN' (swiggy deal);
 # override_mrp = 'Override MRP' OR 'Correct MRP'; note = 'Note' OR 'Name'.
-_COLS = ['kind', 'source_code', 'maps_to', 'override_mrp', 'override_margin',
-         'use_vendor_cp', 'marketplace', 'note', 'item_id', 'correct_gst',
-         'cost_with_gst', 'cost_after_gst', 'source', 'updated_at']
+_COLS = [
+    "kind",
+    "source_code",
+    "maps_to",
+    "override_mrp",
+    "override_margin",
+    "use_vendor_cp",
+    "marketplace",
+    "note",
+    "item_id",
+    "correct_gst",
+    "cost_with_gst",
+    "cost_after_gst",
+    "source",
+    "updated_at",
+]
 
 # Excel-header ↔ DB-column maps, per sheet, used by both seed (read) and
 # build_overlay_workbook (regenerate) → one definition, no drift.
 _EXC_MAP = [
-    ('source_code', 'Source Code'), ('maps_to', 'Maps To'),
-    ('override_mrp', 'Override MRP'), ('override_margin', 'Override Margin %'),
-    ('marketplace', 'Marketplace'), ('note', 'Note'),
-    ('use_vendor_cp', 'Use Vendor CP'),
+    ("source_code", "Source Code"),
+    ("maps_to", "Maps To"),
+    ("override_mrp", "Override MRP"),
+    ("override_margin", "Override Margin %"),
+    ("marketplace", "Marketplace"),
+    ("note", "Note"),
+    ("use_vendor_cp", "Use Vendor CP"),
 ]
 _DEAL_MAP = [
-    ('item_id', 'Iteam ID'), ('source_code', 'EAN'), ('note', 'Name'),
-    ('override_mrp', 'Correct MRP'), ('correct_gst', 'Correct GST'),
-    ('cost_with_gst', 'Cost With GST'), ('cost_after_gst', 'Cost after GST'),
+    ("item_id", "Iteam ID"),
+    ("source_code", "EAN"),
+    ("note", "Name"),
+    ("override_mrp", "Correct MRP"),
+    ("correct_gst", "Correct GST"),
+    ("cost_with_gst", "Cost With GST"),
+    ("cost_after_gst", "Cost after GST"),
 ]
 
 _MYSQL = """
@@ -81,20 +101,23 @@ CREATE TABLE IF NOT EXISTS item_exceptions (
 
 def _s(x) -> str:
     if x is None or (isinstance(x, float) and pd.isna(x)):
-        return ''
+        return ""
     s = str(x).strip()
-    return '' if s.lower() == 'nan' else s
+    return "" if s.lower() == "nan" else s
 
 
 def ensure_tables() -> None:
     with _conn() as (cur, d):
-        cur.execute(_MYSQL if d['kind'] == 'mysql' else _SQLITE)
+        cur.execute(_MYSQL if d["kind"] == "mysql" else _SQLITE)
         # Upgrade a pre-existing (separate-tables era) item_exceptions to the
         # unified schema — add the columns it didn't have. Idempotent.
         for col, ddl in (
-                ('kind', "VARCHAR(16) DEFAULT 'exception'"),
-                ('item_id', 'VARCHAR(40)'), ('correct_gst', 'VARCHAR(40)'),
-                ('cost_with_gst', 'VARCHAR(40)'), ('cost_after_gst', 'VARCHAR(40)')):
+            ("kind", "VARCHAR(16) DEFAULT 'exception'"),
+            ("item_id", "VARCHAR(40)"),
+            ("correct_gst", "VARCHAR(40)"),
+            ("cost_with_gst", "VARCHAR(40)"),
+            ("cost_after_gst", "VARCHAR(40)"),
+        ):
             try:
                 cur.execute(f"ALTER TABLE {_TABLE} ADD COLUMN {col} {ddl}")
             except Exception:  # noqa: BLE001 — column already exists
@@ -113,16 +136,16 @@ def _read_sheet(xlsx_path, sheet, colmap, kind):
         df = pd.read_excel(xlsx_path, sheet_name=sheet, header=0, dtype=str)
     except Exception:  # noqa: BLE001
         return []
-    norm = {''.join(str(c).split()).lower(): c for c in df.columns}
+    norm = {"".join(str(c).split()).lower(): c for c in df.columns}
     rows = []
     for _, r in df.iterrows():
-        row = {c: '' for c in _COLS if c not in ('source', 'updated_at')}
-        row['kind'] = kind
+        row = {c: "" for c in _COLS if c not in ("source", "updated_at")}
+        row["kind"] = kind
         for dbcol, header in colmap:
-            src = norm.get(''.join(header.split()).lower())
+            src = norm.get("".join(header.split()).lower())
             if src is not None:
                 row[dbcol] = _s(r.get(src))
-        if any(v for k, v in row.items() if k != 'kind'):
+        if any(v for k, v in row.items() if k != "kind"):
             rows.append(row)
     return rows
 
@@ -131,14 +154,16 @@ def replace_all(rows) -> int:
     """Replace ALL Excel-sourced rows (both kinds); manual rows are kept."""
     ensure_tables()
     now = _dt.datetime.now()
-    payload = [tuple(r.get(c, '') for c in _COLS[:-2]) + ('excel', now) for r in rows]
+    payload = [tuple(r.get(c, "") for c in _COLS[:-2]) + ("excel", now) for r in rows]
     with _conn() as (cur, d):
-        ph = d['ph']
+        ph = d["ph"]
         cur.execute(f"DELETE FROM {_TABLE} WHERE COALESCE(source,'excel') <> 'manual'")
         if payload:
             cur.executemany(
                 f"INSERT INTO {_TABLE} ({', '.join(_COLS)}) "
-                f"VALUES ({', '.join([ph] * len(_COLS))})", payload)
+                f"VALUES ({', '.join([ph] * len(_COLS))})",
+                payload,
+            )
         cur.connection.commit()
     return len(payload)
 
@@ -149,24 +174,25 @@ def seed_from_bundled() -> dict:
         from pathlib import Path
 
         from .engine_bridge import _engine_imports
-        master = _engine_imports()['get_bundled_master_path']()
-        exc_path = Path(master).parent / 'Master Exceptions.xlsx'
+
+        master = _engine_imports()["get_bundled_master_path"]()
+        exc_path = Path(master).parent / "Master Exceptions.xlsx"
     except Exception as e:  # noqa: BLE001
-        return {'ok': False, 'error': f"Bundled sources unavailable: {e}"}
+        return {"ok": False, "error": f"Bundled sources unavailable: {e}"}
     rows = []
     if exc_path.exists():
         rows += _read_sheet(str(exc_path), 0, _EXC_MAP, KIND_EXC)
-    rows += _read_sheet(str(master), 'Swiggy Deal SKUs', _DEAL_MAP, KIND_DEAL)
+    rows += _read_sheet(str(master), "Swiggy Deal SKUs", _DEAL_MAP, KIND_DEAL)
     n = replace_all(rows)
-    exc = sum(1 for r in rows if r['kind'] == KIND_EXC)
-    return {'ok': True, 'rows': n, 'exceptions': exc, 'swiggy_deals': n - exc}
+    exc = sum(1 for r in rows if r["kind"] == KIND_EXC)
+    return {"ok": True, "rows": n, "exceptions": exc, "swiggy_deals": n - exc}
 
 
-def _fetch(where=''):
+def _fetch(where=""):
     try:
         with _conn() as (cur, d):
             cur.execute(f"SELECT {', '.join(_COLS[:-2])}, source FROM {_TABLE} {where}")
-            cols = _COLS[:-2] + ['source']
+            cols = _COLS[:-2] + ["source"]
             return [dict(zip(cols, r)) for r in cur.fetchall()]
     except Exception:  # noqa: BLE001
         return []
@@ -183,9 +209,11 @@ def table_count() -> int:
 
 def table_counts() -> dict:
     rows = _fetch()
-    return {'exceptions': sum(1 for r in rows if r.get('kind') == KIND_EXC),
-            'swiggy_deals': sum(1 for r in rows if r.get('kind') == KIND_DEAL),
-            'total': len(rows)}
+    return {
+        "exceptions": sum(1 for r in rows if r.get("kind") == KIND_EXC),
+        "swiggy_deals": sum(1 for r in rows if r.get("kind") == KIND_DEAL),
+        "total": len(rows),
+    }
 
 
 def build_overlay_workbook() -> str | None:
@@ -195,20 +223,20 @@ def build_overlay_workbook() -> str | None:
     rows = _fetch()
     if not rows:
         return None
-    exc = [r for r in rows if r.get('kind') == KIND_EXC]
-    deals = [r for r in rows if r.get('kind') == KIND_DEAL]
+    exc = [r for r in rows if r.get("kind") == KIND_EXC]
+    deals = [r for r in rows if r.get("kind") == KIND_DEAL]
     exc_df = pd.DataFrame(
-        [{h: r.get(c, '') for c, h in _EXC_MAP} for r in exc],
-        columns=[h for _, h in _EXC_MAP])
+        [{h: r.get(c, "") for c, h in _EXC_MAP} for r in exc], columns=[h for _, h in _EXC_MAP]
+    )
     deal_df = pd.DataFrame(
-        [{h: r.get(c, '') for c, h in _DEAL_MAP} for r in deals],
-        columns=[h for _, h in _DEAL_MAP])
-    fd, path = _tmp.mkstemp(suffix='.xlsx', prefix='ovl_')
+        [{h: r.get(c, "") for c, h in _DEAL_MAP} for r in deals], columns=[h for _, h in _DEAL_MAP]
+    )
+    fd, path = _tmp.mkstemp(suffix=".xlsx", prefix="ovl_")
     _os.close(fd)
     try:
-        with pd.ExcelWriter(path, engine='openpyxl') as xw:
-            exc_df.to_excel(xw, sheet_name='Exceptions', index=False)   # sheet 0
-            deal_df.to_excel(xw, sheet_name='Swiggy Deal SKUs', index=False)
+        with pd.ExcelWriter(path, engine="openpyxl") as xw:
+            exc_df.to_excel(xw, sheet_name="Exceptions", index=False)  # sheet 0
+            deal_df.to_excel(xw, sheet_name="Swiggy Deal SKUs", index=False)
     except Exception:  # noqa: BLE001
         try:
             _os.remove(path)
@@ -225,9 +253,9 @@ def status() -> dict:
         with _conn() as (cur, d):
             cur.execute(f"SELECT MAX(updated_at) FROM {_TABLE}")
             last = cur.fetchone()[0]
-        return {'ok': True, 'last_updated': last, **c}
+        return {"ok": True, "last_updated": last, **c}
     except Exception as e:  # noqa: BLE001
-        return {'ok': False, 'error': f"{type(e).__name__}: {e}"}
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
 def list_all() -> list:

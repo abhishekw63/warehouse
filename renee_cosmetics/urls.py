@@ -22,9 +22,9 @@ from django.urls import include, path
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path('', include('core.urls')),
-    path('offline/', include('offline.urls')),
-    path('b2b/', include('online_b2b.urls')),
+    path("", include("core.urls")),
+    path("offline/", include("offline.urls")),
+    path("b2b/", include("online_b2b.urls")),
 ]
 
 if settings.DEBUG:

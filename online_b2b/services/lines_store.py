@@ -27,13 +27,36 @@ from .order_db import _conn
 # ``order_lines_full``. ``received_ean`` (wrong EAN as received) lives in the
 # validation table — order_lines never holds wrong data.
 _FACT_COLS = [
-    'run_id', 'run_ts', 'marketplace', 'po', 'location', 'item_no', 'ean',
-    'description', 'qty', 'order_type', 'gst_code', 'unit_price', 'output_file',
+    "run_id",
+    "run_ts",
+    "marketplace",
+    "po",
+    "location",
+    "item_no",
+    "ean",
+    "description",
+    "qty",
+    "order_type",
+    "gst_code",
+    "unit_price",
+    "output_file",
 ]
 _VAL_COLS = [
-    'our_mrp', 'vendor_mrp', 'our_landing', 'vendor_landing', 'our_cp',
-    'vendor_cp', 'diff', 'margin_pct', 'status', 'exception_label',
-    'received_ean', 'action', 'override_cp', 'remark', 'decided_at',
+    "our_mrp",
+    "vendor_mrp",
+    "our_landing",
+    "vendor_landing",
+    "our_cp",
+    "vendor_cp",
+    "diff",
+    "margin_pct",
+    "status",
+    "exception_label",
+    "received_ean",
+    "action",
+    "override_cp",
+    "remark",
+    "decided_at",
 ]
 # Back-compat: the full logical column set of a line (facts + validation).
 COLS = _FACT_COLS + _VAL_COLS
@@ -124,11 +147,13 @@ def ensure_table() -> None:
     """Create the facts table + validation table + join view (idempotent).
     Web owns all three; the engine schema is untouched."""
     with _conn() as (cur, d):
-        mysql = d['kind'] == 'mysql'
+        mysql = d["kind"] == "mysql"
         cur.execute(_MYSQL_FACTS if mysql else _SQLITE_FACTS)
         cur.execute(_MYSQL_VAL if mysql else _SQLITE_VAL)
-        view_sql = (f"SELECT {_VIEW_SELECT} FROM order_lines l "
-                    "LEFT JOIN order_line_validation v ON v.line_id = l.line_id")
+        view_sql = (
+            f"SELECT {_VIEW_SELECT} FROM order_lines l "
+            "LEFT JOIN order_line_validation v ON v.line_id = l.line_id"
+        )
         if mysql:
             cur.execute(f"CREATE OR REPLACE VIEW order_lines_full AS {view_sql}")
         else:
@@ -146,8 +171,8 @@ def ensure_cascade_trigger() -> dict:
     cleanup). It only deletes from the **web-owned** ``order_lines`` table — the
     engine's insert behaviour is untouched. MySQL only (no-op elsewhere)."""
     with _conn() as (cur, d):
-        if d['kind'] != 'mysql':
-            return {'ok': True, 'skipped': 'not-mysql'}
+        if d["kind"] != "mysql":
+            return {"ok": True, "skipped": "not-mysql"}
         try:
             cur.execute("DROP TRIGGER IF EXISTS trg_order_headers_cascade_lines")
             cur.execute(
@@ -159,11 +184,12 @@ def ensure_cascade_trigger() -> dict:
                  WHERE run_id      <=> OLD.run_id
                    AND marketplace <=> OLD.marketplace
                    AND po          <=> OLD.po
-                """)
+                """
+            )
             cur.connection.commit()
-            return {'ok': True}
+            return {"ok": True}
         except Exception as e:  # noqa: BLE001 — needs TRIGGER privilege
-            return {'ok': False, 'error': f"{type(e).__name__}: {e}"}
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
 def ensure_run_cascade_trigger() -> dict:
@@ -176,8 +202,8 @@ def ensure_run_cascade_trigger() -> dict:
     ``AFTER DELETE`` trigger on ``runs`` → fires however the run is removed (UI,
     raw SQL, admin). MySQL only (no-op elsewhere). Needs TRIGGER privilege."""
     with _conn() as (cur, d):
-        if d['kind'] != 'mysql':
-            return {'ok': True, 'skipped': 'not-mysql'}
+        if d["kind"] != "mysql":
+            return {"ok": True, "skipped": "not-mysql"}
         try:
             cur.execute("DROP TRIGGER IF EXISTS trg_runs_cascade_headers")
             cur.execute(
@@ -186,11 +212,12 @@ def ensure_run_cascade_trigger() -> dict:
                 AFTER DELETE ON runs
                 FOR EACH ROW
                 DELETE FROM order_headers WHERE run_id <=> OLD.run_id
-                """)
+                """
+            )
             cur.connection.commit()
-            return {'ok': True}
+            return {"ok": True}
         except Exception as e:  # noqa: BLE001 — needs TRIGGER privilege
-            return {'ok': False, 'error': f"{type(e).__name__}: {e}"}
+            return {"ok": False, "error": f"{type(e).__name__}: {e}"}
 
 
 def ean_alias_map() -> dict:
@@ -202,9 +229,9 @@ def ean_alias_map() -> dict:
         with _conn() as (cur, d):
             cur.execute(
                 "SELECT DISTINCT received_ean, ean FROM order_lines_full "
-                "WHERE received_ean IS NOT NULL AND received_ean <> ''")
-            return {str(w).strip(): str(c).strip()
-                    for w, c in cur.fetchall() if w and c}
+                "WHERE received_ean IS NOT NULL AND received_ean <> ''"
+            )
+            return {str(w).strip(): str(c).strip() for w, c in cur.fetchall() if w and c}
     except Exception:  # noqa: BLE001
         return {}
 
@@ -215,22 +242,25 @@ def set_order_value(run_id, value_by_po: dict) -> dict:
     carries no amount — the value is computed from our master pricing
     (Landing × qty) in the engine bridge. No-op on empty input."""
     if run_id is None or not value_by_po:
-        return {'updated': 0}
+        return {"updated": 0}
     updated = 0
     with _conn() as (cur, d):
-        ph = d['ph']
+        ph = d["ph"]
         for po, val in value_by_po.items():
             cur.execute(
-                f"UPDATE order_headers SET order_value={ph} "
-                f"WHERE run_id={ph} AND po={ph}", (_f(val), run_id, str(po)))
+                f"UPDATE order_headers SET order_value={ph} WHERE run_id={ph} AND po={ph}",
+                (_f(val), run_id, str(po)),
+            )
             updated += cur.rowcount or 0
         # keep the run's stored aggregate in sync (engine wrote 0).
         cur.execute(
             f"UPDATE runs SET total_value="
             f"(SELECT COALESCE(SUM(order_value),0) FROM order_headers "
-            f"WHERE run_id={ph}) WHERE run_id={ph}", (run_id, run_id))
+            f"WHERE run_id={ph}) WHERE run_id={ph}",
+            (run_id, run_id),
+        )
         cur.connection.commit()
-    return {'updated': updated}
+    return {"updated": updated}
 
 
 def set_po_dates(run_id, dates_by_po: dict) -> dict:
@@ -239,24 +269,27 @@ def set_po_dates(run_id, dates_by_po: dict) -> dict:
     the date in the header, not a row column). ``COALESCE`` so engine-provided
     dates are never overwritten. Powers the TAT tracker for those channels."""
     if run_id is None or not dates_by_po:
-        return {'updated': 0}
+        return {"updated": 0}
     updated = 0
     with _conn() as (cur, d):
-        ph = d['ph']
+        ph = d["ph"]
         for po, dd in dates_by_po.items():
             sets, args = [], []
-            if dd.get('po_date'):
-                sets.append(f"po_date=COALESCE(po_date,{ph})"); args.append(dd['po_date'])
-            if dd.get('exp_date'):
-                sets.append(f"exp_date=COALESCE(exp_date,{ph})"); args.append(dd['exp_date'])
+            if dd.get("po_date"):
+                sets.append(f"po_date=COALESCE(po_date,{ph})")
+                args.append(dd["po_date"])
+            if dd.get("exp_date"):
+                sets.append(f"exp_date=COALESCE(exp_date,{ph})")
+                args.append(dd["exp_date"])
             if not sets:
                 continue
             cur.execute(
-                f"UPDATE order_headers SET {', '.join(sets)} "
-                f"WHERE run_id={ph} AND po={ph}", tuple(args) + (run_id, str(po)))
+                f"UPDATE order_headers SET {', '.join(sets)} WHERE run_id={ph} AND po={ph}",
+                tuple(args) + (run_id, str(po)),
+            )
             updated += cur.rowcount or 0
         cur.connection.commit()
-    return {'updated': updated}
+    return {"updated": updated}
 
 
 def web_dedup(result, marketplace) -> list:
@@ -266,7 +299,7 @@ def web_dedup(result, marketplace) -> list:
     the engine's PURE ``build_tracker_rows`` for the summary. DB is only READ here
     — no engine history store is opened (so no desktop tables get recreated)."""
     result.skipped_orders = []
-    rows = getattr(result, 'rows', None) or []
+    rows = getattr(result, "rows", None) or []
     if not rows:
         return []
     try:
@@ -282,33 +315,39 @@ def web_dedup(result, marketplace) -> list:
     existing = set()
     try:
         with _conn() as (cur, d):
-            ph = d['ph']
-            cur.execute(f"SELECT DISTINCT po FROM order_headers WHERE "
-                        f"marketplace={ph}", (marketplace,))
+            ph = d["ph"]
+            cur.execute(
+                f"SELECT DISTINCT po FROM order_headers WHERE marketplace={ph}", (marketplace,)
+            )
             existing = {str(r[0]) for r in cur.fetchall()}
     except Exception:  # noqa: BLE001
         return []
     dup = {str(so.po_number) for so in rows if str(so.po_number) in existing}
     if not dup:
         return []
-    trk = {str(t['po']): t for t in build_tracker_rows(result)}
+    trk = {str(t["po"]): t for t in build_tracker_rows(result)}
     skipped = []
     for po in dup:
         t = trk.get(po, {})
-        skipped.append({
-            'segment': ORDER_SEGMENT, 'marketplace': marketplace,
-            'marketplace_label': t.get('market_place', marketplace), 'po': po,
-            'location': t.get('location', '') or '',
-            'po_date': t.get('po_date', ''), 'exp_date': t.get('exp_date', ''),
-            'qty': int(t.get('order_qty') or 0),
-            'order_value': float(t.get('order_value') or 0.0),
-        })
+        skipped.append(
+            {
+                "segment": ORDER_SEGMENT,
+                "marketplace": marketplace,
+                "marketplace_label": t.get("market_place", marketplace),
+                "po": po,
+                "location": t.get("location", "") or "",
+                "po_date": t.get("po_date", ""),
+                "exp_date": t.get("exp_date", ""),
+                "qty": int(t.get("order_qty") or 0),
+                "order_value": float(t.get("order_value") or 0.0),
+            }
+        )
     result.rows = [so for so in rows if str(so.po_number) not in dup]
     result.skipped_orders = skipped
     return skipped
 
 
-def record_run_headers(result, marketplace, warehouse, output_file='') -> dict:
+def record_run_headers(result, marketplace, warehouse, output_file="") -> dict:
     """Web-owned replica of the engine's ``record_manual`` — write ``runs`` +
     ``order_headers`` DIRECTLY (no engine history store, so ``order_issue_lines``
     is never recreated). Reuses the engine's PURE ``order_rows_from_result`` for
@@ -322,45 +361,69 @@ def record_run_headers(result, marketplace, warehouse, output_file='') -> dict:
         _to_date,
         order_rows_from_result,
     )
-    rows = order_rows_from_result(result, marketplace, warehouse or '', output_file)
+
+    rows = order_rows_from_result(result, marketplace, warehouse or "", output_file)
     if not rows:
-        return {'run_id': None, 'new_orders': 0}
+        return {"run_id": None, "new_orders": 0}
     run_ts = _dt2.datetime.now()
-    source = (f"MANUAL: {_os.path.basename(output_file)}" if output_file
-              else 'MANUAL')
+    source = f"MANUAL: {_os.path.basename(output_file)}" if output_file else "MANUAL"
     meta = {
-        'marketplaces': 1,
-        'total_pos': len({(o['marketplace'], o['po']) for o in rows}),
+        "marketplaces": 1,
+        "total_pos": len({(o["marketplace"], o["po"]) for o in rows}),
         # total_items = LINE-item count (matches the engine's record_manual),
         # not the header/PO count.
-        'total_items': len(getattr(result, 'rows', []) or []),
-        'total_qty': sum(int(o['qty'] or 0) for o in rows),
-        'total_value': sum(float(o['order_value'] or 0) for o in rows),
+        "total_items": len(getattr(result, "rows", []) or []),
+        "total_qty": sum(int(o["qty"] or 0) for o in rows),
+        "total_value": sum(float(o["order_value"] or 0) for o in rows),
     }
     with _conn() as (cur, d):
-        ph = d['ph']
+        ph = d["ph"]
         cur.execute(
             f"INSERT INTO runs (run_ts, mode, source, marketplaces, total_pos, "
             f"total_items, total_qty, total_value, consolidated_path, "
             f"tracker_path) VALUES ({ph},'MANUAL',{ph},{ph},{ph},{ph},{ph},{ph},"
             f"'','')",
-            (run_ts, source, meta['marketplaces'], meta['total_pos'],
-             meta['total_items'], meta['total_qty'], meta['total_value']))
+            (
+                run_ts,
+                source,
+                meta["marketplaces"],
+                meta["total_pos"],
+                meta["total_items"],
+                meta["total_qty"],
+                meta["total_value"],
+            ),
+        )
         run_id = cur.lastrowid
-        hcols = ('run_id, run_ts, mode, segment, marketplace, marketplace_label, '
-                 'po, location, warehouse, po_date, exp_date, order_type, items, '
-                 'qty, order_value, output_file')
-        marks = ', '.join([ph] * 16)
+        hcols = (
+            "run_id, run_ts, mode, segment, marketplace, marketplace_label, "
+            "po, location, warehouse, po_date, exp_date, order_type, items, "
+            "qty, order_value, output_file"
+        )
+        marks = ", ".join([ph] * 16)
         for o in rows:
             cur.execute(
                 f"INSERT INTO order_headers ({hcols}) VALUES ({marks})",
-                (run_id, run_ts, 'MANUAL', o.get('segment', ORDER_SEGMENT),
-                 o['marketplace'], o['marketplace_label'], o['po'], o['location'],
-                 o['warehouse'], _to_date(o['po_date']), _to_date(o['exp_date']),
-                 o['order_type'], o['items'], o['qty'], o['order_value'],
-                 o['output_file']))
+                (
+                    run_id,
+                    run_ts,
+                    "MANUAL",
+                    o.get("segment", ORDER_SEGMENT),
+                    o["marketplace"],
+                    o["marketplace_label"],
+                    o["po"],
+                    o["location"],
+                    o["warehouse"],
+                    _to_date(o["po_date"]),
+                    _to_date(o["exp_date"]),
+                    o["order_type"],
+                    o["items"],
+                    o["qty"],
+                    o["order_value"],
+                    o["output_file"],
+                ),
+            )
         cur.connection.commit()
-    return {'run_id': run_id, 'new_orders': len(rows)}
+    return {"run_id": run_id, "new_orders": len(rows)}
 
 
 def apply_issue_ean_fix(line_id, correct_ean) -> dict:
@@ -376,89 +439,111 @@ def apply_issue_ean_fix(line_id, correct_ean) -> dict:
 
         from . import item_master_loader as iml
     except Exception as e:  # noqa: BLE001
-        return {'ok': False, 'error': f"{type(e).__name__}: {e}"}
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}
     hit = iml.resolve_in_master(correct_ean)
     if not hit:
-        return {'ok': False, 'error': f"'{correct_ean}' is not in the item master."}
+        return {"ok": False, "error": f"'{correct_ean}' is not in the item master."}
     try:
         lid = int(line_id)
     except (TypeError, ValueError):
-        return {'ok': False, 'error': 'bad line_id'}
+        return {"ok": False, "error": "bad line_id"}
 
     with _conn() as (cur, d):
-        ph = d['ph']
+        ph = d["ph"]
         cur.execute(
             f"SELECT marketplace, ean, vendor_cp, vendor_landing, margin_pct "
-            f"FROM order_lines_full WHERE line_id={ph}", (lid,))
+            f"FROM order_lines_full WHERE line_id={ph}",
+            (lid,),
+        )
         row = cur.fetchone()
         if not row:
-            return {'ok': False, 'error': 'line not found'}
+            return {"ok": False, "error": "line not found"}
         mp, old_ean, v_cp, v_land, margin_pct = row
         cfg = MARKETPLACE_CONFIGS.get(mp, {})
-        margin = (float(margin_pct) / 100.0 if margin_pct
-                  else cfg.get('default_margin', 70) / 100.0)
-        mrp = float(hit['mrp']) if hit.get('mrp') is not None else None
-        gst = hit.get('gst_code', '') or ''
+        margin = float(margin_pct) / 100.0 if margin_pct else cfg.get("default_margin", 70) / 100.0
+        mrp = float(hit["mrp"]) if hit.get("mrp") is not None else None
+        gst = hit.get("gst_code", "") or ""
         our_land = MasterLoader.calc_landing_price(mrp, margin)
         our_cp = MasterLoader.calc_cost_price(mrp, gst, margin)
-        compare = cfg.get('compare_basis', 'cost')
-        sbasis = cfg.get('status_basis') or compare
+        compare = cfg.get("compare_basis", "cost")
+        sbasis = cfg.get("status_basis") or compare
 
         def _pair(b):
-            if b == 'landing':
+            if b == "landing":
                 return our_land, (float(v_land) if v_land is not None else None)
             return our_cp, (float(v_cp) if v_cp is not None else None)
-        o_disp, t_disp = _pair(compare)          # diff shown on compare basis
-        disp_diff = (round(t_disp - o_disp, 2)
-                     if (o_disp is not None and t_disp is not None) else None)
-        o_st, t_st = _pair(sbasis)               # status decided on status basis
+
+        o_disp, t_disp = _pair(compare)  # diff shown on compare basis
+        disp_diff = (
+            round(t_disp - o_disp, 2) if (o_disp is not None and t_disp is not None) else None
+        )
+        o_st, t_st = _pair(sbasis)  # status decided on status basis
         st_diff = (t_st - o_st) if (o_st is not None and t_st is not None) else None
-        status = 'OK' if (st_diff is not None and abs(st_diff) <= 0.5) else 'MISMATCH'
+        status = "OK" if (st_diff is not None and abs(st_diff) <= 0.5) else "MISMATCH"
 
         cur.execute(
-            f"UPDATE order_lines SET ean={ph}, item_no={ph}, description={ph} "
-            f"WHERE line_id={ph}",
-            (hit['ean'] or correct_ean, hit['item_no'],
-             (hit['description'] or '')[:255], lid))
+            f"UPDATE order_lines SET ean={ph}, item_no={ph}, description={ph} WHERE line_id={ph}",
+            (hit["ean"] or correct_ean, hit["item_no"], (hit["description"] or "")[:255], lid),
+        )
         cur.execute(
             f"UPDATE order_line_validation SET received_ean={ph}, our_mrp={ph}, "
             f"our_landing={ph}, our_cp={ph}, diff={ph}, margin_pct={ph}, "
             f"status={ph}, exception_label={ph} WHERE line_id={ph}",
-            (old_ean, _f(mrp), _f(our_land), _f(our_cp), _f(disp_diff),
-             round(margin * 100, 2), status, 'EAN remap', lid))
+            (
+                old_ean,
+                _f(mrp),
+                _f(our_land),
+                _f(our_cp),
+                _f(disp_diff),
+                round(margin * 100, 2),
+                status,
+                "EAN remap",
+                lid,
+            ),
+        )
         cur.connection.commit()
-    return {'ok': True, 'status': status, 'item_no': hit['item_no'],
-            'ean': hit['ean'] or correct_ean, 'our_cp': _f(our_cp),
-            'diff': _f(disp_diff)}
+    return {
+        "ok": True,
+        "status": status,
+        "item_no": hit["item_no"],
+        "ean": hit["ean"] or correct_ean,
+        "our_cp": _f(our_cp),
+        "diff": _f(disp_diff),
+    }
 
 
-def build_lines(result, run_id=None, output_file: str = '', actions=None,
-                ean_fixes=None) -> list[dict]:
+def build_lines(
+    result, run_id=None, output_file: str = "", actions=None, ean_fixes=None
+) -> list[dict]:
     """One dict per SO line from an engine ``ProcessingResult`` (reads only).
     Carries the full comparison columns so affected = status filter. ``actions``
     is an optional ``{"po|item_no|ean": {"action":..,"remark":..}}`` map of the
     operator's per-line decision captured on the review screen."""
     actions = actions or {}
     ean_fixes = ean_fixes or {}
-    basis = getattr(result, 'compare_basis', None) or 'landing'
-    run_ts = _dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    otype = 'TO' if getattr(result, 'output_type', 'so') == 'to' else 'SO'
+    basis = getattr(result, "compare_basis", None) or "landing"
+    run_ts = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    otype = "TO" if getattr(result, "output_type", "so") == "to" else "SO"
     out: list[dict] = []
     for so in result.rows:
-        v_landing = so.fob_price if basis == 'landing' else so.ref_fob_price
-        v_cp = so.fob_price if basis == 'cost' else so.ref_fob_price
-        row_margin = (so.applied_margin_pct
-                      if getattr(so, 'applied_margin_pct', None) is not None
-                      else result.margin_pct)
+        v_landing = so.fob_price if basis == "landing" else so.ref_fob_price
+        v_cp = so.fob_price if basis == "cost" else so.ref_fob_price
+        row_margin = (
+            so.applied_margin_pct
+            if getattr(so, "applied_margin_pct", None) is not None
+            else result.margin_pct
+        )
         o_landing = None
         if so.mrp is not None and _f(so.mrp) is not None and row_margin:
             o_landing = round(float(so.mrp) * float(row_margin), 2)
-        up = (so.forced_unit_price
-              if getattr(so, 'forced_unit_price', None) is not None
-              else getattr(so, 'cost_price_ref', None))
+        up = (
+            so.forced_unit_price
+            if getattr(so, "forced_unit_price", None) is not None
+            else getattr(so, "cost_price_ref", None)
+        )
         po = str(so.po_number)
-        item = str(so.item_no or '')
-        raw_ean = str(so.ean or '')
+        item = str(so.item_no or "")
+        raw_ean = str(so.ean or "")
         # If this EAN was corrected, ship on the CORRECT one and remember the
         # WRONG one as received_ean (audit). order_lines never holds wrong data.
         recv_ean = None
@@ -466,41 +551,43 @@ def build_lines(result, run_id=None, output_file: str = '', actions=None,
         if raw_ean and raw_ean in ean_fixes:
             ean = str(ean_fixes[raw_ean])
             recv_ean = raw_ean
-        act = (actions.get(f"{po}|{item}|{ean}")
-               or actions.get(f"{po}|{item}|{raw_ean}") or {})
-        out.append({
-            'run_id': run_id, 'run_ts': run_ts,
-            'marketplace': result.marketplace,
-            'po': po,
-            'location': str(getattr(so, 'source_location', '') or ''),
-            'item_no': item,
-            'ean': ean,
-            'description': (str(so.description or ''))[:255],
-            'qty': int(so.qty or 0),
-            'order_type': otype,
-            'gst_code': str(getattr(so, 'gst_code', '') or ''),
-            'unit_price': _f(up),
-            'vendor_mrp': _f(so.vendor_mrp),
-            'our_mrp': _f(so.mrp),
-            'vendor_landing': _f(v_landing),
-            'our_landing': _f(o_landing),
-            'vendor_cp': _f(v_cp),
-            'our_cp': _f(so.cost_price_ref),
-            'diff': _f(so.diffn),
-            'margin_pct': round(float(row_margin) * 100, 2) if row_margin else None,
-            'status': getattr(so, 'validation_status', '') or '',
-            'exception_label': getattr(so, 'exception_label', '') or '',
-            # wrong EAN as received (set by the review-page EAN fix); else None.
-            'received_ean': (recv_ean or act.get('received_ean') or None),
-            'output_file': output_file or '',
-            'action': str(act.get('action', '') or ''),
-            'remark': str(act.get('remark', '') or '')[:255],
-            'override_cp': _f(act.get('override_cp')),
-            # stamp WHEN the decision was taken (only when there IS one)
-            'decided_at': run_ts if act.get('action') else None,
-            # which rate the validation compared on (highlight on the UI).
-            'basis': 'CP' if basis == 'cost' else 'Landing',
-        })
+        act = actions.get(f"{po}|{item}|{ean}") or actions.get(f"{po}|{item}|{raw_ean}") or {}
+        out.append(
+            {
+                "run_id": run_id,
+                "run_ts": run_ts,
+                "marketplace": result.marketplace,
+                "po": po,
+                "location": str(getattr(so, "source_location", "") or ""),
+                "item_no": item,
+                "ean": ean,
+                "description": (str(so.description or ""))[:255],
+                "qty": int(so.qty or 0),
+                "order_type": otype,
+                "gst_code": str(getattr(so, "gst_code", "") or ""),
+                "unit_price": _f(up),
+                "vendor_mrp": _f(so.vendor_mrp),
+                "our_mrp": _f(so.mrp),
+                "vendor_landing": _f(v_landing),
+                "our_landing": _f(o_landing),
+                "vendor_cp": _f(v_cp),
+                "our_cp": _f(so.cost_price_ref),
+                "diff": _f(so.diffn),
+                "margin_pct": round(float(row_margin) * 100, 2) if row_margin else None,
+                "status": getattr(so, "validation_status", "") or "",
+                "exception_label": getattr(so, "exception_label", "") or "",
+                # wrong EAN as received (set by the review-page EAN fix); else None.
+                "received_ean": (recv_ean or act.get("received_ean") or None),
+                "output_file": output_file or "",
+                "action": str(act.get("action", "") or ""),
+                "remark": str(act.get("remark", "") or "")[:255],
+                "override_cp": _f(act.get("override_cp")),
+                # stamp WHEN the decision was taken (only when there IS one)
+                "decided_at": run_ts if act.get("action") else None,
+                # which rate the validation compared on (highlight on the UI).
+                "basis": "CP" if basis == "cost" else "Landing",
+            }
+        )
     return out
 
 
@@ -508,15 +595,19 @@ def insert_lines(run_id, rows: list[dict]) -> dict:
     """Bulk-insert the line rows for a confirmed run. No-op if run_id is None
     (nothing new recorded) or rows empty."""
     if run_id is None or not rows:
-        return {'recorded': 0}
+        return {"recorded": 0}
     ensure_table()
     with _conn() as (cur, d):
-        ph = d['ph']
-        ins_f = (f"INSERT INTO order_lines ({', '.join(_FACT_COLS)}) "
-                 f"VALUES ({', '.join([ph] * len(_FACT_COLS))})")
-        vcols = ['line_id'] + _VAL_COLS
-        ins_v = (f"INSERT INTO order_line_validation ({', '.join(vcols)}) "
-                 f"VALUES ({', '.join([ph] * len(vcols))})")
+        ph = d["ph"]
+        ins_f = (
+            f"INSERT INTO order_lines ({', '.join(_FACT_COLS)}) "
+            f"VALUES ({', '.join([ph] * len(_FACT_COLS))})"
+        )
+        vcols = ["line_id"] + _VAL_COLS
+        ins_v = (
+            f"INSERT INTO order_line_validation ({', '.join(vcols)}) "
+            f"VALUES ({', '.join([ph] * len(vcols))})"
+        )
         # Insert facts row-by-row to capture each line_id, then bulk-insert the
         # matching validation rows keyed by that line_id (1:1).
         val_payload = []
@@ -527,7 +618,7 @@ def insert_lines(run_id, rows: list[dict]) -> dict:
         if val_payload:
             cur.executemany(ins_v, val_payload)
         cur.connection.commit()
-    return {'recorded': len(rows)}
+    return {"recorded": len(rows)}
 
 
 def update_action(line_id, action, remark) -> dict:
@@ -536,35 +627,35 @@ def update_action(line_id, action, remark) -> dict:
     try:
         lid = int(line_id)
     except (TypeError, ValueError):
-        return {'ok': False, 'error': 'bad line_id'}
+        return {"ok": False, "error": "bad line_id"}
     ensure_table()
     with _conn() as (cur, d):
-        ph = d['ph']
+        ph = d["ph"]
         cur.execute(
-            f"UPDATE order_line_validation SET action={ph}, remark={ph} "
-            f"WHERE line_id={ph}",
-            (str(action or '')[:20], str(remark or '')[:255], lid))
+            f"UPDATE order_line_validation SET action={ph}, remark={ph} WHERE line_id={ph}",
+            (str(action or "")[:20], str(remark or "")[:255], lid),
+        )
         cur.connection.commit()
-    return {'ok': True}
+    return {"ok": True}
 
 
 def update_action_bulk(line_ids, action, remark) -> dict:
     """Set the same Action + Remark on many lines at once (Issues page bulk)."""
     ids = []
-    for x in (line_ids or []):
+    for x in line_ids or []:
         try:
             ids.append(int(x))
         except (TypeError, ValueError):
             pass
     if not ids:
-        return {'ok': False, 'updated': 0}
+        return {"ok": False, "updated": 0}
     ensure_table()
     with _conn() as (cur, d):
-        ph = d['ph']
-        marks = ','.join([ph] * len(ids))
+        ph = d["ph"]
+        marks = ",".join([ph] * len(ids))
         cur.execute(
-            f"UPDATE order_line_validation SET action={ph}, remark={ph} "
-            f"WHERE line_id IN ({marks})",
-            tuple([str(action or '')[:20], str(remark or '')[:255]] + ids))
+            f"UPDATE order_line_validation SET action={ph}, remark={ph} WHERE line_id IN ({marks})",
+            tuple([str(action or "")[:20], str(remark or "")[:255]] + ids),
+        )
         cur.connection.commit()
-    return {'ok': True, 'updated': len(ids)}
+    return {"ok": True, "updated": len(ids)}
