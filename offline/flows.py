@@ -19,8 +19,9 @@ GT_MASS_SPEC = FlowSpec(
     base_template='online_b2b/base_b2b.html',
     upload_dirname='gt_mass_flow',
     processor=lambda meta: GTMassProcessor(meta),
-    caps=frozenset({'warehouse', 'exclude', 'download'}),
-    warehouses=(('AHD', 'AHD'), ('BLR', 'BLR')),
+    # GT Mass carries its own warehouse in the file (recorder defaults to AHD) —
+    # no manual warehouse picker needed, so the 'warehouse' cap is intentionally off.
+    caps=frozenset({'exclude', 'download'}),
     intro=('Upload GT Mass PO file(s) → review → record to the dashboard. '
            'The 7-sheet dump (SO Workbook) is downloadable any time.'),
     accept='.xlsx,.xls,.xlsm',

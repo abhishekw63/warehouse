@@ -39,7 +39,7 @@
   <div class="im-card reveal">
     <h2>Upload / refresh</h2>
     <p class="im-sub">Provide both ERP exports. We take the <b>effective MRP</b> (the price active today), join it to the item attributes, and fully rebuild the master. Swiggy codes &amp; hand-added items are preserved across rebuilds.</p>
-    <form method="post" action="{% url 'b2b_item_master_upload' %}" enctype="multipart/form-data" class="im-up">
+    <form method="post" action="{% url 'b2b_item_master_upload' %}" enctype="multipart/form-data" class="im-up" data-loading="Reading the ERP exports &amp; rebuilding the item master">
       {% csrf_token %}
       <label class="im-file">
         <span class="imf-l">① Items export</span>

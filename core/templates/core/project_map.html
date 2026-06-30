@@ -31,6 +31,7 @@
     <button class="tab" data-tab="tree">File tree</button>
     <button class="tab" data-tab="routes">Routes <span class="tcount">{{ routes|length }}</span></button>
     <button class="tab" data-tab="models">DB tables <span class="tcount">{{ models|length }}</span></button>
+    <button class="tab" data-tab="sync">🔗 Keep in sync</button>
   </div>
 
   <!-- ── Data flow (graphical) ── -->
@@ -110,9 +111,70 @@
     </details>
     {% endfor %}
   </div>
+
+  <!-- ── Keep in sync — change-impact / coupling map ── -->
+  <div class="tabpane" data-pane="sync" style="display:none;">
+    <p class="pm-hint">When you change one thing, these are the other places that must change to stay aligned. <b>Auto</b> = updates itself, no action needed.</p>
+
+    <div class="sync-card">
+      <h3>➕ Add / enable an <b>online</b> marketplace</h3>
+      <ol>
+        <li><span class="f">online_po_management/.../config/marketplaces.py</span> — add the marketplace dict (columns + parser). <span class="frz">frozen engine</span></li>
+        <li><span class="f">online_b2b/services/engine_bridge.py</span> → <span class="c">PILOT_MARKETPLACES</span> (+ <span class="c">PILOT_LABELS</span> for a friendly name)</li>
+        <li><span class="f">online_b2b/views.py</span> → <span class="c">ONLINE_CHANNELS</span> chip: <span class="c">soon → live</span></li>
+        <li><span class="f">online_b2b/services/template_samples.json</span> — add a sample so <b>Rules → See full template</b> works</li>
+        <li><i>If PDF source:</i> add a <span class="c">_source_dates_by_po</span> override in engine_bridge (tracker dates for TAT)</li>
+        <li class="auto"><b>Auto:</b> upload dropdown · Rules §3 formats · this Project Map</li>
+      </ol>
+    </div>
+
+    <div class="sync-card">
+      <h3>➕ Add an <b>offline</b> channel (shared po_flow)</h3>
+      <ol>
+        <li><span class="f">offline/services/&lt;channel&gt;_flow.py</span> — a processor (wraps the frozen tool) returning the unified payload</li>
+        <li><span class="f">offline/flows.py</span> — a <span class="c">FlowSpec</span> (caps, slots, warehouses, url names)</li>
+        <li><span class="f">offline/views.py</span> + <span class="f">offline/urls.py</span> — thin CBVs + routes</li>
+        <li><span class="f">offline/templates/offline/dashboard.html</span> + sidebar link</li>
+        <li class="auto"><b>Auto:</b> the shared <span class="c">po_flow</span> upload/review templates · this Project Map</li>
+      </ol>
+    </div>
+
+    <div class="sync-card">
+      <h3>🗄 Add / change a <b>DB column or table</b></h3>
+      <ol>
+        <li>Schema is owned by the engine (<span class="c">managed=False</span>) — update the raw SQL in the relevant <span class="f">*_store.py</span> / <span class="f">order_db.py</span></li>
+        <li><span class="f">online_b2b/models.py</span> — mirror it (managed=False) for admin + this map</li>
+        <li>If it's the line split: the <span class="c">order_lines_full</span> VIEW</li>
+      </ol>
+    </div>
+
+    <div class="sync-card">
+      <h3>🧭 Add a <b>page / feature</b></h3>
+      <ol>
+        <li>view (CBV) + url + template; add a sidebar link (<span class="f">_sidebar.html</span>)</li>
+        <li class="auto"><b>Auto:</b> Dev · Health captures its perf · this Project Map lists the route</li>
+      </ol>
+    </div>
+
+    <div class="sync-card sync-rule">
+      <h3>📌 Always</h3>
+      <ol>
+        <li>Append a line to <span class="f">online_po_management/docs.md</span> changelog</li>
+        <li>If a file format / date capture changed → update <b>Rules &amp; Exceptions</b> + the <b>See full template</b> sample</li>
+        <li><b>Never modify the frozen engine</b> (<span class="c">online_po_processor</span>) — wrap it, additively</li>
+      </ol>
+    </div>
+  </div>
 </div>
 
 <style>
+  .sync-card{border:1px solid var(--border);border-radius:12px;padding:14px 18px;margin:0 0 14px;background:var(--surface);}
+  .sync-card h3{font-size:14px;margin:0 0 10px;font-weight:700;}
+  .sync-card ol{margin:0;padding-left:20px;} .sync-card li{font-size:12.5px;color:var(--text-2);margin:5px 0;line-height:1.55;}
+  .sync-card .f{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;background:var(--surface-2);border:1px solid var(--border);border-radius:5px;padding:1px 6px;color:var(--text);}
+  .sync-card .c{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:var(--accent);font-weight:700;}
+  .sync-card li.auto{color:#0a7c4a;} .sync-card .frz{font-size:10px;font-weight:700;color:#b45309;background:#fff3e0;border-radius:5px;padding:1px 6px;}
+  .sync-rule{border-left:4px solid #f59e0b;background:#fff8ed;}
   .pm-h{font-size:13px;font-weight:700;color:var(--text-2);margin:18px 0 10px;text-transform:uppercase;letter-spacing:.04em;}
   /* interactive graph */
   .pm-graph{position:relative;border:1px solid var(--border);border-radius:14px;overflow:hidden;

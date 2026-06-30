@@ -25,10 +25,11 @@ from pathlib import Path
 
 PILOT_MARKETPLACES = ['Blink', 'Flipkart', 'RK', 'Dmart', 'Zepto', 'Flipkart-TO',
                       'Purplle', 'Swiggy', 'Nykaa', 'Myntra', 'Reliance',
-                      'Meesho-TO']
+                      'Meesho-TO', 'Bigbasket', 'Firstcry']
 # Friendly labels for the upload dropdown where the engine key isn't operator-
 # facing. The engine key (value) is unchanged — only the shown text differs.
-PILOT_LABELS = {'Flipkart-TO': 'Flipkart Branch', 'Meesho-TO': 'Meesho Branch'}
+PILOT_LABELS = {'Flipkart-TO': 'Flipkart Branch', 'Meesho-TO': 'Meesho Branch',
+                'Bigbasket': 'Big Basket', 'Firstcry': 'First Cry'}
 _ISSUE_STATUSES = {'MISMATCH', 'NOT_IN_MASTER'}
 
 
@@ -960,10 +961,42 @@ class DmartProcessor(Processor):
         return out
 
 
+class FirstcryProcessor(Processor):
+    """FirstCry (bordered PO PDFs). Processing is the base flow — this subclass
+    only adds the tracker dates: the FirstCry parser reads ``PO Date`` and
+    ``PO Expiry Date`` from each PDF header (not a row column), so we backfill
+    po_date/exp_date per PO after recording (so FirstCry shows on the TAT page),
+    mirroring :class:`DmartProcessor`."""
+
+    def _source_dates_by_po(self) -> dict:
+        try:
+            from online_po_processor.engine.firstcry_pdf_parser import (
+                parse_firstcry_pdf,
+            )
+        except Exception:  # noqa: BLE001
+            return {}
+        out: dict = {}
+        for p in self.po_paths:
+            if not str(p).lower().endswith('.pdf'):
+                continue
+            try:
+                po = parse_firstcry_pdf(p)
+                h = po.header
+                if h.po_number:
+                    out[str(h.po_number)] = {
+                        'po_date': _parse_ddmmyyyy(h.po_date),
+                        'exp_date': _parse_ddmmyyyy(h.po_expiry),
+                    }
+            except Exception:  # noqa: BLE001 — never block on date extraction
+                continue
+        return out
+
+
 # ── Factory + module entry points (views call these) ────────────────────
 
 _PROCESSORS = {'Flipkart': FlipkartProcessor, 'Flipkart-TO': FlipkartTOProcessor,
-               'Meesho-TO': MeeshoTOProcessor, 'Dmart': DmartProcessor}
+               'Meesho-TO': MeeshoTOProcessor, 'Dmart': DmartProcessor,
+               'Firstcry': FirstcryProcessor}
 
 
 def processor_for(marketplace, po_paths, warehouse=None, margin_pct=None,

@@ -237,24 +237,46 @@
       });
     }
 
-    fetch(form.action || window.location.href, {
-      method: 'POST', body: new FormData(form),
-      headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin'
-    }).then(function (r) { return r.json(); }).then(function (j) {
-      if (!j.ok) { fail(j.error); return; }
-      done = true; clearInterval(tick);
-      // snap to 100% + a clear completion the operator can't miss
-      card.classList.add('proc-done');
-      if (spin) spin.style.display = 'none';
-      fill.style.width = '100%'; pctEl.textContent = '100%';
-      var el = Date.now() - start;
-      titleEl.innerHTML = '✓ Imported';
-      stageEl.textContent = j.pos + ' PO(s) · ' + j.lines + ' line(s)' +
-        (j.affected ? ' · ' + j.affected + ' to review' : ' · all clean') +
-        (j.warnings ? ' · ' + j.warnings + ' warning(s)' : '');
-      timeEl.textContent = 'done in ' + clock(el) + ' — opening review…';
-      setTimeout(function () { window.location = j.review_url; }, 1100);
-    }).catch(function () { fail('Network error — please retry.'); });
+    function doFetch() {
+      fetch(form.action || window.location.href, {
+        method: 'POST', body: new FormData(form),
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin'
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        if (!j.ok) { fail(j.error); return; }
+        done = true; clearInterval(tick);
+        // snap to 100% + a clear completion the operator can't miss
+        card.classList.add('proc-done');
+        if (spin) spin.style.display = 'none';
+        fill.style.width = '100%'; pctEl.textContent = '100%';
+        var el = Date.now() - start;
+        titleEl.innerHTML = '✓ Imported';
+        stageEl.textContent = j.pos + ' PO(s) · ' + j.lines + ' line(s)' +
+          (j.affected ? ' · ' + j.affected + ' to review' : ' · all clean') +
+          (j.warnings ? ' · ' + j.warnings + ' warning(s)' : '');
+        timeEl.textContent = 'done in ' + clock(el) + ' — opening review…';
+        setTimeout(function () { window.location = j.review_url; }, 1100);
+      }).catch(function (err) {
+        var name = (err && err.name) ? err.name : 'NetworkError';
+        fail('Could not read/send the file(s) — is one still OPEN in Excel? ' +
+             'Close them, then retry. [' + name + ']');
+      });
+    }
+
+    // Pre-flight: try to read 1 byte of each selected file. A file OPEN/locked in
+    // Excel rejects here — so we can name the exact offender(s) instead of failing
+    // the whole batch with a vague error (matters most for many-file uploads).
+    Promise.all(Array.prototype.map.call(input.files, function (f) {
+      return f.slice(0, 1).arrayBuffer().then(function () { return null; },
+                                              function () { return f.name; });
+    })).then(function (bad) {
+      bad = (bad || []).filter(Boolean);
+      if (bad.length) {
+        fail('Close these file(s) in Excel, then retry (' + bad.length + '): ' +
+             bad.join(', '));
+      } else {
+        doFetch();
+      }
+    });
   });
 })();
 </script>

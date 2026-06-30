@@ -37,8 +37,8 @@
 
 /* page scaffold ------------------------------------------------ */
 body{background:var(--bg);}
-.b2b-wrap,.iss-wrap,.rd-wrap{max-width:1560px;margin:24px auto 64px;padding:0 32px;
-  color:var(--text);font-family:var(--font);}
+.b2b-wrap,.iss-wrap,.rd-wrap{width:100%;max-width:1560px;margin:24px auto 64px;padding:0 32px;
+  box-sizing:border-box;color:var(--text);font-family:var(--font);}
 .b2b-head,.iss-head,.rd-head{display:flex;justify-content:space-between;align-items:flex-end;
   flex-wrap:wrap;gap:12px;margin-bottom:4px;padding-bottom:18px;border-bottom:1px solid var(--border);}
 .b2b-head h1,.iss-head h1,.rd-head h1{margin:0;font-size:23px;font-weight:700;letter-spacing:-.02em;}

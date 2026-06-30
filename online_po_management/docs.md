@@ -372,6 +372,70 @@ instead of a single number that lies for rule-based marketplaces.
 
 ## 10. Changelog (append one line per development)
 
+- **2026-06-30** — **Email skeleton + Issues "Email" feature.** New reusable
+  `online_b2b/services/mailer.py` — ONE SMTP layer (`send_html` + `EmailReport`
+  base) that **reuses the frozen desktop app's `email_config.get_email_config`**
+  verbatim (same Gmail sender/recipients, `Calculation Data/email_config.json`
+  override). Every future email feature subclasses `EmailReport` (subject/html/
+  to/cc → preview/send). First consumer: `issue_email.IssuesEmailReport` — emails
+  the **currently-filtered** issue lines (PO/item/EAN/qty/CP/diff/status +
+  **Action: Excluded/Override/Kept** + remark) to management. Issues page gets a
+  **✉ Email** button → **preview modal** (subject, To/Cc, full HTML in an iframe)
+  → **Send**. Views `issues_email_preview` (GET, render-only) + `issues_email_send`
+  (POST); both read the same `_issue_filters` as the page/export. The email modal
+  + JS are generic (point `data-preview-url`/`data-send-url` at any future report).
+  See [[dry-skeleton-first]]. Additive; never touches the frozen engine.
+
+- **2026-06-30** — **First Cry web integration + item-master NaT fix + reusable
+  loading overlay + SOP tab.** (1) **First Cry** is now a live web pilot: added
+  `'Firstcry'` to `PILOT_MARKETPLACES` (label "First Cry") and a
+  `FirstcryProcessor(Processor)` whose `_source_dates_by_po()` backfills po_date/
+  exp_date from the FirstCry PDF header (`parse_firstcry_pdf` → `PO Date` /
+  `PO Expiry Date`), mirroring `DmartProcessor`; hub chip flipped soon→live.
+  Verified E2E on a sample PDF (1 PO / 16 lines / ₹53,941.98, dates backfilled).
+  (2) **Item-master MRP bug** — blank Start/End cells parse to `NaT` (which is
+  *truthy*), so `_read_effective_mrp` fell into `NaT <= today` → "Cannot compare
+  NaT with datetime.date" on Preview & rebuild. Fixed with `pd.notna()` guards
+  everywhere a window date is tested/compared; NaT now stored as `None`.
+  (3) **Reusable processing overlay** — `core/base.html` gains a `body_end` block;
+  `base_b2b.html` injects `#b2b-load` (spinner + message) that any element opts
+  into via `data-loading="…"` (forms) / `data-loading-click="…"`. Wired on the
+  Item-Master Preview & rebuild form. (4) Operator **SOP** moved to its own tab in
+  Rules & Exceptions (applies to both segments). [[tracker-dates-and-tat]]
+  [[item-master-in-db]]
+- **2026-06-28** — **Rules & Exceptions split into Online B2B / Offline segments;
+  GT Mass file rules drafted.** Top-of-page segment tabs: **Online B2B** holds all
+  existing content (validation, per-marketplace rules, formats, exceptions,
+  decisions, Flipkart map); **Offline** has a full **GT Mass — file rules &
+  regulations** card: hard rules (first-sheet-only, BC Code+Order Qty header, PO
+  Number label+value) each paired with the **exact error thrown**
+  (`Template violation: …`), soft rules (Location/Distributor/City/State blank,
+  EAN-only rescue, EAN-not-in-master) with their warning text, the columns the
+  engine reads, meta fields, and best practice. Mirrors the actual
+  `offline/utils.py:TemplateValidator` logic (reads Sheet1 only).
+- **2026-06-28** — **Analytics → SKU demand (qty + value, top-10).** New section on
+  the Analytics page (`order_db.sku_analytics`) over uploaded POs: overall demanded
+  **qty**, **value** (Σ qty × unit_price), distinct **SKUs / POs**, and **Top 10 SKUs
+  by Qty** and **by Value**. Own filter bar — **marketplace** + **upload-date range**
+  (`run_ts`), **defaulting to today's uploads** (`sku_from`/`sku_to`/`sku_mp` query
+  params; "Today" / "All time" buttons). Note: alias `lines` is a MySQL reserved
+  word — use `nlines`. Enhanced: polished cards (rank badges + proportion bars +
+  hover), **click-to-sort** Qty/Value/POs (asc/desc, client-side via `data-v`),
+  and a **Full view** page `/b2b/analytics/sku/` (`SkuDemandView`) listing every
+  SKU with the same filters + **CSV export** (`b2b_sku_demand_export`).
+
+- **2026-06-28** — **Big Basket enabled in the web app + Project Map "Keep in
+  sync".** Big Basket was engine-ready (config + `bigbasket` parser) but not in
+  the web layer; enabled by adding `Bigbasket` to `engine_bridge.PILOT_MARKETPLACES`
+  (+ `PILOT_LABELS` → "Big Basket") and flipping its `ONLINE_CHANNELS` chip
+  `soon → live`; added a Big Basket sample to `template_samples.json` so Rules →
+  "See full template" works. Verified end-to-end (4 POs / 10 lines). (Reliance was
+  already live — no change.) **New:** Project Map → **🔗 Keep in sync** tab — a
+  curated change-impact / coupling map ("change here ⇒ also change there") for
+  adding an online marketplace, an offline channel, a DB column, or a page, with
+  the always-do rules (docs changelog, Rules/See-full-template, never touch the
+  frozen engine) and which surfaces auto-update.
+
 - **2026-06-28** — **Item-master update diff + 15-day refresh reminder.** Item
   Master upload **preview** now shows a "What will change" section
   (`iml.diff_against_current(rows)`): **new** items, **MRP changed** (old → new),

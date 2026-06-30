@@ -109,7 +109,147 @@
     </div>
   </div>
 
+  <!-- ── SKU demand (newly uploaded POs) — qty + value, top 10 ── -->
+  <div class="reveal sku-an">
+    <div class="sec-head">
+      <h2>SKU demand <span class="muted">· newly uploaded POs</span></h2>
+      <form method="get" class="sku-filter">
+        <input type="hidden" name="days" value="{{ days }}">
+        {% if date %}<input type="hidden" name="date" value="{{ date }}">{% endif %}
+        <select name="sku_mp">
+          <option value="">All marketplaces</option>
+          {% for m in sku.marketplaces %}<option value="{{ m }}" {% if m == sku_mp %}selected{% endif %}>{{ m }}</option>{% endfor %}
+        </select>
+        <label>From <input type="date" name="sku_from" value="{{ sku_from }}"></label>
+        <label>To <input type="date" name="sku_to" value="{{ sku_to }}"></label>
+        <button type="submit" class="btn-primary">Apply</button>
+        <a class="btn-ghost" href="?days={{ days }}{% if date %}&date={{ date }}{% endif %}">Today</a>
+        <a class="btn-ghost" href="?days={{ days }}{% if date %}&date={{ date }}{% endif %}&sku_from=&sku_to=">All time</a>
+        <a class="btn-primary skux-full" href="{% url 'b2b_sku_demand' %}?sku_mp={{ sku_mp|urlencode }}&sku_from={{ sku_from }}&sku_to={{ sku_to }}">Full view →</a>
+      </form>
+    </div>
+    <p class="sku-scope muted">
+      {% if sku_from or sku_to %}Upload date {{ sku_from|default:'…' }} → {{ sku_to|default:'…' }}{% else %}All uploads{% endif %}{% if sku_mp %} · {{ sku_mp }}{% endif %}.
+    </p>
+
+    <div class="hub-kpis sku-kpis" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px;">
+      <div class="hk"><div class="n">{{ sku.overall.skus|compact }}</div><div class="l">SKUs</div></div>
+      <div class="hk"><div class="n">{{ sku.overall.qty|compact }}</div><div class="l">Qty demanded</div></div>
+      <div class="hk"><div class="n">{{ sku.overall.value|inr_short }}</div><div class="l">Value</div></div>
+      <div class="hk"><div class="n">{{ sku.overall.pos|compact }}</div><div class="l">POs</div></div>
+    </div>
+
+    {% if sku.overall.skus %}
+    <div class="sku-cols">
+      <div class="skux-card">
+        <div class="skux-h"><span class="dot d-q"></span>Top 10 by Qty<span class="skux-cnt">of {{ sku.overall.skus }} SKUs</span></div>
+        <table class="grid compact skux sortable">
+          <thead><tr><th class="rkh">#</th><th>Item</th><th>Description</th>
+            <th class="r srt" data-k="qty">Qty ⇅</th><th class="r srt" data-k="value">Value ⇅</th><th class="r srt" data-k="pos">POs ⇅</th></tr></thead>
+          <tbody>{% for r in sku.top_qty %}
+            <tr>
+              <td class="rk"><span class="rk-b rk-{{ forloop.counter }}">{{ forloop.counter }}</span></td>
+              <td class="mono">{{ r.item_no|default:'—' }}</td>
+              <td class="desc" title="{{ r.description }}">{{ r.description|default:'—' }}</td>
+              <td class="r barcell" data-k="qty" data-v="{{ r.qty }}"><span class="bar bq" style="width:{% widthratio r.qty sku.top_qty.0.qty 100 %}%"></span><b>{{ r.qty|compact }}</b></td>
+              <td class="r" data-k="value" data-v="{{ r.value }}">{{ r.value|inr_short }}</td>
+              <td class="r" data-k="pos" data-v="{{ r.pos }}">{{ r.pos }}</td>
+            </tr>
+          {% endfor %}</tbody>
+        </table>
+      </div>
+      <div class="skux-card">
+        <div class="skux-h"><span class="dot d-v"></span>Top 10 by Value<span class="skux-cnt">of {{ sku.overall.value|inr_short }}</span></div>
+        <table class="grid compact skux sortable">
+          <thead><tr><th class="rkh">#</th><th>Item</th><th>Description</th>
+            <th class="r srt" data-k="value">Value ⇅</th><th class="r srt" data-k="qty">Qty ⇅</th><th class="r srt" data-k="pos">POs ⇅</th></tr></thead>
+          <tbody>{% for r in sku.top_value %}
+            <tr>
+              <td class="rk"><span class="rk-b rk-{{ forloop.counter }}">{{ forloop.counter }}</span></td>
+              <td class="mono">{{ r.item_no|default:'—' }}</td>
+              <td class="desc" title="{{ r.description }}">{{ r.description|default:'—' }}</td>
+              <td class="r barcell" data-k="value" data-v="{{ r.value }}"><span class="bar bv" style="width:{% widthratio r.value sku.top_value.0.value 100 %}%"></span><b>{{ r.value|inr_short }}</b></td>
+              <td class="r" data-k="qty" data-v="{{ r.qty }}">{{ r.qty|compact }}</td>
+              <td class="r" data-k="pos" data-v="{{ r.pos }}">{{ r.pos }}</td>
+            </tr>
+          {% endfor %}</tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+      <p class="muted" style="padding:10px 2px;">No SKUs uploaded in this scope — try “All time” or another marketplace.</p>
+    {% endif %}
+  </div>
+
 </div>
+
+<style>
+  .sku-an{margin-top:34px;padding-top:26px;border-top:1px dashed var(--border);}
+  .sku-an .sec-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .sku-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .sku-filter select,.sku-filter input[type=date]{padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12.5px;background:#fff;color:var(--text);}
+  .sku-filter label{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:5px;}
+  .sku-scope{font-size:12px;margin:6px 0 12px;}
+  .sku-cols{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+  @media(max-width:980px){.sku-cols{grid-template-columns:1fr;}}
+  /* KPI cards — colored left accent + lift */
+  .sku-kpis .hk{position:relative;overflow:hidden;transition:transform .14s,box-shadow .14s;}
+  .sku-kpis .hk:hover{transform:translateY(-2px);box-shadow:0 8px 20px -12px rgba(15,23,42,.3);}
+  .sku-kpis .hk::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:4px 0 0 4px;}
+  .sku-kpis .hk:nth-child(1)::before{background:#6366f1;}
+  .sku-kpis .hk:nth-child(2)::before{background:#4f46e5;}
+  .sku-kpis .hk:nth-child(3)::before{background:#0a9d6e;}
+  .sku-kpis .hk:nth-child(4)::before{background:#f59e0b;}
+  /* cards */
+  .skux-card{border:1px solid var(--border);border-radius:14px;background:var(--surface);overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.05);}
+  .skux-h{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800;padding:12px 16px;border-bottom:1px solid var(--border);
+    background:linear-gradient(180deg,var(--surface),var(--surface-2));}
+  .skux-h .dot{width:9px;height:9px;border-radius:50%;box-shadow:0 0 0 3px color-mix(in srgb,currentColor 0%,transparent);} .d-q{background:#4f46e5;} .d-v{background:#0a9d6e;}
+  .skux-h .skux-cnt{margin-left:auto;font-size:11px;font-weight:700;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:2px 10px;}
+  table.skux{width:100%;margin:0;} table.skux th{font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--border);}
+  table.skux td{padding:8px 12px;border-bottom:1px solid color-mix(in srgb,var(--border) 50%,transparent);font-size:12.5px;}
+  table.skux tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--surface-2) 45%,transparent);}
+  table.skux tr:last-child td{border-bottom:none;}
+  table.skux tbody tr:hover td{background:color-mix(in srgb,var(--accent) 6%,transparent);}
+  table.skux .desc{max-width:210px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-2);}
+  .skux .rkh{width:30px;} .skux td.rk{text-align:center;}
+  .rk-b{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-size:11px;font-weight:800;background:var(--surface-2);color:var(--muted);}
+  .rk-b.rk-1{background:linear-gradient(135deg,#fcd34d,#f59e0b);color:#5b3700;box-shadow:0 2px 6px -2px #f59e0b;}
+  .rk-b.rk-2{background:linear-gradient(135deg,#e5e7eb,#cbd5e1);color:#3f4654;} .rk-b.rk-3{background:linear-gradient(135deg,#fed7aa,#fb923c);color:#7c2d12;}
+  .skux th.srt{cursor:pointer;user-select:none;white-space:nowrap;} .skux th.srt:hover,.skux th.srt.on{color:var(--accent);}
+  /* proportion bars — clipped, right-anchored fill behind the (right-aligned) number */
+  /* magnitude = slim underline pinned to the cell bottom (row-height proof),
+     right-anchored under the right-aligned figure, grows on load */
+  .skux td.barcell{position:relative;overflow:hidden;}
+  .skux td.barcell .bar{position:absolute;right:8px;left:auto;bottom:5px;top:auto;height:3px;border-radius:3px;z-index:0;min-width:6px;max-width:calc(100% - 16px);transform-origin:right center;animation:skuxbar .7s cubic-bezier(.2,.85,.25,1) both;}
+  @keyframes skuxbar{from{transform:scaleX(0);opacity:.3;}to{transform:scaleX(1);opacity:1;}}
+  @media (prefers-reduced-motion: reduce){.skux td.barcell .bar{animation:none;}}
+  .skux td.barcell .bar.bq{background:linear-gradient(90deg,color-mix(in srgb,#6366f1 35%,transparent),color-mix(in srgb,#4f46e5 75%,transparent));}
+  .skux td.barcell .bar.bv{background:linear-gradient(90deg,color-mix(in srgb,#10b981 35%,transparent),color-mix(in srgb,#0a9d6e 75%,transparent));}
+  .skux td.barcell b{position:relative;z-index:1;}
+  .skux-full{margin-left:2px;}
+</style>
+<script>
+(function () {
+  // click-to-sort (asc/desc) for any table.sortable — uses each cell's data-v.
+  document.querySelectorAll('table.sortable').forEach(function (table) {
+    table.querySelectorAll('th.srt').forEach(function (th) {
+      th.addEventListener('click', function () {
+        var k = th.getAttribute('data-k');
+        var asc = th.getAttribute('data-dir') !== 'asc';
+        table.querySelectorAll('th.srt').forEach(function (x) { x.removeAttribute('data-dir'); x.classList.remove('on'); });
+        th.setAttribute('data-dir', asc ? 'asc' : 'desc'); th.classList.add('on');
+        var tb = table.tBodies[0];
+        Array.prototype.slice.call(tb.rows).sort(function (a, b) {
+          var av = parseFloat((a.querySelector('[data-k=\"' + k + '\"]') || {}).getAttribute && a.querySelector('[data-k=\"' + k + '\"]').getAttribute('data-v') || 0);
+          var bv = parseFloat((b.querySelector('[data-k=\"' + k + '\"]') || {}).getAttribute && b.querySelector('[data-k=\"' + k + '\"]').getAttribute('data-v') || 0);
+          return asc ? av - bv : bv - av;
+        }).forEach(function (r) { tb.appendChild(r); });
+      });
+    });
+  });
+})();
+</script>
 
 <script src="{% static 'online_b2b/vendor/apexcharts.min.js' %}"></script>
 <script>

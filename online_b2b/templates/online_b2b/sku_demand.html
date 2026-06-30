@@ -1,0 +1,125 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static b2b_extras %}
+{% block title %}SKU demand — full view{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_dashboard' %}"> / Order Management</a>
+    <a href="{% url 'b2b_analytics' %}"> / Analytics</a> <span>/ SKU demand</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap b2b-wide">
+  <div class="b2b-head">
+    <div>
+      <h1>SKU demand <span>· full view</span></h1>
+      <p class="src">Every SKU's demanded qty &amp; value across uploaded POs. Click <b>Qty / Value / POs</b> to sort.</p>
+    </div>
+    <a href="{% url 'b2b_analytics' %}" class="back">← Analytics</a>
+  </div>
+
+  <div class="sec-head sku-an">
+    <form method="get" class="sku-filter">
+      <select name="sku_mp">
+        <option value="">All marketplaces</option>
+        {% for m in sku.marketplaces %}<option value="{{ m }}" {% if m == sku_mp %}selected{% endif %}>{{ m }}</option>{% endfor %}
+      </select>
+      <label>From <input type="date" name="sku_from" value="{{ sku_from }}"></label>
+      <label>To <input type="date" name="sku_to" value="{{ sku_to }}"></label>
+      <button type="submit" class="btn-primary">Apply</button>
+      <a class="btn-ghost" href="{% url 'b2b_sku_demand' %}">Today</a>
+      <a class="btn-ghost" href="{% url 'b2b_sku_demand' %}?sku_from=&sku_to=">All time</a>
+      <a class="btn-ghost" href="{% url 'b2b_sku_demand_export' %}?sku_mp={{ sku_mp|urlencode }}&sku_from={{ sku_from }}&sku_to={{ sku_to }}">⬇ Export CSV</a>
+    </form>
+  </div>
+  <p class="sku-scope muted">{% if sku_from or sku_to %}Upload date {{ sku_from|default:'…' }} → {{ sku_to|default:'…' }}{% else %}All uploads{% endif %}{% if sku_mp %} · {{ sku_mp }}{% endif %} · <b>{{ sku.rows|length }}</b> SKUs.</p>
+
+  <div class="hub-kpis" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px;">
+    <div class="hk"><div class="n">{{ sku.overall.skus|compact }}</div><div class="l">SKUs</div></div>
+    <div class="hk"><div class="n">{{ sku.overall.qty|compact }}</div><div class="l">Qty demanded</div></div>
+    <div class="hk"><div class="n">{{ sku.overall.value|inr_short }}</div><div class="l">Value</div></div>
+    <div class="hk"><div class="n">{{ sku.overall.pos|compact }}</div><div class="l">POs</div></div>
+  </div>
+
+  {% if sku.rows %}
+  <div class="skux-card">
+    <div class="scroll">
+    <table class="grid compact skux sortable">
+      <thead><tr><th class="rkh">#</th><th>Item</th><th>Description</th>
+        <th class="r srt" data-k="qty">Qty ⇅</th><th class="r srt on" data-k="value" data-dir="desc">Value ⇅</th><th class="r srt" data-k="pos">POs ⇅</th><th class="r">MPs</th></tr></thead>
+      <tbody>{% for r in sku.rows %}
+        <tr>
+          <td class="rk"><span class="rk-b rk-{{ forloop.counter }}">{{ forloop.counter }}</span></td>
+          <td class="mono">{{ r.item_no|default:'—' }}</td>
+          <td class="desc" title="{{ r.description }}">{{ r.description|default:'—' }}</td>
+          <td class="r" data-k="qty" data-v="{{ r.qty }}">{{ r.qty|compact }}</td>
+          <td class="r barcell" data-k="value" data-v="{{ r.value }}"><span class="bar bv" style="width:{% widthratio r.value sku.rows.0.value 100 %}%"></span><b>{{ r.value|inr_short }}</b></td>
+          <td class="r" data-k="pos" data-v="{{ r.pos }}">{{ r.pos }}</td>
+          <td class="r">{{ r.mps }}</td>
+        </tr>
+      {% endfor %}</tbody>
+    </table>
+    </div>
+  </div>
+  {% else %}
+    <p class="muted" style="padding:14px 2px;">No SKUs uploaded in this scope — try “All time” or another marketplace.</p>
+  {% endif %}
+</div>
+
+<style>
+  /* use (almost) the full screen — this is a single wide data table */
+  .b2b-wrap.b2b-wide{ max-width:min(2300px, 97vw); }
+  .sku-an{margin-bottom:4px;} .sku-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .sku-filter select,.sku-filter input[type=date]{padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12.5px;background:#fff;color:var(--text);}
+  .sku-filter label{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:5px;}
+  .sku-scope{font-size:12px;margin:6px 0 12px;}
+  .skux-card{border:1px solid var(--border);border-radius:12px;background:var(--surface);overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.04);}
+  table.skux{width:100%;margin:0;} table.skux th{font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface-2);z-index:1;}
+  table.skux td{padding:7px 12px;border-bottom:1px solid color-mix(in srgb,var(--border) 55%,transparent);font-size:12.5px;}
+  table.skux tbody tr:hover td{background:color-mix(in srgb,var(--accent) 4%,transparent);}
+  /* Excel-style fixed grid: even columns, centered figures, reasonable description */
+  table.skux{table-layout:fixed;width:100%;}
+  table.skux th,table.skux td{padding:9px 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  table.skux th:nth-child(1),table.skux td:nth-child(1){width:4%;text-align:center;}   /* # */
+  table.skux th:nth-child(2),table.skux td:nth-child(2){width:11%;text-align:left;}     /* Item */
+  table.skux th:nth-child(3),table.skux td:nth-child(3){width:34%;text-align:left;color:var(--text-2);} /* Description */
+  table.skux th:nth-child(4),table.skux td:nth-child(4){width:13%;text-align:center;}   /* Qty */
+  table.skux th:nth-child(5),table.skux td:nth-child(5){width:16%;text-align:center;}   /* Value */
+  table.skux th:nth-child(6),table.skux td:nth-child(6){width:11%;text-align:center;}   /* POs */
+  table.skux th:nth-child(7),table.skux td:nth-child(7){width:11%;text-align:center;}   /* MPs */
+  .skux .rkh{width:34px;} .skux td.rk{text-align:center;}
+  .rk-b{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 5px;border-radius:10px;font-size:11px;font-weight:800;background:var(--surface-2);color:var(--muted);}
+  .rk-b.rk-1{background:#fde68a;color:#92600a;} .rk-b.rk-2{background:#e5e7eb;color:#4b5563;} .rk-b.rk-3{background:#fed7aa;color:#9a3412;}
+  .skux th.srt{cursor:pointer;user-select:none;white-space:nowrap;} .skux th.srt:hover,.skux th.srt.on{color:var(--accent);}
+  /* value magnitude = thin centered underline beneath the figure */
+  .skux td.barcell{position:relative;overflow:hidden;}
+  .skux td.barcell .bar{position:absolute;left:50%;transform:translateX(-50%) scaleX(1);bottom:5px;top:auto;right:auto;height:3px;border-radius:3px;z-index:0;min-width:6px;max-width:calc(100% - 24px);background:linear-gradient(90deg,color-mix(in srgb,#10b981 55%,transparent),color-mix(in srgb,#0a9d6e 75%,transparent));transform-origin:center;animation:skuxbar .7s cubic-bezier(.2,.85,.25,1) both;}
+  @keyframes skuxbar{from{transform:translateX(-50%) scaleX(0);opacity:.3;}to{transform:translateX(-50%) scaleX(1);opacity:1;}}
+  table.skux tbody{animation:skuxrows .45s ease both;} @keyframes skuxrows{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+  @media (prefers-reduced-motion: reduce){.skux td.barcell .bar,table.skux tbody{animation:none;}}
+  .skux td.barcell b{position:relative;z-index:1;}
+  .scroll{max-height:70vh;overflow:auto;}
+</style>
+<script>
+(function () {
+  document.querySelectorAll('table.sortable').forEach(function (table) {
+    table.querySelectorAll('th.srt').forEach(function (th) {
+      th.addEventListener('click', function () {
+        var k = th.getAttribute('data-k');
+        var asc = th.getAttribute('data-dir') !== 'asc';
+        table.querySelectorAll('th.srt').forEach(function (x) { x.removeAttribute('data-dir'); x.classList.remove('on'); });
+        th.setAttribute('data-dir', asc ? 'asc' : 'desc'); th.classList.add('on');
+        var tb = table.tBodies[0];
+        Array.prototype.slice.call(tb.rows).sort(function (a, b) {
+          var ae = a.querySelector('[data-k="' + k + '"]'), be = b.querySelector('[data-k="' + k + '"]');
+          var av = parseFloat(ae ? ae.getAttribute('data-v') : 0) || 0;
+          var bv = parseFloat(be ? be.getAttribute('data-v') : 0) || 0;
+          return asc ? av - bv : bv - av;
+        }).forEach(function (r) { tb.appendChild(r); });
+      });
+    });
+  });
+})();
+</script>
+{% endblock %}

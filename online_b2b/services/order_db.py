@@ -853,6 +853,16 @@ def issues(marketplace='', q='', status='', resolution='pending',
                 f"WHERE {_AFFECTED_SQL} AND {res_sql}{date_sql}", tuple(date_params))
             mm, nim = cur.fetchone()
             out['counts'] = {'MISMATCH': int(mm or 0), 'NOT_IN_MASTER': int(nim or 0)}
+            # Totals across ALL resolutions (same date window) — so the cards can
+            # show "X in this view · of N total" and never read as a misleading 0.
+            cur.execute(
+                f"SELECT SUM(CASE WHEN status='MISMATCH' THEN 1 ELSE 0 END), "
+                f"SUM(CASE WHEN status='NOT_IN_MASTER' OR {_FIXED_EAN_SQL} "
+                f"THEN 1 ELSE 0 END) FROM order_lines_full "
+                f"WHERE {_AFFECTED_SQL}{date_sql}", tuple(date_params))
+            tmm, tnim = cur.fetchone()
+            out['counts_total'] = {'MISMATCH': int(tmm or 0),
+                                   'NOT_IN_MASTER': int(tnim or 0)}
             cur.execute(f"SELECT COUNT(*) FROM order_lines_full "
                         f"WHERE {_AFFECTED_SQL} AND {_RESOLVED_SQL}{date_sql}",
                         tuple(date_params))
@@ -965,6 +975,64 @@ def sku_summary(marketplace='', q='', date_from='', date_to='',
             tq, tok, tmis, tnim = cur.fetchone()
             out['totals'] = {'qty': int(tq or 0), 'ok': int(tok or 0),
                              'mismatch': int(tmis or 0), 'nim': int(tnim or 0)}
+            out['ok'] = True
+    except Exception as e:  # noqa: BLE001
+        out['error'] = f"{type(e).__name__}: {e}"
+    return out
+
+
+def sku_analytics(date_from='', date_to='', marketplace='', top: int = 10,
+                  full: bool = False) -> dict:
+    """SKU-wise rollup of uploaded POs, filtered by **upload date** (``run_ts``)
+    and **marketplace** — overall demanded qty + value, distinct SKUs / POs, and
+    the top-N SKUs by **qty** and by **value** (Σ qty × unit_price). The caller
+    sets the defaults (the Analytics view defaults to *today's* uploads). Also
+    returns the marketplace list for the filter dropdown. With ``full=True`` it
+    also returns ``rows`` = every SKU (value-desc) for the full-view page. Never
+    raises."""
+    out = {'ok': False, 'date_from': date_from, 'date_to': date_to,
+           'marketplace': marketplace, 'marketplaces': [],
+           'overall': {'skus': 0, 'qty': 0, 'value': 0, 'pos': 0, 'lines': 0},
+           'top_qty': [], 'top_value': [], 'rows': []}
+    try:
+        with _conn() as (cur, d):
+            ph = d['ph']
+            cur.execute("SELECT DISTINCT marketplace FROM order_lines_full "
+                        "WHERE marketplace IS NOT NULL AND marketplace <> '' "
+                        "ORDER BY marketplace")
+            out['marketplaces'] = [r[0] for r in cur.fetchall()]
+            where, args = [], []
+            if date_from:
+                where.append(f"DATE(run_ts) >= {ph}"); args.append(date_from)
+            if date_to:
+                where.append(f"DATE(run_ts) <= {ph}"); args.append(date_to)
+            if marketplace:
+                where.append(f"marketplace={ph}"); args.append(marketplace)
+            wsql = ' AND '.join(where) if where else '1=1'
+            cur.execute(
+                "SELECT item_no, MAX(description) AS description, SUM(qty) AS qty, "
+                "SUM(qty * COALESCE(unit_price, 0)) AS value, "
+                "COUNT(DISTINCT po) AS pos, COUNT(*) AS nlines, "
+                "COUNT(DISTINCT marketplace) AS mps "
+                f"FROM order_lines_full WHERE {wsql} GROUP BY item_no", tuple(args))
+            rows = _rows(cur, ['item_no', 'description', 'qty', 'value',
+                               'pos', 'lines', 'mps'])
+            for r in rows:                       # normalise numerics
+                r['qty'] = int(r['qty'] or 0)
+                r['value'] = round(float(r['value'] or 0), 2)
+            out['overall'] = {
+                'skus': len(rows),
+                'qty': sum(r['qty'] for r in rows),
+                'value': round(sum(r['value'] for r in rows), 2),
+                'pos': 0, 'lines': sum(r['lines'] for r in rows),
+            }
+            cur.execute(f"SELECT COUNT(DISTINCT po) FROM order_lines_full "
+                        f"WHERE {wsql}", tuple(args))
+            out['overall']['pos'] = int(cur.fetchone()[0] or 0)
+            out['top_qty'] = sorted(rows, key=lambda r: -r['qty'])[:top]
+            out['top_value'] = sorted(rows, key=lambda r: -r['value'])[:top]
+            if full:
+                out['rows'] = sorted(rows, key=lambda r: -r['value'])
             out['ok'] = True
     except Exception as e:  # noqa: BLE001
         out['error'] = f"{type(e).__name__}: {e}"

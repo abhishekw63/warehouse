@@ -43,10 +43,10 @@ ONLINE_CHANNELS = [
     {'name': 'Myntra', 'tag': 'live'},
     {'name': 'Reliance', 'tag': 'live'},
     {'name': 'Meesho Branch', 'tag': 'live'},
+    {'name': 'Big Basket', 'tag': 'live'},
+    {'name': 'First Cry', 'tag': 'live'},
     # ── TO-DO · pending web integration (shown as "coming soon") ──
     {'name': 'BlinkMP', 'tag': 'soon'},
-    {'name': 'Big Basket', 'tag': 'soon'},
-    {'name': 'First Cry', 'tag': 'soon'},
     {'name': 'Smytten', 'tag': 'soon'},
 ]
 OFFLINE_CHANNELS = [
@@ -146,6 +146,27 @@ class MarketplaceTemplateView(LoginRequiredMixin, TemplateView):
         return ctx
 
 
+def _sku_filters(request):
+    """Shared SKU-demand filters (marketplace + upload-date range). Defaults to
+    *today's* uploads on first load; validates the dates."""
+    import datetime as _dt
+    sf, st = request.GET.get('sku_from'), request.GET.get('sku_to')
+    smp = (request.GET.get('sku_mp') or '').strip()
+    if sf is None and st is None:
+        sf = st = _dt.date.today().isoformat()
+
+    def _ok(v):
+        v = (v or '').strip()
+        if not v:
+            return ''
+        try:
+            _dt.date.fromisoformat(v)
+            return v
+        except ValueError:
+            return ''
+    return _ok(sf), _ok(st), smp
+
+
 class AnalyticsView(LoginRequiredMixin, TemplateView):
     """Management daily-intake analytics: daily stacked chart by segment +
     segment→marketplace→child breakdown. Date range via ?days= (7/30/90)."""
@@ -182,7 +203,42 @@ class AnalyticsView(LoginRequiredMixin, TemplateView):
             except ValueError:
                 pass
         ctx['daily'] = daily
+        # SKU demand (newly uploaded POs) — own filter, defaults to today.
+        sf, st, smp = _sku_filters(self.request)
+        ctx['sku'] = order_db.sku_analytics(sf, st, smp)
+        ctx['sku_from'], ctx['sku_to'], ctx['sku_mp'] = sf, st, smp
         return ctx
+
+
+class SkuDemandView(LoginRequiredMixin, TemplateView):
+    """Full view — every SKU's demanded qty + value for the chosen marketplace +
+    upload-date range (defaults to today). Sortable; CSV export."""
+    template_name = 'online_b2b/sku_demand.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        sf, st, smp = _sku_filters(self.request)
+        ctx['sku'] = order_db.sku_analytics(sf, st, smp, full=True)
+        ctx['sku_from'], ctx['sku_to'], ctx['sku_mp'] = sf, st, smp
+        return ctx
+
+
+@login_required
+def sku_demand_export(request):
+    """CSV of the full SKU-demand list for the current filters."""
+    import csv
+    import io
+    sf, st, smp = _sku_filters(request)
+    data = order_db.sku_analytics(sf, st, smp, full=True)
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(['Item No', 'Description', 'Qty', 'Value', 'POs', 'Marketplaces'])
+    for r in data.get('rows', []):
+        w.writerow([r['item_no'], r['description'], r['qty'], r['value'],
+                    r['pos'], r['mps']])
+    resp = HttpResponse(buf.getvalue(), content_type='text/csv')
+    resp['Content-Disposition'] = 'attachment; filename="sku_demand.csv"'
+    return resp
 
 
 class OfflineBranchView(LoginRequiredMixin, TemplateView):
@@ -390,6 +446,32 @@ def issues_export(request):
         content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     resp['Content-Disposition'] = f'attachment; filename="{fname}"'
     return resp
+
+
+@login_required
+def issues_email_preview(request):
+    """Render (NO send) the Issues email for the current filter — the modal
+    shows subject + recipients + the exact HTML that will be emailed."""
+    from .services.issue_email import IssuesEmailReport
+    rep = IssuesEmailReport(_issue_filters(request))
+    p = rep.preview()
+    return JsonResponse({'ok': True, 'subject': p['subject'], 'html': p['html'],
+                         'to': p['to'], 'cc': p['cc'], 'count': len(rep.rows)})
+
+
+@login_required
+@require_POST
+def issues_email_send(request):
+    """Send the Issues email for the current filter (filters come via the query
+    string, same as the preview/export). Returns the delivery result as JSON."""
+    from .services.issue_email import IssuesEmailReport
+    rep = IssuesEmailReport(_issue_filters(request))
+    if not rep.rows:
+        return JsonResponse(
+            {'ok': False,
+             'error': 'No issue lines in the current filter — nothing to send.'})
+    ok, reason = rep.send()
+    return JsonResponse({'ok': ok, 'error': reason, 'count': len(rep.rows)})
 
 
 @login_required
@@ -645,6 +727,12 @@ def upload(request):
     """Phase 1: stash the uploaded PO(s) under a token and go to Review.
     Nothing is processed or written here."""
     if request.method == 'POST':
+      # Wrap the WHOLE POST path: multipart/file parsing (request.FILES),
+      # saving, and the engine preview can each raise. For AJAX we must never
+      # 500 to an HTML page (the client does r.json() and shows only a vague
+      # "Network error") — catch everything, log the traceback, and return the
+      # REAL reason as JSON so the operator (and the logs) see what failed.
+      try:
         form = UploadForm(request.POST, request.FILES)
         if form.is_valid():
             token = uuid.uuid4().hex[:12]
@@ -693,6 +781,15 @@ def upload(request):
             errs = '; '.join(f"{k}: {v.as_text()}" for k, v in form.errors.items())
             return JsonResponse({'ok': False, 'error': errs or 'Invalid form.'},
                                 status=200)
+      except Exception as e:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).exception('upload POST crashed')
+        if _is_ajax(request):
+            return JsonResponse(
+                {'ok': False,
+                 'error': f'Upload crashed: {type(e).__name__}: {e}'},
+                status=200)
+        raise
     else:
         form = UploadForm()
     return render(request, 'online_b2b/upload.html',

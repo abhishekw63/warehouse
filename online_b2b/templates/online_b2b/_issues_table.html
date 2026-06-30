@@ -1,6 +1,6 @@
 <div class="iss-kpis">
-  <div class="ik mis" data-filter="status:MISMATCH" title="Show mismatch only"><div class="n">{{ d.counts.MISMATCH|default:0 }}</div><div class="l">Mismatch</div></div>
-  <div class="ik nim" data-filter="status:NOT_IN_MASTER" title="Show not-in-master only"><div class="n">{{ d.counts.NOT_IN_MASTER|default:0 }}</div><div class="l">Not in master</div></div>
+  <div class="ik mis" data-filter="status:MISMATCH" title="Mismatch in this view — click to filter"><div class="n">{{ d.counts.MISMATCH|default:0 }}</div><div class="l">Mismatch</div>{% if d.counts_total.MISMATCH != d.counts.MISMATCH %}<div class="ik-of">of {{ d.counts_total.MISMATCH }} total</div>{% endif %}</div>
+  <div class="ik nim" data-filter="status:NOT_IN_MASTER" title="Not-in-master in this view — click to filter"><div class="n">{{ d.counts.NOT_IN_MASTER|default:0 }}</div><div class="l">Not in master</div>{% if d.counts_total.NOT_IN_MASTER != d.counts.NOT_IN_MASTER %}<div class="ik-of">of {{ d.counts_total.NOT_IN_MASTER }} total</div>{% endif %}</div>
   <div class="ik tot" data-filter="status:" title="Show all statuses"><div class="n">{{ d.rows|length }}</div><div class="l">Shown</div></div>
   <div class="ik res" data-filter="resolution:resolved" title="Click to view resolved lines"><div class="n">{{ d.resolved_total }}</div><div class="l">Resolved →</div></div>
 </div>

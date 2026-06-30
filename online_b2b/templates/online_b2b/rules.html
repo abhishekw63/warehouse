@@ -58,6 +58,15 @@
     </div>
   </div>
 
+  <!-- ── Segment switch: Online B2B / Offline ── -->
+  <div class="seg-tabs">
+    <button class="seg-tab on" data-seg="online">🛒 Online B2B</button>
+    <button class="seg-tab" data-seg="offline">🏬 Offline</button>
+    <button class="seg-tab" data-seg="sop">📋 SOP</button>
+  </div>
+
+  <div class="seg-pane on" data-pane="online">
+
   <!-- ── 1. How validation works ── -->
   <div class="rule-card reveal">
     <div class="rc-head"><span class="rc-no">1</span><h2>How a line is validated</h2></div>
@@ -238,6 +247,130 @@
     </div>
   </div>
   {% endif %}
+  </div><!-- /seg-pane online -->
+
+  <!-- ════════════════ OFFLINE ════════════════ -->
+  <div class="seg-pane" data-pane="offline" style="display:none;">
+
+    <div class="rule-card reveal">
+      <div class="rc-head"><span class="rc-no off">GT</span><h2>GT Mass — file rules &amp; regulations <span class="rc-sub">— what the parser needs to read &amp; record your PO</span></h2></div>
+      <p class="rc-lead">GT Mass reads the uploaded Excel and records each PO to the dashboard (the 7-sheet dump is generated on confirm). The engine reads the workbook's <b>first sheet only</b>. Below is exactly what it expects — and the error you'll see if something is missing.</p>
+
+      <h3 class="off-h">🔴 Hard rules — file is <b>REJECTED</b> if any fail</h3>
+      <div class="scroll"><table class="grid compact rule-tbl">
+        <thead><tr><th>Rule</th><th>What's expected</th><th>Error thrown</th></tr></thead>
+        <tbody>
+          <tr><td><b>First sheet</b></td><td>All PO data + header fields on the <b>first tab (Sheet1)</b> — not Sheet2/Sheet3.</td><td class="err">(reads Sheet1 only — data on another tab is invisible → the checks below fail)</td></tr>
+          <tr><td><b>Product header row</b></td><td>A row containing <b>both</b> <span class="mono">BC Code</span> and <span class="mono">Order Qty</span>.</td><td class="err">Template violation: header row not found. File must have a row with BOTH 'BC Code' AND 'Order Qty'.</td></tr>
+          <tr><td><b>PO Number label</b></td><td>A <span class="mono">PO Number</span> label in the rows above the header.</td><td class="err">Template violation: missing 'PO Number' label in meta rows.</td></tr>
+          <tr><td><b>PO Number value</b></td><td>A value beside the label (within 1–2 cells), e.g. <span class="mono">SO/GTM/####</span>.</td><td class="err">Template violation: 'PO Number' label exists but value is empty.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3 class="off-h">🟠 Soft rules — file still <b>records</b>, but a warning is logged</h3>
+      <div class="scroll"><table class="grid compact rule-tbl">
+        <thead><tr><th>Check</th><th>If missed → message</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr><td><b>Location</b> (AHD / BLR…)</td><td class="warn">❌ CRITICAL: Location Code is EMPTY — ERP import will fail without Location Code.</td><td>Records, but the D365 import will fail until Location is set.</td></tr>
+          <tr><td><b>Distributor Name</b></td><td class="warn">Distributor Name is blank.</td><td>Records; location/party shows blank.</td></tr>
+          <tr><td><b>City</b></td><td class="warn">City is blank.</td><td>Records.</td></tr>
+          <tr><td><b>State</b></td><td class="warn">State is blank.</td><td>Records.</td></tr>
+          <tr><td><b>BC Code missing</b> (EAN-only file)</td><td class="warn">EAN-only format (no BC Code): resolved N line(s) from the master by EAN…</td><td>Rescued — items resolved via EAN against the master.</td></tr>
+          <tr><td><b>EAN not in master</b></td><td class="warn">EAN … not in item master — line skipped (add this SKU to the master to record it).</td><td>That line is skipped; the rest record.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3 class="off-h">📥 Columns the engine reads <span class="rc-sub">(product table, below the header)</span></h3>
+      <div class="fmt-grid">
+        <div><span class="fmt-k">Item (SKU)</span><span class="fmt-v">BC Code</span></div>
+        <div><span class="fmt-k">Barcode (fallback)</span><span class="fmt-v">EAN</span></div>
+        <div><span class="fmt-k">Quantity</span><span class="fmt-v">Order Qty</span></div>
+        <div><span class="fmt-k">Tester</span><span class="fmt-v">Tester Qty → remark</span></div>
+        <div><span class="fmt-k">Order value</span><span class="fmt-v">TOTAL (inc-GST) · or CLP / Basic Price</span></div>
+        <div><span class="fmt-k">Reference</span><span class="fmt-v">Article Description · HSN Code · Category</span></div>
+      </div>
+
+      <h3 class="off-h">🧾 Meta fields read <span class="rc-sub">(rows above the header)</span></h3>
+      <p class="off-meta"><b>Left block:</b> Distributor Name · City · State &nbsp;·&nbsp; <b>Right block:</b> PO Number · Date of PO · Location.</p>
+
+      <div class="off-note">
+        <b>Best practice:</b> one PO per file · a <b>unique</b> PO Number (re-uploading a recorded SO is skipped as “already uploaded”) · keep the labels exactly as above · GST is 18%. If the PO Number is blank, the SO falls back to the filename digits with a warning (“SO from filename: '…'. Fill PO Number field.”) — always fill the PO Number field.
+      </div>
+    </div>
+
+  </div><!-- /seg-pane offline -->
+
+  <!-- ── SOP pane (applies to BOTH segments) ── -->
+  <div class="seg-pane" data-pane="sop" style="display:none;">
+
+  <div class="rule-card reveal sop-card">
+    <div class="rc-head"><span class="rc-no sop">✓</span><h2>Upload SOP <span class="rc-sub">— applies to BOTH Online B2B &amp; Offline · run every time you Process a PO</span></h2></div>
+    <p class="rc-lead" style="margin-top:6px;">My personal pre-flight + post-check list, built from real past mistakes. Before processing, sanity-check the file; after recording, spot-check a couple of POs against the source.</p>
+
+    <div class="sop-phase">① Before processing</div>
+    <div class="sop-step" style="--d:1"><span class="sn">1</span><div class="tx"><b>Unit price — empty or override?</b> Confirm whether the file actually carries a vendor <b>Unit Price / cost</b> (some channels send it, some don't — see <b>§3 file formats</b>). <b>Decide up front</b> whether the unit price should be left <b>empty</b> or <b>overridden</b> during upload. If it should have one and doesn't, the value &amp; price validation will be wrong.</div></div>
+    <div class="sop-step" style="--d:2"><span class="sn">2</span><div class="tx"><b>Ship-to — mapped or fuzzy?</b> Every delivery location must resolve to a <b>Ship-To</b> (Cust No + ship-to code). <b>Check whether it's an exact match or only a fuzzy / partial match</b> — confirm it's the right destination. If a location is unmapped, fix it in <a href="{% url 'b2b_ship_to' %}">Ship-To Mapping</a> <i>first</i>, then upload.</div></div>
+    <div class="sop-step" style="--d:3"><span class="sn">3</span><div class="tx"><b>Right sheet / location — don't mix.</b> Upload each PO under its <b>correct warehouse sheet</b> — <b>AHD POs in the AHD sheet, BLR in the BLR sheet</b> — never mix them. <b>DS POs go in DS</b> and must be <b>updated in the DS sheet</b>, with the <b>correct location</b>.</div></div>
+    <div class="sop-step" style="--d:4"><span class="sn">4</span><div class="tx"><b>Exception prices.</b> Check whether <b>deal / exception</b> SKU prices are already baked into the unit price (Swiggy deals, vendor overrides — see <b>§4 exceptions</b>). Don't assume the flat marketplace margin applies.</div></div>
+
+    <div class="sop-phase">② Keep current</div>
+    <div class="sop-step" style="--d:5"><span class="sn">5</span><div class="tx"><b>Item master &amp; MRP — refresh timely.</b> Keep <a href="{% url 'b2b_item_master' %}">Item Master</a> and item MRP up to date (the Hub shows a reminder at <b>15 days</b>). Stale MRP → wrong price comparison on every line.</div></div>
+
+    <div class="sop-phase">③ After recording — spot-check</div>
+    <div class="sop-step" style="--d:6"><span class="sn">6</span><div class="tx"><b>Randomly pick 2–3 POs</b> and open the source file side-by-side. Verify each: <b>Qty</b> · <b>Total incl-GST value</b> (GST amount included) · <b>Ship-to</b> (Cust No + code) and the <b>address</b> match the destination.</div></div>
+    <div class="sop-step" style="--d:7"><span class="sn">7</span><div class="tx"><b>Randomly check 2–3 SKUs' count</b> across all three: the <b>dump</b> → the <b>D365 line</b> → the marketplace <b>portal</b>. The quantity must match end-to-end.</div></div>
+
+    <div class="sop-phase">④ Don't forget — staging</div>
+    <div class="sop-step" style="--d:8"><span class="sn">8</span><div class="tx"><b>Run staging.</b> Don't forget to <b>run staging</b>, including its <b>M-Assist integration</b>.</div></div>
+  </div>
+
+  </div><!-- /seg-pane sop -->
 
 </div>
+
+<style>
+  .seg-tabs{display:flex;gap:8px;margin:0 0 18px;}
+  .seg-tab{font-size:13.5px;font-weight:700;padding:9px 18px;border:1px solid var(--border);background:var(--surface);
+    border-radius:10px;cursor:pointer;color:var(--text-2);transition:all .14s;}
+  .seg-tab:hover{border-color:var(--accent);color:var(--accent);}
+  .seg-tab.on{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 4px 14px -6px var(--accent);}
+  .rc-no.off{background:#f59e0b;}
+  /* Operator SOP — big, animated checklist */
+  .sop-card{background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 9%,var(--surface)),var(--surface));
+    border:1.5px solid color-mix(in srgb,var(--accent) 40%,transparent);box-shadow:0 6px 22px -14px var(--accent);}
+  .rc-no.sop{background:#10b981;}
+  .sop-phase{font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--accent);
+    margin:20px 0 10px;opacity:0;animation:sopIn .5s ease forwards;}
+  .sop-step{display:flex;gap:16px;align-items:flex-start;padding:15px 18px;margin:10px 0;
+    background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    opacity:0;transform:translateX(-16px);animation:sopIn .55s cubic-bezier(.2,.8,.2,1) forwards;
+    animation-delay:calc(var(--d,0) * 90ms);transition:box-shadow .18s,transform .18s;}
+  .sop-step:hover{box-shadow:0 8px 24px -12px var(--accent);transform:translateX(2px);}
+  .sop-step .sn{flex:none;width:38px;height:38px;border-radius:50%;background:var(--accent);color:#fff;
+    font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;
+    box-shadow:0 6px 14px -5px var(--accent);}
+  .sop-step .tx{font-size:15.5px;line-height:1.65;color:var(--text);}
+  .sop-step .tx b{color:var(--text);font-weight:800;}
+  @keyframes sopIn{to{opacity:1;transform:none;}}
+  @media (prefers-reduced-motion: reduce){.sop-step,.sop-phase{animation:none;opacity:1;transform:none;}}
+  .off-h{font-size:13px;margin:18px 0 9px;font-weight:700;}
+  .rule-tbl td.err{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:#b91c1c;background:#fef2f2;}
+  .rule-tbl td.warn{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:#92600a;background:#fff8ed;}
+  .off-meta{font-size:12.5px;color:var(--text-2);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;}
+  .off-note{margin-top:14px;font-size:12.5px;color:#7a4a06;background:#fff8ed;border:1px solid #ffd9a0;border-left:4px solid #f59e0b;border-radius:10px;padding:11px 14px;line-height:1.6;}
+</style>
+<script>
+(function () {
+  var tabs = document.querySelectorAll('.seg-tab');
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () {
+      tabs.forEach(function (x) { x.classList.toggle('on', x === t); });
+      var seg = t.getAttribute('data-seg');
+      document.querySelectorAll('.seg-pane').forEach(function (p) {
+        p.style.display = (p.getAttribute('data-pane') === seg) ? '' : 'none';
+      });
+    });
+  });
+})();
+</script>
 {% endblock %}

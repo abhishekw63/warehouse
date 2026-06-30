@@ -237,24 +237,35 @@ def _read_effective_mrp(path: str, as_of: _dt.date):
     df['end'] = pd.to_datetime(df['end'], errors='coerce').dt.date
     df['mrp'] = pd.to_numeric(df['mrp'], errors='coerce')
 
+    # Blank Start/End cells parse to NaT, which is TRUTHY — a bare ``if
+    # r['start']`` lets NaT through and ``NaT <= today`` raises a TypeError.
+    # Guard with pd.notna() wherever a date is tested or compared.
+    def _has(d):
+        return pd.notna(d)
     effective: dict = {}
     no_cover: list = []
+    no_end: list = []   # effective period missing its End Date (open-ended)
     for item_no, grp in df.groupby('item_no'):
         rows = [r for _, r in grp.iterrows()]
         covering = [r for r in rows
-                    if r['start'] and r['end']
+                    if _has(r['start']) and _has(r['end'])
                     and r['start'] <= as_of <= r['end']]
         if covering:
             r = max(covering, key=lambda x: x['start'])
         else:
-            started = [r for r in rows if r['start'] and r['start'] <= as_of]
+            started = [r for r in rows if _has(r['start']) and r['start'] <= as_of]
             if started:
                 r = max(started, key=lambda x: x['start'])
                 no_cover.append(item_no)
             else:
-                r = min(rows, key=lambda x: (x['start'] or _dt.date.max))
+                r = min(rows, key=lambda x: x['start'] if _has(x['start'])
+                        else _dt.date.max)
                 no_cover.append(item_no)
-        effective[item_no] = {'mrp': r['mrp'], 'start': r['start'], 'end': r['end']}
+        if not _has(r['end']):
+            no_end.append(item_no)
+        effective[item_no] = {'mrp': r['mrp'],
+                              'start': r['start'] if _has(r['start']) else None,
+                              'end': r['end'] if _has(r['end']) else None}
 
     warnings = []
     if no_cover:
@@ -262,6 +273,12 @@ def _read_effective_mrp(path: str, as_of: _dt.date):
             f"{len(no_cover)} item(s) had no MRP period covering {as_of} — used "
             f"the latest already-started price instead (e.g. {', '.join(no_cover[:8])}"
             f"{'…' if len(no_cover) > 8 else ''}).")
+    if no_end:
+        warnings.append(
+            f"{len(no_end)} item(s) have an MRP period with a BLANK End Date — "
+            f"treated as open-ended (never expires); the ERP normally fills a "
+            f"far-future end (e.g. 31-03-2030), so verify these aren't a data slip "
+            f"(e.g. {', '.join(no_end[:8])}{'…' if len(no_end) > 8 else ''}).")
     return effective, warnings
 
 

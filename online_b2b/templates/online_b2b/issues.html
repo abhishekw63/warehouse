@@ -5,6 +5,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
 <style>
+  /* use the full screen width — lots of columns to show */
+  .iss-wrap{ max-width:min(2100px, 96vw); }
+  .ik .ik-of{ font-size:10px; font-weight:700; color:var(--muted); margin-top:3px; }
   /* Polished filter / export bar (frontend only) */
   #iss-filters{ align-items:flex-end; gap:12px 14px; padding:16px 18px; }
   #iss-filters .fg label{ font-size:10.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:#8a8a96; }
@@ -24,6 +27,29 @@
     border-radius:8px; text-decoration:none; font-weight:600; white-space:nowrap; box-shadow:0 7px 15px -7px rgba(27,122,61,.65); transition:.15s; }
   .iss-export:hover{ background:#176a35; transform:translateY(-1px); }
   .iss-export svg{ width:15px; height:15px; }
+  /* Email button + reusable email preview/send modal (skeleton) */
+  .iss-email{ height:38px; display:inline-flex; align-items:center; gap:7px; padding:0 17px; background:#1A237E; color:#fff;
+    border:none; border-radius:8px; font-weight:600; white-space:nowrap; cursor:pointer; box-shadow:0 7px 15px -7px rgba(26,35,126,.6); transition:.15s; }
+  .iss-email:hover{ background:#283593; transform:translateY(-1px); }
+  .iss-email svg{ width:15px; height:15px; }
+  .em-overlay{ position:fixed; inset:0; z-index:9998; display:flex; align-items:center; justify-content:center;
+    background:rgba(15,23,42,.5); backdrop-filter:blur(2px); }
+  .em-overlay[hidden]{ display:none; }
+  .em-card{ background:#fff; width:min(980px,95vw); max-height:92vh; border-radius:16px; display:flex; flex-direction:column;
+    box-shadow:0 30px 80px -20px rgba(15,23,42,.6); overflow:hidden; animation:emPop .22s cubic-bezier(.2,.85,.25,1); }
+  @keyframes emPop{ from{ transform:translateY(12px) scale(.97); opacity:0; } to{ transform:none; opacity:1; } }
+  .em-head{ display:flex; align-items:center; justify-content:space-between; padding:15px 20px; border-bottom:1px solid var(--border); }
+  .em-head h3{ margin:0; font-size:17px; color:var(--text); }
+  .em-x{ background:none; border:none; font-size:18px; cursor:pointer; color:var(--muted); line-height:1; }
+  .em-meta{ padding:12px 20px; font-size:12.5px; display:grid; gap:5px; border-bottom:1px solid var(--border); background:var(--surface-2); }
+  .em-meta .em-lbl{ display:inline-block; width:64px; color:var(--muted); font-weight:700; text-transform:uppercase; font-size:10.5px; letter-spacing:.04em; }
+  .em-preview{ flex:1; overflow:auto; background:#f1f5f9; min-height:200px; }
+  .em-preview iframe{ width:100%; height:46vh; border:0; background:#fff; display:block; }
+  .em-foot{ display:flex; align-items:center; gap:10px; padding:14px 20px; border-top:1px solid var(--border); }
+  .em-status{ font-size:12.5px; font-weight:600; }
+  .em-status.ok{ color:#15803d; } .em-status.err{ color:#b91c1c; }
+  .em-spin{ width:15px; height:15px; border:2px solid rgba(255,255,255,.5); border-top-color:#fff; border-radius:50%; display:inline-block; vertical-align:-2px; margin-right:6px; animation:emspin .7s linear infinite; }
+  @keyframes emspin{ to{ transform:rotate(360deg); } }
 </style>
 {% endblock %}
 
@@ -73,6 +99,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
         Export
       </a>
+      <button type="button" id="iss-email" class="iss-email" title="Email these filtered issue lines to management">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><polyline points="3 7 12 13 21 7"/></svg>
+        Email
+      </button>
     </div>
     <span id="iss-spin" class="spin" hidden></span>
   </form>
@@ -95,6 +125,30 @@
     {% include 'online_b2b/_issues_table.html' %}
   </div>
   {% endif %}
+</div>
+
+{# Reusable email preview/send modal — skeleton for all email features #}
+<div id="email-modal" class="em-overlay" hidden
+     data-preview-url="{% url 'b2b_issues_email_preview' %}"
+     data-send-url="{% url 'b2b_issues_email_send' %}">
+  <div class="em-card">
+    <div class="em-head">
+      <h3 id="em-title">Email issue lines</h3>
+      <button type="button" class="em-x" id="em-close" aria-label="Close">✕</button>
+    </div>
+    <div class="em-meta">
+      <div><span class="em-lbl">To</span><span id="em-to">—</span></div>
+      <div><span class="em-lbl">Cc</span><span id="em-cc">—</span></div>
+      <div><span class="em-lbl">Subject</span><span id="em-subject">—</span></div>
+    </div>
+    <div class="em-preview"><iframe id="em-frame" title="Email preview"></iframe></div>
+    <div class="em-foot">
+      <span id="em-status" class="em-status"></span>
+      <span style="flex:1"></span>
+      <button type="button" class="btn-ghost" id="em-cancel">Cancel</button>
+      <button type="button" class="btn-primary" id="em-send">Send email</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -252,6 +306,70 @@
   });
 
   bindActions();
+})();
+</script>
+
+<script>
+/* Email modal — preview then send the filtered issue lines. Self-contained;
+   reads filters straight off the Issues form so it always matches the view.
+   Generic enough to reuse for future email features (point data-*-url at them). */
+(function () {
+  var modal = document.getElementById('email-modal');
+  var btn = document.getElementById('iss-email');
+  var form = document.getElementById('iss-filters');
+  if (!modal || !btn || !form) return;
+  var csrfEl = document.getElementById('iss-csrf');
+  var csrf = csrfEl ? csrfEl.value : '';
+  var $ = function (id) { return document.getElementById(id); };
+
+  function params() {
+    var p = new URLSearchParams();
+    if (form.resolution) p.set('resolution', form.resolution.value);
+    if (form.status && form.status.value) p.set('status', form.status.value);
+    if (form.q && form.q.value.trim()) p.set('q', form.q.value.trim());
+    if (form.date_from && form.date_from.value) p.set('date_from', form.date_from.value);
+    if (form.date_to && form.date_to.value) p.set('date_to', form.date_to.value);
+    return p;
+  }
+  function setStatus(html, cls) {
+    var s = $('em-status'); s.innerHTML = html || '';
+    s.className = 'em-status' + (cls ? ' ' + cls : '');
+  }
+  function close() { modal.hidden = true; setStatus(''); }
+
+  btn.addEventListener('click', function () {
+    modal.hidden = false; setStatus('Loading preview…');
+    $('em-send').disabled = true; $('em-frame').srcdoc = '';
+    fetch(modal.getAttribute('data-preview-url') + '?' + params().toString(),
+          { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) { setStatus(j.error || 'Could not build preview.', 'err'); return; }
+        $('em-to').textContent = (j.to || []).join(', ') || '—';
+        $('em-cc').textContent = (j.cc || []).join(', ') || '—';
+        $('em-subject').textContent = j.subject || '—';
+        $('em-frame').srcdoc = j.html || '';
+        if (!j.count) { setStatus('No issue lines in the current filter — nothing to send.', 'err'); }
+        else { setStatus(j.count + ' line(s) will be emailed.'); $('em-send').disabled = false; }
+      })
+      .catch(function () { setStatus('Could not load preview — please retry.', 'err'); });
+  });
+
+  $('em-send').addEventListener('click', function () {
+    $('em-send').disabled = true;
+    setStatus('<span class="em-spin"></span>Sending…');
+    fetch(modal.getAttribute('data-send-url') + '?' + params().toString(), {
+      method: 'POST',
+      headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest' }
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      if (j.ok) { setStatus('✓ Sent ' + (j.count || '') + ' line(s).', 'ok'); setTimeout(close, 1500); }
+      else { setStatus(j.error || 'Send failed.', 'err'); $('em-send').disabled = false; }
+    }).catch(function () { setStatus('Network error — please retry.', 'err'); $('em-send').disabled = false; });
+  });
+
+  $('em-close').addEventListener('click', close);
+  $('em-cancel').addEventListener('click', close);
+  modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
 })();
 </script>
 {% endblock %}
