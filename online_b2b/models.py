@@ -25,8 +25,8 @@ class Run(models.Model):
 
     class Meta:
         managed = False
-        db_table = 'runs'
-        verbose_name = 'Run'
+        db_table = "runs"
+        verbose_name = "Run"
 
     def __str__(self):
         return f"Run #{self.run_id} · {self.mode}"
@@ -54,8 +54,8 @@ class OrderHeader(models.Model):
 
     class Meta:
         managed = False
-        db_table = 'order_headers'
-        verbose_name = 'Order header'
+        db_table = "order_headers"
+        verbose_name = "Order header"
 
     def __str__(self):
         return f"{self.marketplace_label} · {self.po}"
@@ -99,14 +99,15 @@ class OrderLine(models.Model):
         # the admin browses the full line — the facts live in `order_lines` and
         # the comparison/decision cols in `order_line_validation`. Browse-only
         # (a view isn't updatable).
-        db_table = 'order_lines_full'
-        verbose_name = 'Order line'
+        db_table = "order_lines_full"
+        verbose_name = "Order line"
 
     def __str__(self):
         return f"{self.po} · {self.item_no} ({self.status or 'OK'})"
 
 
 # ── DB-sourced master data (Excels retired into these tables) ────────────────
+
 
 class ItemMaster(models.Model):
     item_no = models.CharField(max_length=50, primary_key=True)
@@ -126,8 +127,8 @@ class ItemMaster(models.Model):
 
     class Meta:
         managed = False
-        db_table = 'item_master'
-        verbose_name = 'Item master'
+        db_table = "item_master"
+        verbose_name = "Item master"
 
     def __str__(self):
         return f"{self.item_no} · {self.description}"
@@ -136,6 +137,7 @@ class ItemMaster(models.Model):
 class ChannelSkuMap(models.Model):
     """Per-channel SKU-code -> item/EAN map (Swiggy / Health & Glow / future
     code-only channels). Generalises the old item_swiggy_map."""
+
     id = models.BigAutoField(primary_key=True)
     channel = models.CharField(max_length=40, blank=True, null=True)
     sku_code = models.CharField(max_length=80, blank=True, null=True)
@@ -146,8 +148,8 @@ class ChannelSkuMap(models.Model):
 
     class Meta:
         managed = False
-        db_table = 'channel_sku_map'
-        verbose_name = 'Channel SKU map'
+        db_table = "channel_sku_map"
+        verbose_name = "Channel SKU map"
 
     def __str__(self):
         return f"[{self.channel}] {self.sku_code} → {self.item_no or self.ean}"
@@ -170,8 +172,8 @@ class ShipToMapping(models.Model):
 
     class Meta:
         managed = False
-        db_table = 'ship_to_mapping'
-        verbose_name = 'Ship-To mapping'
+        db_table = "ship_to_mapping"
+        verbose_name = "Ship-To mapping"
 
     def __str__(self):
         return f"{self.party} · {self.del_location} → {self.ship_to}"
@@ -180,6 +182,7 @@ class ShipToMapping(models.Model):
 class ItemException(models.Model):
     """ALL per-code overrides in one table: EAN remap / CP override / vendor-CP
     (kind='exception') AND Swiggy deal SKUs (kind='swiggy_deal')."""
+
     id = models.BigAutoField(primary_key=True)
     kind = models.CharField(max_length=16, blank=True, null=True)
     source_code = models.CharField(max_length=80, blank=True, null=True)
@@ -198,8 +201,8 @@ class ItemException(models.Model):
 
     class Meta:
         managed = False
-        db_table = 'item_exceptions'
-        verbose_name = 'Item exception'
+        db_table = "item_exceptions"
+        verbose_name = "Item exception"
 
     def __str__(self):
         return f"[{self.kind}] {self.source_code} ({self.marketplace or 'all'})"

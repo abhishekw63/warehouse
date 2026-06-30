@@ -12,7 +12,7 @@ class _MultiFileField(forms.FileField):
     support; this is the documented re-implementation)."""
 
     def __init__(self, *args, **kwargs):
-        kwargs.setdefault('widget', _MultiFileInput(attrs={'multiple': True}))
+        kwargs.setdefault("widget", _MultiFileInput(attrs={"multiple": True}))
         super().__init__(*args, **kwargs)
 
     def clean(self, data, initial=None):
@@ -25,16 +25,17 @@ class _MultiFileField(forms.FileField):
 class UploadForm(forms.Form):
     marketplace = forms.ChoiceField(
         choices=engine_bridge.pilot_choices(),
-        initial='Blink',
+        initial="Blink",
     )
     warehouse = forms.ChoiceField(
         choices=[(w, w) for w in engine_bridge.warehouse_choices()],
         initial=engine_bridge.default_warehouse(),
     )
     margin_pct = forms.IntegerField(
-        min_value=1, max_value=100,
-        required=False,                       # blank → marketplace default (view)
-        initial=engine_bridge.default_margin_pct('Blink'),
-        label='Margin %',
+        min_value=1,
+        max_value=100,
+        required=False,  # blank → marketplace default (view)
+        initial=engine_bridge.default_margin_pct("Blink"),
+        label="Margin %",
     )
-    po_files = _MultiFileField(label='PO file(s)')
+    po_files = _MultiFileField(label="PO file(s)")
