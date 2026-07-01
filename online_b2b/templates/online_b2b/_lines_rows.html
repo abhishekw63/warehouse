@@ -1,6 +1,6 @@
 {% load b2b_extras %}
 {% for l in rows %}
-<tr>
+<tr class="{% if l.exception_label %}has-exc{% endif %}">
   <td>{{ l.marketplace }}</td>
   <td class="mono"><a href="{% url 'b2b_run_detail' run_id=l.run_id %}" class="po">{{ l.po }}</a></td>
   <td class="mono">{{ l.item_no|default:'—' }}</td>
@@ -14,7 +14,7 @@
   <td class="r {% if l.basis == 'CP' %}basis-on{% endif %}">{{ l.our_cp|default_if_none:'—' }}</td><td class="r {% if l.basis == 'CP' %}basis-on{% endif %}">{{ l.vendor_cp|default_if_none:'—' }}</td>
   <td class="r {% if l.diff and l.diff != 0 %}diff{% endif %}">{{ l.diff|default_if_none:'—' }}</td>
   <td>{% if l.basis %}<span class="basis-badge b-{{ l.basis|lower }}">{{ l.basis }}</span>{% endif %}</td>
-  <td><span class="st {{ l.status|lower|default:'ok' }}">{{ l.status|default:'OK' }}</span></td>
+  <td><span class="st {{ l.status|lower|default:'ok' }}">{{ l.status|default:'OK' }}</span>{% if l.exception_label %}<br><span class="exc" title="agreed deal / exception applied">⚑ {{ l.exception_label }}</span>{% endif %}</td>
   <td>{% if l.action %}<span class="actpill a-{{ l.action|lower }}">{{ l.action }}</span>{% else %}—{% endif %}</td>
   <td class="r"><a href="{% url 'b2b_run_detail' run_id=l.run_id %}" class="lnk">#{{ l.run_id }}</a></td>
 </tr>

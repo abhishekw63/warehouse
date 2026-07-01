@@ -1,0 +1,154 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static %}
+{% block title %}Daily Tasks{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+  <a href="{% url 'departments' %}">Departments</a>
+  <a href="{% url 'b2b_dashboard' %}"> / Order Management</a> <span>/ Daily Tasks</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap dt-wrap">
+  <div class="b2b-head">
+    <div>
+      <h1>Daily Tasks <span>· {{ d.day }}{% if d.is_today %} (today){% endif %}</span></h1>
+      <p class="src">Tick each step as you finish it — <b>Uploaded (web)</b> auto-ticks from what you actually recorded. Every tick is time-stamped so you always know where you left off.</p>
+    </div>
+    <div class="dt-daynav">
+      <a class="btn-ghost" href="?day={{ d.day|add:'-0' }}" id="dt-prev">← Prev</a>
+      <a class="btn-primary" href="{% url 'b2b_daily' %}">Today</a>
+    </div>
+  </div>
+
+  <div class="dt-overall">
+    <div class="dt-ovbar"><span id="dt-ovfill" style="width:{{ d.overall_pct }}%"></span></div>
+    <div class="dt-ovlbl"><b id="dt-ovpct">{{ d.overall_pct }}%</b> · <span id="dt-ovdone">{{ d.done_channels }}</span>/{{ d.total_channels }} channels fully done</div>
+  </div>
+
+  {% if d.yesterday.count %}
+  <div class="dt-carry">⚠ <b>{{ d.yesterday.count }}</b> channel(s) were left incomplete yesterday ({{ d.yesterday.date }}): {{ d.yesterday.channels|join:', ' }}<a href="?day={{ d.yesterday.date }}">view →</a></div>
+  {% endif %}
+
+  {% for seg in d.segments %}
+  <div class="dt-seg">
+    <div class="dt-seg-h">{{ seg.segment }}</div>
+    <div class="dt-scroll">
+    <table class="dt-table">
+      <thead><tr>
+        <th class="dt-ch">Channel</th>
+        {% for s in d.steps %}<th>{{ s.label }}</th>{% endfor %}
+        <th class="dt-prog">Progress</th>
+      </tr></thead>
+      <tbody>
+        {% for c in seg.channels %}
+        <tr data-channel="{{ c.key }}" class="{% if c.done %}dt-done{% endif %}">
+          <td class="dt-ch">
+            <span class="dt-dot {% if c.done %}ok{% elif c.done_steps %}part{% endif %}"></span>
+            {{ c.display }}{% if not c.live %} <span class="dt-soon" title="not web-integrated — tick manually">manual</span>{% endif %}
+          </td>
+          {% for s in c.steps %}
+          <td class="dt-cell">
+            <label class="dt-box {% if s.auto %}auto{% endif %}">
+              <input type="checkbox" data-channel="{{ c.key }}" data-step="{{ s.key }}"
+                     {% if s.checked %}checked{% endif %}{% if s.auto %} disabled{% endif %}>
+              <span class="dt-mark"></span>
+            </label>
+            <span class="dt-time" data-cell="{{ c.key }}:{{ s.key }}">{% if s.checked %}{% if s.auto %}auto {% endif %}{{ s.at }}{% endif %}</span>
+          </td>
+          {% endfor %}
+          <td class="dt-prog"><div class="dt-pbar"><span style="width:{{ c.pct }}%"></span></div></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% endfor %}
+
+  <input type="hidden" id="dt-csrf" value="{{ csrf_token }}">
+  <input type="hidden" id="dt-day" value="{{ d.day }}">
+</div>
+
+<style>
+  .dt-wrap .b2b-head{align-items:flex-start;}
+  .dt-daynav{display:flex;gap:8px;align-items:center;}
+  .dt-overall{display:flex;align-items:center;gap:14px;margin:6px 0 18px;}
+  .dt-ovbar{flex:1;height:12px;border-radius:8px;background:var(--surface-2);overflow:hidden;max-width:520px;}
+  .dt-ovbar span{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,#10b981,#0a9d6e);transition:width .3s;}
+  .dt-ovlbl{font-size:13px;color:var(--text-2);}
+  .dt-carry{background:#fff7e6;border:1px solid #f5c86b;color:#8a5a00;border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:16px;}
+  .dt-carry a{margin-left:8px;font-weight:700;color:var(--accent);}
+  .dt-seg{margin:0 0 22px;}
+  .dt-seg-h{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);margin:0 0 8px;}
+  .dt-scroll{overflow:auto;border:1px solid var(--border);border-radius:12px;background:var(--surface);}
+  table.dt-table{width:100%;border-collapse:collapse;}
+  .dt-table th{font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);padding:10px 12px;text-align:center;background:var(--surface-2);border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:0;}
+  .dt-table td{padding:9px 12px;border-bottom:1px solid color-mix(in srgb,var(--border) 55%,transparent);text-align:center;vertical-align:middle;}
+  .dt-table th.dt-ch,.dt-table td.dt-ch{text-align:left;min-width:200px;font-weight:600;font-size:13px;color:var(--text);}
+  .dt-table tbody tr:hover td{background:color-mix(in srgb,var(--accent) 4%,transparent);}
+  tr.dt-done td.dt-ch{color:#0a9d6e;}
+  .dt-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#d1d5db;margin-right:8px;vertical-align:middle;}
+  .dt-dot.part{background:#f59e0b;} .dt-dot.ok{background:#10b981;}
+  .dt-soon{font-size:9.5px;font-weight:700;text-transform:uppercase;color:#9ca3af;border:1px solid #e5e7eb;border-radius:6px;padding:1px 5px;margin-left:4px;}
+  .dt-cell{min-width:96px;}
+  .dt-box{position:relative;display:inline-flex;cursor:pointer;}
+  .dt-box input{position:absolute;opacity:0;width:0;height:0;}
+  .dt-mark{width:20px;height:20px;border:2px solid #cbd5e1;border-radius:6px;display:inline-block;transition:.15s;background:#fff;}
+  .dt-box input:checked ~ .dt-mark{background:#10b981;border-color:#10b981;}
+  .dt-box input:checked ~ .dt-mark::after{content:'✓';color:#fff;font-size:14px;font-weight:800;position:absolute;left:4px;top:-1px;}
+  .dt-box.auto .dt-mark{background:#3b82f6;border-color:#3b82f6;}
+  .dt-box.auto input:checked ~ .dt-mark::after{content:'✓';}
+  .dt-box input:disabled ~ .dt-mark{cursor:not-allowed;opacity:.9;}
+  .dt-time{display:block;font-size:10px;color:var(--muted);margin-top:3px;min-height:12px;}
+  .dt-prog{min-width:90px;} .dt-pbar{height:7px;border-radius:5px;background:var(--surface-2);overflow:hidden;}
+  .dt-pbar span{display:block;height:100%;background:linear-gradient(90deg,#10b981,#0a9d6e);transition:width .3s;}
+</style>
+<script>
+(function () {
+  var csrf = document.getElementById('dt-csrf').value;
+  var day = document.getElementById('dt-day').value;
+  var toggleUrl = "{% url 'b2b_daily_toggle' %}";
+  var STEPS = {{ d.steps|length }};
+  var TOTAL = {{ d.total_channels }};
+
+  function recompute() {
+    var doneCh = 0;
+    document.querySelectorAll('tr[data-channel]').forEach(function (tr) {
+      var boxes = tr.querySelectorAll('input[type=checkbox]');
+      var done = 0; boxes.forEach(function (b) { if (b.checked) done++; });
+      var pct = Math.round(done * 100 / boxes.length);
+      var bar = tr.querySelector('.dt-pbar span'); if (bar) bar.style.width = pct + '%';
+      var dot = tr.querySelector('.dt-dot');
+      if (dot) { dot.className = 'dt-dot' + (done === boxes.length ? ' ok' : (done ? ' part' : '')); }
+      if (done === boxes.length) { doneCh++; tr.classList.add('dt-done'); } else { tr.classList.remove('dt-done'); }
+    });
+    var op = Math.round(doneCh * 100 / TOTAL);
+    document.getElementById('dt-ovfill').style.width = op + '%';
+    document.getElementById('dt-ovpct').textContent = op + '%';
+    document.getElementById('dt-ovdone').textContent = doneCh;
+  }
+
+  document.querySelectorAll('input[type=checkbox]:not([disabled])').forEach(function (cb) {
+    cb.addEventListener('change', function () {
+      var want = cb.checked;
+      cb.disabled = true;
+      var body = new URLSearchParams({ day: day, channel: cb.dataset.channel,
+        step: cb.dataset.step, checked: want ? '1' : '0' });
+      fetch(toggleUrl, { method: 'POST', headers: { 'X-CSRFToken': csrf,
+        'X-Requested-With': 'XMLHttpRequest',
+        'Content-Type': 'application/x-www-form-urlencoded' }, body: body })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          cb.disabled = false;
+          if (!j.ok) { cb.checked = !want; alert(j.error || 'Could not save.'); return; }
+          var t = cb.closest('.dt-cell').querySelector('.dt-time');
+          if (t) t.textContent = j.checked ? (j.at + (j.by ? ' · ' + j.by : '')) : '';
+          recompute();
+        })
+        .catch(function () { cb.disabled = false; cb.checked = !want; alert('Network error — please retry.'); });
+    });
+  });
+})();
+</script>
+{% endblock %}

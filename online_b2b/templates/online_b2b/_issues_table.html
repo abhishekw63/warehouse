@@ -18,7 +18,7 @@
   </tr></thead>
   <tbody>
     {% for i in d.rows %}
-    <tr class="{% if i.status == 'MISMATCH' %}rmis{% else %}rnim{% endif %}">
+    <tr class="{% if i.status == 'MISMATCH' %}rmis{% else %}rnim{% endif %}{% if i.exception_label %} has-exc{% endif %}">
       <td>{{ i.marketplace }}</td>
       <td class="mono">{{ i.po }}</td>
       <td class="mono">{{ i.item_no }}</td>
@@ -31,7 +31,7 @@
       <td class="r {% if i.basis == 'CP' %}basis-on{% endif %}">{{ i.our_cp|default_if_none:'—' }}</td><td class="r {% if i.basis == 'CP' %}basis-on{% endif %}">{{ i.vendor_cp|default_if_none:'—' }}</td>
       <td class="r {% if i.diff and i.diff != 0 %}diff{% endif %}">{{ i.diff|default_if_none:'—' }}</td>
       <td>{% if i.basis %}<span class="basis-badge b-{{ i.basis|lower }}">{{ i.basis }}</span>{% endif %}</td>
-      <td>{% if i.received_ean %}<span class="st nim" title="was NOT_IN_MASTER">EAN fixed</span>{% else %}<span class="st {{ i.status|lower }}">{{ i.status }}</span>{% endif %}</td>
+      <td>{% if i.received_ean %}<span class="st nim" title="was NOT_IN_MASTER">EAN fixed</span>{% else %}<span class="st {{ i.status|lower }}">{{ i.status }}</span>{% endif %}{% if i.exception_label %}<br><span class="exc" title="agreed deal / exception applied — verify before excluding">⚑ {{ i.exception_label }}</span>{% endif %}</td>
       {% if i.received_ean %}
       <td><span class="ean-fixed">corrected ✓</span></td>
       <td class="muted">EAN → <span class="mono">{{ i.ean }}</span></td>
@@ -48,7 +48,7 @@
       <td>
         <select class="act-sel" data-line="{{ i.line_id }}">
           <option value="" {% if not i.action %}selected{% endif %}>— set —</option>
-          <option value="KEEP" {% if i.action == 'KEEP' %}selected{% endif %}>Keep (flag)</option>
+          <option value="INCLUDE" {% if i.action == 'INCLUDE' or i.action == 'KEEP' %}selected{% endif %}>Include (as-is)</option>
           <option value="OVERRIDE" {% if i.action == 'OVERRIDE' %}selected{% endif %}>Override</option>
           <option value="EXCLUDE" {% if i.action == 'EXCLUDE' %}selected{% endif %}>Exclude</option>
         </select>

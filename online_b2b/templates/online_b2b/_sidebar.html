@@ -8,6 +8,8 @@
   <nav class="side-nav">
     <a href="{% url 'b2b_dashboard' %}" class="sn{% if request.path == '/b2b/' %} on{% endif %}" title="Hub">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><span class="side-label">Hub</span></a>
+    <a href="{% url 'b2b_daily' %}" class="sn{% if '/daily' in request.path %} on{% endif %}" title="Daily Tasks">
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='clock' %}</span><span class="side-label">Daily Tasks</span></a>
     <a href="{% url 'b2b_analytics' %}" class="sn{% if '/analytics' in request.path %} on{% endif %}" title="Analytics">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><span class="side-label">Analytics</span></a>
     <a href="{% url 'b2b_rules' %}" class="sn{% if '/rules' in request.path %} on{% endif %}" title="Rules & Exceptions">

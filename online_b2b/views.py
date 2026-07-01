@@ -475,6 +475,31 @@ def issues_email_send(request):
 
 
 @login_required
+def daily_tasks(request):
+    """Daily Activity Checklist — per-day grid of channels × workflow steps.
+    Dual-render: JSON for AJAX (API-ready), template otherwise."""
+    from .services import daily_checklist as dc
+    data = dc.get_day(request.GET.get('day'))
+    if _is_ajax(request):
+        return JsonResponse({'ok': True, 'data': data})
+    return render(request, 'online_b2b/daily_tasks.html', {'d': data})
+
+
+@login_required
+@require_POST
+def daily_tasks_toggle(request):
+    """Tick/untick one cell (channel × step) for a day — records timestamp+user."""
+    from .services import daily_checklist as dc
+    res = dc.toggle(
+        request.POST.get('day'),
+        request.POST.get('channel', ''),
+        request.POST.get('step', ''),
+        request.POST.get('checked') in ('1', 'true', 'True', 'on'),
+        user=request.user.get_username())
+    return JsonResponse(res)
+
+
+@login_required
 @require_POST
 def issues_save(request):
     """Save the operator's Action + Remark on one flagged line (Issues page)."""

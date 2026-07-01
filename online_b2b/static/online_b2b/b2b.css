@@ -287,6 +287,9 @@ tr.rexcl td{background:#f6f7f9;color:#8b94a3;} tr.rexcl td.mono,tr.rexcl td.desc
 .tab.on .tcount{background:rgba(255,255,255,.25);}
 .st.ok{background:var(--green-soft);color:var(--green);}
 .exc{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;background:#fff4e0;color:var(--amber);}
+/* exception/deal applied — subtle amber row tint (matches the SO workbook) */
+tr.has-exc > td{background:#fff8ec;}
+tr.has-exc > td:first-child{box-shadow:inset 3px 0 0 var(--amber);}
 .actpill{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;}
 .actpill.a-keep{background:var(--accent-soft);color:var(--accent);}
 .actpill.a-override{background:var(--green-soft);color:var(--green);}

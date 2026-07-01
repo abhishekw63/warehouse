@@ -19,6 +19,7 @@ call them) but delegate to the right Processor subclass via :func:`processor_for
 
 from __future__ import annotations
 
+import os
 import re
 import time
 from pathlib import Path
@@ -683,7 +684,8 @@ class Processor:
 
     def _append_sku_sheet(self, path):
         from openpyxl import load_workbook
-        from openpyxl.styles import Font
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+        from openpyxl.utils import get_column_letter
         rows = self._sku_pivot(self._lines())
         wb = load_workbook(path)
         if 'SKU Summary' in wb.sheetnames:
@@ -693,10 +695,34 @@ class Processor:
                'MRP varies', 'Tot Qty', 'OK Qty', 'Mismatch Qty',
                'Not-in-Master Qty', '# POs', 'Worst Diff']
         ws.append(hdr)
-        for cell in ws[1]:
-            cell.font = Font(bold=True)
         for r in rows:
             ws.append(r)
+        # ── formatting: header band, widths, alignment, borders, freeze ──
+        navy = PatternFill('solid', fgColor='1A237E')
+        hfont = Font(bold=True, color='FFFFFF')
+        thin = Side(style='thin', color='E6E8EC')
+        bd = Border(thin, thin, thin, thin)
+        for cell in ws[1]:
+            cell.font = hfont
+            cell.fill = navy
+            cell.alignment = Alignment(horizontal='center', vertical='center',
+                                       wrap_text=True)
+            cell.border = bd
+        # per-column width + alignment (1=Item .. 12=Worst Diff)
+        widths = [11, 16, 46, 10, 10, 11, 9, 9, 13, 17, 8, 11]
+        right_cols = {4, 5, 7, 8, 9, 10, 11, 12}   # numeric columns
+        center_cols = {6}                          # MRP varies
+        for i, w in enumerate(widths, 1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+            for cell in row:
+                cell.border = bd
+                if cell.column in right_cols:
+                    cell.alignment = Alignment(horizontal='right')
+                elif cell.column in center_cols:
+                    cell.alignment = Alignment(horizontal='center')
+        ws.row_dimensions[1].height = 30
+        ws.freeze_panes = 'A2'
         wb.save(path)
 
     # ── phase 1: preview (no DB write) ──────────────────────────────────
@@ -841,7 +867,24 @@ class FlipkartProcessor(Processor):
             from online_po_processor.engine.flipkart_tracker import (
                 build_flipkart_tracker,
             )
-            result.flipkart_tracker_rows = build_flipkart_tracker(csv)
+            rows = build_flipkart_tracker(csv)
+            # The header CSV lists EVERY open Flipkart PO on the portal. Keep ONLY
+            # the POs actually uploaded this run (the purchase_order_*.xlsx we fed
+            # the SO), so the Tracker reflects THIS upload — not the whole list.
+            uploaded = set()
+            for p in self.engine_files():
+                stem = os.path.splitext(os.path.basename(p))[0]
+                m = re.match(r'(?i)purchase[_-]?order[_-](.+)', stem)
+                uploaded.add((m.group(1) if m else stem).strip().upper())
+            before = len(rows)
+            if uploaded:
+                rows = [r for r in rows
+                        if str(r.get('PO', '')).strip().upper() in uploaded]
+            result.flipkart_tracker_rows = rows
+            if uploaded and before != len(rows):
+                self.warnings.append(
+                    f"Flipkart Tracker: kept the {len(rows)} uploaded PO(s); "
+                    f"the header CSV listed {before} — the rest were left out.")
         except Exception as e:  # noqa: BLE001
             self.warnings.append(f"Flipkart Tracker skipped ({type(e).__name__}: {e}).")
 
@@ -992,11 +1035,134 @@ class FirstcryProcessor(Processor):
         return out
 
 
+class MyntraProcessor(Processor):
+    """Myntra now sends ONE ``PO_<id>_PO-MYNJ-*.xlsx`` PER PO (a title + a
+    header block, with the line-item table a few rows down) instead of a single
+    compiled dump. The operator used to copy-paste them into one sheet by hand;
+    this compiles them automatically into the flat dump the engine's Myntra
+    reader expects — ``PO`` (from 'PO Barcode') + ``Location`` (from 'Ship To')
+    + the line columns — then runs the engine on that. A file that is ALREADY a
+    compiled dump (has a ``PO`` column) passes through unchanged. Frozen engine
+    untouched."""
+
+    _COMPILED_NAME = '_myntra_compiled.xlsx'
+
+    def engine_files(self) -> list[str]:
+        xlsx = [p for p in self.po_paths if p.lower().endswith('.xlsx')]
+        if not xlsx:
+            return self.po_paths
+        passthrough = [p for p in xlsx if self._is_compiled_dump(p)]
+        per_po = [p for p in xlsx if p not in passthrough]
+        if not per_po:
+            return xlsx
+        compiled = self._compile(per_po)
+        return ([compiled] + passthrough) if compiled else (passthrough or xlsx)
+
+    @staticmethod
+    def _is_compiled_dump(path) -> bool:
+        import pandas as pd
+        try:
+            cols = [str(c).strip().lower() for c in pd.read_excel(path, nrows=0).columns]
+        except Exception:  # noqa: BLE001
+            return False
+        return 'po' in cols or 'po number' in cols
+
+    def _compile(self, files):
+        import pandas as pd
+        frames = []
+        for f in files:
+            try:
+                raw = pd.read_excel(f, sheet_name=0, header=None)
+            except Exception as e:  # noqa: BLE001
+                self.warnings.append(
+                    f"[{os.path.basename(f)}] Myntra compile skipped: {e}")
+                continue
+            po = self._label_value(raw, 'PO Barcode') or self._po_from_name(f)
+            location = (self._label_value(raw, 'Ship To', multiline=True)
+                        or self._label_value(raw, 'Bill To', multiline=True) or '')
+            hrow = self._header_row(raw)
+            if hrow is None:
+                self.warnings.append(
+                    f"[{os.path.basename(f)}] Myntra: line-item header "
+                    f"(SKU Code / GTIN) not found — file skipped.")
+                continue
+            tbl = pd.read_excel(f, sheet_name=0, header=hrow)
+            tbl.columns = [str(c).strip() for c in tbl.columns]
+            key = 'GTIN' if 'GTIN' in tbl.columns else (
+                'SKU Code' if 'SKU Code' in tbl.columns else None)
+            if key:
+                tbl = tbl[tbl[key].notna()]
+            tbl = tbl.dropna(how='all')
+            if tbl.empty:
+                continue
+            tbl.insert(0, 'Location', location)
+            tbl.insert(0, 'PO', po)
+            frames.append(tbl)
+        if not frames:
+            self.warnings.append(
+                "Myntra: no per-PO files could be compiled (nothing extracted).")
+            return None
+        big = pd.concat(frames, ignore_index=True)
+        out = os.path.join(os.path.dirname(files[0]), self._COMPILED_NAME)
+        big.to_excel(out, index=False, sheet_name='Sheet1')
+        self.warnings.append(
+            f"Myntra: compiled {len(frames)} per-PO file(s) into one dump "
+            f"({len(big)} line(s)).")
+        return out
+
+    @staticmethod
+    def _label_value(raw, label, multiline=False):
+        """Value to the RIGHT of a header-block label cell (e.g. 'PO Barcode',
+        'Ship To'). With ``multiline``, append continuation rows (merged address
+        cells) until a new label or a blank appears."""
+        import pandas as pd
+        lab = label.strip().lower()
+        nrows, ncols = raw.shape
+        for r in range(min(nrows, 12)):
+            for c in range(ncols):
+                v = raw.iat[r, c]
+                if isinstance(v, str) and v.strip().lower() == lab:
+                    vc = next((cc for cc in range(c + 1, ncols)
+                               if pd.notna(raw.iat[r, cc])
+                               and str(raw.iat[r, cc]).strip()), None)
+                    if vc is None:
+                        return ''
+                    parts = [str(raw.iat[r, vc]).strip()]
+                    if multiline:
+                        rr = r + 1
+                        while rr < nrows and (pd.isna(raw.iat[rr, c])
+                                              or not str(raw.iat[rr, c]).strip()):
+                            cell = raw.iat[rr, vc]
+                            if pd.isna(cell) or not str(cell).strip():
+                                break
+                            parts.append(str(cell).strip())
+                            rr += 1
+                    return ' '.join(parts).strip()
+        return ''
+
+    @staticmethod
+    def _header_row(raw):
+        import pandas as pd
+        nrows, ncols = raw.shape
+        for r in range(min(nrows, 20)):
+            vals = {str(raw.iat[r, c]).strip().lower()
+                    for c in range(ncols) if pd.notna(raw.iat[r, c])}
+            if 'sku code' in vals or 'gtin' in vals or 'sku id' in vals:
+                return r
+        return None
+
+    @staticmethod
+    def _po_from_name(path):
+        name = os.path.splitext(os.path.basename(path))[0]
+        m = re.search(r'(MYNJ[-\w]*)', name, re.IGNORECASE)
+        return m.group(1) if m else name
+
+
 # ── Factory + module entry points (views call these) ────────────────────
 
 _PROCESSORS = {'Flipkart': FlipkartProcessor, 'Flipkart-TO': FlipkartTOProcessor,
                'Meesho-TO': MeeshoTOProcessor, 'Dmart': DmartProcessor,
-               'Firstcry': FirstcryProcessor}
+               'Firstcry': FirstcryProcessor, 'Myntra': MyntraProcessor}
 
 
 def processor_for(marketplace, po_paths, warehouse=None, margin_pct=None,

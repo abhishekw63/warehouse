@@ -372,6 +372,32 @@ instead of a single number that lies for rule-based marketplaces.
 
 ## 10. Changelog (append one line per development)
 
+- **2026-07-01** — **Myntra per-PO auto-compile.** Myntra switched from one
+  compiled dump to MANY per-PO files (`PO_<id>_PO-MYNJ-*.xlsx`: title + header
+  block, line-item table a few rows down, no `PO` column). New
+  `engine_bridge.MyntraProcessor` compiles them web-side into the flat dump the
+  engine expects — `PO` (from 'PO Barcode') + `Location` (raw 'Ship To' address,
+  resolved via ship_to_mapping like Flipkart) + the line columns — writing one
+  `Sheet1` and feeding it to the engine. An already-compiled dump (has a `PO`
+  column) passes through unchanged. Fixes "No valid rows extracted" on the new
+  format. Frozen engine untouched.
+
+- **2026-07-01** — **Daily Activity Checklist** (`/b2b/daily/`, sidebar under Hub)
+  + **marketplace registry**. New `services/marketplaces.py` = single channel
+  source of truth (24 channels, Online/Offline, each with display / segment /
+  db_key for auto-detect / live flag) — chips + dropdown migrate to it later.
+  New `services/daily_checklist.py` + `daily_checklist` table (day, channel, step,
+  checked, checked_at, checked_by): per-day grid of channel × 5 steps (Uploaded
+  web → Workbook → Sheet → D365 → Staging/M-Assist). **"Uploaded (web)" auto-ticks**
+  from that day's `order_headers`; every manual tick stores **timestamp + user**;
+  per-channel + overall progress; yesterday's incomplete surfaced (never-skip).
+  Built API-ready (`get_day` → JSON dict; view dual-renders). Frozen engine
+  untouched. See [[api-ready-architecture]], [[dry-skeleton-first]].
+- **2026-07-01** — **Flipkart Tracker filtered to uploaded POs.** The Tracker
+  sheet was built from the whole `purchase-orders-*.csv` (every open FK PO);
+  `FlipkartProcessor.post_process` now keeps only the uploaded PO xlsx numbers
+  (warns how many were left out). Web-side only; engine untouched.
+
 - **2026-06-30** — **Email skeleton + Issues "Email" feature.** New reusable
   `online_b2b/services/mailer.py` — ONE SMTP layer (`send_html` + `EmailReport`
   base) that **reuses the frozen desktop app's `email_config.get_email_config`**
