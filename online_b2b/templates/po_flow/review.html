@@ -36,6 +36,13 @@
   {# ── channel-specific slot (under KPIs): dark for channels that don't set it ── #}
   {% if slots.after_kpis %}{% include slots.after_kpis %}{% endif %}
 
+  {% if r.notes %}
+  <div class="notebox" style="margin:0 0 16px;padding:10px 14px;border-radius:8px;
+       background:#eef4ff;border:1px solid #c7dbff;color:#1a3a6b;font-size:13px;">
+    {% for n in r.notes %}<div>ℹ️ {{ n }}</div>{% endfor %}
+  </div>
+  {% endif %}
+
   {% if r.warnings %}
   <details class="warnbox" style="margin:0 0 16px;">
     <summary><strong>{{ r.warnings|length }} warning(s)</strong> — click to view</summary>
@@ -56,6 +63,7 @@
     </div>
     <div class="cb-actions">
       {% if slots.actions %}{% include slots.actions %}{% endif %}
+      {% if u_export %}<a href="{% url u_export token %}" class="btn-ghost">⬇ Export review (Excel)</a>{% endif %}
       {% if has_download or caps.download %}<a href="{% url u_download token %}" class="btn-ghost">⬇ Download SO Workbook</a>{% endif %}
       {% if locked %}
         {% if run_id %}<a href="{% url 'b2b_run_detail' run_id=run_id %}" class="btn-ghost">View run →</a>{% endif %}

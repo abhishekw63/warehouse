@@ -57,7 +57,7 @@
         <td class="mono">{{ l.so_no }}</td><td class="mono">{{ l.external_doc|default:'—' }}</td>
         <td><span class="pill to">{{ l.channel }}</span></td>
         <td class="loc" title="{{ l.location }}">{{ l.location }}</td>
-        <td>{{ l.warehouse }}</td><td class="nowrap">{% if l.po_date %}{{ l.po_date }}{% else %}—{% endif %}</td>
+        <td>{{ l.warehouse }}</td><td class="nowrap">{% if l.po_date %}{{ l.po_date|date:"d M Y" }}{% else %}—{% endif %}</td>
         <td><span class="pill {{ l.order_type|lower }}">{{ l.order_type }}</span></td>
         <td class="r">{{ l.qty }}</td><td class="r">{{ l.order_value|inr_short }}</td>
         <td>{% if l.is_new %}<span class="st ok">NEW</span>{% else %}<span class="st">imported</span>{% endif %}</td>

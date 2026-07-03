@@ -26,11 +26,36 @@ from pathlib import Path
 
 PILOT_MARKETPLACES = ['Blink', 'Flipkart', 'RK', 'Dmart', 'Zepto', 'Flipkart-TO',
                       'Purplle', 'Swiggy', 'Nykaa', 'Myntra', 'Reliance',
-                      'Meesho-TO', 'Bigbasket', 'Firstcry']
+                      'Meesho-TO', 'Bigbasket', 'Firstcry', 'BlinkMP']
 # Friendly labels for the upload dropdown where the engine key isn't operator-
 # facing. The engine key (value) is unchanged — only the shown text differs.
 PILOT_LABELS = {'Flipkart-TO': 'Flipkart Branch', 'Meesho-TO': 'Meesho Branch',
                 'Bigbasket': 'Big Basket', 'Firstcry': 'First Cry'}
+# Web-side config overrides — applied to a COPY of the marketplace config at run
+# time, so the frozen engine config file is never touched. Myntra: compare on CP
+# (cost) instead of the landing rate (operator, 2026-07-01).
+_WEB_CONFIG_OVERRIDES = {
+    # Compare on CP (pre-GST cost), not landing. The vendor's pre-GST CP is the
+    # 'List price(FOB+Transport-Excise)' column → fob_col (drives the validation).
+    # NOTE: do NOT add ref_fob_col here — it flips the engine into a dual
+    # landing+cost check that flags every line. The Vendor Landing (with-GST
+    # 'Landing Price') is instead read web-side in build_lines for display only.
+    # loc_match='address': Myntra's ship-to is a full postal address, and two
+    # warehouse PAIRS share a pincode (Binola/Gurgaon 122413, Bangalore/Hoskote
+    # 560067) — so the generic name/substring tiers mis-resolve (e.g. the token
+    # 'Haryana' matched BOTH Binola & Gurgaon → wrong ship-to code). Address
+    # matching (pincode-gated word-overlap vs the D365 ship_to_mapping addresses)
+    # disambiguates them correctly. Requires the Myntra ship_to_mapping to carry
+    # the full D365 addresses (rebuilt from the D365 Ship-to Address List).
+    'Myntra': {'compare_basis': 'cost', 'compare_label': 'CP',
+               'fob_col': 'List price(FOB+Transport-Excise)',
+               'loc_match': 'address'},
+}
+# Per-marketplace column whose value should populate vendor_landing for DISPLAY
+# only (read web-side; never fed to the frozen engine's validation). Myntra's
+# 'Landing Price' (with GST) — so the tracker shows Vendor CP (List price, no GST)
+# AND Vendor Landing (Landing Price, with GST) without breaking the CP validation.
+_WEB_VENDOR_LANDING_COL = {'Myntra': 'Landing Price'}
 _ISSUE_STATUSES = {'MISMATCH', 'NOT_IN_MASTER'}
 
 
@@ -348,6 +373,10 @@ class Processor:
         # operator's pending EAN corrections for THIS upload ({wrong → correct})
         self.ean_fixes = dict(ean_fixes or {})
         self.warnings: list[str] = []
+        # Informational notes (successful, non-problem messages e.g. "compiled N
+        # per-PO files") — shown separately from warnings so a clean run doesn't
+        # read as "1 warning".
+        self.notes: list[str] = []
         self.skipped: list = []
         self.env = None
         self.config = None
@@ -393,7 +422,11 @@ class Processor:
         if not files:
             return {'ok': False, 'error': "No PO file uploaded."}
 
-        config = self.config = configs[self.marketplace]
+        config = configs[self.marketplace]
+        _ov = _WEB_CONFIG_OVERRIDES.get(self.marketplace)
+        if _ov:
+            config = {**config, **_ov}   # copy — never mutate the frozen config
+        self.config = config
         self.warehouse = self.warehouse or env['DEFAULT_WAREHOUSE']
         if self.margin_pct is None:
             self.margin_pct = config.get('default_margin', 70) / 100.0
@@ -647,6 +680,10 @@ class Processor:
                 self._append_sku_sheet(str(path))
             except Exception as e:  # noqa: BLE001
                 self.warnings.append(f"SKU Summary sheet skipped ({type(e).__name__}).")
+            try:
+                self._append_tracker_sheet(str(path))
+            except Exception as e:  # noqa: BLE001
+                self.warnings.append(f"Tracker sheet skipped ({type(e).__name__}).")
         return path
 
     def _sku_pivot(self, lines):
@@ -725,6 +762,95 @@ class Processor:
         ws.freeze_panes = 'A2'
         wb.save(path)
 
+    @staticmethod
+    def _fmt_tracker_date(v) -> str:
+        """Day-first ``dd-mm-YYYY`` (matches the web tracker), '' when blank.
+        Accepts a date/datetime or an ISO/other string."""
+        import datetime as _dt
+        if not v:
+            return ''
+        if isinstance(v, (_dt.date, _dt.datetime)):
+            return v.strftime('%d-%m-%Y')
+        s = str(v).strip()
+        try:
+            return _dt.date.fromisoformat(s[:10]).strftime('%d-%m-%Y')
+        except ValueError:
+            return s
+
+    def _append_tracker_sheet(self, path):
+        """Append a per-PO **Tracker** sheet to the SO workbook (all marketplaces):
+        Platform · PO/RO No · Location · PO Date · Expiry Date · Order Type ·
+        Items · Total Qty · Total Amount (inc GST). Dates come from the engine or
+        the PDF-date backfill (``_source_dates_by_po``). Additive post-process;
+        the engine's own sheets are untouched. Best-effort — never fails export."""
+        from openpyxl import load_workbook
+        from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+        from openpyxl.utils import get_column_letter
+        headers = self._headers()
+        if not headers:
+            return
+        try:
+            dts = self._source_dates_by_po() or {}
+        except Exception:  # noqa: BLE001
+            dts = {}
+        try:
+            short = self._source_location_by_po() or {}   # {po: short warehouse code}
+        except Exception:  # noqa: BLE001
+            short = {}
+        wb = load_workbook(path)
+        if 'Tracker' in wb.sheetnames:
+            del wb['Tracker']
+        ws = wb.create_sheet('Tracker')
+        # Columns MATCH the org master tracker ('New PO format.xlsx') EXACTLY and
+        # in order, so the operator can copy A2:I<n> and paste straight into it —
+        # same for EVERY marketplace (this runs in the base Processor). 'Order
+        # Receive Date' + 'Picklist Qty' are left blank (filled by hand in the
+        # master). No TOTAL row → the whole block pastes cleanly.
+        cols = ['Segment', 'Market Place', 'PO', 'Location', 'PO Date', 'Exp Date',
+                'PO Aging For Exp', 'Order Value', 'Order Qty']
+        ws.append(cols)
+        for h in headers:
+            po = str(h.get('po') or '')
+            d = dts.get(po) or {}
+            pod = self._fmt_tracker_date(d.get('po_date') or h.get('po_date'))
+            exd = self._fmt_tracker_date(d.get('exp_date') or h.get('exp_date'))
+            q = int(h.get('qty') or 0)
+            v = round(float(h.get('order_value') or 0), 2)
+            ws.append([h.get('segment') or 'OnlineB2B',
+                       h.get('marketplace_label') or h.get('marketplace') or '',
+                       po, short.get(po) or h.get('location') or '', pod, exd,
+                       '', v, q])        # PO Aging For Exp = filled manually
+        # ── formatting ──
+        navy = PatternFill('solid', fgColor='1A237E')
+        hfont = Font(bold=True, color='FFFFFF')
+        thin = Side(style='thin', color='E6E8EC')
+        bd = Border(thin, thin, thin, thin)
+        for cell in ws[1]:
+            cell.font = hfont
+            cell.fill = navy
+            cell.alignment = Alignment(horizontal='center', vertical='center',
+                                       wrap_text=True)
+            cell.border = bd
+        widths = [13, 16, 18, 42, 13, 13, 16, 15, 11]
+        right_cols = {8, 9}          # Order Value, Order Qty
+        center_cols = {5, 6, 7}      # PO Date, Exp Date, PO Aging For Exp
+        for i, w in enumerate(widths, 1):
+            ws.column_dimensions[get_column_letter(i)].width = w
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+            for cell in row:
+                cell.border = bd
+                if cell.column in right_cols:
+                    cell.alignment = Alignment(horizontal='right')
+                elif cell.column in center_cols:
+                    cell.alignment = Alignment(horizontal='center')
+        ws.row_dimensions[1].height = 30
+        ws.freeze_panes = 'A2'
+        # Position the Tracker as the 4th sheet (after Headers / Lines / Summary).
+        idx = wb.sheetnames.index('Tracker')
+        if len(wb.sheetnames) > 3 and idx != 3:
+            wb.move_sheet('Tracker', offset=3 - idx)
+        wb.save(path)
+
     # ── phase 1: preview (no DB write) ──────────────────────────────────
     def preview(self) -> dict:
         err = self._run()
@@ -738,6 +864,7 @@ class Processor:
             'ok': True, 'summary': self._summary(lines, headers),
             'headers': headers, 'lines': lines, 'affected': affected,
             'skipped': self.skipped, 'warnings': self.warnings,
+            'notes': self.notes,
             'output_path': str(output_path) if output_path else None,
         }
 
@@ -787,17 +914,37 @@ class Processor:
             dts = self._source_dates_by_po()
             if dts and out.get('run_id'):
                 out['dates_backfilled'] = lines_store.set_po_dates(
-                    out['run_id'], dts).get('updated', 0)
+                    out['run_id'], dts, force=self._dates_force).get('updated', 0)
+            # Tracker location: some marketplaces (Myntra) need the engine to read
+            # the RAW ship-to address for its own resolution, so we can't shorten
+            # what it reads — instead re-stamp the friendly short name (e.g.
+            # 'Mumbai') onto the recorded headers here. No-op for everyone else.
+            locs = self._source_location_by_po()
+            if locs and out.get('run_id'):
+                out['locations_relabelled'] = lines_store.set_location(
+                    out['run_id'], locs).get('updated', 0)
         except Exception as e:  # noqa: BLE001
             out['ok'] = False
             out['error'] = f"DB push failed: {type(e).__name__}: {e}"
         return out
+
+    #: When True, ``_source_dates_by_po`` OVERWRITES the engine's po_date/exp_date
+    #: (not COALESCE) — for marketplaces whose engine date parse is WRONG, not
+    #: merely blank (Swiggy day-first timestamp). Base = additive/blank-fill only.
+    _dates_force: bool = False
 
     def _source_dates_by_po(self) -> dict:
         """``{po: {'po_date': date, 'exp_date': date}}`` from the source file(s),
         for marketplaces whose parser carries the dates in the header (not a row
         column). Base = none; PDF processors override. Used to backfill the
         tracker (po_date/exp_date) so TAT works for them."""
+        return {}
+
+    def _source_location_by_po(self) -> dict:
+        """``{po: 'short location'}`` to re-stamp onto ``order_headers.location``
+        after recording — for marketplaces that must feed the engine the RAW
+        address but want a friendly short name on the tracker. Base = none;
+        Myntra overrides."""
         return {}
 
 
@@ -888,6 +1035,31 @@ class FlipkartProcessor(Processor):
         except Exception as e:  # noqa: BLE001
             self.warnings.append(f"Flipkart Tracker skipped ({type(e).__name__}: {e}).")
 
+    def _source_location_by_po(self) -> dict:
+        """``{PO: 'origin warehouse code'}`` — the SHORT internal warehouse code
+        (e.g. ``ahm_sh_wh_nl_02nl``) from the header CSV's 'Origin Warehouse'
+        column, keyed by 'Purchase Order ID'. Used to re-stamp the recorded
+        headers + the Tracker Location with the short code instead of the
+        resolved full ship-to address. No CSV / columns → no-op."""
+        import pandas as pd
+        csv = next((p for p in self.po_paths if p.lower().endswith('.csv')), None)
+        if not csv:
+            return {}
+        try:
+            df = pd.read_csv(csv, dtype=str)
+        except Exception:  # noqa: BLE001
+            return {}
+        df.columns = [str(c).strip() for c in df.columns]
+        if 'Purchase Order ID' not in df.columns or 'Origin Warehouse' not in df.columns:
+            return {}
+        out: dict = {}
+        for _, r in df.iterrows():
+            po = str(r.get('Purchase Order ID', '') or '').strip()
+            ow = str(r.get('Origin Warehouse', '') or '').strip()
+            if po and ow:
+                out[po] = ow
+        return out
+
 
 # ── Flipkart Branch (Flipkart-TO) ───────────────────────────────────────
 
@@ -905,9 +1077,40 @@ class FlipkartTOProcessor(Processor):
 
     _CONSIGNMENT_RE = re.compile(r'Consignment_Details_', re.I)
     _VISIBILITY_RE = re.compile(r'Consignment_Visibility_Report', re.I)
+    #: The visibility report's dates are day-first ('02-07-2026 18:13') but the
+    #: frozen engine parses them month-first (2 Jul → Feb 7 for days 1–12), so we
+    #: re-read them here and OVERWRITE the recorded po_date/exp_date.
+    _dates_force = True
 
     def use_multi(self, config) -> bool:
         return True
+
+    def _source_dates_by_po(self) -> dict:
+        """``{PO: {po_date, exp_date}}`` read DAY-FIRST from the Consignment
+        Visibility Report — 'Creation Date' → po_date, 'Scheduled Pick Up Date'
+        → exp_date, keyed by 'Consignment Id' (== PO). Fixes the engine's
+        month-first swap for days 1–12."""
+        import pandas as pd
+        vis = self._visibility_file()
+        if not vis:
+            return {}
+        try:
+            df = pd.read_csv(vis, dtype=str)
+        except Exception:  # noqa: BLE001
+            return {}
+        df.columns = [str(c).strip() for c in df.columns]
+        if 'Consignment Id' not in df.columns:
+            return {}
+        out: dict = {}
+        for _, r in df.iterrows():
+            po = str(r.get('Consignment Id', '') or '').strip()
+            if not po:
+                continue
+            pod = _parse_dayfirst(r.get('Creation Date'))
+            exd = _parse_dayfirst(r.get('Scheduled Pick Up Date'))
+            if pod or exd:
+                out[po] = {'po_date': pod, 'exp_date': exd}
+        return out
 
     def _consignment_files(self) -> list:
         return [p for p in self.po_paths
@@ -955,9 +1158,23 @@ class MeeshoTOProcessor(Processor):
         if not csvs:                      # tolerate any uploaded csv naming
             csvs = [p for p in files if str(p).lower().endswith('.csv')] or files
         # Location is filename-token driven for Meesho → no visibility report.
-        return engine.process_consignments(
+        result = engine.process_consignments(
             csvs, config, margin_pct=self.margin_pct,
             visibility_report_path=None)
+        # The frozen engine appends a Flipkart-specific per-PO line
+        # ("Amount reference — … Flipkart portal 'Amount' … = ₹0.00") for EVERY
+        # TO, because Meesho Branch reuses the same process_consignments pipeline.
+        # For Meesho the dump carries NO vendor price, so the portal total is
+        # always ₹0.00 AND the "Flipkart" label is wrong — the line is mislabelled
+        # and meaningless here. Drop it; the accurate "dump carries no price —
+        # order value COMPUTED from our master pricing" warning (from _headers)
+        # already states the real basis, so nothing is lost.
+        try:
+            result.warnings = [w for w in result.warnings
+                               if "Flipkart portal 'Amount'" not in str(w[2])]
+        except Exception:  # noqa: BLE001
+            pass
+        return result
 
 
 # ── DMart (Avenue) — PDF dates for the tracker ──────────────────────────
@@ -1046,6 +1263,114 @@ class MyntraProcessor(Processor):
     untouched."""
 
     _COMPILED_NAME = '_myntra_compiled.xlsx'
+    #: {po: short location} built during _compile, re-stamped after recording.
+    _short_loc: dict = {}
+    #: {(po, ean): Landing Price} captured during _compile, stamped onto
+    #: so.ref_fob_price in post_process for DISPLAY only (never validation).
+    _landing_by_key: dict = {}
+
+    @staticmethod
+    def _norm_ean(v) -> str:
+        s = str(v if v is not None else '').strip()
+        return s[:-2] if s.endswith('.0') else s
+
+    def post_process(self, result, env) -> None:
+        """After the engine runs: (1) stamp the with-GST 'Landing Price' onto
+        ``so.ref_fob_price`` for the tracker's Vendor Landing display (never the
+        CP validation — see the ref_fob_col note); (2) build the tracker's SHORT
+        location per PO from the engine's RESOLVED ship-to code (so.ship_to →
+        D365 short name), guaranteeing the tracker label matches the ship-to code
+        actually sent to D365 (e.g. 20011_4 → 'Gurgaon', 20011_1 → 'Binola')."""
+        import pandas as pd
+        if '_short_loc' not in self.__dict__:
+            self._short_loc = {}   # instance dict (compile may not have run)
+        # (2) code → short name (D365 'name' col), for the tracker relabel.
+        code2name: dict = {}
+        try:
+            from .order_db import _conn
+            with _conn() as (cur, d):
+                cur.execute("SELECT ship_to, name FROM ship_to_mapping "
+                            "WHERE party='Myntra' AND name IS NOT NULL")
+                code2name = {str(a): str(b) for a, b in cur.fetchall() if b}
+        except Exception:  # noqa: BLE001
+            code2name = {}
+        # (3) Myntra negotiated deal SKUs: expected CP = agreed transfer price
+        # ÷(1+GST). The frozen engine's deal path is Swiggy-ONLY (gated at
+        # marketplace_engine.py, so it never leaks), so we apply Myntra's here.
+        try:
+            from . import overrides_store
+            deal_map = overrides_store.myntra_deal_map()
+        except Exception:  # noqa: BLE001
+            deal_map = {}
+        applied = mismatched = 0
+        for so in result.rows:
+            po = str(so.po_number)
+            # (1) Vendor Landing display value.
+            if self._landing_by_key:
+                v = self._landing_by_key.get((po, self._norm_ean(so.ean)))
+                if v is not None and pd.notna(v):
+                    so.ref_fob_price = float(v)
+            # (2) short tracker location from resolved ship-to code.
+            code = str(getattr(so, 'ship_to', '') or '')
+            if code and code in code2name:
+                self._short_loc[po] = code2name[code]
+            # (3) negotiated deal price override.
+            transfer = deal_map.get(self._norm_ean(so.ean))
+            if transfer is None:
+                continue
+            # Use Vendor CP WINS: if the engine already accepted the vendor's
+            # stated CP for this SKU (e.g. Goddess → exception_label 'Vendor CP
+            # (deal)'), do NOT clobber it with a deal price. The two rules are
+            # mutually exclusive per SKU; vendor-CP takes precedence.
+            if str(getattr(so, 'exception_label', '') or '').startswith('Vendor CP'):
+                continue
+            vendor_cp = getattr(so, 'fob_price', None)   # Myntra basis='cost'
+            # Per-item GST factor from the vendor's own landing/CP ratio (both
+            # scale with the GST rate), clamped; default 18%.
+            gst_div = 1.18
+            try:
+                ratio = float(so.ref_fob_price) / float(vendor_cp)
+                if 1.01 <= ratio <= 1.40:
+                    gst_div = ratio
+            except (TypeError, ValueError, ZeroDivisionError):
+                pass
+            expected_cp = round(float(transfer) / gst_div, 2)
+            so.cost_price_ref = expected_cp
+            note_status = 'OK'
+            try:
+                diff = round(float(vendor_cp) - expected_cp, 2)
+            except (TypeError, ValueError):
+                diff = None
+            if diff is not None and abs(diff) <= 1.0:
+                so.validation_status = 'OK'
+                # Flag it so an OK-by-deal is distinguishable from a natural OK
+                # (drives the ⚑ EXCEPTION column + row highlight), and force the
+                # agreed cost into the D365 Unit Price so ERP uses the negotiated
+                # price, NOT the flat Myntra margin — same as 'Vendor CP (deal)'.
+                so.exception_label = 'Myntra deal'
+                try:
+                    so.forced_unit_price = float(vendor_cp)
+                except (TypeError, ValueError):
+                    pass
+                applied += 1
+            else:
+                so.validation_status = 'MISMATCH'   # vendor differs from the deal
+                so.exception_label = 'Deal ≠ vendor'
+                note_status = 'MISMATCH vs deal'
+                mismatched += 1
+            try:
+                result.exceptions_applied.append({
+                    'type': 'price_override', 'po': po, 'ean': str(so.ean),
+                    'item_no': str(so.item_no),
+                    'detail': f"Myntra deal SKU — expected CP {expected_cp} "
+                              f"(transfer {transfer} inc GST) [{note_status}]"})
+            except Exception:  # noqa: BLE001
+                pass
+        if applied or mismatched:
+            self.warnings.append(
+                f"Myntra deal SKUs: {applied} line(s) matched the negotiated "
+                f"transfer price (expected CP set, marked OK); {mismatched} still "
+                f"differ from the agreed price (kept MISMATCH). Never silent.")
 
     def engine_files(self) -> list[str]:
         xlsx = [p for p in self.po_paths if p.lower().endswith('.xlsx')]
@@ -1069,6 +1394,14 @@ class MyntraProcessor(Processor):
 
     def _compile(self, files):
         import pandas as pd
+        # The engine reads the RAW Ship-To address for its own ship-to
+        # resolution, so keep it as-is here. Separately we remember the resolved
+        # SHORT mapped name per PO (``_short_loc``) to backfill onto the tracker
+        # after recording, so order_headers.location shows 'Mumbai'/'West bengal'
+        # rather than the full address.
+        self._short_loc = {}
+        self._landing_by_key = {}
+        lcol = _WEB_VENDOR_LANDING_COL.get(self.marketplace)  # 'Landing Price'
         frames = []
         for f in files:
             try:
@@ -1095,6 +1428,18 @@ class MyntraProcessor(Processor):
             tbl = tbl.dropna(how='all')
             if tbl.empty:
                 continue
+            # Remember the with-GST Landing Price per (po, ean) for the tracker's
+            # Vendor Landing display column (stamped in post_process; the engine
+            # itself keeps comparing on CP = List price).
+            if lcol and lcol in tbl.columns and 'GTIN' in tbl.columns:
+                for _, rr in tbl.iterrows():
+                    g = self._norm_ean(rr.get('GTIN'))
+                    lv = rr.get(lcol)
+                    if g and pd.notna(lv):
+                        try:
+                            self._landing_by_key[(str(po), g)] = float(lv)
+                        except (TypeError, ValueError):
+                            pass
             tbl.insert(0, 'Location', location)
             tbl.insert(0, 'PO', po)
             frames.append(tbl)
@@ -1105,7 +1450,7 @@ class MyntraProcessor(Processor):
         big = pd.concat(frames, ignore_index=True)
         out = os.path.join(os.path.dirname(files[0]), self._COMPILED_NAME)
         big.to_excel(out, index=False, sheet_name='Sheet1')
-        self.warnings.append(
+        self.notes.append(
             f"Myntra: compiled {len(frames)} per-PO file(s) into one dump "
             f"({len(big)} line(s)).")
         return out
@@ -1157,12 +1502,404 @@ class MyntraProcessor(Processor):
         m = re.search(r'(MYNJ[-\w]*)', name, re.IGNORECASE)
         return m.group(1) if m else name
 
+    def _source_dates_by_po(self) -> dict:
+        """Myntra's per-PO files carry ``PO Approved Date`` + ``Estimated
+        Delivery Date`` in the header block (not a line column), so backfill
+        po_date/exp_date per PO after recording — so Myntra shows on the TAT
+        page. Mirrors DMart / FirstCry."""
+        import pandas as pd
+        out: dict = {}
+        for p in self.po_paths:
+            if not str(p).lower().endswith('.xlsx'):
+                continue
+            try:
+                raw = pd.read_excel(p, sheet_name=0, header=None)
+            except Exception:  # noqa: BLE001
+                continue
+            po = self._label_value(raw, 'PO Barcode') or self._po_from_name(p)
+            pod = _parse_ddmmyyyy(self._label_value(raw, 'PO Approved Date'))
+            exd = _parse_ddmmyyyy(self._label_value(raw, 'Estimated Delivery Date'))
+            if po and (pod or exd):
+                out[str(po)] = {'po_date': pod, 'exp_date': exd}
+        return out
+
+    def _source_location_by_po(self) -> dict:
+        """Short mapped location per PO (built in :meth:`_compile`), so the
+        tracker shows 'Mumbai'/'West bengal' while the engine still reads the raw
+        ship-to address for its own resolution."""
+        return dict(self._short_loc)
+
+
+# ── Swiggy ──────────────────────────────────────────────────────────────
+
+class SwiggyProcessor(Processor):
+    """Swiggy: flat ``PO_<id>.csv``. The engine reads ``PoCreatedAt`` (po_date)
+    which is a **day-first timestamp WITH a time** ('01-07-2026 13:38'). The
+    engine's tracker date formatter tries date-only day-first patterns, they fail
+    on the time, and it falls back to ``pd.to_datetime`` (month-first) — so a PO
+    created on the 1st–12th gets its day/month SWAPPED (1-Jul → 7-Jan), which
+    then reads as a huge false TAT breach. Engine is frozen, so we re-read the
+    source dates day-first here and OVERWRITE (``_dates_force``).
+
+    Status filter: Swiggy must punch ONLY ``CONFIRMED`` POs. The frozen engine
+    (``_flag_po_status``) flags-and-KEEPS the rest for manual review; the operator
+    instead wants non-CONFIRMED POs IGNORED (dropped) with a notification. So we
+    drop them here (``run_engine`` → ``_drop_non_confirmed``) and name every
+    dropped PO on Warnings — never silent (golden rule)."""
+
+    _dates_force = True
+
+    def _status_by_po(self) -> dict:
+        """``{PoNumber: set(UPPER statuses)}`` from the source dump(s)
+        (CSV or XLSX). Empty if the dump has no ``Status`` column."""
+        import pandas as pd
+        out: dict = {}
+        for p in self.po_paths:
+            low = str(p).lower()
+            try:
+                if low.endswith('.csv'):
+                    df = pd.read_csv(p, dtype=str)
+                elif low.endswith(('.xlsx', '.xls')):
+                    df = pd.read_excel(p, dtype=str)
+                else:
+                    continue
+            except Exception:  # noqa: BLE001
+                continue
+            df.columns = [str(c).strip() for c in df.columns]
+            if 'PoNumber' not in df.columns or 'Status' not in df.columns:
+                continue
+            for _, row in df.iterrows():
+                po = str(row.get('PoNumber', '')).strip()
+                st = str(row.get('Status', '')).strip().upper()
+                if po and st and st != 'NAN':
+                    out.setdefault(po, set()).add(st)
+        return out
+
+    def run_engine(self, engine, files, config):
+        self._remap_nfs_to_forsale(engine)
+        result = super().run_engine(engine, files, config)
+        self._drop_non_confirmed(result, config)
+        self._note_nfs_remaps(result)
+        return result
+
+    def _nfs_forsale_map(self) -> dict:
+        """``{base_ean: base_ean+'_FS'}`` for master items whose description
+        contains 'NFS' (Not-For-Sale) AND which have a ``<ean>_FS`` (For-Sale)
+        twin. Swiggy sells the FOR-SALE variant and the negotiated deal price is
+        registered on the ``_FS`` EAN — so a Swiggy line that resolves to the NFS
+        item must be redirected to its For-Sale twin (then the deal applies)."""
+        out: dict = {}
+        try:
+            from .order_db import _conn
+            with _conn() as (cur, d):
+                cur.execute("SELECT ean FROM item_master "
+                            "WHERE UPPER(description) LIKE '%NFS%'")
+                nfs = {str(r[0]) for r in cur.fetchall()}
+                cur.execute("SELECT ean FROM item_master WHERE ean LIKE '%\\_FS'")
+                fs = {str(r[0]) for r in cur.fetchall()}
+        except Exception:  # noqa: BLE001
+            return {}
+        for base in nfs:
+            if base + '_FS' in fs:
+                out[base] = base + '_FS'
+        return out
+
+    def _remap_nfs_to_forsale(self, engine) -> None:
+        """Redirect Swiggy SkuCode→EAN entries that land on an NFS item to the
+        item's ``_FS`` For-Sale twin, BEFORE the engine resolves items (so item
+        resolution + deal-SKU override both key off the For-Sale EAN). Mutates
+        only this run's in-memory master; the frozen engine is untouched."""
+        m = getattr(engine, 'master', None)
+        self._nfs_remaps = self._nfs_forsale_map() if m and getattr(
+            m, 'swiggy_sku', None) else {}
+        if not self._nfs_remaps:
+            return
+        for sku, ean in list(m.swiggy_sku.items()):
+            if str(ean) in self._nfs_remaps:
+                m.swiggy_sku[sku] = self._nfs_remaps[str(ean)]
+
+    def _note_nfs_remaps(self, result) -> None:
+        """NEVER SILENT: one note per PO whose NFS line was remapped to its
+        For-Sale twin (so the Swiggy deal applied)."""
+        fs_set = set(getattr(self, '_nfs_remaps', {}).values())
+        if not fs_set:
+            return
+        seen = set()
+        for so in result.rows:
+            e = str(getattr(so, 'ean', '') or '')
+            key = (str(so.po_number), e)
+            if e in fs_set and key not in seen:
+                seen.add(key)
+                self.notes.append(
+                    f"Swiggy NFS→For-Sale: PO {so.po_number} — EAN {e[:-3]} "
+                    f"(Not-For-Sale) remapped to For-Sale variant {e} "
+                    f"(item {so.item_no}); Swiggy deal price applied.")
+
+    def _drop_non_confirmed(self, result, config) -> None:
+        """KEEP only ``status_keep`` (CONFIRMED) POs; DROP every other state
+        (EXPIRED / COMPLETED / CANCELLED / PENDING) with ONE named warning per
+        dropped PO. Overrides the frozen engine's flag-and-keep: we suppress its
+        now-inaccurate "KEPT in output / pasted as-is" flags and replace them with
+        "IGNORED" notices. A PO is kept only when ALL its lines are CONFIRMED."""
+        keep = {str(s).strip().upper()
+                for s in (config.get('status_keep') or ['CONFIRMED'])}
+        st_by_po = self._status_by_po()
+        if not st_by_po:
+            return
+        drop_pos = {po for po, sts in st_by_po.items() if not (sts <= keep)}
+        if not drop_pos:
+            return
+        # Suppress the engine's flag-and-keep status-review warnings — we DROP.
+        result.warnings = [w for w in result.warnings
+                           if not ('pasted as-is' in str(w[2])
+                                   or 'KEPT in output' in str(w[2]))]
+        before = len(result.rows)
+        result.rows = [so for so in result.rows
+                       if str(so.po_number).strip() not in drop_pos]
+        dropped = before - len(result.rows)
+        for po in sorted(drop_pos):
+            sts = ', '.join(sorted(st_by_po[po] - keep)) or ', '.join(sorted(st_by_po[po]))
+            result.warnings.append((
+                po, '',
+                f"PO STATUS {sts} — IGNORED (not {sorted(keep)}); dropped from "
+                f"this run. Re-upload if it should be punched."))
+        result.warnings.append((
+            '', '',
+            f"Swiggy status filter: dropped {dropped} line(s) across "
+            f"{len(drop_pos)} non-CONFIRMED PO(s); only {sorted(keep)} punched."))
+        import logging
+        logging.info("Swiggy status filter: dropped %d line(s) across %d PO(s) %s",
+                     dropped, len(drop_pos), sorted(drop_pos))
+
+    def _source_dates_by_po(self) -> dict:
+        import pandas as pd
+        out: dict = {}
+        for p in self.po_paths:
+            if not str(p).lower().endswith('.csv'):
+                continue
+            try:
+                df = pd.read_csv(p, dtype=str)
+            except Exception:  # noqa: BLE001
+                continue
+            df.columns = [str(c).strip() for c in df.columns]
+            if 'PoNumber' not in df.columns:
+                continue
+            for _, row in df.iterrows():
+                po = str(row.get('PoNumber', '')).strip()
+                if not po:
+                    continue
+                pod = _parse_dayfirst(row.get('PoCreatedAt'))
+                exd = _parse_dayfirst(row.get('PoExpiryDate'))
+                if po and (pod or exd):
+                    out[po] = {'po_date': pod, 'exp_date': exd}
+        return out
+
+
+def _parse_dayfirst(v):
+    """Parse a day-first date/timestamp ('01-07-2026 13:38', '12-07-2026') to a
+    ``date``, day BEFORE month always. Returns None on blank/unparseable."""
+    import datetime as _dt
+
+    import pandas as pd
+    if v is None:
+        return None
+    s = str(v).strip()
+    if not s or s.lower() in ('nan', 'nat', 'none'):
+        return None
+    # A leading 4-digit year means it's already year-first (ISO) — don't apply
+    # dayfirst (which would swap YYYY-DD-MM). Everything else is day-first.
+    iso = bool(re.match(r'^\d{4}-\d{1,2}-\d{1,2}', s))
+    try:
+        ts = pd.to_datetime(s, dayfirst=not iso, errors='raise')
+        if pd.notna(ts):
+            return ts.date()
+    except Exception:  # noqa: BLE001
+        pass
+    for fmt in ('%d-%m-%Y', '%d/%m/%Y', '%d.%m.%Y', '%Y-%m-%d'):
+        try:
+            return _dt.datetime.strptime(s[:10], fmt).date()
+        except ValueError:
+            continue
+    return None
+
 
 # ── Factory + module entry points (views call these) ────────────────────
 
+class BlinkMPProcessor(Processor):
+    """BlinkMP (BCPL Reorder channel). Each RO arrives as a **PAIR**: a per-RO
+    ORDER **Excel** (the line items) + a per-RO ORDER **PDF** (RO date, expiry
+    date, delivery location) — paired by the RO number in the filename. The tabular
+    dump the engine reads has no dates and no location column, so we build one:
+    read each RO's Excel lines, prepend ``ro_number`` + ``location`` (from the PDF),
+    concat into the flat dump the frozen BlinkMP config reads, and backfill
+    po_date/exp_date from the PDF. Frozen engine untouched.
+
+    Aligns with the other online marketplaces (mirrors :class:`MyntraProcessor` —
+    ``engine_files``→compile, ``_source_dates_by_po``→date backfill)."""
+
+    _COMPILED_NAME = '_blinkmp_compiled.xlsx'
+    #: {ro_number: {'po_date': date, 'exp_date': date}} built during compile.
+    _dates: dict = {}
+
+    def engine_files(self) -> list[str]:
+        pairs = self._pair_files()
+        if not pairs:
+            return self.po_paths     # let the engine raise a clear column error
+        compiled = self._compile(pairs)
+        return [compiled] if compiled else self.po_paths
+
+    def _expanded_paths(self) -> list:
+        """The uploaded paths, with any ``.zip`` extracted — BlinkMP's raw
+        download is two zips (``…ORDER_PDF.zip`` + ``…ORDER_XLS.zip``), so accept
+        them directly and pull the per-RO ``.pdf`` / ``.xls`` out."""
+        import tempfile
+        import zipfile
+        out = []
+        for p in self.po_paths:
+            if str(p).lower().endswith('.zip'):
+                try:
+                    dst = tempfile.mkdtemp(suffix='_bmp_zip')
+                    with zipfile.ZipFile(p) as z:
+                        z.extractall(dst)
+                    for root, _dirs, files in os.walk(dst):
+                        out += [os.path.join(root, f) for f in files
+                                if f.lower().endswith(('.pdf', '.xls', '.xlsx'))]
+                except Exception as e:  # noqa: BLE001
+                    self.warnings.append(
+                        f"[{os.path.basename(str(p))}] zip extract failed: {e}")
+            else:
+                out.append(p)
+        return out
+
+    def _pair_files(self) -> list[dict]:
+        """Pair the uploaded files by the RO number (leading digits) in the
+        filename — ``<ro>_ORDER_XLS.xls`` ↔ ``<ro>_ORDER_PDF.pdf`` (zips expanded)."""
+        excel: dict = {}
+        pdf: dict = {}
+        for p in self._expanded_paths():
+            base = os.path.basename(str(p))
+            m = re.search(r'\d{5,}', base)
+            if not m:
+                continue
+            ro = m.group()
+            low = str(p).lower()
+            if low.endswith(('.xlsx', '.xls')):
+                excel.setdefault(ro, p)
+            elif low.endswith('.pdf'):
+                pdf.setdefault(ro, p)
+        return [{'ro': ro, 'excel': excel[ro], 'pdf': pdf.get(ro)} for ro in excel]
+
+    def _compile(self, pairs):
+        import pandas as pd
+        self._dates = {}
+        frames = []
+        for pr in pairs:
+            ro = str(pr['ro'])
+            meta = self._pdf_meta(pr['pdf']) if pr.get('pdf') else {}
+            if not pr.get('pdf'):
+                self.warnings.append(
+                    f"[RO {ro}] no matching ORDER PDF — location + PO/expiry dates "
+                    f"missing for this RO (upload the PDF too).")
+            try:
+                df = pd.read_excel(pr['excel'])
+            except Exception as e:  # noqa: BLE001
+                self.warnings.append(
+                    f"[RO {ro}] {os.path.basename(str(pr['excel']))}: Excel read "
+                    f"failed: {e}")
+                continue
+            if 'Item Code' in df.columns:      # drop Total/Net + blank-item rows
+                df = df[df['Item Code'].notna()]
+                df = df[~df['Item Code'].astype(str).str.contains(
+                    'Total|Net', case=False, na=False)]
+            df = df.dropna(how='all')
+            if df.empty:
+                continue
+            if 'Product UPC' in df.columns:    # float/sci-notation → clean EAN
+                df['Product UPC'] = df['Product UPC'].map(self._clean_ean)
+            df.insert(0, 'location', meta.get('location', ''))
+            df.insert(0, 'ro_number', ro)
+            frames.append(df)
+            if meta.get('po_date') or meta.get('exp_date'):
+                self._dates[ro] = {'po_date': meta.get('po_date'),
+                                   'exp_date': meta.get('exp_date')}
+        if not frames:
+            self.warnings.append(
+                "BlinkMP: no RO pairs could be compiled (nothing extracted).")
+            return None
+        big = pd.concat(frames, ignore_index=True)
+        # Write the compiled dump into the UPLOAD token dir (where po_paths live,
+        # under MEDIA) — NOT the zip's temp-extract dir — so the engine's workbook
+        # export lands in <token>/output where review_download reads it.
+        base_dir = (os.path.dirname(str(self.po_paths[0])) if self.po_paths
+                    else os.path.dirname(str(pairs[0]['excel'])))
+        out = os.path.join(base_dir, self._COMPILED_NAME)
+        big.to_excel(out, index=False, sheet_name='Sheet1')
+        self.notes.append(
+            f"BlinkMP: compiled {len(frames)} RO pair(s) into one dump "
+            f"({len(big)} line(s)).")
+        return out
+
+    @staticmethod
+    def _clean_ean(v) -> str:
+        import pandas as pd
+        try:
+            if pd.isna(v):
+                return ''
+        except (TypeError, ValueError):
+            pass
+        try:                                    # 8.904473e+12 / 8904473012345.0 → int
+            f = float(v)
+            if f == int(f):
+                return str(int(f))
+        except (TypeError, ValueError):
+            pass
+        s = str(v).strip()
+        return s[:-2] if s.endswith('.0') else s
+
+    @staticmethod
+    def _pdf_meta(pdf_path) -> dict:
+        """Delivery location + RO date + expiry date from the ORDER PDF. Dates are
+        parsed with the standard ``dateutil`` parser (robust to 'June 8, 2026' /
+        'Jul. 8, 2025' / full-or-abbreviated month), NOT a brittle month-map."""
+        import pdfplumber
+        from dateutil import parser as _dp
+        try:
+            with pdfplumber.open(pdf_path) as pdf:
+                t = re.sub(r'\s+', ' ',
+                           ' '.join(pg.extract_text() or '' for pg in pdf.pages))
+        except Exception:  # noqa: BLE001
+            return {}
+        loc = re.search(
+            r'(BCPL\s*-\s*[A-Za-z]+(?:\s+[A-Za-z0-9]+)*(?:\s*-\s*[A-Za-z0-9]+)?'
+            r'\s*(?:SR\s+Feeder|Feeder\s+Warehouse|Feeder|Warehouse)'
+            r'(?:\s*Warehouse)?)', t, re.I)
+
+        def _date(pat):
+            m = re.search(pat, t, re.I)
+            if not m:
+                return None
+            try:
+                return _dp.parse(m.group(1), dayfirst=False).date()
+            except (ValueError, OverflowError):
+                return None
+        return {
+            'location': loc.group(1).strip() if loc else '',
+            # "Date :June 8, 2026, 6:47 p.m." / "R.O. expiry :July 8, 2026, …"
+            'po_date': _date(r'\bDate\s*:\s*([A-Za-z]+\.?\s+\d{1,2},\s*\d{4})'),
+            'exp_date': _date(r'expiry\s*:?\s*([A-Za-z]+\.?\s+\d{1,2},\s*\d{4})'),
+        }
+
+    def _source_dates_by_po(self) -> dict:
+        """RO date → po_date, expiry → exp_date, keyed by ``ro_number`` (== the
+        engine's po_number). The tabular dump has no dates, so this fills them
+        (COALESCE — blanks only) so BlinkMP shows on the TAT tracker."""
+        return dict(self._dates or {})
+
+
 _PROCESSORS = {'Flipkart': FlipkartProcessor, 'Flipkart-TO': FlipkartTOProcessor,
                'Meesho-TO': MeeshoTOProcessor, 'Dmart': DmartProcessor,
-               'Firstcry': FirstcryProcessor, 'Myntra': MyntraProcessor}
+               'Firstcry': FirstcryProcessor, 'Myntra': MyntraProcessor,
+               'Swiggy': SwiggyProcessor, 'BlinkMP': BlinkMPProcessor}
 
 
 def processor_for(marketplace, po_paths, warehouse=None, margin_pct=None,

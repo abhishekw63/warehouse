@@ -25,7 +25,7 @@ from django.views.generic import TemplateView, View
 
 from online_b2b.services import po_flow
 
-from .flows import GT_MASS_SPEC
+from .flows import GT_MASS_SPEC, MT_SPEC
 from .services import gt_mass_bridge, mt_bridge
 from .utils import (
     EMAIL_CONFIG,
@@ -241,16 +241,15 @@ class DownloadTemplateView(LoginRequiredMixin, View):
 #  runs the EXACT desktop pipeline headlessly → same ss_so_*.xlsx workbook.
 # ─────────────────────────────────────────────────────────────────────────
 
-class ShoppersStopView(LoginRequiredMixin, TemplateView):
-    """Upload + generate page for the MT-Select Shoppers Stop channel."""
-    template_name = 'offline/shoppers_stop.html'
+class ShoppersStopView(LoginRequiredMixin, View):
+    """Legacy MT (Shoppers Stop) single-page generator — RETIRED. It used a
+    different (core/base) look; MT now runs on the shared PO-flow scaffold so the
+    UI matches every other segment. Kept as a permanent redirect so old
+    bookmarks/links land on the new page. (The SS preview/confirm/download
+    endpoints below stay dark — nothing links to them.)"""
 
-    def get_context_data(self, **kwargs):
-        ctx = super().get_context_data(**kwargs)
-        ctx['channels'] = mt_bridge.channel_choices()
-        ctx['warehouses'] = mt_bridge.warehouse_choices()
-        ctx['default_warehouse'] = mt_bridge.default_warehouse()
-        return ctx
+    def get(self, request, *args, **kwargs):
+        return redirect(reverse('mt_flow_upload'))
 
 
 class SSPreviewView(LoginRequiredMixin, View):
@@ -399,12 +398,27 @@ class GTMDownloadView(LoginRequiredMixin, View):
                             filename=os.path.basename(path))
 
 
-# ── GT Mass on the shared PO-flow scaffold (upload → review → confirm) ───────
-# Thin CBVs: all logic lives in online_b2b.services.po_flow, driven by
-# GT_MASS_SPEC. A new offline channel = a processor adapter + a FlowSpec + these
-# six one-line views (or a shared base later). The Tkinter-style recorder above
-# stays untouched as a fallback.
-_GTM = GT_MASS_SPEC
+# ── Shared PO-flow scaffold (upload → review → confirm → lock) ───────────────
+# Generic, spec-driven CBVs: all logic lives in online_b2b.services.po_flow.
+# A new offline channel = a processor adapter + a FlowSpec + a 6-line block of
+# subclasses that just set ``spec`` (see GT Mass and MT below). The Tkinter-style
+# single-page recorders above stay untouched as fallbacks.
+
+
+def _channel_reqs(spec) -> dict:
+    """{channel code: requirements descriptor} for the upload-page hint, so the
+    operator sees what each channel demands (and the if-absent behaviour) BEFORE
+    uploading. MT channels only; empty for other segments."""
+    try:
+        from .services import mt_bridge
+    except Exception:  # noqa: BLE001
+        return {}
+    out = {}
+    for code, _label in (spec.marketplaces or ()):
+        req = mt_bridge.channel_requirements(code)
+        if req:
+            out[code] = req
+    return out
 
 
 def _flow_upload_ctx(spec):
@@ -415,6 +429,7 @@ def _flow_upload_ctx(spec):
         'warehouses': spec.warehouses,
         'marketplaces': spec.marketplaces, 'default_margin': spec.default_margin,
         'accept': spec.accept,
+        'channel_reqs': _channel_reqs(spec),
         'u_upload': spec.urls['upload'], 'u_back': spec.urls['back'],
         'u_dashboard': spec.urls['dashboard'],
     }
@@ -424,28 +439,32 @@ def _is_ajax(request):
     return request.headers.get('x-requested-with') == 'XMLHttpRequest'
 
 
-class GTMFlowUploadView(LoginRequiredMixin, View):
+class _FlowUploadView(LoginRequiredMixin, View):
+    """Generic upload view — subclasses set ``spec``."""
+    spec = None
+
     def get(self, request):
-        return render(request, 'po_flow/upload.html', _flow_upload_ctx(_GTM))
+        return render(request, 'po_flow/upload.html', _flow_upload_ctx(self.spec))
 
     def post(self, request):
+        spec = self.spec
         files = request.FILES.getlist('po_files')
         if not files:
             return JsonResponse({'ok': False, 'error': 'Choose at least one file.'})
         extra = {}
-        if 'warehouse' in _GTM.caps:
+        if 'warehouse' in spec.caps:
             extra['warehouse'] = (request.POST.get('warehouse')
-                                  or (_GTM.warehouses[0][0] if _GTM.warehouses else ''))
-        if 'margin' in _GTM.caps:
-            extra['margin_pct'] = request.POST.get('margin_pct') or _GTM.default_margin
-        if 'marketplace' in _GTM.caps:
+                                  or (spec.warehouses[0][0] if spec.warehouses else ''))
+        if 'margin' in spec.caps:
+            extra['margin_pct'] = request.POST.get('margin_pct') or spec.default_margin
+        if 'marketplace' in spec.caps:
             extra['marketplace'] = request.POST.get('marketplace')
-        token = po_flow.save_upload(_GTM, files, extra)
-        meta = po_flow.load_meta(_GTM, token)
-        payload = po_flow.preview(_GTM, token, meta)
+        token = po_flow.save_upload(spec, files, extra)
+        meta = po_flow.load_meta(spec, token)
+        payload = po_flow.preview(spec, token, meta)
         s = payload.get('summary', {})
         return JsonResponse({
-            'ok': True, 'review_url': reverse(_GTM.urls['review'], args=[token]),
+            'ok': True, 'review_url': reverse(spec.urls['review'], args=[token]),
             'pos': s.get('pos', 0), 'lines': s.get('lines', 0),
             'affected': s.get('affected', 0),
             'issues': len(payload.get('file_issues', [])),
@@ -453,21 +472,26 @@ class GTMFlowUploadView(LoginRequiredMixin, View):
         })
 
 
-class GTMFlowReviewView(LoginRequiredMixin, View):
+class _FlowReviewView(LoginRequiredMixin, View):
+    spec = None
+
     def get(self, request, token):
-        meta = po_flow.load_meta(_GTM, token)
+        meta = po_flow.load_meta(self.spec, token)
         if meta is None:
             raise Http404('Upload not found or expired.')
         return render(request, 'po_flow/review.html',
-                      po_flow.review_context(_GTM, token, meta))
+                      po_flow.review_context(self.spec, token, meta))
 
 
-class GTMFlowConfirmView(LoginRequiredMixin, View):
+class _FlowConfirmView(LoginRequiredMixin, View):
+    spec = None
+
     def post(self, request, token):
-        meta = po_flow.load_meta(_GTM, token)
+        spec = self.spec
+        meta = po_flow.load_meta(spec, token)
         if meta is None:
             return JsonResponse({'ok': False, 'error': 'Upload expired.'}, status=404)
-        review_url = reverse(_GTM.urls['review'], args=[token])
+        review_url = reverse(spec.urls['review'], args=[token])
         if meta.get('locked'):
             return JsonResponse({'ok': True, 'run_id': meta.get('run_id'),
                                  'review_url': review_url, 'already': True})
@@ -479,31 +503,110 @@ class GTMFlowConfirmView(LoginRequiredMixin, View):
                     {'ok': False, 'error': 'Confirm intent missing — click '
                      'Confirm & Record.'}, status=400)
             return redirect(review_url)
-        result = po_flow.confirm(_GTM, token, meta)
+        result = po_flow.confirm(spec, token, meta)
         result['review_url'] = review_url
         if not _is_ajax(request):
             return redirect(review_url)
         return JsonResponse(result)
 
 
-class GTMFlowDecisionView(LoginRequiredMixin, View):
+class _FlowDecisionView(LoginRequiredMixin, View):
+    spec = None
+
     def post(self, request, token):
-        n = po_flow.set_decision(_GTM, token, request.POST.get('key', ''),
+        n = po_flow.set_decision(self.spec, token, request.POST.get('key', ''),
                                  request.POST.get('action', ''),
                                  request.POST.get('override_cp', ''),
                                  request.POST.get('remark', ''))
         return JsonResponse({'ok': True, 'saved': n})
 
 
-class GTMFlowDiscardView(LoginRequiredMixin, View):
+class _FlowDiscardView(LoginRequiredMixin, View):
+    spec = None
+
     def post(self, request, token):
-        po_flow.discard(_GTM, token)
-        return redirect(reverse(_GTM.urls['dashboard']))
+        po_flow.discard(self.spec, token)
+        return redirect(reverse(self.spec.urls['dashboard']))
 
 
-class GTMFlowDownloadView(LoginRequiredMixin, View):
+class _FlowDownloadView(LoginRequiredMixin, View):
+    spec = None
+
     def get(self, request, token):
-        p = po_flow.download_path(_GTM, token)
+        p = po_flow.download_path(self.spec, token)
         if not p:
             raise Http404('No workbook available.')
         return FileResponse(open(p, 'rb'), as_attachment=True, filename=p.name)
+
+
+class _FlowExportView(LoginRequiredMixin, View):
+    """Download the review data (Orders + Line items) as a plain Excel — NO SO
+    numbers — for eyeballing before Confirm. Available pre- and post-lock."""
+    spec = None
+
+    def get(self, request, token):
+        meta = po_flow.load_meta(self.spec, token)
+        if meta is None:
+            raise Http404('Upload not found or expired.')
+        p = po_flow.export_review_xlsx(self.spec, token, meta)
+        if not p:
+            raise Http404('Could not build the review export.')
+        return FileResponse(open(p, 'rb'), as_attachment=True, filename=p.name)
+
+
+# ── GT Mass (unchanged behaviour — now on the generic base) ──────────────
+class GTMFlowUploadView(_FlowUploadView):
+    spec = GT_MASS_SPEC
+
+
+class GTMFlowReviewView(_FlowReviewView):
+    spec = GT_MASS_SPEC
+
+
+class GTMFlowConfirmView(_FlowConfirmView):
+    spec = GT_MASS_SPEC
+
+
+class GTMFlowDecisionView(_FlowDecisionView):
+    spec = GT_MASS_SPEC
+
+
+class GTMFlowDiscardView(_FlowDiscardView):
+    spec = GT_MASS_SPEC
+
+
+class GTMFlowDownloadView(_FlowDownloadView):
+    spec = GT_MASS_SPEC
+
+
+class GTMFlowExportView(_FlowExportView):
+    spec = GT_MASS_SPEC
+
+
+# ── Modern Trade (MT) — on par with the online marketplaces ──────────────
+class MTFlowUploadView(_FlowUploadView):
+    spec = MT_SPEC
+
+
+class MTFlowReviewView(_FlowReviewView):
+    spec = MT_SPEC
+
+
+class MTFlowConfirmView(_FlowConfirmView):
+    spec = MT_SPEC
+
+
+class MTFlowDecisionView(_FlowDecisionView):
+    spec = MT_SPEC
+
+
+class MTFlowDiscardView(_FlowDiscardView):
+    spec = MT_SPEC
+
+
+class MTFlowDownloadView(_FlowDownloadView):
+    spec = MT_SPEC
+
+
+class MTFlowExportView(_FlowExportView):
+    spec = MT_SPEC

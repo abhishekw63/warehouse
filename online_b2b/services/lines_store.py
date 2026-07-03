@@ -233,11 +233,14 @@ def set_order_value(run_id, value_by_po: dict) -> dict:
     return {'updated': updated}
 
 
-def set_po_dates(run_id, dates_by_po: dict) -> dict:
-    """Backfill ``po_date`` / ``exp_date`` on ``order_headers`` for a run, per PO
-    — only where the engine left them blank (PDF marketplaces whose parser carries
-    the date in the header, not a row column). ``COALESCE`` so engine-provided
-    dates are never overwritten. Powers the TAT tracker for those channels."""
+def set_po_dates(run_id, dates_by_po: dict, force=False) -> dict:
+    """Backfill ``po_date`` / ``exp_date`` on ``order_headers`` for a run, per PO.
+    Default (``force=False``) uses ``COALESCE`` so engine-provided dates are never
+    overwritten — for PDF marketplaces whose parser carries the date in the header
+    (not a row column), filling blanks only. ``force=True`` OVERWRITES the engine's
+    value — needed when the engine parsed the date WRONGLY (e.g. Swiggy's
+    day-first ``PoCreatedAt`` timestamp misread month-first for days 1–12). Powers
+    the TAT tracker."""
     if run_id is None or not dates_by_po:
         return {'updated': 0}
     updated = 0
@@ -246,14 +249,39 @@ def set_po_dates(run_id, dates_by_po: dict) -> dict:
         for po, dd in dates_by_po.items():
             sets, args = [], []
             if dd.get('po_date'):
-                sets.append(f"po_date=COALESCE(po_date,{ph})"); args.append(dd['po_date'])
+                col = ph if force else f"COALESCE(po_date,{ph})"
+                sets.append(f"po_date={col}"); args.append(dd['po_date'])
             if dd.get('exp_date'):
-                sets.append(f"exp_date=COALESCE(exp_date,{ph})"); args.append(dd['exp_date'])
+                col = ph if force else f"COALESCE(exp_date,{ph})"
+                sets.append(f"exp_date={col}"); args.append(dd['exp_date'])
             if not sets:
                 continue
             cur.execute(
                 f"UPDATE order_headers SET {', '.join(sets)} "
                 f"WHERE run_id={ph} AND po={ph}", tuple(args) + (run_id, str(po)))
+            updated += cur.rowcount or 0
+        cur.connection.commit()
+    return {'updated': updated}
+
+
+def set_location(run_id, loc_by_po: dict) -> dict:
+    """Overwrite ``order_headers.location`` on a run, per PO, with a resolved
+    SHORT name (e.g. 'Mumbai', 'West bengal'). Used where the engine needs the
+    RAW ship-to address to do its own resolution (so we can't pre-shorten what it
+    reads) but the tracker should show the friendly short name — Myntra. Unlike
+    the dates backfill this OVERWRITES (the engine wrote the raw address). No-op
+    on empty input or blank values."""
+    if run_id is None or not loc_by_po:
+        return {'updated': 0}
+    updated = 0
+    with _conn() as (cur, d):
+        ph = d['ph']
+        for po, loc in loc_by_po.items():
+            if not loc:
+                continue
+            cur.execute(
+                f"UPDATE order_headers SET location={ph} "
+                f"WHERE run_id={ph} AND po={ph}", (loc, run_id, str(po)))
             updated += cur.rowcount or 0
         cur.connection.commit()
     return {'updated': updated}

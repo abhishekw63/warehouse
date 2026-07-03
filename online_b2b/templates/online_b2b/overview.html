@@ -27,7 +27,7 @@
       <a href="{% url 'b2b_orders' %}?segment={% if branch.kind == 'offline' %}Offline{% else %}OnlineB2B{% endif %}" class="btn-ghost">View {{ branch.label }} orders →</a>
       {% if branch.kind == 'offline' %}
         <a href="/offline/gt-mass-dump/" class="btn-ghost">GT Mass</a>
-        <a href="/offline/shoppers-stop/" class="btn-primary">＋ MT Select</a>
+        <a href="/offline/mt-flow/" class="btn-primary">＋ MT Select</a>
       {% else %}
         <a href="{% url 'b2b_bulk_upload' %}" class="btn-ghost">⬆ Bulk Import</a>
         {% if user.is_staff %}<a href="/admin/online_b2b/orderline/" class="btn-ghost">⚙ DB Admin</a>{% endif %}

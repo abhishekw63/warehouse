@@ -1,0 +1,231 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static b2b_extras %}
+{% block title %}Sales Validation — Order Management{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<style>
+  .sv-tabs{display:flex;gap:6px;margin:18px 0 14px;border-bottom:1px solid var(--border,#e5e7eb);}
+  .sv-tab{padding:9px 16px;border:0;background:none;font-weight:700;font-size:13px;color:var(--muted,#64748b);
+    cursor:pointer;border-bottom:2px solid transparent;}
+  .sv-tab.on{color:var(--accent,#4f46e5);border-bottom-color:var(--accent,#4f46e5);}
+  .sv-panel{display:none;}
+  .sv-panel.on{display:block;}
+  .sv-verdict{display:inline-flex;align-items:center;gap:8px;font-weight:800;font-size:15px;
+    padding:8px 16px;border-radius:10px;margin-bottom:14px;}
+  .sv-verdict.ok{background:#dcfce7;color:#166534;}
+  .sv-verdict.bad{background:#fee2e2;color:#991b1b;}
+  .sv-metrics{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin:14px 0;}
+  .sv-m{background:var(--surface,#fff);border:1px solid var(--border,#e5e7eb);border-radius:10px;padding:10px 12px;}
+  .sv-m .n{font-size:18px;font-weight:800;}
+  .sv-m .l{font-size:11px;color:var(--muted,#64748b);}
+  .sv-check{display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border-radius:8px;margin-bottom:5px;
+    border:1px solid var(--border,#eef1f5);}
+  .sv-check .pill{font-size:11px;font-weight:800;padding:2px 8px;border-radius:20px;white-space:nowrap;}
+  .sv-check.pass .pill{background:#dcfce7;color:#166534;}
+  .sv-check.fail .pill{background:#fee2e2;color:#991b1b;}
+  .sv-check .lab{font-weight:600;font-size:13px;}
+  .sv-check .det{font-size:12px;color:var(--muted,#64748b);}
+  .sv-flag{background:#fffbeb;border-color:#fde68a;}
+  .sv-flag .pill{background:#fef3c7;color:#92400e;}
+  td.ok,.sv-st.ok{color:#166534;font-weight:700;}
+  td.bad,.sv-st.bad{color:#991b1b;font-weight:700;}
+</style>{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_dashboard' %}"> / Order Management</a> <span>/ Sales Validation</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap b2b-wide">
+  <div class="b2b-head">
+    <div>
+      <h1>Sales Validation <span>· D365 ⇄ recorded run</span></h1>
+      <p class="src">Upload the two D365 Sales exports — <b>Order Headers</b> + <b>Sales Lines</b>. We reconcile them against the recorded run (or a source file) and prove header, line-item, quantity, item↔EAN, ship-to and integrity all match. Value is <b>flagged, not failed</b> (D365 prices from its own master).</p>
+    </div>
+    <div class="head-actions"><a href="{% url 'b2b_dashboard' %}" class="btn-ghost">← Hub</a></div>
+  </div>
+
+  <!-- Upload -->
+  <div class="im-card reveal">
+    <h2>Upload &amp; reconcile</h2>
+    <form method="post" action="{% url 'b2b_sales_validation_run' %}" enctype="multipart/form-data" class="im-up" data-loading="Reconciling the D365 export against the recorded run">
+      {% csrf_token %}
+      <label class="im-file">
+        <span class="imf-l">① Sales Order Headers</span>
+        <input type="file" name="headers_file" accept=".xlsx,.xls" required>
+        <span class="imf-h">No., External Document No., Ship-to Code, Total Quantity…</span>
+      </label>
+      <label class="im-file">
+        <span class="imf-l">② Sales Lines</span>
+        <input type="file" name="lines_file" accept=".xlsx,.xls" required>
+        <span class="imf-h">Document No., GTIN, No., Quantity…</span>
+      </label>
+      <label class="im-file">
+        <span class="imf-l">Target run <small>(auto-matched if blank)</small></span>
+        <select name="run_id">
+          <option value="">Auto-match by SO → run</option>
+          {% for r in recent_runs %}
+          <option value="{{ r.run_id }}">#{{ r.run_id }} · {{ r.run_ts }} · {{ r.marketplaces }} · {{ r.pos }} POs</option>
+          {% endfor %}
+        </select>
+        <span class="imf-h">Or provide a source .xlsb path below</span>
+      </label>
+      <label class="im-file">
+        <span class="imf-l">Source file (fallback)</span>
+        <input type="text" name="source_path" placeholder="D:\…\Renee Repl Po 1-Jul-26.xlsb">
+        <span class="imf-h">Used only when no DB run is chosen/matched</span>
+      </label>
+      <button type="submit" class="btn-primary">Validate →</button>
+    </form>
+  </div>
+
+  {% if result %}
+    {% if not result.ok %}
+      <div class="banner err reveal">Validation failed — {{ result.error }}</div>
+    {% else %}
+    {% with s=result.summary v=result.value ls=result.line_summary %}
+    <div class="sv-tabs">
+      <button class="sv-tab on" data-p="summary">Summary</button>
+      <button class="sv-tab" data-p="headers">Headers Reco</button>
+      <button class="sv-tab" data-p="lines">Lines Reco</button>
+      <a class="btn-primary" style="margin-left:auto" href="{% url 'b2b_sales_validation_download' token %}">⬇ Download reconciliation Excel</a>
+    </div>
+
+    <!-- PART 1 · SUMMARY -->
+    <div class="sv-panel on" id="p-summary">
+      <div class="sv-verdict {% if s.all_pass %}ok{% else %}bad{% endif %}">
+        {% if s.all_pass %}✓ ALL {{ s.checks_total }} CHECKS PASS{% else %}✗ {{ s.checks_pass }}/{{ s.checks_total }} checks pass — review failures{% endif %}
+      </div>
+      <p class="im-sub">Target: <b>{{ s.target_kind }}</b></p>
+      <div class="sv-metrics">
+        <div class="sv-m"><div class="n">{{ s.headers }}</div><div class="l">D365 headers</div></div>
+        <div class="sv-m"><div class="n">{{ s.lines }}</div><div class="l">D365 lines</div></div>
+        <div class="sv-m"><div class="n">{{ s.total_qty }}</div><div class="l">Total qty</div></div>
+        <div class="sv-m"><div class="n">{{ s.recorded_units }}</div><div class="l">Recorded units</div></div>
+        <div class="sv-m"><div class="n">{{ v.d365_value }}</div><div class="l">D365 value (incl GST)</div></div>
+        <div class="sv-m"><div class="n">{{ v.target_value }}</div><div class="l">Recorded value</div></div>
+        <div class="sv-m"><div class="n">{{ v.gap_pct }}%</div><div class="l">Value gap (flagged)</div></div>
+        <div class="sv-m"><div class="n">{{ ls.ok }}</div><div class="l">Lines OK</div></div>
+      </div>
+
+      <h2>Check list</h2>
+      {% for c in result.checks %}
+      <div class="sv-check {% if c.pass %}pass{% else %}fail{% endif %}">
+        <span class="pill">{% if c.pass %}PASS{% else %}FAIL{% endif %}</span>
+        <div><div class="lab">{{ c.label }}</div>{% if c.detail %}<div class="det">{{ c.detail }}</div>{% endif %}</div>
+      </div>
+      {% endfor %}
+      <div class="sv-check sv-flag">
+        <span class="pill">FLAG</span>
+        <div><div class="lab">Value gap {{ v.gap }} ({{ v.gap_pct }}%) — non-failing</div>
+          <div class="det">{{ v.note }}</div></div>
+      </div>
+    </div>
+
+    <!-- PART 2 · HEADERS RECO -->
+    <div class="sv-panel" id="p-headers">
+      <p class="im-sub">Per-SO side-by-side — {{ result.rows|length }} SOs.</p>
+      <div class="scroll">
+      <table class="grid compact">
+        <thead><tr><th>Store</th><th>PO (src)</th><th>PO (D365)</th><th>PO✓</th><th>SO</th>
+          <th>Ship-to</th><th>Address</th><th class="r">Src Qty</th><th class="r">D365 Qty</th><th>Qty✓</th>
+          <th class="r">Src Ln</th><th class="r">D365 Ln</th><th>Ln✓</th>
+          <th class="r">Src Val</th><th class="r">D365 Val</th><th class="r">Val Δ</th><th>VERDICT</th></tr></thead>
+        <tbody>
+        {% for r in result.rows %}
+          <tr>
+            <td class="mono">{{ r.store }}</td><td class="mono">{{ r.po }}</td><td class="mono">{{ r.po }}</td>
+            <td class="{% if r.po_ok %}ok{% else %}bad{% endif %}">{% if r.po_ok %}✓{% else %}✗{% endif %}</td>
+            <td class="mono">{{ r.so }}</td><td class="mono">{{ r.ship }}</td>
+            <td class="desc" title="{{ r.address }}">{{ r.address }}</td>
+            <td class="r">{{ r.src_qty }}</td><td class="r">{{ r.d365_qty }}</td>
+            <td class="{% if r.qty_ok %}ok{% else %}bad{% endif %}">{% if r.qty_ok %}✓{% else %}✗{% endif %}</td>
+            <td class="r">{{ r.src_lines }}</td><td class="r">{{ r.d365_lines }}</td>
+            <td class="{% if r.lines_ok %}ok{% else %}bad{% endif %}">{% if r.lines_ok %}✓{% else %}✗{% endif %}</td>
+            <td class="r">{{ r.src_value }}</td><td class="r">{{ r.d365_value }}</td><td class="r">{{ r.value_diff }}</td>
+            <td class="{% if r.verdict == 'OK' %}ok{% else %}bad{% endif %}">{{ r.verdict }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    <!-- PART 3 · LINES RECO -->
+    <div class="sv-panel" id="p-lines">
+      {% if line_bad %}
+        <div class="banner err">{{ line_bad|length }} line(s) need review (qty / item / missing / extra). Full {{ ls.total }}-line tally is in the Excel.</div>
+      {% else %}
+        <div class="banner ok">All {{ ls.total }} lines reconcile — 0 quantity, item, missing or extra mismatches.</div>
+      {% endif %}
+      <p class="im-sub">OK {{ ls.ok }} · qty-mismatch {{ ls.qty_mismatch }} · item-mismatch {{ ls.item_mismatch }} · missing {{ ls.missing }} · extra {{ ls.extra }}.
+        <label style="margin-left:12px"><input type="checkbox" id="sv-showall"> Show all {{ ls.total }} lines</label></p>
+      <div class="scroll">
+      <table class="grid compact" id="sv-lines">
+        <thead><tr><th>SO</th><th>Store</th><th>EAN</th><th>Item No.</th><th>Description</th>
+          <th class="r">D365 Qty</th><th class="r">Target Qty</th><th>Status</th><th>Note</th></tr></thead>
+        <tbody>
+        {% for f in line_bad %}
+          <tr data-ok="0">
+            <td class="mono">{{ f.so }}</td><td class="mono">{{ f.store }}</td><td class="mono">{{ f.ean }}</td>
+            <td class="mono">{{ f.item_no }}</td><td class="desc">{{ f.description }}</td>
+            <td class="r">{{ f.d365_qty }}</td><td class="r">{{ f.target_qty }}</td>
+            <td class="sv-st bad">{{ f.status }}</td><td class="det">{{ f.detail }}</td>
+          </tr>
+        {% empty %}
+          <tr id="sv-none"><td colspan="9" class="muted">No mismatches. Toggle “Show all lines” to see the full OK tally, or download the Excel.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+    {% endwith %}
+    {% endif %}
+  {% endif %}
+</div>
+
+<script>
+(function () {
+  // 3-part tabs
+  document.querySelectorAll('.sv-tab').forEach(function (t) {
+    t.addEventListener('click', function () {
+      document.querySelectorAll('.sv-tab').forEach(function (x) { x.classList.remove('on'); });
+      document.querySelectorAll('.sv-panel').forEach(function (x) { x.classList.remove('on'); });
+      t.classList.add('on');
+      var p = document.getElementById('p-' + t.dataset.p);
+      if (p) p.classList.add('on');
+    });
+  });
+  // "Show all lines" — lazily fetch the full result JSON and render OK rows too
+  var box = document.getElementById('sv-showall');
+  if (box) box.addEventListener('change', function () {
+    var body = document.querySelector('#sv-lines tbody');
+    var none = document.getElementById('sv-none');
+    if (!box.checked) { location.reload(); return; }
+    if (body.dataset.loaded) { toggleFull(true); return; }
+    box.disabled = true;
+    fetch(location.pathname + location.search +
+      (location.search ? '&' : '?') + 'format=json',
+      { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var f = (d.data && d.data.result && d.data.result.line_findings) || [];
+        function esc(s){var e=document.createElement('div');e.textContent=(s==null?'':s);return e.innerHTML;}
+        var html = f.map(function (x) {
+          var ok = x.status === 'OK';
+          return '<tr data-ok="' + (ok ? 1 : 0) + '"><td class="mono">' + esc(x.so) +
+            '</td><td class="mono">' + esc(x.store) + '</td><td class="mono">' + esc(x.ean) +
+            '</td><td class="mono">' + esc(x.item_no) + '</td><td class="desc">' + esc(x.description) +
+            '</td><td class="r">' + esc(x.d365_qty) + '</td><td class="r">' + esc(x.target_qty) +
+            '</td><td class="sv-st ' + (ok ? 'ok' : 'bad') + '">' + esc(x.status) +
+            '</td><td class="det">' + esc(x.detail) + '</td></tr>';
+        }).join('');
+        if (none) none.remove();
+        body.innerHTML = html;
+        body.dataset.loaded = '1';
+        box.disabled = false;
+      }).catch(function () { box.disabled = false; });
+  });
+})();
+</script>
+{% endblock %}

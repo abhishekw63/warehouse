@@ -1,7 +1,31 @@
 {% extends 'online_b2b/base_b2b.html' %}
 {% load static b2b_extras %}
 {% block title %}Online B2B — Review{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<style>
+  @keyframes cpShake{10%,90%{transform:translateX(-1px)}20%,80%{transform:translateX(2px)}
+    30%,50%,70%{transform:translateX(-5px)}40%,60%{transform:translateX(5px)}}
+  .cp-shake{animation:cpShake .5s;}
+  @keyframes cpFlash{0%,100%{background:transparent}25%,60%{background:#fff2c2;box-shadow:inset 0 0 0 2px #f0b400;}}
+  .cp-flash>td{animation:cpFlash 1.3s ease 2;}
+  .cpg-ov{position:fixed;inset:0;background:rgba(16,22,38,.52);display:flex;align-items:center;
+    justify-content:center;z-index:9999;animation:cpgFade .18s ease;}
+  @keyframes cpgFade{from{opacity:0}to{opacity:1}}
+  .cpg-card{background:#fff;border-radius:16px;padding:24px 26px;max-width:460px;width:calc(100% - 40px);
+    box-shadow:0 24px 70px -22px rgba(0,0,0,.55);}
+  .cpg-card h3{margin:0 0 8px;font-size:18px;color:#b42318;font-weight:800;}
+  .cpg-card p{margin:0 0 18px;color:#475467;font-size:14px;line-height:1.6;}
+  .cpg-actions{display:flex;flex-direction:column;gap:9px;}
+  .cpg-btn{padding:12px 15px;border-radius:10px;border:1px solid #d0d5dd;font-weight:700;
+    font-size:13.5px;cursor:pointer;text-align:left;font-family:inherit;line-height:1.4;}
+  .cpg-later{background:#2f6feb;color:#fff;border-color:#2f6feb;}
+  .cpg-later:hover{background:#245ad0;}
+  .cpg-cancel{background:#f4f6f9;color:#344054;}
+  .cpg-cancel:hover{background:#eaeef3;}
+  .cpg-anyway{background:#fff;color:#b42318;border-color:#f2b8b0;}
+  .cpg-anyway:hover{background:#fdf2f1;}
+  .cpg-btn small{display:block;font-weight:500;font-size:12px;opacity:.85;margin-top:2px;}
+</style>{% endblock %}
 
 {% block breadcrumb %}
     <a href="{% url 'departments' %}">Departments</a>
@@ -67,6 +91,16 @@
        slow). The Discard button below lives inside confirm-form but targets THIS
        form via the HTML5 form= attribute. -->
   <form id="discard-form" method="post" action="{% url 'b2b_discard' token=token %}">{% csrf_token %}</form>
+  <form id="save-later-form" method="post" action="{% url 'b2b_save_review_later' token=token %}">{% csrf_token %}</form>
+
+  {% if is_draft and not locked %}
+  <div style="margin:0 0 14px;padding:10px 14px;border-radius:10px;background:#fff8e6;
+       border:1px solid #f4d58a;color:#7a5b12;font-size:13.5px;">
+    🕒 <b>Review-Later draft</b> — reopened &amp; re-validated against the current master
+    (so any CP correction the team made is applied). Resolve the pending line(s), then
+    <b>Lock &amp; Record</b>. <a href="{% url 'b2b_drafts' %}" style="color:#7a5b12;text-decoration:underline;">All drafts →</a>
+  </div>
+  {% endif %}
 
   <!-- Confirm bar -->
   <form id="confirm-form" method="post" action="{% url 'b2b_confirm' token=token %}">{% csrf_token %}
@@ -87,11 +121,18 @@
         <button class="btn-primary" type="submit" formaction="{% url 'b2b_generate_d365' token=token %}" formnovalidate onclick="var b=this;b.innerHTML='<span class=&quot;btn-spin&quot;></span> Generating…';setTimeout(function(){b.innerHTML='⬇ Generate D365 dump';},4500);">⬇ Generate D365 dump</button>
       {% else %}
         <button class="btn-discard" type="submit" form="discard-form" formnovalidate>Discard</button>
+        <button class="btn-ghost" type="submit" form="save-later-form" formnovalidate
+                title="Park this whole run — decide the CP issue later (after the team corrects it) without re-uploading">🕒 Save for Review Later</button>
         <button class="btn-primary" id="lockBtn" type="button">🔒 Lock &amp; Record</button>
       {% endif %}
     </div>
   </div>
 
+  {% if r.notes %}
+  <div class="notebox" style="margin-bottom:12px;border:1px solid #bcdcff;border-left:4px solid #2f6feb;background:#f0f6ff;border-radius:9px;padding:9px 12px;font-size:13px;color:#1f3b73;">
+    {% for n in r.notes %}<div>ℹ️ {{ n }}</div>{% endfor %}
+  </div>
+  {% endif %}
   {% if r.warnings %}
   <details class="warnbox" style="margin-bottom:16px;">
     <summary><strong>{{ r.warnings|length }} warning(s)</strong> — click to view</summary>
@@ -614,6 +655,84 @@
     });
   }
 
+  // The actual lock+record (progress bar → AJAX). Called once all guards pass.
+  function doLock() {
+    lockBtn.disabled = true;
+    startProgress();
+    var t0 = Date.now();
+    fetch(form.action, {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      body: new FormData(form),
+      credentials: 'same-origin'
+    }).then(function (r) {
+      return r.json().then(function (j) { return { ok: r.ok, j: j }; });
+    }).then(function (res) {
+      var j = res.j || {};
+      if (!res.ok || !j.ok) { failProgress(j.error); return; }
+      if (j.redirect) { finishProgress(); setTimeout(function () { location.href = j.redirect; }, 500); return; }
+      var wait = Math.max(0, 1150 - (Date.now() - t0));  // min on-screen time
+      setTimeout(function () {
+        finishProgress();
+        setTimeout(function () {
+          ov.classList.remove('show');
+          document.body.classList.remove('lo-open');
+          morphLocked(j);
+          flourish(j);
+        }, 580);
+      }, wait);
+    }).catch(function () {
+      failProgress('Network error — nothing was locked. Try again.');
+    });
+  }
+
+  // ── CP / undecided lock-guard ─────────────────────────────────────────
+  // Any affected line with NO decision (Include/Override/Exclude) blocks the
+  // lock: shake the button, flash the pending row(s), and ASK — Save for Review
+  // Later, go decide, or Record anyway. Never silently records undecided lines.
+  function undecidedSelects() {
+    return Array.prototype.slice.call(
+      document.querySelectorAll('#confirm-form select[name=aff_action]'))
+      .filter(function (s) { return !s.disabled && (s.value || '').trim() === ''; });
+  }
+  function cpGuard(undec) {
+    lockBtn.classList.remove('cp-shake'); void lockBtn.offsetWidth;
+    lockBtn.classList.add('cp-shake');
+    var affTab = document.querySelector('.tab[data-tab="affected"]');
+    if (affTab) affTab.click();
+    undec.forEach(function (s) {
+      var tr = s.closest('tr');
+      if (tr) { tr.classList.remove('cp-flash'); void tr.offsetWidth; tr.classList.add('cp-flash'); }
+    });
+    var first = undec[0].closest('tr');
+    if (first) first.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    showCpModal(undec.length);
+  }
+  function showCpModal(n) {
+    if (document.querySelector('.cpg-ov')) return;
+    var ov2 = document.createElement('div');
+    ov2.className = 'cpg-ov';
+    ov2.innerHTML =
+      '<div class="cpg-card"><h3>⚠ ' + n + ' line(s) still need a decision</h3>' +
+      '<p>These lines have no Include / Override / Exclude set — e.g. an unresolved CP mismatch. What do you want to do?</p>' +
+      '<div class="cpg-actions">' +
+        '<button class="cpg-btn cpg-later" data-a="later">🕒 Save for Review Later' +
+          '<small>Park the whole run — decide after the team corrects the price. No re-upload.</small></button>' +
+        '<button class="cpg-btn cpg-cancel" data-a="decide">Go decide them now' +
+          '<small>Jump to the flashing line(s) on the Affected tab.</small></button>' +
+        '<button class="cpg-btn cpg-anyway" data-a="anyway">Lock &amp; Record anyway' +
+          '<small>Include the ' + n + ' undecided line(s) as-is (still flagged in the DB).</small></button>' +
+      '</div></div>';
+    document.body.appendChild(ov2);
+    ov2.addEventListener('click', function (e) {
+      var btn = e.target.closest && e.target.closest('[data-a]');
+      var a = btn ? btn.getAttribute('data-a') : null;
+      if (e.target === ov2 || a === 'decide') { ov2.remove(); return; }
+      if (a === 'later') { document.getElementById('save-later-form').submit(); return; }
+      if (a === 'anyway') { ov2.remove(); lockBtn._forced = true; lockBtn.click(); }
+    });
+  }
+
   if (lockBtn && form && window.fetch) {
     lockBtn.addEventListener('click', function (e) {
       e.preventDefault();
@@ -628,33 +747,14 @@
           'Lock anyway? (Cancel to go back and apply the fix first.)')) {
         return;
       }
-      lockBtn.disabled = true;
-      startProgress();
-      var t0 = Date.now();
-      fetch(form.action, {
-        method: 'POST',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        body: new FormData(form),
-        credentials: 'same-origin'
-      }).then(function (r) {
-        return r.json().then(function (j) { return { ok: r.ok, j: j }; });
-      }).then(function (res) {
-        var j = res.j || {};
-        if (!res.ok || !j.ok) { failProgress(j.error); return; }
-        if (j.redirect) { finishProgress(); setTimeout(function () { location.href = j.redirect; }, 500); return; }
-        var wait = Math.max(0, 1150 - (Date.now() - t0));  // min on-screen time
-        setTimeout(function () {
-          finishProgress();
-          setTimeout(function () {
-            ov.classList.remove('show');
-            document.body.classList.remove('lo-open');
-            morphLocked(j);
-            flourish(j);
-          }, 580);
-        }, wait);
-      }).catch(function () {
-        failProgress('Network error — nothing was locked. Try again.');
-      });
+      // Guard: undecided affected line(s) → shake + flash + ask (unless the
+      // operator already chose "Record anyway").
+      if (!lockBtn._forced) {
+        var undec = undecidedSelects();
+        if (undec.length) { cpGuard(undec); return; }
+      }
+      lockBtn._forced = false;
+      doLock();
     });
   }
 })();

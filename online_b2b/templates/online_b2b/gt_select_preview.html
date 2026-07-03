@@ -60,7 +60,7 @@
           <td class="mono">{{ h.external_doc|default:'—' }}</td>
           <td class="desc" title="{{ h.location }}">{{ h.location }}</td>
           <td class="mono">{{ h.warehouse }}</td>
-          <td class="muted">{{ h.po_date|default:'—' }}</td>
+          <td class="muted">{% if h.po_date %}{{ h.po_date|date:"d M Y" }}{% else %}—{% endif %}</td>
           <td class="r">{{ h.line_count }}</td>
           <td class="r">{{ h.qty }}</td>
           <td class="r">{{ h.order_value|inr_short }}</td>

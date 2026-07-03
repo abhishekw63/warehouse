@@ -33,6 +33,7 @@ from .order_db import _conn
 _TABLE = 'item_exceptions'
 KIND_EXC = 'exception'      # Master Exceptions row (remap / price / vendor_cp)
 KIND_DEAL = 'swiggy_deal'   # Swiggy Deal SKUs row
+KIND_MYNTRA_DEAL = 'myntra_deal'   # Myntra negotiated per-SKU transfer prices
 
 # Unified columns. source_code = 'Source Code' (exception) OR 'EAN' (swiggy deal);
 # override_mrp = 'Override MRP' OR 'Correct MRP'; note = 'Note' OR 'Name'.
@@ -52,6 +53,14 @@ _DEAL_MAP = [
     ('item_id', 'Iteam ID'), ('source_code', 'EAN'), ('note', 'Name'),
     ('override_mrp', 'Correct MRP'), ('correct_gst', 'Correct GST'),
     ('cost_with_gst', 'Cost With GST'), ('cost_after_gst', 'Cost after GST'),
+]
+# Myntra negotiated-price sheet ('Myntra Deal SKU'): each SKU carries an agreed
+# per-unit 'Cost With GST (Transfer Price)' that becomes the expected CP for
+# Myntra POs (÷(1+GST) → pre-GST CP). Marketplace is stamped by the reader (the
+# sheet has no Marketplace column). Same unified columns as the Swiggy deal.
+_MYNTRA_DEAL_MAP = [
+    ('item_id', 'Style ID'), ('source_code', 'EAN'), ('note', 'SKU Name'),
+    ('override_mrp', 'MRP'), ('cost_with_gst', 'Cost With GST (Transfer Price)'),
 ]
 
 _MYSQL = """
@@ -143,8 +152,28 @@ def replace_all(rows) -> int:
     return len(payload)
 
 
+def _compilation_path():
+    """The Online B2B dump compilation workbook — the operator's live source for
+    the marketplace deal sheets (e.g. 'Myntra Deal SKU'). Overridable via the
+    ``B2B_DEAL_COMPILATION`` Django setting / env var; falls back to the known
+    OneDrive location. Returns None if not found (deal seeding is then skipped)."""
+    import os
+    try:
+        from django.conf import settings
+        cand = getattr(settings, 'B2B_DEAL_COMPILATION', None)
+    except Exception:  # noqa: BLE001
+        cand = None
+    cand = cand or os.environ.get('B2B_DEAL_COMPILATION')
+    default = r'D:/OneDrive - RENEE COSMETICS PRIVATE LIMITED/Online_B2B_Dump_Compilation.xlsx'
+    for p in (cand, default):
+        if p and os.path.exists(p):
+            return p
+    return None
+
+
 def seed_from_bundled() -> dict:
-    """Seed the unified item_exceptions from BOTH bundled sources."""
+    """Seed the unified item_exceptions from ALL sources: Master Exceptions +
+    Swiggy Deal SKUs (bundled master) + Myntra Deal SKU (dump compilation)."""
     try:
         from pathlib import Path
 
@@ -157,9 +186,22 @@ def seed_from_bundled() -> dict:
     if exc_path.exists():
         rows += _read_sheet(str(exc_path), 0, _EXC_MAP, KIND_EXC)
     rows += _read_sheet(str(master), 'Swiggy Deal SKUs', _DEAL_MAP, KIND_DEAL)
+    # Myntra negotiated deal SKUs — read from the dump compilation the operator
+    # maintains (the sheet isn't in the bundled master). Stamp marketplace so the
+    # override applies to Myntra ONLY (never leaks to other channels).
+    myn = 0
+    comp = _compilation_path()
+    if comp:
+        mrows = _read_sheet(comp, 'Myntra Deal SKU', _MYNTRA_DEAL_MAP, KIND_MYNTRA_DEAL)
+        for r in mrows:
+            r['marketplace'] = 'Myntra'
+        rows += mrows
+        myn = len(mrows)
     n = replace_all(rows)
     exc = sum(1 for r in rows if r['kind'] == KIND_EXC)
-    return {'ok': True, 'rows': n, 'exceptions': exc, 'swiggy_deals': n - exc}
+    deals = sum(1 for r in rows if r['kind'] == KIND_DEAL)
+    return {'ok': True, 'rows': n, 'exceptions': exc, 'swiggy_deals': deals,
+            'myntra_deals': myn}
 
 
 def _fetch(where=''):
@@ -185,7 +227,25 @@ def table_counts() -> dict:
     rows = _fetch()
     return {'exceptions': sum(1 for r in rows if r.get('kind') == KIND_EXC),
             'swiggy_deals': sum(1 for r in rows if r.get('kind') == KIND_DEAL),
+            'myntra_deals': sum(1 for r in rows if r.get('kind') == KIND_MYNTRA_DEAL),
             'total': len(rows)}
+
+
+def myntra_deal_map() -> dict:
+    """``{clean EAN: agreed Cost With GST (Transfer Price)}`` for the Myntra deal
+    SKUs — the per-SKU negotiated price used as the expected CP on Myntra POs."""
+    out: dict = {}
+    for r in _fetch(f"WHERE kind='{KIND_MYNTRA_DEAL}'"):
+        ean = _s(r.get('source_code'))
+        if ean.endswith('.0'):
+            ean = ean[:-2]
+        try:
+            v = float(_s(r.get('cost_with_gst')))
+        except (TypeError, ValueError):
+            continue
+        if ean and v > 0:
+            out[ean] = v
+    return out
 
 
 def build_overlay_workbook() -> str | None:

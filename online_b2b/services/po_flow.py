@@ -238,6 +238,10 @@ def review_context(spec: FlowSpec, token: str, meta: dict) -> dict:
         'u_confirm': spec.urls['confirm'], 'u_decision': spec.urls['decision'],
         'u_discard': spec.urls['discard'], 'u_download': spec.urls['download'],
         'u_back': spec.urls['back'], 'u_dashboard': spec.urls['dashboard'],
+        # Optional 'Export review to Excel' (no SO numbers) — only if the spec
+        # wired an 'export' URL. Available pre- AND post-lock (it's just the
+        # on-screen review data, for eyeballing in Excel before you commit).
+        'u_export': spec.urls.get('export'),
     }
 
 
@@ -271,3 +275,67 @@ def download_path(spec: FlowSpec, token: str) -> Path | None:
         except Exception:  # noqa: BLE001
             return None
     return None
+
+
+def export_review_xlsx(spec: FlowSpec, token: str, meta: dict) -> Path | None:
+    """Build a plain **review** workbook (Orders + Line items exactly as shown on
+    the review page) so the operator can eyeball it in Excel BEFORE confirming.
+
+    Deliberately carries **no SO numbers** — SO numbers are assigned only at
+    Confirm & Record (the real SO workbook is the post-lock ⬇ download). This is
+    just the on-screen data in a sheet, available any time. Channel-agnostic —
+    every flow gets it for free once its spec wires an 'export' URL."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    payload = preview(spec, token, meta)
+    _overlay_decisions(payload, meta)
+    headers = payload.get('headers', []) or []
+    lines = payload.get('lines', []) or []
+
+    wb = Workbook()
+    band = PatternFill('solid', fgColor='1f2a5a')
+    white = Font(bold=True, color='FFFFFF')
+    right = Alignment(horizontal='right')
+
+    def _sheet(ws, cols, rows, keys):
+        ws.append(cols)
+        for c in ws[1]:
+            c.fill = band
+            c.font = white
+        for r in rows:
+            ws.append([r.get(k, '') for k in keys])
+        for i, w in enumerate(_widths(cols), start=1):
+            ws.column_dimensions[chr(64 + i)].width = w
+        ws.freeze_panes = 'A2'
+
+    def _widths(cols):
+        return [max(10, min(48, len(c) + 6)) for c in cols]
+
+    ws1 = wb.active
+    ws1.title = 'Orders'
+    _sheet(ws1, ['PO', 'Location', 'Type', 'Items', 'Qty', 'Value'], headers,
+           ['po', 'location', 'order_type', 'items', 'qty', 'order_value'])
+
+    ws2 = wb.create_sheet('Line items')
+    _sheet(ws2,
+           ['PO', 'Item No', 'EAN', 'Description', 'Qty', 'Unit price', 'MRP',
+            'Status', 'Exception', 'Decision'],
+           [{**ln, 'decision': (ln.get('decision') or {}).get('action', '')}
+            for ln in lines],
+           ['po', 'item_no', 'ean', 'description', 'qty', 'unit_price',
+            'our_mrp', 'status', 'exception_label', 'decision'])
+    # right-align the numeric columns on both sheets
+    for col in ('D', 'E', 'F'):
+        for cell in ws1[col][1:]:
+            cell.alignment = right
+    for col in ('E', 'F', 'G'):
+        for cell in ws2[col][1:]:
+            cell.alignment = right
+
+    out = _dir(spec, token) / f"{spec.key}_review_{token}.xlsx"
+    try:
+        wb.save(str(out))
+    except Exception:  # noqa: BLE001
+        return None
+    return out

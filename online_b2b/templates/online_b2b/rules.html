@@ -194,6 +194,20 @@
         <div class="eg">Myntra's Goddess line ships at the vendor's CP as-is — the engine doesn't force the standard margin.</div>
       </div>
 
+      <!-- Swiggy status filter -->
+      <div class="exc-card e-deal">
+        <div class="exc-h">Swiggy · Status filter <span class="exc-scope">Swiggy only</span></div>
+        <p>Only <b>CONFIRMED</b> POs are punched. Any other status (<b>COMPLETED / EXPIRED / CANCELLED / PENDING</b>) is <b>dropped from the run</b> — with a <b>named notification per PO</b> on Warnings (never silent). Re-upload if a dropped PO should be punched.</p>
+        <div class="eg">A PO marked COMPLETED → ignored + warned: “PO STATUS COMPLETED — IGNORED (not CONFIRMED); dropped.”</div>
+      </div>
+
+      <!-- Swiggy NFS → For-Sale -->
+      <div class="exc-card e-deal">
+        <div class="exc-h">Swiggy · NFS → For-Sale <span class="exc-scope">Swiggy only</span></div>
+        <p>Some fragrances have two master items on one base EAN: <span class="mono">&lt;ean&gt;</span> = <b>(NFS)</b> Not-For-Sale and <span class="mono">&lt;ean&gt;_FS</span> = <b>(FOR SALE)</b>. Swiggy sells the For-Sale variant and the deal price sits on the <span class="mono">_FS</span> EAN, so a Swiggy line landing on the NFS item is <b>remapped to its _FS twin</b> — the deal then applies. Noted per line (never silent).</p>
+        <div class="eg">Bloom 8ML: EAN …674 (NFS, item 200076) → …674_FS (For Sale, 200075) → Swiggy deal ₹35 applies (was MISMATCH at ₹134.92).</div>
+      </div>
+
       <!-- EAN remap (generic) -->
       <div class="exc-card e-remap">
         <div class="exc-h">EAN remap <span class="exc-scope">any marketplace</span></div>
@@ -297,6 +311,30 @@
         <b>Best practice:</b> one PO per file · a <b>unique</b> PO Number (re-uploading a recorded SO is skipped as “already uploaded”) · keep the labels exactly as above · GST is 18%. If the PO Number is blank, the SO falls back to the filename digits with a warning (“SO from filename: '…'. Fill PO Number field.”) — always fill the PO Number field.
       </div>
     </div>
+
+    {% if mt_channels %}
+    <div class="rule-card reveal">
+      <div class="rc-head"><span class="rc-no off">MT</span><h2>Modern Trade — channels &amp; what each demands
+        <span class="rc-sub">— pick the channel at upload; each has its own file(s)</span></h2></div>
+      <p class="rc-lead">MT is the parent; below are its child channels. The <b>Required</b> file(s) must be uploaded; <b>Optional</b> file(s) unlock extra checks — and if an optional file is absent, the <b>If missing</b> behaviour applies (never blocked, always noted). This same hint shows on the upload page when you pick a channel.</p>
+      <div class="scroll"><table class="grid compact rule-tbl">
+        <thead><tr><th>Channel</th><th>Sell-to</th><th>Lookup</th><th>Required</th><th>Optional</th><th>If missing</th></tr></thead>
+        <tbody>
+          {% for c in mt_channels %}
+          <tr>
+            <td><b>{{ c.name }}</b> <span class="mono">{{ c.code }}</span></td>
+            <td class="mono">{{ c.sell_to }}</td>
+            <td class="mono">{{ c.lookup }}</td>
+            <td>{{ c.required|default:'—' }}</td>
+            <td>{{ c.optional|default:'—' }}</td>
+            <td class="warn">{{ c.if_absent|default:'—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+      <div class="off-note"><b>Reliance Retail (Centro):</b> tabular Excel (per-unit pre-GST cost → inc-GST value computed); ship-to by <b>Site code</b> (T8VY/T8WL/…) → D365 20043. Upload the <b>PO PDF(s)</b> too to auto-confirm the <b>delivery address</b> vs D365 and backfill <b>PO Date</b>. Reliance Trends / Smart Bazaar are separate customers → separate channels.</div>
+    </div>
+    {% endif %}
 
   </div><!-- /seg-pane offline -->
 

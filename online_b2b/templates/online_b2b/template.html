@@ -93,6 +93,33 @@
     .tpl-table thead th, .tpl-table tbody, .tpl-stat .bar i{ animation:none !important; opacity:1 !important; transform:none !important; width:var(--pct) !important; }
     .tpl-table thead th.used::after{ animation:none; }
   }
+
+  /* ── Exception worked-example mini table (magnificent, animated) ── */
+  .exg-wrap{ position:relative; margin-top:20px; }
+  .exg-tag{ position:absolute; top:-10px; left:14px; z-index:2; font-size:10px; font-weight:800;
+    letter-spacing:.7px; text-transform:uppercase; color:#fff; background:linear-gradient(90deg,#6366f1,#8b5cf6);
+    padding:3px 11px; border-radius:20px; box-shadow:0 5px 14px -4px #6366f1; }
+  .exg-scroll{ overflow:auto; max-height:340px; border-radius:13px; }
+  .exg-tbl thead th{ position:sticky; top:0; z-index:1; }
+  .exg-tbl{ width:100%; border-collapse:separate; border-spacing:0; font-size:13.5px;
+    background:#fff; border:1px solid #e5e7f0; border-radius:13px; overflow:hidden;
+    box-shadow:0 6px 18px -12px rgba(67,56,202,.4); }
+  .exg-tbl th{ text-align:left; white-space:nowrap; padding:12px 18px; font-weight:700; font-size:12px;
+    letter-spacing:.3px; color:#fff; background:linear-gradient(180deg,#4338ca,#3730a3);
+    opacity:0; transform:translateY(-6px); animation:exgHead .45s cubic-bezier(.2,.8,.25,1) forwards;
+    animation-delay:calc(var(--i) * .06s + .05s); }
+  .exg-tbl td{ padding:13px 18px; white-space:nowrap; color:#1e293b; border-top:1px solid #eef0f7;
+    font-family:ui-monospace,'Cascadia Code',Consolas,monospace; }
+  .exg-row{ opacity:0; transform:translateX(-10px); animation:exgRow .5s cubic-bezier(.2,.8,.25,1) forwards;
+    animation-delay:calc(var(--r) * .09s + .22s); }
+  .exg-row:hover td{ background:#f5f6ff; }
+  .exg-row td:first-child{ font-weight:700; font-family:inherit; }
+  .exg-row td:last-child{ color:#065f46; font-weight:700; }
+  @keyframes exgHead{ to{ opacity:1; transform:none; } }
+  @keyframes exgRow{ to{ opacity:1; transform:none; } }
+  @media (prefers-reduced-motion: reduce){
+    .exg-tbl th, .exg-row{ animation:none !important; opacity:1 !important; transform:none !important; }
+  }
 </style>
 {% endblock %}
 
@@ -172,6 +199,66 @@
         {% endfor %}
       </tbody>
     </table>
+  </div>
+
+  {# ── Full profile: pricing rule + exceptions applied to THIS marketplace ── #}
+  <div class="tpl-profile" style="margin-top:26px;">
+    {% if rule %}
+    <div class="prof-rule" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+         padding:14px 16px;border:1px solid var(--border);border-radius:12px;background:#fafbff;">
+      <span style="font-weight:800;color:var(--text);margin-right:4px;">Pricing rule</span>
+      <span class="lg-chip" style="background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;">
+        Keep {{ rule.margin_label }}</span>
+      <span class="lg-chip" style="background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;">
+        {{ rule.basis }}</span>
+      {% if rule.compare_label %}<span class="lg-chip" style="background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;">
+        Compare: {{ rule.compare_label }}</span>{% endif %}
+      <span class="lg-chip" style="background:#f5f3ff;border:1px solid #ddd6fe;color:#5b21b6;">
+        Resolve by: {{ rule.item }}</span>
+    </div>
+    {% endif %}
+
+    <div style="margin:18px 0 10px;font-weight:800;font-size:16px;color:var(--text);">
+      Exceptions applied to {{ tpl.name }}
+      <span style="font-weight:600;color:var(--muted);font-size:13px;">— named cases the engine accepts, not errors</span>
+    </div>
+    {% if exc_cards %}
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(560px,1fr));gap:18px;">
+      {% for e in exc_cards %}
+      <div style="border:1px solid var(--border);border-left:5px solid
+           {% if e.kind == 'behavioral' %}#6366f1{% elif e.kind == 'deal' %}#f59e0b{% else %}#10b981{% endif %};
+           border-radius:14px;padding:20px 24px;background:#fff;box-shadow:0 2px 10px -6px rgba(30,41,59,.15);">
+        <div style="font-weight:800;font-size:16px;color:var(--text);margin-bottom:6px;">{{ e.title }}
+          <span style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);
+                letter-spacing:.4px;">· {{ e.kind }}</span></div>
+        <div style="font-size:13.5px;line-height:1.6;color:#444;max-width:70ch;">{{ e.detail }}</div>
+        {% if e.ex_head %}
+        <div class="exg-wrap">
+          <span class="exg-tag">{{ e.ex_label|default:'Example' }}</span>
+          <div class="exg-scroll">
+          <table class="exg-tbl">
+            <thead><tr>{% for h in e.ex_head %}<th style="--i:{{ forloop.counter0 }};">{{ h }}</th>{% endfor %}</tr></thead>
+            <tbody>
+              {% for row in e.ex_rows %}
+              <tr class="exg-row" style="--r:{{ forloop.counter0 }};">
+                {% for cell in row %}<td>{{ cell }}</td>{% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p style="color:var(--muted);font-size:13px;">No special exceptions — the flat
+      {{ rule.margin_label|default:'marketplace' }} rule applies to every line.</p>
+    {% endif %}
+    <p class="tpl-foot" style="margin-top:12px;color:var(--muted);font-size:12px;">
+      Rule + exceptions are read live from the engine config / Master Exceptions
+      overlay, so this profile always reflects exactly what the engine does.</p>
   </div>
 
   <p class="rc-foot" style="margin-top:12px;">

@@ -38,6 +38,16 @@ def compact(value):
 
 
 @register.filter
+def dictget(d, key):
+    """Look up ``d[key]`` with a VARIABLE key in a template (Django can't do
+    ``row[c.key]`` natively). Used by the generic verification page to render an
+    arbitrary, channel-supplied column list. Returns '' when absent/not a dict."""
+    if isinstance(d, dict):
+        return d.get(key, '')
+    return getattr(d, str(key), '')
+
+
+@register.filter
 def querystring(filters):
     """Turn the dashboard filters dict into a URL query string carrying only
     the active filters (matches the names the views read). 'direction' → 'dir'."""

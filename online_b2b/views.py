@@ -18,6 +18,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
+from django.views import View
 from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
 
@@ -50,7 +51,7 @@ ONLINE_CHANNELS = [
     {'name': 'Smytten', 'tag': 'soon'},
 ]
 OFFLINE_CHANNELS = [
-    {'name': 'MT (Modern Trade)', 'tag': 'live', 'url': '/offline/shoppers-stop/'},
+    {'name': 'MT (Modern Trade)', 'tag': 'live', 'url': '/offline/mt-flow/'},
     {'name': 'GT Mass', 'tag': 'live', 'url': '/offline/gt-mass-dump/'},
     {'name': 'GT Select', 'tag': 'live', 'url': '/b2b/gt-select/'},
     # ── TO-DO · pending web integration (shown as "coming soon") ──
@@ -102,6 +103,163 @@ ONLINE_BRANCH = {'kind': 'online', 'label': 'Online B2B'}
 OFFLINE_BRANCH = {'kind': 'offline', 'label': 'Offline'}
 
 
+# Code-level (behavioral) exceptions per marketplace — the ones enforced in the
+# engine/bridge rather than the item_exceptions DB overlay. Keyed by the
+# marketplace name (matches the config / template name).
+_BEHAVIORAL_EXC = {
+    'Swiggy': [
+        {'title': 'Status filter', 'detail': 'Only CONFIRMED POs are punched; '
+         'COMPLETED / EXPIRED / CANCELLED / PENDING are dropped from the run with '
+         'a named notification per PO (never silent).',
+         'ex_head': ['PO status', 'Action', 'Notification'],
+         'ex_rows': [['CONFIRMED', '✅ Punched', '—'],
+                     ['COMPLETED / EXPIRED', '🚫 Dropped',
+                      '“PO STATUS … — IGNORED (not CONFIRMED)”']]},
+        {'title': 'NFS → For-Sale', 'detail': 'A line landing on an NFS (Not-For-Sale) '
+         'item is remapped to its <ean>_FS For-Sale twin so the negotiated deal '
+         'price applies. Noted per line.',
+         'ex_head': ['Input EAN', 'Resolves to', 'Item', 'Deal CP', 'Result'],
+         'ex_rows': [['…674 (NFS)', '…674_FS (For Sale)', '200075', '₹35',
+                      '✅ OK (was MISMATCH ₹134.92)']]},
+    ],
+    'Blink': [
+        {'title': 'EPISENSE deal', 'detail': 'EPISENSE promo SKUs price off a deal MRP '
+         'at a special landing%, not the flat 70% — recorded as a price override so '
+         'the line is not flagged as a mismatch.',
+         'ex_head': ['Case', 'Master', 'Deal', 'Their CP'],
+         'ex_rows': [['EPISENSE promo', '₹1099 @ 70%', '₹899 @ 76%', '₹579.02 ✅']]},
+    ],
+    'Myntra': [
+        # NOTE: Goddess (Use Vendor CP) is NOT hard-coded here — it lives in the DB
+        # 'Use Vendor CP' card (Master Exceptions overlay), so it's shown ONCE and
+        # stays in sync. A "Use Vendor CP" SKU is distinct from a Deal SKU: it
+        # accepts the vendor's stated CP as-is (no fixed price), whereas a Deal SKU
+        # validates against an agreed transfer price.
+        {'title': 'Compare on CP (+ Landing shown)', 'detail': 'Validation is on CP '
+         '(List price, pre-GST); the with-GST Vendor Landing is shown alongside for '
+         'reference only.',
+         'ex_head': ['MRP', 'Vendor CP (no GST)', 'Vendor Landing (GST)', 'Validated on'],
+         'ex_rows': [['₹199', '₹118.05', '₹139.30', 'CP']]},
+    ],
+    'Reliance': [
+        {'title': 'GST-dependent margin', 'detail': "keep% isn't flat — it's "
+         '1 − discount × (1 + GST), so it varies with each line’s GST rate.',
+         'ex_head': ['GST rate', 'Keep %'],
+         'ex_rows': [['18%', '63.42%'], ['12%', '65.28%'],
+                     ['5%', '67.45%'], ['0%', '69.0%']]},
+    ],
+}
+
+
+def _marketplace_exceptions(name: str) -> list:
+    """Every exception applied to ONE marketplace, for its profile page: the
+    code-level behavioral ones (``_BEHAVIORAL_EXC``) + the DB ``item_exceptions``
+    overlay filtered to this marketplace (grouped by type with counts + a few
+    examples). Read-only; never raises."""
+    cards = [{**e, 'kind': 'behavioral'} for e in _BEHAVIORAL_EXC.get(name, [])]
+    try:
+        from .services import overrides_store
+        allx = overrides_store.list_all()
+    except Exception:  # noqa: BLE001
+        return cards
+    low = name.lower()
+    def _clip(s, n=34):
+        s = str(s or '')
+        return s if len(s) <= n else s[:n - 1] + '…'
+
+    if low == 'swiggy':
+        deals = [r for r in allx if r.get('kind') == 'swiggy_deal']
+        if deals:
+            rows = [[_clip(r.get('note') or r.get('source_code')),
+                     f"₹{r.get('override_mrp') or '—'}",
+                     f"₹{r.get('cost_after_gst') or '—'}"] for r in deals]
+            cards.append({'title': f'Deal SKUs ({len(deals)})', 'kind': 'deal',
+                          'detail': 'Per-SKU negotiated deal prices — the agreed Cost '
+                          'after GST is used as our CP (not MRP × margin). Full list:',
+                          'ex_label': f'All {len(deals)}',
+                          'ex_head': ['SKU', 'MRP', '→ CP (after GST)'], 'ex_rows': rows})
+    # Myntra (and any marketplace) negotiated deal SKUs — the agreed transfer
+    # price (Cost With GST) becomes the expected CP. List every one so the
+    # operator can tally, same as the Swiggy deal card.
+    mp_deals = [r for r in allx if r.get('kind') == 'myntra_deal'
+                and str(r.get('marketplace') or '').strip().lower() == low]
+    if mp_deals:
+        rows = [[_clip(r.get('note') or r.get('source_code')),
+                 f"₹{r.get('override_mrp') or '—'}",
+                 f"₹{r.get('cost_with_gst') or '—'}"] for r in mp_deals]
+        cards.append({'title': f'Deal SKUs ({len(mp_deals)})', 'kind': 'deal',
+                      'detail': 'Per-SKU prices negotiated with the marketplace — the '
+                      'agreed Cost With GST (transfer price) is used as the expected CP '
+                      '(÷(1+GST)), not MRP × margin. Full list:',
+                      'ex_label': f'All {len(mp_deals)}',
+                      'ex_head': ['SKU', 'MRP', '→ CP (transfer, inc GST)'],
+                      'ex_rows': rows})
+    # DB overrides tagged to this marketplace, grouped by effect type. EVERY SKU is
+    # listed (not just one example) so the operator can tally the full set.
+    groups: dict = {}   # type -> {'head': [...], 'rows': [[...], ...]}
+    for r in allx:
+        if r.get('kind') in ('swiggy_deal', 'myntra_deal'):
+            continue
+        if str(r.get('marketplace') or '').strip().lower() != low:
+            continue
+        note = _clip(r.get('note') or r.get('source_code') or '')
+        uc = (r.get('use_vendor_cp') or '').strip().upper()
+        if uc.startswith('Y'):
+            t = 'Use Vendor CP'
+            head, row = ['SKU', 'Price used'], [note, 'vendor CP as-is']
+        elif (r.get('maps_to') or '').strip():
+            t = 'EAN remap'
+            head, row = ['Punch EAN', '→ Master item'], [r.get('source_code'), r.get('maps_to')]
+        elif (r.get('override_mrp') or '').strip():
+            t = 'Override MRP'
+            head, row = ['SKU', 'Deal MRP'], [note, f"₹{r.get('override_mrp')}"]
+        elif (r.get('override_margin') or '').strip():
+            t = 'Override margin'
+            head, row = ['SKU', 'Margin'], [note, str(r.get('override_margin'))]
+        else:
+            t = 'Exception'
+            head, row = ['SKU', 'Note'], [note, '—']
+        g = groups.setdefault(t, {'head': head, 'rows': []})
+        g['rows'].append(row)
+    for t, g in groups.items():
+        n = len(g['rows'])
+        cards.append({'title': f'{t} ({n})', 'kind': 'db',
+                      'detail': 'From the Master Exceptions overlay — edit there and '
+                      'it reflects here. Every SKU in this exception is listed:',
+                      'ex_label': f'All {n}',
+                      'ex_head': g['head'], 'ex_rows': g['rows']})
+    return cards
+
+
+def _group_exceptions(rows):
+    """Group item_exceptions rows by marketplace for the Rules §4 live view —
+    JSON-safe, one entry per marketplace with its lines (Swiggy deals grouped
+    on their own). Type is derived so the operator sees WHAT each row does."""
+    groups: dict = {}
+    for r in rows:
+        if r.get('kind') == 'swiggy_deal':
+            mp, typ = 'Swiggy (deal SKUs)', 'Deal price'
+        else:
+            mp = (r.get('marketplace') or 'Any marketplace').strip() or 'Any marketplace'
+            uc = (r.get('use_vendor_cp') or '').strip().upper()
+            if uc.startswith('Y'):
+                typ = 'Use Vendor CP'
+            elif (r.get('maps_to') or '').strip():
+                typ = 'EAN remap'
+            elif (r.get('override_mrp') or '').strip():
+                typ = 'Override MRP'
+            elif (r.get('override_margin') or '').strip():
+                typ = 'Override margin'
+            else:
+                typ = 'Exception'
+        groups.setdefault(mp, []).append({
+            'code': r.get('source_code', ''), 'maps_to': r.get('maps_to', '') or '',
+            'type': typ, 'note': (r.get('note') or '')[:140],
+            'cost': r.get('cost_after_gst') or r.get('cost_with_gst') or '',
+            'mrp': r.get('override_mrp') or '', 'margin': r.get('override_margin') or ''})
+    return [{'mp': k, 'rows': v} for k, v in sorted(groups.items())]
+
+
 class RulesView(LoginRequiredMixin, TemplateView):
     """Marketplace Rules & Exceptions reference — margins, compare basis, item
     resolution, the engine's exception types + operator decisions, and Flipkart's
@@ -122,10 +280,36 @@ class RulesView(LoginRequiredMixin, TemplateView):
         # Actual Swiggy deal SKUs (name + agreed prices) for accuracy on the card.
         try:
             from .services import overrides_store
-            ctx['swiggy_deals'] = [r for r in overrides_store.list_all()
-                                   if r.get('kind') == 'swiggy_deal']
+            allx = overrides_store.list_all()
+            ctx['swiggy_deals'] = [r for r in allx if r.get('kind') == 'swiggy_deal']
+            ctx['exc_groups'] = _group_exceptions(allx)
+            ctx['exc_total'] = len(allx)
         except Exception:  # noqa: BLE001
             ctx['swiggy_deals'] = []
+            ctx['exc_groups'] = []
+            ctx['exc_total'] = 0
+        # MT (Modern Trade) child channels + their per-channel input requirements
+        # (data-driven, so new channels e.g. Reliance auto-appear on the Rules page).
+        try:
+            from offline.services import mt_bridge
+            eng = mt_bridge._engine()
+            mt = []
+            for code in mt_bridge.WEB_CHANNELS:
+                cfg = eng.CHANNELS.get(code)
+                if not cfg:
+                    continue
+                req = mt_bridge.channel_requirements(code) or {}
+                mt.append({
+                    'code': code, 'name': cfg.display_name,
+                    'sell_to': getattr(cfg, 'sell_to', ''),
+                    'lookup': getattr(cfg, 'lookup_via', ''),
+                    'required': req.get('required', ''),
+                    'optional': req.get('optional', ''),
+                    'if_absent': req.get('if_absent', ''),
+                })
+            ctx['mt_channels'] = mt
+        except Exception:  # noqa: BLE001
+            ctx['mt_channels'] = []
         return ctx
 
 
@@ -143,6 +327,17 @@ class MarketplaceTemplateView(LoginRequiredMixin, TemplateView):
         if tpl is None:
             raise Http404(f'No template captured for “{name}”.')
         ctx['tpl'] = tpl
+        # Full per-marketplace PROFILE on this page: the pricing RULE + every
+        # EXCEPTION we apply to THIS marketplace, so each customer's page is the
+        # single elegant place with demand (columns) + rule + exceptions.
+        nm = tpl.get('name', name) if isinstance(tpl, dict) else getattr(tpl, 'name', name)
+        try:
+            ctx['rule'] = next(
+                (r for r in engine_bridge.marketplace_rules()
+                 if str(r['name']).lower() == nm.lower()), None)
+        except Exception:  # noqa: BLE001
+            ctx['rule'] = None
+        ctx['exc_cards'] = _marketplace_exceptions(nm)
         return ctx
 
 
@@ -448,12 +643,27 @@ def issues_export(request):
     return resp
 
 
+def _email_extras(request):
+    """Pull the operator's note + recipient overrides off the request (modal
+    posts them; preview may send them via GET for a live re-render). Returns
+    ``(note, to, cc)`` where ``to``/``cc`` are ``None`` when the field was not
+    supplied at all (⇒ report falls back to the config defaults)."""
+    src = request.POST if request.method == 'POST' else request.GET
+    note = src.get('note', '')
+    to = src.get('to') if 'to' in src else None
+    cc = src.get('cc') if 'cc' in src else None
+    return note, to, cc
+
+
 @login_required
 def issues_email_preview(request):
     """Render (NO send) the Issues email for the current filter — the modal
-    shows subject + recipients + the exact HTML that will be emailed."""
+    shows subject + recipients + the exact HTML that will be emailed. Accepts an
+    optional ``note`` / ``to`` / ``cc`` so the preview reflects the operator's
+    edits live."""
     from .services.issue_email import IssuesEmailReport
-    rep = IssuesEmailReport(_issue_filters(request))
+    note, to, cc = _email_extras(request)
+    rep = IssuesEmailReport(_issue_filters(request), note=note, to=to, cc=cc)
     p = rep.preview()
     return JsonResponse({'ok': True, 'subject': p['subject'], 'html': p['html'],
                          'to': p['to'], 'cc': p['cc'], 'count': len(rep.rows)})
@@ -463,13 +673,28 @@ def issues_email_preview(request):
 @require_POST
 def issues_email_send(request):
     """Send the Issues email for the current filter (filters come via the query
-    string, same as the preview/export). Returns the delivery result as JSON."""
+    string, same as the preview/export). The operator's note + edited To/Cc come
+    via POST. Returns the delivery result as JSON — never sends silently on
+    error."""
     from .services.issue_email import IssuesEmailReport
-    rep = IssuesEmailReport(_issue_filters(request))
+    note, to, cc = _email_extras(request)
+    rep = IssuesEmailReport(_issue_filters(request), note=note, to=to, cc=cc)
     if not rep.rows:
         return JsonResponse(
             {'ok': False,
              'error': 'No issue lines in the current filter — nothing to send.'})
+    # Never send with an empty To. If the operator supplied a To field (non-None)
+    # that cleaned to nothing (all blank/invalid), refuse — do NOT silently fall
+    # back to the config default and mail the wrong people. ``rep._to`` is the
+    # cleaned override (None ⇒ To not supplied ⇒ config defaults apply).
+    if to is not None and not rep._to:
+        return JsonResponse(
+            {'ok': False, 'error': 'No valid recipient in "To" — add at least '
+             'one valid stakeholder email before sending.'})
+    if not rep.recipients().get('to'):
+        return JsonResponse(
+            {'ok': False, 'error': 'No recipient configured — add a "To" address '
+             'before sending.'})
     ok, reason = rep.send()
     return JsonResponse({'ok': ok, 'error': reason, 'count': len(rep.rows)})
 
@@ -707,6 +932,11 @@ def _load_meta(token: str):
         return None, d
 
 
+def _save_meta(d: Path, meta: dict) -> None:
+    """Persist a token's meta.json (draft flag, decisions, locked, …)."""
+    (d / 'meta.json').write_text(json.dumps(meta), encoding='utf-8')
+
+
 def _preview_sig(meta) -> str:
     """Cache key for a token's processed preview — everything that changes the
     engine output. Notably includes ``ean_fixes`` so an EAN-fix re-validate
@@ -819,7 +1049,16 @@ def upload(request):
         form = UploadForm()
     return render(request, 'online_b2b/upload.html',
                   {'form': form,
-                   'margin_defaults': json.dumps(engine_bridge.margin_defaults())})
+                   'margin_defaults': json.dumps(engine_bridge.margin_defaults()),
+                   # {marketplace: "what file(s) this MP needs"} — drives the
+                   # dynamic per-marketplace upload hint (updates on select change).
+                   'mp_hints': json.dumps({
+                       f['name']: f['note']
+                       for f in engine_bridge.marketplace_formats() if f.get('note')}),
+                   # marketplaces that have a "See full template" page → the hint
+                   # shows a "Full detail →" link only for those.
+                   'mp_templates': json.dumps(
+                       list(engine_bridge.marketplace_templates().keys()))})
 
 
 @login_required
@@ -829,8 +1068,11 @@ def review(request, token):
     if not meta:
         raise Http404("Upload not found or expired.")
     # Load the cached preview (the AJAX upload already ran + cached it → instant);
-    # falls back to a fresh run for non-JS uploads or a busted cache.
-    res = _cached_preview(token, d, meta)
+    # falls back to a fresh run for non-JS uploads or a busted cache. Reopening a
+    # 'Review Later' draft passes ?revalidate=1 → force a fresh run so the team's
+    # master correction (CP fix / new deal SKU) is picked up and the MISMATCH clears.
+    force = request.GET.get('revalidate') == '1'
+    res = _cached_preview(token, d, meta, force=force)
     has_preview = bool(res.get('output_path') and os.path.exists(res['output_path']))
     # Re-attach any saved decisions so the Affected rows show them (esp. when locked).
     decisions = meta.get('decisions') or {}
@@ -865,11 +1107,110 @@ def review(request, token):
     return render(request, 'online_b2b/review.html',
                   {'token': token, 'meta': meta, 'r': res,
                    'has_preview': has_preview,
+                   'is_draft': bool(meta.get('draft')),
                    'locked': bool(meta.get('locked')),
                    'run_id': meta.get('run_id'),
                    'exc_count': exc_count, 'nim_lines': nim_lines,
                    'auto_fixed': auto_fixed,
                    'margin': meta.get('margin_pct')})
+
+
+def _collect_drafts() -> list[dict]:
+    """All parked 'Review Later' runs as API-ready dicts (token, marketplace,
+    when, note, PO count, undecided-affected count, file count). Read-only; the
+    fat data layer behind :class:`DraftsView` and the JSON endpoint."""
+    rows: list[dict] = []
+    if not _UPLOADS.exists():
+        return rows
+    for d in _UPLOADS.iterdir():
+        if not d.is_dir():
+            continue
+        mp = d / 'meta.json'
+        if not mp.exists():
+            continue
+        try:
+            meta = json.loads(mp.read_text(encoding='utf-8'))
+        except Exception:  # noqa: BLE001
+            continue
+        if not meta.get('draft') or meta.get('locked'):
+            continue
+        npos = undecided = 0
+        cache = d / 'preview.json'
+        if cache.exists():
+            try:
+                res = (json.loads(cache.read_text(encoding='utf-8'))
+                       .get('res') or {})
+                npos = len(res.get('headers') or [])
+                dec = meta.get('decisions') or {}
+                for ln in (res.get('affected') or []):
+                    k = (f"{ln.get('po', '')}|{ln.get('item_no', '')}"
+                         f"|{ln.get('ean', '')}")
+                    if not (dec.get(k) or {}).get('action'):
+                        undecided += 1
+            except Exception:  # noqa: BLE001
+                pass
+        rows.append({
+            'token': d.name,
+            'marketplace': meta.get('marketplace', ''),
+            'draft_at': meta.get('draft_at', ''),
+            'note': meta.get('draft_note', ''),
+            'pos': npos, 'undecided': undecided,
+            'files': len(meta.get('files') or []),
+        })
+    rows.sort(key=lambda r: r['draft_at'], reverse=True)
+    return rows
+
+
+class SaveReviewLaterView(LoginRequiredMixin, View):
+    """Park the WHOLE run as a 'Review Later' draft — kept intact (raw file +
+    parsed result), NOT locked/recorded. Use when a CP issue can't be decided yet
+    (needs the team to correct the master). The operator later reopens it from
+    Drafts, re-validates (picks up the correction), and finalizes — never
+    re-uploaded. API: returns ``{ok, redirect}`` / ``{ok:false, error}``."""
+
+    def post(self, request, token):
+        import datetime as _dt
+        meta, d = _load_meta(token)
+        if not meta:
+            return JsonResponse({'ok': False, 'error': 'Upload not found or expired.'},
+                                status=404)
+        if meta.get('locked'):
+            return JsonResponse({'ok': False,
+                                 'error': 'Already recorded — nothing to defer.'})
+        meta['draft'] = True
+        meta['draft_at'] = _dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        meta['draft_note'] = (request.POST.get('note') or '')[:300]
+        _save_meta(d, meta)
+        # Parking a run = an unresolved CP issue → auto-HOLD that channel on
+        # today's Daily Tasks so it's not chased as pending until it's resolved
+        # (finalizing the run un-holds it). Best-effort — never blocks the park.
+        try:
+            from .services import daily_checklist as dc
+            from .services import marketplaces as reg
+            ch = reg.db_key_to_channel().get(str(meta.get('marketplace')))
+            if ch:
+                dc.toggle(None, ch, 'hold', True,
+                          getattr(request.user, 'username', '') or 'system')
+        except Exception:  # noqa: BLE001
+            pass
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+            return JsonResponse({'ok': True, 'redirect': '/b2b/drafts/'})
+        return redirect('b2b_drafts')
+
+
+class DraftsView(LoginRequiredMixin, TemplateView):
+    """'Review Later' list — parked runs the operator reopens (instead of
+    re-uploading) once the team corrects the CP. Each row deep-links to its review
+    with ?revalidate=1 so it re-checks against the current master. Dual-render:
+    ``?format=json`` (or an AJAX request) returns ``{ok, data}``."""
+    template_name = 'online_b2b/drafts.html'
+
+    def get(self, request, *args, **kwargs):
+        drafts = _collect_drafts()
+        if (request.GET.get('format') == 'json'
+                or request.headers.get('x-requested-with') == 'XMLHttpRequest'):
+            return JsonResponse({'ok': True, 'data': drafts})
+        return self.render_to_response({'drafts': drafts})
 
 
 @login_required
@@ -937,10 +1278,24 @@ def confirm(request, token):
         'd365_path': d365_path,
     })
     # Lock the decisions on the token so the review page now offers Generate D365.
+    was_draft = bool(meta.get('draft'))
     meta['decisions'] = actions
     meta['run_id'] = run_id
     meta['locked'] = True
     (d / 'meta.json').write_text(json.dumps(meta), encoding='utf-8')
+    # A parked ("Review Later") run just got finalized → the CP issue is resolved,
+    # so auto-UN-HOLD that channel on today's Daily Tasks (mirrors the auto-hold on
+    # park). Best-effort. (Uploaded-web will also auto-tick from the new record.)
+    if was_draft:
+        try:
+            from .services import daily_checklist as dc
+            from .services import marketplaces as reg
+            ch = reg.db_key_to_channel().get(str(meta.get('marketplace')))
+            if ch:
+                dc.toggle(None, ch, 'hold', False,
+                          getattr(request.user, 'username', '') or 'system')
+        except Exception:  # noqa: BLE001
+            pass
     pos = res['summary']['pos']
     lines = res.get('lines_recorded', 0)
     if ajax:
@@ -1360,14 +1715,19 @@ class OfflineProcessView(LoginRequiredMixin, TemplateView):
         ctx['parents'] = [
             {'key': 'MT', 'name': 'MT · Modern Trade', 'tag': 'live',
              'desc': 'Retail chains — master-driven SO generation. Pick a child.',
+             'url': reverse('mt_flow_upload'),
              'children': [
                  {'key': 'SS', 'name': 'Shoppers Stop (SS)', 'tag': 'live',
-                  'url': reverse('shoppers_stop')},
-                 {'key': 'HG', 'name': 'HG', 'tag': 'soon'},
-                 {'key': 'NT', 'name': 'NT', 'tag': 'soon'},
+                  'url': reverse('mt_flow_upload')},
+                 {'key': 'HG', 'name': 'Health & Glow (HG)', 'tag': 'live',
+                  'url': reverse('mt_flow_upload')},
+                 {'key': 'NT', 'name': 'Naturals (NT)', 'tag': 'live',
+                  'url': reverse('mt_flow_upload')},
+                 {'key': 'LL', 'name': 'Lulu (LL)', 'tag': 'live',
+                  'url': reverse('mt_flow_upload')},
+                 {'key': 'BN', 'name': 'Apollo (BN)', 'tag': 'live',
+                  'url': reverse('mt_flow_upload')},
                  {'key': 'HB', 'name': 'HB', 'tag': 'soon'},
-                 {'key': 'LL', 'name': 'LL', 'tag': 'soon'},
-                 {'key': 'BN', 'name': 'BN', 'tag': 'soon'},
              ]},
             {'key': 'GT Mass', 'name': 'GT Mass', 'tag': 'live',
              'url': reverse('index'), 'desc': 'General trade mass — dump processing.',
@@ -1645,3 +2005,118 @@ def ship_to_edit(request, row_id):
 def ship_to_delete(request, row_id):
     from .services import mapping_store as ms
     return JsonResponse(ms.delete_mapping(row_id))
+
+
+# ── Sales Validation (the ★ Sales Validator) ────────────────────────────────
+# Upload the two D365 Sales exports (Order Headers + Sales Lines) → reconcile
+# against the recorded run (DB) or a source .xlsb → 3-part result
+# (Summary / Headers Reco / Lines Reco) + a downloadable reconciliation Excel.
+_SV_UPLOADS = _MEDIA / 'b2b_sales_validation'
+
+
+def _sv_token_dir(token: str) -> Path:
+    base = _SV_UPLOADS.resolve()
+    d = (_SV_UPLOADS / token).resolve()
+    if d != base and base not in d.parents:
+        raise Http404()
+    return d
+
+
+class SalesValidationView(LoginRequiredMixin, TemplateView):
+    """`/b2b/sales-validation/` — upload form + recent-run picker. Renders the
+    last result if a ``?token=`` is supplied. ``?format=json`` → {ok,data}."""
+    template_name = 'online_b2b/sales_validation.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        from .services import sales_validation as sv
+        ctx['recent_runs'] = sv.recent_runs(limit=30)
+        token = self.request.GET.get('token', '')
+        result = None
+        if token:
+            d = _sv_token_dir(token)
+            rp = d / 'result.json'
+            if rp.exists():
+                result = json.loads(rp.read_text(encoding='utf-8'))
+        ctx['token'] = token
+        ctx['result'] = result
+        # trim the on-screen line list to non-OK rows (full set lives in Excel)
+        if result and result.get('ok'):
+            findings = result.get('line_findings', [])
+            ctx['line_bad'] = [f for f in findings if f['status'] != 'OK']
+        return ctx
+
+    def render_to_response(self, context, **kwargs):
+        if self.request.GET.get('format') == 'json':
+            return JsonResponse({'ok': True, 'data': {
+                'recent_runs': context.get('recent_runs', []),
+                'result': context.get('result'),
+            }})
+        return super().render_to_response(context, **kwargs)
+
+
+@login_required
+@require_POST
+def sales_validation_run(request):
+    """Accept the two D365 files, stash under a token, run validate(), persist
+    the JSON-safe result + Excel, and redirect to the result view."""
+    from .services import sales_validation as sv
+    hf = request.FILES.get('headers_file')
+    lf = request.FILES.get('lines_file')
+    if not hf or not lf:
+        messages.error(request, "Choose BOTH files — the Sales Order Headers "
+                                "export and the Sales Lines export.")
+        return redirect('b2b_sales_validation')
+    token = uuid.uuid4().hex[:12]
+    d = _SV_UPLOADS / token
+    d.mkdir(parents=True, exist_ok=True)
+    hp = d / ('headers' + Path(hf.name).suffix)
+    lp = d / ('lines' + Path(lf.name).suffix)
+    for f, dest in ((hf, hp), (lf, lp)):
+        with open(dest, 'wb') as out:
+            for chunk in f.chunks():
+                out.write(chunk)
+
+    # target: explicit run_id, else a source .xlsb path, else auto-match
+    run_id = request.POST.get('run_id', '').strip()
+    source_path = request.POST.get('source_path', '').strip()
+    party = request.POST.get('party', 'LS').strip() or 'LS'
+    kwargs = {'party': party, 'excel_out': str(d / 'reconciliation.xlsx')}
+    if run_id:
+        kwargs['run_id'] = int(run_id)
+    elif source_path:
+        kwargs['source_path'] = source_path
+    else:
+        cands = sv.match_run(str(hp))
+        if cands:
+            kwargs['run_id'] = cands[0]
+        else:
+            (d / 'result.json').write_text(json.dumps({
+                'ok': False,
+                'error': ("No recorded run matched these SOs, and no source "
+                          "file was given. Pick a run or provide a source "
+                          "file path."),
+            }), encoding='utf-8')
+            from django.urls import reverse
+            return redirect(f"{reverse('b2b_sales_validation')}?token={token}")
+
+    result = sv.validate(str(hp), str(lp), **kwargs)
+    (d / 'meta.json').write_text(json.dumps({
+        'headers_name': hf.name, 'lines_name': lf.name,
+        'target': kwargs.get('run_id') or kwargs.get('source_path'),
+    }), encoding='utf-8')
+    (d / 'result.json').write_text(
+        json.dumps(result, default=str), encoding='utf-8')
+    from django.urls import reverse
+    return redirect(f"{reverse('b2b_sales_validation')}?token={token}")
+
+
+@login_required
+def sales_validation_download(request, token):
+    """Serve the reconciliation Excel for a completed validation."""
+    d = _sv_token_dir(token)
+    xp = d / 'reconciliation.xlsx'
+    if not xp.exists():
+        raise Http404("Reconciliation file not found or expired.")
+    return FileResponse(open(xp, 'rb'), as_attachment=True,
+                        filename='sales_reconciliation.xlsx')

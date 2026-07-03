@@ -23,7 +23,10 @@
 
   <div class="dt-overall">
     <div class="dt-ovbar"><span id="dt-ovfill" style="width:{{ d.overall_pct }}%"></span></div>
-    <div class="dt-ovlbl"><b id="dt-ovpct">{{ d.overall_pct }}%</b> · <span id="dt-ovdone">{{ d.done_channels }}</span>/{{ d.total_channels }} channels fully done</div>
+    <div class="dt-ovlbl"><b id="dt-ovpct">{{ d.overall_pct }}%</b> handled ·
+      <span id="dt-ovdone">{{ d.done_channels }}</span> done ·
+      <span id="dt-ovnopo">{{ d.nopo_channels }}</span> no-PO ·
+      <span id="dt-ovpend">{{ d.pending_channels }}</span> pending / {{ d.total_channels }}</div>
   </div>
 
   {% if d.yesterday.count %}
@@ -42,23 +45,29 @@
       </tr></thead>
       <tbody>
         {% for c in seg.channels %}
-        <tr data-channel="{{ c.key }}" class="{% if c.done %}dt-done{% endif %}">
+        {% if c.is_parent %}
+        {# ── Expandable PARENT (container) row — rolls up its children ── #}
+        <tr class="dt-parent" data-parent="{{ c.key }}" aria-expanded="false">
           <td class="dt-ch">
-            <span class="dt-dot {% if c.done %}ok{% elif c.done_steps %}part{% endif %}"></span>
-            {{ c.display }}{% if not c.live %} <span class="dt-soon" title="not web-integrated — tick manually">manual</span>{% endif %}
+            <button type="button" class="dt-caret" aria-label="Expand {{ c.display }}">▸</button>
+            <span class="dt-name">{{ c.display }}</span>
+            <span class="dt-parent-count"><b class="dt-pc-done">{{ c.child_done }}</b>/{{ c.child_total }} done</span>
           </td>
-          {% for s in c.steps %}
-          <td class="dt-cell">
-            <label class="dt-box {% if s.auto %}auto{% endif %}">
-              <input type="checkbox" data-channel="{{ c.key }}" data-step="{{ s.key }}"
-                     {% if s.checked %}checked{% endif %}{% if s.auto %} disabled{% endif %}>
-              <span class="dt-mark"></span>
-            </label>
-            <span class="dt-time" data-cell="{{ c.key }}:{{ s.key }}">{% if s.checked %}{% if s.auto %}auto {% endif %}{{ s.at }}{% endif %}</span>
+          <td class="dt-cell dt-parent-hint" colspan="{{ d.steps|length }}">
+            <span class="dt-parent-sub">Click to expand {{ c.child_total }} channel(s)</span>
           </td>
-          {% endfor %}
-          <td class="dt-prog"><div class="dt-pbar"><span style="width:{{ c.pct }}%"></span></div></td>
+          <td class="dt-prog"><div class="dt-pbar"><span class="dt-parent-bar" style="width:{{ c.pct }}%"></span></div></td>
         </tr>
+        {% for ch in c.children %}
+        <tr data-channel="{{ ch.key }}" data-parent-of="{{ c.key }}" class="dt-child{% if ch.done %} dt-done{% endif %}{% if ch.no_po %} dt-nopo{% endif %}{% if ch.on_hold %} dt-hold{% endif %}" style="display:none;">
+          {% include 'online_b2b/_dt_row_body.html' with c=ch steps_len=d.steps|length %}
+        </tr>
+        {% endfor %}
+        {% else %}
+        <tr data-channel="{{ c.key }}" class="{% if c.done %}dt-done{% endif %}{% if c.no_po %} dt-nopo{% endif %}{% if c.on_hold %} dt-hold{% endif %}">
+          {% include 'online_b2b/_dt_row_body.html' with c=c steps_len=d.steps|length %}
+        </tr>
+        {% endif %}
         {% endfor %}
       </tbody>
     </table>
@@ -103,6 +112,46 @@
   .dt-time{display:block;font-size:10px;color:var(--muted);margin-top:3px;min-height:12px;}
   .dt-prog{min-width:90px;} .dt-pbar{height:7px;border-radius:5px;background:var(--surface-2);overflow:hidden;}
   .dt-pbar span{display:block;height:100%;background:linear-gradient(90deg,#10b981,#0a9d6e);transition:width .3s;}
+  /* "no PO today" — handled without ticking the work steps */
+  .dt-nopo-t{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:var(--muted);margin-left:10px;cursor:pointer;user-select:none;}
+  .dt-nopo-t input{width:13px;height:13px;cursor:pointer;}
+  .dt-dot.nopo{background:#94a3b8;}
+  tr.dt-nopo{background:#f8fafc;}
+  tr.dt-nopo .dt-name{text-decoration:line-through;color:var(--muted);}
+  tr.dt-nopo .dt-box{opacity:.35;pointer-events:none;}
+  .dt-nopo-lbl{font-size:11px;color:var(--muted);font-style:italic;}
+  /* "On hold" — parked (e.g. a CP issue), not chased/counted as pending */
+  .dt-hold-t{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:#b45309;margin-left:8px;cursor:pointer;user-select:none;}
+  .dt-hold-t input{width:13px;height:13px;cursor:pointer;}
+  .dt-dot.hold{background:#f59e0b;}
+  .dt-hold-badge{font-size:9.5px;font-weight:800;letter-spacing:.4px;color:#fff;background:#f59e0b;padding:2px 7px;border-radius:20px;margin-left:8px;vertical-align:middle;}
+  .dt-hold-lbl{font-size:11px;color:#b45309;font-weight:700;font-style:italic;}
+  tr.dt-hold{background:#fffaf0;}
+  tr.dt-hold .dt-box{opacity:.35;pointer-events:none;}
+  /* Expandable MT-Select parent (container) row + its nested children */
+  tr.dt-parent{cursor:pointer;background:color-mix(in srgb,var(--accent) 6%,transparent);}
+  tr.dt-parent:hover td{background:color-mix(in srgb,var(--accent) 9%,transparent);}
+  tr.dt-parent td.dt-ch{font-weight:800;}
+  .dt-caret{border:0;background:none;cursor:pointer;font-size:12px;color:var(--accent);
+            margin-right:6px;padding:0;transition:transform .2s ease;display:inline-block;
+            transform:rotate(0deg);vertical-align:middle;}
+  tr.dt-parent[aria-expanded="true"] .dt-caret{transform:rotate(90deg);}
+  .dt-parent-count{font-size:11px;font-weight:700;color:var(--muted);margin-left:10px;}
+  .dt-parent-count b{color:#0a9d6e;}
+  .dt-parent-hint{text-align:left !important;}
+  .dt-parent-sub{font-size:11px;color:var(--muted);font-style:italic;}
+  .dt-pbar span.dt-parent-bar{background:linear-gradient(90deg,#6366f1,#4f46e5);}
+  tr.dt-child td.dt-ch{padding-left:34px;position:relative;}
+  tr.dt-child td.dt-ch::before{content:'';position:absolute;left:18px;top:0;bottom:0;
+            width:2px;background:color-mix(in srgb,var(--accent) 22%,transparent);}
+  tr.dt-child td.dt-ch .dt-name{font-weight:600;}
+  /* slide open/closed — animate the child rows collapsing */
+  tr.dt-child.dt-collapsing td{padding-top:0;padding-bottom:0;}
+  /* custom-flow channels (e.g. GT Select) — own steps inline, spanning the columns */
+  .dt-customcell{text-align:left !important;}
+  .dt-cstep{display:inline-flex;align-items:center;gap:6px;margin:0 18px 0 0;font-size:12px;}
+  .dt-cstep .dt-clabel{color:var(--text);}
+  .dt-cstep .dt-time{display:inline;margin:0 0 0 2px;}
 </style>
 <script>
 (function () {
@@ -113,42 +162,161 @@
   var TOTAL = {{ d.total_channels }};
 
   function recompute() {
-    var doneCh = 0;
+    var done = 0, nopo = 0, held = 0;
     document.querySelectorAll('tr[data-channel]').forEach(function (tr) {
-      var boxes = tr.querySelectorAll('input[type=checkbox]');
-      var done = 0; boxes.forEach(function (b) { if (b.checked) done++; });
-      var pct = Math.round(done * 100 / boxes.length);
+      if (tr.classList.contains('dt-hold')) { held++; return; }   // parked = handled
+      if (tr.classList.contains('dt-nopo')) { nopo++; return; }
+      var boxes = tr.querySelectorAll('.dt-cell input[type=checkbox]');
+      var d = 0; boxes.forEach(function (b) { if (b.checked) d++; });
+      var pct = boxes.length ? Math.round(d * 100 / boxes.length) : 0;
       var bar = tr.querySelector('.dt-pbar span'); if (bar) bar.style.width = pct + '%';
+      var full = d === boxes.length;
       var dot = tr.querySelector('.dt-dot');
-      if (dot) { dot.className = 'dt-dot' + (done === boxes.length ? ' ok' : (done ? ' part' : '')); }
-      if (done === boxes.length) { doneCh++; tr.classList.add('dt-done'); } else { tr.classList.remove('dt-done'); }
+      if (dot) dot.className = 'dt-dot' + (full ? ' ok' : (d ? ' part' : ''));
+      if (full) { done++; tr.classList.add('dt-done'); } else tr.classList.remove('dt-done');
     });
-    var op = Math.round(doneCh * 100 / TOTAL);
-    document.getElementById('dt-ovfill').style.width = op + '%';
-    document.getElementById('dt-ovpct').textContent = op + '%';
-    document.getElementById('dt-ovdone').textContent = doneCh;
+    var handled = done + nopo + held;
+    document.getElementById('dt-ovfill').style.width = Math.round(handled * 100 / TOTAL) + '%';
+    document.getElementById('dt-ovpct').textContent = Math.round(handled * 100 / TOTAL) + '%';
+    document.getElementById('dt-ovdone').textContent = done;
+    document.getElementById('dt-ovnopo').textContent = nopo;
+    document.getElementById('dt-ovpend').textContent = TOTAL - handled;
+    recomputeParents();
   }
 
-  document.querySelectorAll('input[type=checkbox]:not([disabled])').forEach(function (cb) {
+  // Roll each parent (e.g. MT Select) up from its children: mean pct on the bar,
+  // "X/N done" count. A child is "done" when its row carries dt-done; "handled"
+  // when done OR no-PO OR on-hold (mirrors the server rollup).
+  function recomputeParents() {
+    document.querySelectorAll('tr.dt-parent').forEach(function (ptr) {
+      var pkey = ptr.dataset.parent;
+      var kids = document.querySelectorAll('tr[data-parent-of="' + pkey + '"]');
+      if (!kids.length) return;
+      var doneK = 0, handledK = 0, sumPct = 0;
+      kids.forEach(function (tr) {
+        var d = tr.classList.contains('dt-done');
+        var nopo = tr.classList.contains('dt-nopo');
+        var hold = tr.classList.contains('dt-hold');
+        if (d) doneK++;
+        if (d || nopo || hold) handledK++;
+        var pct;
+        if (nopo || hold) { pct = 100; }
+        else {
+          var boxes = tr.querySelectorAll('.dt-cell input[type=checkbox]');
+          var c = 0; boxes.forEach(function (b) { if (b.checked) c++; });
+          pct = boxes.length ? Math.round(c * 100 / boxes.length) : 0;
+        }
+        sumPct += pct;
+      });
+      var mean = Math.round(sumPct / kids.length);
+      var bar = ptr.querySelector('.dt-parent-bar'); if (bar) bar.style.width = mean + '%';
+      var pc = ptr.querySelector('.dt-pc-done'); if (pc) pc.textContent = doneK;
+    });
+  }
+
+  function post(cb, onOk) {
+    var want = cb.checked; cb.disabled = true;
+    var body = new URLSearchParams({ day: day, channel: cb.dataset.channel,
+      step: cb.dataset.step, checked: want ? '1' : '0' });
+    fetch(toggleUrl, { method: 'POST', headers: { 'X-CSRFToken': csrf,
+      'X-Requested-With': 'XMLHttpRequest',
+      'Content-Type': 'application/x-www-form-urlencoded' }, body: body })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        cb.disabled = false;
+        if (!j.ok) { cb.checked = !want; alert(j.error || 'Could not save.'); return; }
+        if (onOk) onOk(j); recompute();
+      })
+      .catch(function () { cb.disabled = false; cb.checked = !want; alert('Network error — please retry.'); });
+  }
+
+  // work-step checkboxes (all cells; auto/disabled ones never fire change)
+  document.querySelectorAll('.dt-cell input[type=checkbox]').forEach(function (cb) {
     cb.addEventListener('change', function () {
-      var want = cb.checked;
-      cb.disabled = true;
-      var body = new URLSearchParams({ day: day, channel: cb.dataset.channel,
-        step: cb.dataset.step, checked: want ? '1' : '0' });
-      fetch(toggleUrl, { method: 'POST', headers: { 'X-CSRFToken': csrf,
-        'X-Requested-With': 'XMLHttpRequest',
-        'Content-Type': 'application/x-www-form-urlencoded' }, body: body })
-        .then(function (r) { return r.json(); })
-        .then(function (j) {
-          cb.disabled = false;
-          if (!j.ok) { cb.checked = !want; alert(j.error || 'Could not save.'); return; }
-          var t = cb.closest('.dt-cell').querySelector('.dt-time');
-          if (t) t.textContent = j.checked ? (j.at + (j.by ? ' · ' + j.by : '')) : '';
-          recompute();
-        })
-        .catch(function () { cb.disabled = false; cb.checked = !want; alert('Network error — please retry.'); });
+      post(cb, function (j) {
+        var t = document.querySelector('.dt-time[data-cell="' + cb.dataset.channel + ':' + cb.dataset.step + '"]');
+        if (t) t.textContent = j.checked ? (j.at + (j.by ? ' · ' + j.by : '')) : '';
+      });
     });
   });
+
+  // "No PO today" toggles — mark handled without ticking the steps
+  document.querySelectorAll('.dt-nopo-cb').forEach(function (cb) {
+    cb.addEventListener('change', function () {
+      var on = cb.checked;
+      post(cb, function () {
+        var tr = cb.closest('tr');
+        tr.classList.toggle('dt-nopo', on);
+        tr.querySelectorAll('.dt-cell input[type=checkbox]').forEach(function (b) {
+          var isAuto = b.closest('.dt-box').classList.contains('auto');
+          b.disabled = on || isAuto;
+        });
+        var prog = tr.querySelector('.dt-prog');
+        if (prog) prog.innerHTML = on ? '<span class="dt-nopo-lbl">— no PO</span>'
+                                      : '<div class="dt-pbar"><span style="width:0%"></span></div>';
+      });
+    });
+  });
+
+  // "Hold" toggles — park the channel (e.g. an unresolved CP issue). Update the
+  // badge, greyed steps, progress cell + counts IN PLACE (no page refresh).
+  document.querySelectorAll('.dt-hold-cb').forEach(function (cb) {
+    cb.addEventListener('change', function () {
+      var on = cb.checked;
+      post(cb, function (j) {
+        var tr = cb.closest('tr');
+        tr.classList.toggle('dt-hold', on);
+        if (on) tr.classList.remove('dt-done');
+        // ON HOLD badge in the channel cell (before the "no PO today" label)
+        var cell = tr.querySelector('.dt-ch');
+        var badge = cell.querySelector('.dt-hold-badge');
+        if (on && !badge) {
+          badge = document.createElement('span');
+          badge.className = 'dt-hold-badge';
+          badge.textContent = '⏸ ON HOLD';
+          cell.insertBefore(badge, cell.querySelector('.dt-nopo-t'));
+        } else if (!on && badge) { badge.remove(); }
+        // progress cell: hold label ↔ progress bar (recompute sets the width)
+        var prog = tr.querySelector('td.dt-prog');
+        if (prog) {
+          prog.innerHTML = on
+            ? '<span class="dt-hold-lbl">⏸ on hold' + (j && j.at ? ' · ' + j.at : '') + '</span>'
+            : '<div class="dt-pbar"><span style="width:0%"></span></div>';
+        }
+        recompute();
+        // recompute skips held rows, so set this row's dot explicitly on hold
+        if (on) { var dot = tr.querySelector('.dt-dot'); if (dot) dot.className = 'dt-dot hold'; }
+      });
+    });
+  });
+
+  // Expandable parent (MT Select): click the header row to slide its children
+  // open/closed. Default collapsed. Clicks on the child checkboxes never bubble
+  // here (children are separate rows), so only the header toggles.
+  function toggleParent(ptr) {
+    var open = ptr.getAttribute('aria-expanded') === 'true';
+    var pkey = ptr.dataset.parent;
+    var kids = document.querySelectorAll('tr[data-parent-of="' + pkey + '"]');
+    ptr.setAttribute('aria-expanded', open ? 'false' : 'true');
+    kids.forEach(function (tr) {
+      if (open) {
+        tr.style.display = 'none';
+      } else {
+        tr.style.display = '';
+        // brief fade/slide-in
+        tr.style.opacity = '0';
+        requestAnimationFrame(function () {
+          tr.style.transition = 'opacity .2s ease';
+          tr.style.opacity = '1';
+        });
+      }
+    });
+  }
+  document.querySelectorAll('tr.dt-parent').forEach(function (ptr) {
+    ptr.addEventListener('click', function () { toggleParent(ptr); });
+  });
+
+  recomputeParents();   // seed the parent bars/counts from server-rendered state
 })();
 </script>
 {% endblock %}

@@ -44,6 +44,29 @@
     </div>
     {% endif %}
 
+    {# ── per-channel requirements hint (what this channel demands) ── #}
+    {% if channel_reqs %}
+    <div id="req-hint" style="display:none;margin:0 0 14px;padding:10px 14px;border-radius:8px;
+         background:#eef4ff;border:1px solid #c7dbff;color:#1a3a6b;font-size:13px;line-height:1.5;"></div>
+    {{ channel_reqs|json_script:"channel-reqs" }}
+    <script>
+      (function(){
+        var reqs = JSON.parse(document.getElementById('channel-reqs').textContent||'{}');
+        var sel = document.getElementById('id_marketplace'), box = document.getElementById('req-hint');
+        if(!sel||!box) return;
+        function upd(){
+          var r = reqs[sel.value];
+          if(!r){ box.style.display='none'; return; }
+          var h = '<strong>📎 Requires:</strong> '+(r.required||'');
+          if(r.optional) h += '<br><strong>Optional:</strong> '+r.optional;
+          if(r.if_absent) h += '<br><em>If missing: '+r.if_absent+'</em>';
+          box.innerHTML = h; box.style.display='block';
+        }
+        sel.addEventListener('change', upd); upd();
+      })();
+    </script>
+    {% endif %}
+
     {# ── channel-specific extra upload fields ── #}
     {% if slots.fields %}{% include slots.fields %}{% endif %}
 

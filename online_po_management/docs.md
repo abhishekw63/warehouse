@@ -372,6 +372,365 @@ instead of a single number that lies for rule-based marketplaces.
 
 ## 10. Changelog (append one line per development)
 
+- **2026-07-03** — **LS store-grouped TESTER generation in the MT flow.** The operator may
+  drop a tester-requirement sheet (`STORE CODE, EAN, Tester Req, Commercial Remarks`)
+  alongside the LS `.xlsb`. New service `offline/services/tester.py` detects it BY COLUMNS
+  (`is_ls_tester_file`: STORE + EAN + Tester Req — distinct from the `.xlsb`'s
+  `Order No/Plant ID/Final Order Qty` and from the HG `(Store, SKU)` dump), then groups the
+  `Tester Req=1` rows by store into **one tester SO per store**: header Sell-to `20044`,
+  Ship-to = the store's `20044_N` (party `LS`, matched by `name`/trailing store number),
+  Ext Doc `TESTER-<store>`, Location `PICK`, lines qty **1 @ 0.54** each (EAN→`item_no` via
+  `item_master`). SO No format **`SO/LS/TT/<counter>`** — `TT` marks testers; the counter
+  CONTINUES the same daily `mt_select_seq.json` block AFTER `assign_so_numbers` burns the
+  regular block (`MTProcessor._generate_ls_testers` reloads + advances + persists the
+  counter), so tester numbers never collide (proven: regular `…07/031086-031175`, testers
+  `…TT/031176-031177`). Workbook: tester SORows appended LAST in `mt_workbook.build_result`
+  (`forced_unit_price=0.54` → Lines Unit Price; `_fix_external_doc` stamps `TESTER-<store>`),
+  so they sit after all regular Headers/Lines. Recorded to `order_headers`/`order_lines`
+  under the SAME `run_id` (`_record_testers`) — **no `is_tester` column exists**, so the
+  `SO/LS/TT/` number + `external_doc='TESTER-<store>'` are the tester marker. Never-silent:
+  unresolved EAN / missing ship-to / non-Approved remark → named warnings on the review page
+  (`ls_tester_preview`). Verified end-to-end with the real `Renee Repl Po 1-Jul-26.xlsb` +
+  `Jaipur teste.xlsx`: 49 tester lines @ 0.54, 2 SOs (1501→`20044_82`, 1641→`20044_48`), all
+  EANs resolved, 10 Reject rows flagged; appended after 90 regular headers / 7570 lines; DB
+  recorded. WITHOUT the sheet → zero testers (normal run unchanged). Skeleton: `build_testers`
+  is channel-agnostic; LS is the first consumer.
+- **2026-07-03** — **Lifestyle (LS) integrated as an MT-Select child** (party `LS`, cust
+  `20044`). Source is an Excel BINARY `.xlsb` (one `Sheet1`, all POs). `mt_bridge`
+  `_normalize_lifestyle_excel` converts Excel serial dates (day-first), maps the numeric
+  `Plant ID → the party='LS' Del Location` (so `store_match='exact'` resolves), uses
+  `Total Order value` as the inc-GST value, and notes the effective supply margin
+  (mapping-only, no price check). Registered in `_register_web_channels`; `.xlsb` added to
+  accepted uploads. Verified: 90 PO×store units / 7570 lines / ship-tos `20044_N`, PO date
+  01-07 / exp 20-07. Ship-to DB reconciled to D365 (added store 1421; removed the
+  conflicting duplicate 1941).
+- **2026-07-03** — **MT downloads now use the UNIFIED Online-B2B workbook** (see the
+  unified-workbook rule). `offline/services/mt_workbook.py` adapts the frozen MT
+  `POBatch`→ the online engine's `ProcessingResult`/`SORow` and renders via the SAME online
+  `SOExporter` + SKU-Summary + Tracker helpers, so every channel's download has the identical
+  9-sheet structure. `MTProcessor.confirm` re-renders in place (falls back to the 6-sheet
+  file, logged, never silent). Also fixed a pre-existing LS/Metro day-first date bug.
+- **2026-07-03** — **Daily Tasks: MT Select is an expandable parent** with its 8 children
+  (SS/HG/NT/BN/LL/RL/MET/LS) as slide-open sub-rows (all AJAX, no reload); removed EBO/Kiosk +
+  Airport (→ EKA) and CSD (→ OFF-INST). `marketplaces.Channel` gained a `parent` field;
+  `daily_checklist.get_day` nests children + counts leaves only (`total_channels` excludes the
+  parent). `_dt_row_body.html` extracted for shared rows.
+- **2026-07-03** — **Reusable "additional verification" scaffold + LS PDF address check.**
+  New `online_b2b/services/verification.py` `build()` returns a channel-agnostic
+  `verification` dict (title/columns/rows/summary); `po_flow/_verification_modal.html` renders
+  ANY such dict as a BIG modal (trigger link on the review page's `after_kpis` slot — the
+  shared `review.html` is untouched). LS is the first consumer: `mt_bridge._lifestyle_crosscheck`
+  compares each uploaded PO PDF's per-store delivery **pincode** vs the resolved ship-to
+  (city is advisory only; corporate-pin leak guarded). Shown only when a PDF is uploaded. Also
+  **condensed** the frozen engine's noisy "PO spans many stores" warning to one line per PO
+  for LS. Next MP = just produce the dict, zero new UI. See the verification-scaffold rule.
+- **2026-07-03** — **Tracker Location = SHORT warehouse code (Flipkart + Myntra), via the
+  shared `_source_location_by_po` hook.** The Tracker sheet's Location column now uses
+  the internal short code, not the resolved full ship-to address. `_append_tracker_sheet`
+  reads `self._source_location_by_po()` and falls back to the full address only if it's
+  empty. **Flipkart**: new `FlipkartProcessor._source_location_by_po` maps
+  `Purchase Order ID → Origin Warehouse` (e.g. `ahm_sh_wh_nl_02nl`) from the header CSV.
+  **Myntra**: already implemented (`_short_loc` = D365 `name` from `ship_to_mapping`), so
+  it inherits the fix. Same hook still re-stamps `order_headers.location` in the DB, so
+  Tracker + DB stay consistent. Backdated both open workbooks (`full_flipkart_13PO_*`,
+  `myntra_full_03-07-*`).
+- **2026-07-03** — **Marketplace template page lists EVERY exception SKU (was one example).**
+  `_marketplace_exceptions` grouped DB overrides by effect type but rendered only ONE
+  sample row while showing the true count — so "Use Vendor CP (3)" hid 2 SKUs. Now every
+  SKU is listed (Swiggy deal SKUs too, previously capped at 4); the card's `ex_scroll`
+  gained `max-height:340px` + a sticky header so long lists scroll, and the tag reads
+  "All N" instead of "Example". Lets the operator tally the full exception set.
+- **2026-07-03** — **BigBasket Sell-to Customer No. was blank (split party + empty cust_no).**
+  `ship_to_mapping` held BigBasket under two party names (`Bigbasket` filled, `Big Basket`
+  blank); the `20007_9` (Hyderabad) row had an empty `cust_no`, so the dump's Sell-to
+  printed blank. Filled `cust_no='20007'` for all `20007_%` ship-tos that were blank
+  (Sell-to = base before `_`; ship-to adds `_N`). Flipkart-TO `FK_*` transfer codes were
+  deliberately left alone (they have no Sell-to customer).
+- **2026-07-03** — **Meesho Branch: dropped the misleading "Flipkart portal 'Amount'"
+  warning.** Meesho Branch reuses the frozen `process_consignments`, which appends a
+  Flipkart-hardcoded per-PO amount-reference line. Meesho's dump has no vendor price, so
+  that figure is always ₹0.00 and the "Flipkart" label is wrong — `MeeshoTOProcessor.run_engine`
+  now filters those lines out of `result.warnings`. The accurate "value COMPUTED from our
+  master pricing" note (from `_headers`) is kept, so nothing is lost.
+- **2026-07-03** — **Daily Tasks "Hold" toggle is now AJAX (no page refresh).** The hold
+  checkbox updated the DB then did `location.reload()`; it now updates the badge, row
+  state, greyed steps, progress cell and the handled/pending counters in place. `recompute()`
+  counts held channels as handled.
+- **2026-07-03** — **Process PO page: Margin field hidden + dynamic per-MP file hint.**
+  The editable **Margin %** input is removed from the online upload form (it's the
+  marketplace's own default — showing it just invited a wrong-margin mistake that
+  skews CP validation). Kept as a hidden field auto-filled to the default, so the
+  engine still receives it. Added a **dynamic file-requirement note** that shows
+  only the SELECTED marketplace's needs (e.g. Flipkart → "many purchase_order_*.xlsx
+  + optional header .csv for the tracker"), driven by `mp_hints`
+  (`engine_bridge.marketplace_formats()` notes) + a `<select>` change handler.
+- **2026-07-03** — **CP lock-guard on the review page (block + ask, never silent).**
+  Clicking **🔒 Lock & Record** while any affected line has NO decision now (a) does
+  NOT record, (b) **shakes** the button + **flashes** the pending row(s) and jumps to
+  the Affected tab, and (c) opens an **ask** modal with three explicit choices:
+  **🕒 Save for Review Later** (park the run), **Go decide them now**, or **Lock &
+  Record anyway** (include the undecided lines as-is — still flagged in the DB).
+  Front-end only (`undecidedSelects`/`cpGuard`/`showCpModal` in review.html; the
+  lock flow was extracted to `doLock()` and re-run via a `_forced` flag on "anyway");
+  recording logic unchanged. Completes the pair with the Review-Later draft.
+- **2026-07-03** — **"Review Later" draft runs (defer a CP issue without re-upload).**
+  When a CP MISMATCH can't be decided at review (needs the team to correct the
+  master), the operator clicks **🕒 Save for Review Later** — the whole run is
+  parked as a draft (raw file + parsed result kept, `meta['draft']=True`), NOT
+  locked. A **Review Later** page (`/b2b/drafts/`, sidebar under Process) lists
+  parked runs; **Reopen** deep-links to the review with `?revalidate=1` so it
+  **force re-validates against the current master** (the team's CP fix/deal SKU
+  now applies and the MISMATCH clears) → then finalize. File never re-uploaded.
+  Built class-based + API-ready (`SaveReviewLaterView`, `DraftsView` with
+  `?format=json` → `{ok,data}`; fat `_collect_drafts()` data fn; `_save_meta`
+  helper). Pairs with the (still-pending) CP lock-guard #2.
+- **2026-07-02** — **Flipkart Branch (Flipkart-TO) PO/exp date day/month swap fixed.**
+  Same class of bug as Swiggy: the Consignment Visibility Report carries day-first
+  dd-mm-yyyy timestamps (`Creation Date`→po_date, `Scheduled Pick Up Date`→exp_date)
+  which the frozen engine parsed MONTH-first, flipping days 1–12 (2 Jul→Feb 7, 9 Jul→
+  Sep 7, 11 Jul→Nov 7) → huge false TAT breaches (123d). Fix: `FlipkartTOProcessor.
+  _source_dates_by_po` re-reads the visibility report DAY-FIRST (keyed by Consignment
+  Id == PO) with `_dates_force=True`. Retrospective one-time per-field swap (day≤12 →
+  swap month↔day) corrected all 8 existing Flipkart-TO records (run 174 → PO 2 Jul;
+  run 115 exp → 3/4 Jul; run 96 already correct).
+- **2026-07-02** — **New MT child channel: Metro Cash & Carry (cust 20410).**
+  Registered at runtime in `mt_bridge._register_web_channels` (code `MET`, party
+  `Metro`, + `WEB_CHANNELS`/`CHANNEL_REQUIREMENTS`), mirroring Reliance-MT. Input =
+  Metro tabular Excel (`PurchaseOrders*.xlsx`, sheet **'Purchase Orders'**); store
+  key = **DC_CODE** (T0SM/T0SL/…) matched EXACT to the DB ship-to Del Location
+  (9 rows loaded, `party='Metro'`, cust/bill-to **20410**, del_location=DC code).
+  `_normalize_metro_excel` reads the right sheet, drops the junk 'Unnamed' col, cleans
+  EAN/PO, and parses `PURCH_ORDER_DATE`/`EXPECTED_DATE` DAY-FIRST (dd.mm.yyyy). **No
+  price check** (mapping-only) — records the inc-GST line value
+  (`COST_PRICE_INCL_TAX_PER_PO_OU`); instead it computes + notes the **effective
+  supply margin** (landing ex-GST ÷ MRP): avg 49.0%, range 47.4–59.9% on the test PO.
+  Verified: 6 POs → 46 lines, value ₹61,994.18, ship-to DC→20410_N. (Download
+  workbook is the MT format for now — online-format normalization for ALL MT is a
+  separate planned pass.)
+- **2026-07-02** — **SO workbook: new 'Tracker' sheet (all marketplaces).** The
+  downloaded workbook now carries a per-PO **Tracker** sheet (Platform · PO/RO No ·
+  Location · PO Date · Expiry Date · Order Type · Items · Total Qty · Total Amount
+  inc-GST + TOTAL row), appended post-export by `Processor._append_tracker_sheet`
+  (parallel to `_append_sku_sheet`, wired into `_export`; best-effort, engine sheets
+  untouched). Dates are day-first `dd-mm-YYYY` and use the PDF-date backfill
+  (`_source_dates_by_po`) where the engine has none (Myntra/BlinkMP/Reliance). Also
+  retro-injected the sheet into the already-generated
+  `blink_ro_full_02-07-2026_182711.xlsx` (10 ROs, dates 02-07 → 01-08).
+- **2026-07-02** — **BlinkMP fully integrated (online, live in the picker).** Added
+  `BlinkMP` to `PILOT_MARKETPLACES` + a new `BlinkMPProcessor(Processor)` (registered
+  in `_PROCESSORS`), mirroring `MyntraProcessor`. BlinkMP arrives as **per-RO PAIRS**:
+  an ORDER **Excel** (line items) + an ORDER **PDF** (RO date, expiry, delivery
+  location), paired by the RO number in the filename — and the raw download's two
+  **.zip** files are accepted directly (`_expanded_paths` extracts them). `engine_files`
+  → `_compile` reads each RO's Excel, prepends `ro_number` + `location` (from the PDF),
+  cleans the sci-notation `Product UPC` → EAN, and concats into the flat dump the frozen
+  BlinkMP config reads (po_col `ro_number`, fob_col `Landing Rate`/`LR`, 75% margin,
+  landing basis, party `Blink RO`). The tabular dump has no dates, so
+  `_source_dates_by_po` backfills po_date/exp_date from the PDF — parsed with the
+  **standard `dateutil`** parser (robust to 'June 8, 2026' / 'Jul. 8, 2025'), NOT the
+  standalone's brittle month-map regex (which failed under pdfplumber). Frozen engine
+  untouched; the standalone `BlinkMP_automation/blinkmp_processor.py` stays the desktop
+  backup. Verified on 02-07-2026 POs: 10 RO pairs → 101 lines all OK, ship-to 20647_XX,
+  po_date 2026-07-02 / exp 2026-08-01; zip upload path verified too.
+- **2026-07-02** — **Per-marketplace PROFILE on the "See full template" page.** Each
+  marketplace's template page (`MarketplaceTemplateView` / `template.html`) is now the
+  single elegant place with its FULL detail: what it demands (columns — existing) +
+  its **pricing rule** (margin/basis/compare/resolve chips from `marketplace_rules()`)
+  + **every exception applied to THAT marketplace** — code-level behavioral ones
+  (`_BEHAVIORAL_EXC`: Swiggy status filter + NFS→For-Sale, Myntra Goddess + CP-basis,
+  Blink EPISENSE, Reliance GST-margin) AND the DB `item_exceptions` overlay filtered to
+  the marketplace (grouped by type with counts + examples) via `_marketplace_exceptions()`.
+  All read live from config/overlay → can't drift. Verified: Swiggy shows 3 (status,
+  NFS, 5 deal SKUs), Myntra shows Goddess+CP+3 Use-Vendor-CP, Blink shows EPISENSE.
+  Each exception card now carries a concrete **worked EXAMPLE** (rendered as a visual
+  monospace "Example" box, not plain text) — behavioral ones hardcoded next to the
+  rule, DB/deal ones built from a real overlay row (e.g. EAN remap `src → dst`, deal
+  `MRP → CP`). NOTE: only marketplaces with a captured `template_samples.json` sample
+  get a profile page (Swiggy, a CSV channel, has none yet → its exceptions live on
+  Rules §4).
+- **2026-07-02** — **Rules & Exceptions page refreshed for recent changes.** Added
+  exception cards: **Swiggy · Status filter** (only CONFIRMED punched; others
+  dropped + named notification) and **Swiggy · NFS → For-Sale** (remap to `_FS`
+  twin so the deal applies). New **Offline → Modern Trade** block: a DATA-DRIVEN
+  table of MT child channels (from `mt_bridge.WEB_CHANNELS` + `CHANNEL_REQUIREMENTS`)
+  showing each channel's Sell-to, lookup, Required/Optional files and if-missing
+  behaviour — so new channels (Reliance) auto-appear. Same per-channel hint now
+  also shows on the MT upload page. (`RulesView.get_context_data` → `mt_channels`.)
+- **2026-07-02** — **New MT child channel: Reliance Retail (Centro), cust 20043.**
+  Frozen MT engine untouched — the `RL` `ChannelConfig` is registered at RUNTIME
+  into `_engine().CHANNELS` via `mt_bridge._register_web_channels` (+ `WEB_CHANNELS`).
+  Input = Reliance tabular Excel ('Renee.XLSX', one row/line); `lookup_via='EAN'`
+  (142/142 resolve); store key = **Site code** (T8VY/T8WL/T8WB/FR49) matched EXACT
+  to the DB ship-to Del Location (7 D365 rows loaded to `ship_to_mapping`,
+  `party='Reliance Retail'`, del_location=Site code). The source has only a per-unit
+  pre-GST 'Item Price', so `mt_bridge._normalize_reliance_excel` injects an inc-GST
+  'Value' line total (Item Price×qty×1.18 — matches the PDF 'Total Order Value' to
+  the paisa); `csv_value_col='Value'`. **Optional PDF cross-check** (auto when PO
+  PDF(s) uploaded): verifies delivery ADDRESS (pincode vs D365 ship-to) + PO totals
+  and backfills PO Date; **if no PDF → Excel-only with a note** (never silent).
+  **Per-channel requirements** now shown on the upload page (dynamic hint) AND as a
+  review note (`CHANNEL_REQUIREMENTS` + `channel_requirements()`), so the operator
+  knows what each MT channel demands. Separability: keyed on cust 20043 — Reliance
+  Trends/Smart Bazaar would be separate channels/customers. Verified 3 POs
+  (57,623.83 / 90,366.92 / 50,816.36 = PDF), all address+value cross-checks ✓.
+- **2026-07-02** — **Swiggy NFS→For-Sale remap (deal SKUs now apply).** Some
+  fragrances have TWO master items on one base EAN: `<ean>` = **(NFS)** Not-For-Sale
+  and `<ean>_FS` = **(FOR SALE)**. Swiggy's SkuCode→EAN lands on the NFS item, but
+  the negotiated deal price is registered on the `_FS` For-Sale EAN — so the line
+  missed the deal and validated at 80% → MISMATCH (e.g. RENEE Bloom 8ML: our_cp
+  134.92 vs vendor 35.00). Fix (`SwiggyProcessor._remap_nfs_to_forsale`, in
+  `run_engine` BEFORE the engine resolves): for any Swiggy `swiggy_sku` entry whose
+  EAN resolves to an NFS item that HAS a `<ean>_FS` twin, redirect it to the `_FS`
+  EAN — so item resolution → 200075 (For Sale) and the deal-SKU override fires
+  (`exception_label='Swiggy deal'`, our_cp = deal cost). NEVER SILENT: one NOTE per
+  remapped PO on the review page. Verified: Bloom PO VIAPO76498 → item 200075, deal
+  ₹35 applied, status OK. (`_clean_code` preserves the `_FS` suffix, so both item +
+  deal lookups key off it.)
+- **2026-07-02** — **Myntra ship-to codes fixed (Gurgaon vs Binola mis-route).**
+  Two warehouse PAIRS share a pincode — Binola/Gurgaon (122413) and
+  Bangalore/Hoskote (560067) — so the engine's name/substring match resolved the
+  Embassy/**Gurgaon** address (should be `20011_4`) to `20011_1` (Binola) because
+  the ambiguous alias "Haryana" is a substring of BOTH addresses. Fix: (1) rebuilt
+  the Myntra `ship_to_mapping` from the authoritative **D365 Ship-to Address List**
+  (6 rows 20011_1..6, full addresses + short `name`); (2) `_WEB_CONFIG_OVERRIDES`
+  adds `loc_match:'address'` so Myntra resolves via pincode-gated word-overlap
+  (`lookup_by_address`), which disambiguates same-pincode pairs; (3) the tracker
+  SHORT location is now built in `MyntraProcessor.post_process` from the engine's
+  RESOLVED `so.ship_to` → D365 `name` (guaranteed to match the code sent to D365).
+  Verified all 5 POs: 20011_4 Gurgaon / 20011_1 Binola / 20011_3 Bhiwandi /
+  20011_2 Bangalore / 20011_5 West Bengal. NOTE: prior Myntra runs (e.g. 169)
+  were recorded with the old mapping — re-check/re-export their D365 ship-to.
+- **2026-07-02** — **Swiggy: non-CONFIRMED POs now DROPPED (ignore + notify).**
+  Reverses the earlier flag-and-keep for Swiggy status. Swiggy must punch ONLY
+  `CONFIRMED` POs; EXPIRED / COMPLETED / CANCELLED / PENDING are now **dropped**
+  from the run with a **named notification per PO** on Warnings (never silent —
+  golden rule). Frozen engine untouched: `SwiggyProcessor.run_engine` →
+  `_drop_non_confirmed` reads `Status` per `PoNumber` from the source (CSV/XLSX),
+  removes non-`status_keep` POs from `result.rows` BEFORE dedup/record, and
+  suppresses the engine's now-inaccurate "KEPT in output / pasted as-is"
+  `_flag_po_status` flags (replaced with "PO STATUS … — IGNORED"). A PO is kept
+  only when ALL its lines are CONFIRMED. Verified: mixed dump → 3 non-CONFIRMED
+  POs (15 lines) dropped + named, 16 CONFIRMED kept.
+- **2026-07-02** — **Myntra tracker: Vendor CP (no GST) + Vendor Landing (with
+  GST), compare still on CP.** The tracker was collapsing Vendor Landing onto the
+  CP value. Fixed WITHOUT touching validation: `_WEB_CONFIG_OVERRIDES['Myntra']`
+  compares on CP = `fob_col='List price(FOB+Transport-Excise)'` (no GST); the
+  with-GST `Landing Price` is captured per (po, ean) in `MyntraProcessor._compile`
+  and stamped onto `so.ref_fob_price` in a new `post_process` hook that runs AFTER
+  the engine validates — so `build_lines` shows Vendor Landing (419.30) distinct
+  from Vendor CP (355.34) for display only. NOTE: do **not** set `ref_fob_col` in
+  the override — it flips the frozen engine into `also_check_cost` dual validation
+  that flags every line MISMATCH (diff 0). Compare basis stays CP; diff of the
+  landing rate is shown alongside. Also: the "compiled N per-PO files into one
+  dump" message is now a `self.notes` entry (informational), not a warning —
+  rendered in a blue info block above the warnings box on the review page.
+- **2026-07-01** — **MT dedup by External Doc + HG SKU→EAN shifted to DB.**
+  (1) **Dedup:** MT confirm now stamps `order_headers.external_doc` = store PO;
+  re-uploading the same dump is detected — already-recorded POs show in the
+  Skipped tab and are never re-minted (`MTProcessor._recorded_ext_docs`, preview
+  + confirm). Backfilled external_doc for existing MT runs (89 rows). (2) **HG
+  SKU→EAN → DB:** seeded `channel_sku_map` (channel='HG') from the Dec-25 HG
+  Master (all sheets → 264) + 5 bin/shade-matched lip colors = **269**;
+  `mt_bridge.MTProcessor._apply_db_channel_master` merges it into
+  `bundle.channel_masters['HG']` at load (DB wins; Excel fallback) — so
+  previously NOT_IN_MASTER HG SKUs (ANTI FRIZZ, COLOR FIX, PINK COLLAGEN/THERAPY,
+  CORAL, SALMON, RASPBERRY…) now resolve without touching the 10 MB compilation
+  Excel (which openpyxl can't safely round-trip). Bin-content (GTIN+Item No, no
+  names) → resolve via item_master description fuzzy match, prefer in-stock;
+  EANs shipping-critical so confirmed by targeted shade lookup (fuzzy alone
+  mis-picked raspberry→'HUNGER FOR').
+
+- **2026-07-01** — **MT tester generation (SELECTIVE) in the web flow.** Drop a
+  tester-requirement sheet (Store code + SKU + Tester Req, any layout/header row)
+  alongside the PO file(s); `mt_flow` auto-detects it (`mt_bridge.is_tester_file`)
+  and `mt_bridge.build_tester_dump` → the engine's `TesterDump(eligible_keys)`.
+  `MTProcessor.confirm` runs `assign_so_numbers(generate_testers=True,
+  tester_dump=…)` so tester SOs mint alongside regulars — own SO No
+  (`SO/<ch>/TT/…`), Ext Doc `TESTERS`, qty 1, unit price = `channel.tester_unit_price`
+  (HG **0.54**). Only the sheet's (Store, SKU) get testers (not all). Preview shows
+  a tester count (`MTProcessor.tester_preview`, no writes). Engine untouched — HG
+  already had `tester_unit_price=0.54`. Also **manually appended today's HG testers**
+  to the two pending SO workbooks (regulars already in D365, numbers preserved):
+  `172335` (AHD, "AHD po" sheet → 1 tester SO/7 lines, SO/HG/TT/010815) and
+  `175929` (22nd/Bangalore, "22nd hg" sheet → 84 tester SOs/385 lines,
+  SO/HG/TT/010816-010899); SO counter advanced to 10900; backups in scratchpad.
+
+- **2026-07-01** — **PO-flow: "Export review to Excel" (no-SO review workbook).**
+  Shared, channel-agnostic download on the review page (MT + GT Mass) — dumps the
+  on-screen review (Orders + Line items) to a 2-sheet .xlsx for eyeballing in
+  Excel BEFORE Confirm. Carries **no SO numbers** (SO numbers are counter-assigned
+  only at Confirm; the real SO workbook stays the post-lock ⬇ download). New
+  `po_flow.export_review_xlsx` + generic `_FlowExportView` (+ GTM/MT subclasses),
+  `export` URL key, and a review-page button (shows when the spec wires it).
+  Decided against timestamp-based SO numbers: the `mt_select_seq.json` counter is
+  already unique + persisted (`assign_so_numbers`→`save_seq_state`, increments,
+  resets to DDMMYY per day, shared with desktop) and download-after-lock already
+  gives the final SOs — so no SO-scheme change / D365 risk.
+
+- **2026-07-01** — **MT ship-to shifted to the DB (single source of truth).**
+  MT no longer resolves ship-to from the Excel 'Ship-To B2B' sheet — `mt_bridge`
+  now rebuilds `bundle.ship_to_lookup` from `ship_to_mapping` (DB) after masters
+  load (`MTProcessor._apply_db_shipto`), so the frozen engine's own resolution
+  (HG exact / SS plant-suffix / NT city) runs against DB data, engine untouched
+  (falls back to Excel if the DB is empty/unreachable). DB rebuilt from the
+  current Excel via `mapping_store.build_rows`+`replace_mapping` (864 rows) plus
+  durable manual fixes. **PDF-verified HG ship-to corrections** (confirmed each
+  PO PDF's Buyer code + delivery pincode vs D365 Ship-to Address List, since the
+  short name misleads): added HG-INFINITY MALL-MUM→20039_86 (400064) &
+  HG-SEAWOOD MALL-MUM→20039_108 (400706) (both were missing), and **fixed
+  HG-DIAMOND PLAZA-KOL 20039_101 (Satgachi 700028) → 20039_126 (Unit 8B, 700055)**
+  — the PO actually delivers to 700055. Full addresses stored in the DB. (Excel
+  Ship-To B2B still needs the same 2 adds + Diamond fix pasted for parity.)
+
+- **2026-07-01** — **Modern Trade (MT) on the shared PO-flow scaffold (on par
+  with online).** MT (Shoppers Stop, Health & Glow, Naturals, Apollo, Lulu) moved
+  off the old single-page SS generator onto the same **upload → review → lock →
+  record-affected** flow the online marketplaces + GT Mass use. New
+  `offline/services/mt_flow.py::MTFlowProcessor` reshapes the frozen
+  `mt_bridge.MTProcessor` output into the unified review payload (KPIs, Line
+  items, Orders, Affected, per-line **Exclude**); `MT_SPEC` in `offline/flows.py`
+  (channel chosen at upload via the `marketplace` cap; warehouse picker; **no
+  `download` cap** — the SO workbook is generated only AT confirm so the shared SO
+  sequence counter is never burned by a pre-confirm download; Download link
+  appears post-record via `has_download`). Flow views refactored into generic
+  spec-driven base classes (`_FlowUploadView` … `_FlowDownloadView`); GT Mass +
+  MT are now thin `spec = …` subclasses (DRY). URLs `/offline/mt-flow/…`.
+  **UI consistency:** the old single-page `shoppers_stop.html` (a DIFFERENT
+  core/base look) is RETIRED — `ShoppersStopView` now permanently redirects to
+  `mt_flow_upload`, and every entry point (offline dashboard, `_sidebar.html`,
+  `overview.html`, hub `OFFLINE_CHANNELS` + project-map MT children) points at
+  `/offline/mt-flow/`. So MT now uses the identical `base_b2b.html` + `b2b.css`
+  chrome as the online marketplaces (po_flow/upload.html ≈ online_b2b/upload.html).
+  Verified on today's real HG dump: 5 POs / 63 lines / 184 qty / ₹72,788 —
+  identical to the legacy page.
+  No dedup/Skipped for MT (DB stores the assigned SO, not the store PO — same as
+  before); `mt_bridge.confirm(exclude_keys=…)` drops excluded lines before SO
+  numbers are burned.
+
+- **2026-07-01** — **Swiggy po_date day/month swap fixed (false TAT breach).**
+  Swiggy's `PoCreatedAt` is a **day-first timestamp WITH a time**
+  ('01-07-2026 13:38'). The engine's tracker `_fmt_date` tries date-only
+  day-first patterns (they fail on the time) then falls back to
+  `pd.to_datetime` (**month-first**), so a PO created on the **1st–12th** gets
+  day↔month swapped (1-Jul → 7-Jan) → a huge false TAT breach (~175 days).
+  Engine is frozen, so new `engine_bridge.SwiggyProcessor` re-reads the source
+  CSV dates **day-first** (`_parse_dayfirst`, ISO-safe) and OVERWRITES via
+  `set_po_dates(..., force=True)` (new `force` flag; base still COALESCE/blank-
+  fill). Only days 1–12 were ever affected (days >12 auto-corrected); audit found
+  exactly ONE historical record (Swiggy MBLPO415281) — fixed to 01-Jul-2026.
+
+- **2026-07-01** — **Myntra tracker shows SHORT location (not full address).**
+  The engine needs the RAW ship-to address to do its own ship-to resolution, so
+  `MyntraProcessor._compile` keeps `Location` = raw address (an earlier attempt
+  to pre-shorten it to the mapped name made the engine return **0 rows**). The
+  resolved short name per PO (`_short_loc`, e.g. 'Mumbai'/'West bengal') is now
+  re-stamped onto the recorded `order_headers.location` AFTER recording, via a
+  new base hook `Processor._source_location_by_po()` +
+  `lines_store.set_location(run_id, {po: loc})` (mirrors the dates backfill; the
+  only backfill that OVERWRITES, since the engine wrote the raw address). Base is
+  a no-op; only Myntra overrides. Run 161 (today's compilation upload) backfilled
+  in both `order_headers` + `order_lines`.
+
 - **2026-07-01** — **Myntra per-PO auto-compile.** Myntra switched from one
   compiled dump to MANY per-PO files (`PO_<id>_PO-MYNJ-*.xlsx`: title + header
   block, line-item table a few rows down, no `PO` column). New
@@ -411,6 +770,25 @@ instead of a single number that lies for rule-based marketplaces.
   (POST); both read the same `_issue_filters` as the page/export. The email modal
   + JS are generic (point `data-preview-url`/`data-send-url` at any future report).
   See [[dry-skeleton-first]]. Additive; never touches the frozen engine.
+
+- **2026-07-03** — **Issues email v2: summary metrics + editable note + add
+  stakeholders.** `IssuesEmailReport` now computes a **Total Qty / Total Value /
+  Loss** card at the top of the email body (`_summary_block()`), over the same
+  filtered lines. *Total Value* = Σ qty × our expected per-unit rate on each
+  line's basis (our_cp for CP lines, our_landing for Flipkart-style landing
+  lines, fallback our_mrp). *Loss (value at risk)* = disjoint buckets
+  (precedence excluded > not-in-master > mismatch): **mismatch** = Σ qty×|diff|
+  (the per-unit price gap × qty), **not-in-master** = Σ qty×rate (unverifiable
+  SKU — whole line at risk), **excluded** = Σ qty×rate (dropped from the PO). The
+  modal gained an **editable Note** textarea (`_note_block()` → "Note from
+  sender" section, live-reflected in preview) and **To/Cc recipient inputs**
+  pre-filled with the config defaults, editable/appendable, with email-format
+  validation both client-side and server-side (`_clean_emails`). `note`/`to`/`cc`
+  flow modal → `issues_email_send` (POST) → report → email. **Never sends with an
+  empty To**: if the operator supplied a To that cleaned to nothing, the view
+  refuses instead of silently falling back to the config default. Modal stays the
+  reusable skeleton (recipients/note live in shared `.em-meta`; summary lives in
+  the report, not the view — [[api-ready-architecture]]). Additive.
 
 - **2026-06-30** — **First Cry web integration + item-master NaT fix + reusable
   loading overlay + SOP tab.** (1) **First Cry** is now a live web pilot: added

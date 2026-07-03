@@ -4,7 +4,7 @@
   <td>{{ o.marketplace }}</td>
   <td class="mono"><a href="{% url 'b2b_run_detail' run_id=o.run_id %}" class="po">{{ o.po }}</a></td>
   <td class="loc" title="{{ o.location }}">{{ o.location }}</td>
-  <td class="nowrap">{% if o.po_date %}{{ o.po_date }}{% else %}—{% endif %}</td>
+  <td class="nowrap">{% if o.po_date %}{{ o.po_date|date:"d M Y" }}{% else %}—{% endif %}</td>
   <td><span class="pill {{ o.order_type|lower }}">{{ o.order_type }}</span></td>
   <td class="r">{{ o.items }}</td>
   <td class="r">{{ o.qty }}</td>

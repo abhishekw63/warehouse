@@ -29,4 +29,15 @@ urlpatterns = [
     path('gt-mass-flow/<str:token>/decision/', views.GTMFlowDecisionView.as_view(), name='gtm_flow_decision'),
     path('gt-mass-flow/<str:token>/discard/', views.GTMFlowDiscardView.as_view(), name='gtm_flow_discard'),
     path('gt-mass-flow/<str:token>/download/', views.GTMFlowDownloadView.as_view(), name='gtm_flow_download'),
+    path('gt-mass-flow/<str:token>/export/', views.GTMFlowExportView.as_view(), name='gtm_flow_export'),
+    # Modern Trade (MT) on the shared PO-flow scaffold (upload → review → confirm
+    # → lock), on par with the online marketplaces. Channel picked at upload. The
+    # old single-page shoppers-stop generator above stays as a fallback.
+    path('mt-flow/', views.MTFlowUploadView.as_view(), name='mt_flow_upload'),
+    path('mt-flow/<str:token>/', views.MTFlowReviewView.as_view(), name='mt_flow_review'),
+    path('mt-flow/<str:token>/confirm/', views.MTFlowConfirmView.as_view(), name='mt_flow_confirm'),
+    path('mt-flow/<str:token>/decision/', views.MTFlowDecisionView.as_view(), name='mt_flow_decision'),
+    path('mt-flow/<str:token>/discard/', views.MTFlowDiscardView.as_view(), name='mt_flow_discard'),
+    path('mt-flow/<str:token>/download/', views.MTFlowDownloadView.as_view(), name='mt_flow_download'),
+    path('mt-flow/<str:token>/export/', views.MTFlowExportView.as_view(), name='mt_flow_export'),
 ]

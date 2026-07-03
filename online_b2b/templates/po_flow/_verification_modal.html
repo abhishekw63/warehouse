@@ -1,0 +1,136 @@
+{% comment %}
+Reusable "additional verification" MODAL — one component, any marketplace.
+
+Renders ONLY when the channel produced a `verification` dict (r.verification).
+The review page stays clean: this slot injects a small trigger link + a hidden
+modal + a bit of JS that builds the table from the channel-agnostic dict at
+click time. Any MP that builds a `verification` (via
+online_b2b.services.verification.build) reuses this exact component — zero new UI
+per channel. The dict is emitted JSON-safe via {% templatetag openblock %} json_script,
+so it's also API-friendly.
+
+Contract: {title, subtitle, source, columns:[{key,label,align,mono,kind}],
+rows:[{<key>:val,..., detail, match}], match_key, summary:{checked,ok,mismatch,other}}.
+{% endcomment %}
+{% if r.verification %}
+{% with v=r.verification sm=r.verification.summary %}
+{{ v|json_script:"verification-data" }}
+
+<button type="button" class="verify-link{% if sm.mismatch %} has-mm{% endif %}"
+        id="verifyOpen">
+  📄 <b>{{ v.title }}</b>
+  <span class="verify-sub">{{ sm.checked }} checked{% if sm.mismatch %}
+    · <span class="verify-mm">{{ sm.mismatch }} mismatch{{ sm.mismatch|pluralize:"es" }}</span>{% else %}
+    · all OK{% endif %}</span>
+  <span class="verify-go">→</span>
+</button>
+
+<div class="verify-modal" id="verifyModal" aria-hidden="true">
+  <div class="vm-backdrop" data-verify-close></div>
+  <div class="vm-card" role="dialog" aria-modal="true" aria-labelledby="vmTitle">
+    <div class="vm-head">
+      <div>
+        <h3 id="vmTitle"></h3>
+        <p class="vm-sub" id="vmSub"></p>
+      </div>
+      <button type="button" class="vm-x" data-verify-close aria-label="Close">✕</button>
+    </div>
+    <div class="vm-kpis" id="vmKpis"></div>
+    <div class="vm-scroll"><table class="grid" id="vmTable">
+      <thead><tr id="vmHead"></tr></thead>
+      <tbody id="vmBody"></tbody>
+    </table></div>
+    <p class="vm-src" id="vmSrc"></p>
+  </div>
+</div>
+
+<style>
+  .verify-link{display:flex;align-items:center;gap:10px;margin:0 0 16px;width:100%;
+    padding:11px 15px;border-radius:11px;border:1px solid #cfe0ff;
+    border-left:4px solid #2f6bff;background:#f4f8ff;color:#1a3a6b;
+    font-size:13.5px;text-align:left;cursor:pointer;transition:background .15s;}
+  .verify-link:hover{background:#e9f1ff;}
+  .verify-link.has-mm{border-left-color:#b91c1c;background:#fff4f4;border-color:#f3c9c9;}
+  .verify-sub{font-weight:600;color:#3a5a8b;font-size:12.5px;}
+  .verify-mm{color:#b91c1c;font-weight:700;}
+  .verify-go{margin-left:auto;font-weight:800;font-size:16px;}
+
+  .verify-modal{display:none;position:fixed;inset:0;z-index:9999;}
+  .verify-modal.show{display:block;}
+  .vm-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.55);}
+  .vm-card{position:relative;max-width:1200px;width:94%;margin:3vh auto;
+    height:min(92vh,900px);display:flex;flex-direction:column;background:#fff;
+    border-radius:16px;box-shadow:0 24px 70px rgba(0,0,0,.35);overflow:hidden;}
+  .vm-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;
+    padding:16px 20px;border-bottom:1px solid var(--border);}
+  .vm-head h3{margin:0;font-size:17px;color:var(--text);}
+  .vm-sub{margin:4px 0 0;font-size:12.5px;color:var(--muted);}
+  .vm-x{border:none;background:#f1f3f9;border-radius:9px;width:34px;height:34px;
+    font-size:15px;cursor:pointer;color:#334;}
+  .vm-x:hover{background:#e6e9f3;}
+  .vm-kpis{display:flex;gap:10px;flex-wrap:wrap;padding:12px 20px 4px;}
+  .vm-kpi{flex:1 1 100px;background:#f6f8fd;border:1px solid var(--border);
+    border-radius:10px;padding:8px 12px;}
+  .vm-kpi .n{font-size:20px;font-weight:800;color:var(--text);}
+  .vm-kpi .l{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+  .vm-kpi.mm .n{color:#b91c1c;}
+  .vm-scroll{overflow:auto;padding:8px 20px 0;flex:1;}
+  /* sticky header so the ~90-row body scrolls under a pinned head */
+  #vmTable thead th{position:sticky;top:0;z-index:2;background:#1f2a5a;color:#fff;}
+  .vm-src{margin:0;padding:10px 20px 16px;font-size:12px;color:var(--muted);}
+  .vf-ok{color:#0a9d6e;font-weight:700;font-size:12.5px;}
+  .vf-bad{color:#b91c1c;font-weight:800;font-size:12.5px;}
+  .vf-np{color:var(--muted);font-weight:600;font-size:12.5px;}
+  #vmTable tr.rmis{background:#fff4f4;} #vmTable tr.rnp{background:#fbfbf5;}
+</style>
+
+<script>
+(function () {
+  var el = document.getElementById('verification-data');
+  if (!el) return;
+  var v; try { v = JSON.parse(el.textContent); } catch (e) { return; }
+  var modal = document.getElementById('verifyModal');
+  var openBtn = document.getElementById('verifyOpen');
+  var built = false;
+  function esc(s){ var d=document.createElement('div'); d.textContent=(s==null?'':s); return d.innerHTML; }
+  function matchCell(val){
+    if (val === 'OK') return '<span class="vf-ok">✓ OK</span>';
+    if (val === 'MISMATCH') return '<span class="vf-bad">✗ Mismatch</span>';
+    return '<span class="vf-np">— ' + esc(String(val||'').toLowerCase()) + '</span>';
+  }
+  function build(){
+    if (built) return; built = true;
+    document.getElementById('vmTitle').textContent = v.title || 'Verification';
+    document.getElementById('vmSub').textContent = v.subtitle || '';
+    document.getElementById('vmSrc').textContent = v.source || '';
+    var sm = v.summary || {};
+    var kdefs = [['checked','Checked',''],['ok','OK',''],
+                 ['mismatch','Mismatch','mm'],['other','Not verified','']];
+    document.getElementById('vmKpis').innerHTML = kdefs.map(function(k){
+      return '<div class="vm-kpi '+k[2]+'"><div class="n">'+(sm[k[0]]||0)+
+             '</div><div class="l">'+k[1]+'</div></div>'; }).join('');
+    var cols = v.columns || [];
+    document.getElementById('vmHead').innerHTML = cols.map(function(c){
+      return '<th'+(c.align==='r'?' class="r"':'')+'>'+esc(c.label)+'</th>'; }).join('');
+    var mk = v.match_key || 'match';
+    document.getElementById('vmBody').innerHTML = (v.rows||[]).map(function(row){
+      var mval = row[mk];
+      var cls = mval==='MISMATCH' ? 'rmis' : (mval==='NO_PDF' ? 'rnp' : '');
+      var tds = cols.map(function(c){
+        var val = row[c.key];
+        var inner = (c.kind==='match') ? matchCell(val) : esc(val==null||val===''?'—':val);
+        var tdc = (c.align==='r'?'r ':'') + (c.mono?'mono':'');
+        return '<td'+(tdc.trim()?' class="'+tdc.trim()+'"':'')+'>'+inner+'</td>';
+      }).join('');
+      return '<tr class="'+cls+'" title="'+esc(row.detail||'')+'">'+tds+'</tr>';
+    }).join('') || '<tr><td colspan="'+cols.length+'" class="muted">Nothing to verify.</td></tr>';
+  }
+  function open(){ build(); modal.classList.add('show'); modal.setAttribute('aria-hidden','false'); }
+  function close(){ modal.classList.remove('show'); modal.setAttribute('aria-hidden','true'); }
+  if (openBtn) openBtn.addEventListener('click', open);
+  modal.querySelectorAll('[data-verify-close]').forEach(function(x){ x.addEventListener('click', close); });
+  document.addEventListener('keydown', function(e){ if (e.key==='Escape') close(); });
+})();
+</script>
+{% endwith %}
+{% endif %}

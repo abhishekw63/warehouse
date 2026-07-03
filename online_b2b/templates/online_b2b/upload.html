@@ -32,12 +32,16 @@
         {{ form.warehouse }}
         {% if form.warehouse.errors %}<span class="err-t">{{ form.warehouse.errors|striptags }}</span>{% endif %}
       </div>
-      <div class="fld">
-        <label>Margin %</label>
-        {{ form.margin_pct }}
-        {% if form.margin_pct.errors %}<span class="err-t">{{ form.margin_pct.errors|striptags }}</span>{% endif %}
-      </div>
+      {# Margin = marketplace default (auto-filled below); hidden so it can't be mis-edited, still submitted. #}
+      <div class="fld" style="display:none">{{ form.margin_pct }}</div>
     </div>
+
+    {# Dynamic per-marketplace file requirement — shows only the picked MP's needs. #}
+    <div id="mp-hint" class="mp-hint" style="display:none;margin:2px 0 14px;padding:10px 14px;
+         border-radius:9px;background:#eef4ff;border:1px solid #cadcf6;color:#274a7a;
+         font-size:13px;line-height:1.5;"></div>
+    {{ mp_hints|json_script:"mp-hints" }}
+    {{ mp_templates|json_script:"mp-templates" }}
 
     <div class="fld">
       <label>PO file(s)</label>
@@ -45,7 +49,7 @@
         <span class="dz-ic">{% include 'online_b2b/_icons.html' with i='download' %}</span>
         <span class="dz-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
         <span class="dz-main" id="dz-main">Click to choose PO file(s)</span>
-        <span class="dz-sub">.xlsx / .pdf · Blink = one punch file · Flipkart = all purchase_order_*.xlsx (+ optional header .csv) · DMart = PO PDF(s) · Myntra = compiled dump.xlsx</span>
+        <span class="dz-sub">.xlsx / .pdf · Blink = one punch file · Flipkart = all purchase_order_*.xlsx (+ optional header .csv) · DMart = PO PDF(s) · Myntra = compiled dump.xlsx · BlinkMP = ORDER PDF + XLS pairs (or the two .zip files)</span>
         {{ form.po_files }}
       </label>
       {% if form.po_files.errors %}<span class="err-t">{{ form.po_files.errors|striptags }}</span>{% endif %}
@@ -156,6 +160,26 @@
     };
     applyMargin();                         // set correct default on first load
     mpSel.addEventListener('change', applyMargin);
+  }
+
+  // Per-marketplace file hint — show the picked marketplace's needs + a link to
+  // its full template. Shown for EVERY marketplace (generic fallback if no note).
+  var HINTS = {}, TPLS = [];
+  try { HINTS = JSON.parse(document.getElementById('mp-hints').textContent || '{}'); } catch (e) {}
+  try { TPLS = JSON.parse(document.getElementById('mp-templates').textContent || '[]'); } catch (e) {}
+  var hintBox = document.getElementById('mp-hint');
+  if (mpSel && hintBox) {
+    var applyHint = function () {
+      var mp = mpSel.value;
+      var h = HINTS[mp] || 'the marketplace’s PO file(s) — see the full template for the exact columns.';
+      var link = (TPLS.indexOf(mp) !== -1)
+        ? ' <a href="/b2b/rules/template/' + encodeURIComponent(mp) + '/" style="color:#1f4fb3;font-weight:700;text-decoration:underline;">Full detail →</a>'
+        : '';
+      hintBox.innerHTML = '📎 <b>' + mp + ' needs:</b> ' + h + link;
+      hintBox.style.display = 'block';
+    };
+    applyHint();
+    mpSel.addEventListener('change', applyHint);
   }
 
   var dz = document.getElementById('dz');
