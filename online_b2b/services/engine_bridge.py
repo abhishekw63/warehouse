@@ -378,6 +378,10 @@ class Processor:
         # read as "1 warning".
         self.notes: list[str] = []
         self.skipped: list = []
+        # Ship-to/locations the engine could NOT map (cust_no + ship_to left
+        # blank) — surfaced on the review page's "Mapping" tab so the operator
+        # can add the missing mapping. [[never-skip-silently]]
+        self.unmapped: list = []
         self.env = None
         self.config = None
         self.result = None
@@ -395,6 +399,39 @@ class Processor:
 
     def post_process(self, result, env) -> None:
         """Hook after a successful engine run (e.g. Flipkart tracker)."""
+
+    def _accept_deal_exceptions(self, result) -> None:
+        """A **deal SKU is the REVISED agreed price** — so accept it as an applied
+        exception (same idea as the Blink EPISENSE deal), NOT a mismatch: override
+        the CP into the D365 dump and mark the line **OK + labelled '<MP> deal'**,
+        even when the marketplace's PO still carries the old/standard price. The
+        operator sees "exception applied" (not red MISMATCH); D365 bills the
+        negotiated price, not the flat margin. never-skip-silently: the count is
+        warned and the CP gap stays visible on the row (+ the deal audit)."""
+        accepted = 0
+        for so in getattr(result, 'rows', None) or []:
+            lbl = str(getattr(so, 'exception_label', '') or '')
+            if 'deal' not in lbl.lower():
+                continue
+            if getattr(so, 'validation_status', '') != 'MISMATCH':
+                continue
+            deal_cp = getattr(so, 'cost_price_ref', None)
+            so.validation_status = 'OK'
+            # normalise the 'Deal ≠ vendor' label back to the clean MP deal label
+            if '≠' in lbl or ' vs ' in lbl.lower():
+                so.exception_label = f'{self.marketplace} deal'
+            if not getattr(so, 'forced_unit_price', None) and deal_cp:
+                try:
+                    so.forced_unit_price = float(deal_cp)
+                except (TypeError, ValueError):
+                    pass
+            accepted += 1
+        if accepted:
+            self.warnings.append(
+                f"Deal SKUs: {accepted} line(s) accepted at the revised negotiated "
+                f"price (exception applied → D365 uses the deal price, not the flat "
+                f"margin) — shown as an exception, not a mismatch. Verify values on "
+                f"the deal audit.")
 
     def run_engine(self, engine, files, config):
         """Call the engine for this marketplace. Default = standard single-file
@@ -471,8 +508,13 @@ class Processor:
         result.margin_pct = self.margin_pct
         result.warehouse_display = self.warehouse
         result.warehouse_code = env['WAREHOUSE_CODES'].get(self.warehouse, 'PICK')
+        import re as _re
         for _po, _loc, msg in result.warnings:
             self.warnings.append(msg)
+            if 'not found in mapping' in msg:
+                m = _re.search(r"Location '(.*?)' not found", msg)
+                loc = _loc or (m.group(1) if m else '')
+                self.unmapped.append({'location': loc, 'po': str(_po or '')})
 
         if not result.rows:
             return {'ok': False, 'error': "No valid rows extracted from the PO file(s).",
@@ -486,6 +528,10 @@ class Processor:
                 self.warnings.append(f"Dedup check skipped ({type(e).__name__}: {e}).")
 
         self.post_process(result, env)
+        # Deal SKUs (Swiggy/Myntra) → accept the revised negotiated price as an
+        # applied exception (EPISENSE-style), not a mismatch. Runs for every
+        # channel; no-op unless a line carries a '<MP> deal' label. [[deals]]
+        self._accept_deal_exceptions(result)
         self.result = result
         return None
 
@@ -516,6 +562,20 @@ class Processor:
         r2 = copy.copy(self.result)
         r2.rows = rows
         return r2
+
+    def export_decided_workbook(self, actions=None) -> dict:
+        """The full multi-sheet SO Workbook, but with the operator's LOCKED
+        decisions applied — EXCLUDE rows dropped, OVERRIDE rows repriced (same
+        filter the D365 dump uses). Powers the post-lock **"Download SO Workbook
+        (Completed)"**; the review download stays the every-line workbook."""
+        err = self._run(skip_dedup=True)
+        if err:
+            return err
+        self.result = self._apply_decisions(actions)   # accepted-only + overrides
+        path = self._export(actions)
+        if not path:
+            return {'ok': False, 'error': 'Completed workbook export failed.'}
+        return {'ok': True, 'path': str(path)}
 
     def generate_d365(self, out_path, actions=None) -> dict:
         """Build the ERP-uploadable D365 package at ``out_path`` from LOCKED
@@ -641,7 +701,7 @@ class Processor:
             'skipped': len(self.skipped),
         }
 
-    def _export(self):
+    def _export(self, actions=None):
         # The engine writes the workbook to ``input_file_path.parent/output``.
         # Web uploads already live UNDER MEDIA (b2b_uploads/<token>/), so the
         # engine writes output/ there — web-owned, per-token, and where
@@ -684,7 +744,67 @@ class Processor:
                 self._append_tracker_sheet(str(path))
             except Exception as e:  # noqa: BLE001
                 self.warnings.append(f"Tracker sheet skipped ({type(e).__name__}).")
+            try:
+                self._append_excluded_to_summary(str(path), self._lines(actions=actions))
+            except Exception as e:  # noqa: BLE001
+                self.warnings.append(f"Summary excluded-qty skipped ({type(e).__name__}).")
         return path
+
+    def _append_excluded_to_summary(self, path, lines) -> None:
+        """Augment the SO Workbook 'Summary' sheet (per-PO) with two columns:
+        **Excluded/Dropped Qty** and **Final Qty (to D365)**. Excluded = lines the
+        operator EXCLUDEd, plus still-affected lines (MISMATCH / NOT_IN_MASTER not
+        resolved to Include/Override) — i.e. qty that won't cleanly reach the D365
+        dump. Lets the operator see, right in the downloaded workbook, exactly what
+        dropped from each PO (then check it in Validation). Frozen exporter +
+        every existing sheet/column stay untouched — we only APPEND columns."""
+        import openpyxl
+        from openpyxl.styles import Alignment, Font, PatternFill
+        excl: dict = {}
+        for l in lines:
+            act = (l.get('decision') or {}).get('action') or ''
+            dropped = act == 'EXCLUDE' or (l.get('status') in _ISSUE_STATUSES
+                                           and act not in ('INCLUDE', 'OVERRIDE'))
+            if dropped:
+                po = str(l.get('po') or '')
+                excl[po] = excl.get(po, 0) + int(l.get('qty') or 0)
+        wb = openpyxl.load_workbook(path)
+        if 'Summary' not in wb.sheetnames:
+            return
+        ws = wb['Summary']
+        hdr = [str(c.value).strip() if c.value is not None else '' for c in ws[1]]
+        if 'PO' not in hdr:
+            return
+        c_po = hdr.index('PO') + 1
+        c_qty = hdr.index('Total Qty') + 1 if 'Total Qty' in hdr else None
+        c_exc, c_fin = ws.max_column + 1, ws.max_column + 2
+        ws.cell(1, c_exc, 'Excluded/Dropped Qty')
+        ws.cell(1, c_fin, 'Final Qty (to D365)')
+        for cc in (c_exc, c_fin):
+            h = ws.cell(1, cc)
+            h.font = Font(bold=True, color='FFFFFF')
+            h.fill = PatternFill('solid', fgColor='B45309')
+            h.alignment = Alignment(horizontal='center', wrap_text=True)
+        total_e = sum(excl.values())
+        for r in range(2, ws.max_row + 1):
+            po = str(ws.cell(r, c_po).value or '')
+            tot = ws.cell(r, c_qty).value if c_qty else None
+            try:
+                totf = int(float(tot))
+            except (ValueError, TypeError):
+                continue                       # metadata/footer row → leave blank
+            if po.upper().startswith('TOTAL'):
+                ws.cell(r, c_exc, total_e)
+                ws.cell(r, c_fin, totf - total_e)
+                continue
+            if not po:
+                continue
+            e = excl.get(po, 0)
+            ws.cell(r, c_exc, e)
+            ws.cell(r, c_fin, totf - e)
+        ws.column_dimensions[openpyxl.utils.get_column_letter(c_exc)].width = 18
+        ws.column_dimensions[openpyxl.utils.get_column_letter(c_fin)].width = 18
+        wb.save(path)
 
     def _sku_pivot(self, lines):
         """Per-run SKU rollup grouped by (item_no, ean): qty per status, MRP
@@ -851,6 +971,50 @@ class Processor:
             wb.move_sheet('Tracker', offset=3 - idx)
         wb.save(path)
 
+    def _grouped_unmapped(self) -> list:
+        """Unmapped ship-tos grouped by location → one row per missing mapping,
+        with the affected PO list. Feeds the review page's "Mapping" tab."""
+        by_loc: dict = {}
+        for u in self.unmapped:
+            loc = u.get('location') or '(blank)'
+            g = by_loc.setdefault(loc, {'location': loc, 'marketplace': self.marketplace,
+                                        'pos': [], 'count': 0})
+            g['count'] += 1
+            po = u.get('po')
+            if po and po not in g['pos']:
+                g['pos'].append(po)
+        return sorted(by_loc.values(), key=lambda g: -g['count'])
+
+    def _mapping_report(self) -> list:
+        """Per-PO ship-to resolution for the review **Mapping** tab: every PO →
+        the location it sent → the mapped Cust/Ship-to, classified **EXACT /
+        FUZZY / UNMAPPED**. Lets the operator confirm each match and promote fuzzy
+        ones to exact rows ([[fuzzy→exact goal]]). One row per PO."""
+        if not self.result or not getattr(self.result, 'rows', None):
+            return []
+        seen: dict = {}
+        for row in self.result.rows:
+            po = getattr(row, 'po_number', '') or ''
+            if not po or po in seen:
+                continue
+            raw = (getattr(row, 'location', '') or '').strip()
+            mapped = (getattr(row, 'mapped_location', '') or '').strip()
+            ship = getattr(row, 'ship_to', '') or ''
+            cust = getattr(row, 'cust_no', '') or ''
+            if not ship and not bool(getattr(row, 'mapped', False)):
+                mt = 'UNMAPPED'
+                remark = 'No Ship-To match — Cust/Ship-to left blank. Add an exact mapping.'
+            elif mapped and raw and raw == mapped:
+                mt, remark = 'EXACT', 'Exact match on Del Location.'
+            else:
+                mt = 'FUZZY'
+                remark = (f'Fuzzy match — PO sent "{raw or "(blank)"}" → resolved to '
+                          f'"{mapped or "?"}". Confirm it\'s right; promote to an exact row.')
+            seen[po] = {'po': po, 'location': raw, 'mapped_location': mapped,
+                        'cust_no': cust, 'ship_to': ship, 'match_type': mt, 'remark': remark}
+        rank = {'UNMAPPED': 0, 'FUZZY': 1, 'EXACT': 2}
+        return sorted(seen.values(), key=lambda x: (rank.get(x['match_type'], 3), x['po']))
+
     # ── phase 1: preview (no DB write) ──────────────────────────────────
     def preview(self) -> dict:
         err = self._run()
@@ -864,6 +1028,8 @@ class Processor:
             'ok': True, 'summary': self._summary(lines, headers),
             'headers': headers, 'lines': lines, 'affected': affected,
             'skipped': self.skipped, 'warnings': self.warnings,
+            'unmapped': self._grouped_unmapped(),
+            'mapping_report': self._mapping_report(),
             'notes': self.notes,
             'output_path': str(output_path) if output_path else None,
         }
@@ -873,7 +1039,7 @@ class Processor:
         err = self._run()
         if err:
             return err
-        output_path = self._export()
+        output_path = self._export(actions)   # decisions → Summary Excluded/Final cols
         if output_path is None:
             return {'ok': False, 'error': "Workbook export failed.",
                     'warnings': self.warnings}
@@ -1192,10 +1358,50 @@ def _parse_ddmmyyyy(s):
 
 
 class DmartProcessor(Processor):
-    """DMart (Avenue PO PDFs). Processing is the base flow — this subclass only
-    adds the tracker dates: the avenue parser reads ``Purchase Order Date`` and
-    ``PO Validity`` from each PDF header (not a row column), so we backfill
-    po_date/exp_date per PO after recording (so DMart shows on the TAT page)."""
+    """DMart (Avenue PO PDFs). Processing is the base flow — this subclass adds:
+
+    1. **Correct ship-to (FC)** — the frozen ``avenue_pdf_parser`` hardcodes the
+       ship-to to 'Bhiwandi' and silently defaults every other FC to it. We
+       resolve the REAL FC from the PDF (``dmart_shipto``) and inject it into the
+       engine's ``__loc__`` at runtime, so the right ``ship_to`` code flows to the
+       D365 output AND the record. Unresolved/ambiguous/pincode-mismatch → the run
+       is BLOCKED with a clear message (never routed to a default).
+    2. **Tracker dates** — the parser reads ``Purchase Order Date`` / ``PO
+       Validity`` from the PDF header, backfilled per PO after recording.
+    """
+
+    def _run(self, skip_dedup=False):
+        # Confirm every DMart PO's FC before the engine runs. Block (never
+        # default) on any unresolved ship-to. [[never-skip-silently]]
+        from . import dmart_shipto
+        res = dmart_shipto.resolve_paths(self.po_paths)
+        bad = {po: r for po, r in res.items() if not r.get('ok')}
+        if bad:
+            details = "\n• ".join(f"PO {po}: {r['reason']}" for po, r in bad.items())
+            return {'ok': False, 'error':
+                    "DMart ship-to could not be confirmed — nothing was recorded "
+                    "(no PO was routed to a default warehouse):\n• " + details}
+        loc_by_po = {po: r['fc'] for po, r in res.items()}
+        if not loc_by_po:
+            return super()._run(skip_dedup=skip_dedup)   # no PDFs → base flow
+
+        # Runtime injection: override the frozen parser's __loc__ with the
+        # confirmed FC, keyed by PO. Restored in finally (never left patched).
+        import online_po_processor.engine.avenue_pdf_parser as _ap
+        _orig = _ap.avenue_po_to_dataframe
+
+        def _patched(po):
+            df = _orig(po)
+            fc = loc_by_po.get(str(po.header.po_number))
+            if fc:
+                df['__loc__'] = fc
+            return df
+
+        _ap.avenue_po_to_dataframe = _patched
+        try:
+            return super()._run(skip_dedup=skip_dedup)
+        finally:
+            _ap.avenue_po_to_dataframe = _orig
 
     def _source_dates_by_po(self) -> dict:
         try:
@@ -1926,3 +2132,12 @@ def generate_d365(marketplace: str, po_paths, out_path, warehouse=None,
     Override/Exclude decisions. Engine + full SO Workbook untouched."""
     return processor_for(marketplace, po_paths, warehouse, margin_pct,
                          ean_fixes).generate_d365(out_path, actions)
+
+
+def export_decided_workbook(marketplace: str, po_paths, warehouse=None,
+                            margin_pct=None, actions=None, ean_fixes=None) -> dict:
+    """Full SO Workbook with the operator's locked decisions applied (accepted
+    lines only, overrides repriced) — the post-lock "Completed" download. The
+    review download stays the full every-line workbook."""
+    return processor_for(marketplace, po_paths, warehouse, margin_pct,
+                         ean_fixes).export_decided_workbook(actions)

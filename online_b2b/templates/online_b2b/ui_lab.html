@@ -1,0 +1,187 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static %}
+{% comment %}
+================================================================================
+UI LAB — a learning surface for newer front-end tech, on REAL data.
+Isolated by design: htmx + Alpine load ONLY on this page (below), so nothing
+else in the app is affected. Every section is annotated so it doubles as a
+reference you can revisit.
+
+  • htmx     — server talks to the page: fetch a Django partial, swap it in.
+  • Alpine   — page-local UI state (open/closed, tabs, counters) in the markup.
+  • animation— Alpine x-transition + CSS keyframes.
+  • charts   — we already standardise on ApexCharts (Analytics/Hub) — reused here.
+================================================================================
+{% endcomment %}
+
+{% block title %}UI Lab — htmx · Alpine · animation{% endblock %}
+
+{% block breadcrumb %}
+  <a href="{% url 'b2b_dashboard' %}">Hub</a> <span>/</span> <b>UI Lab</b>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<style>
+  .lab-wrap{max-width:940px;}
+  .lab-sec{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:20px 22px;margin-bottom:20px;box-shadow:var(--shadow);}
+  .lab-sec h2{font-size:16px;margin:0 0 4px;display:flex;align-items:center;gap:9px;}
+  .lab-tag{font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--accent);background:var(--accent-soft);padding:3px 8px;border-radius:20px;}
+  .lab-sec p.hint{color:var(--text-2);font-size:13px;margin:0 0 16px;}
+  .lab-demo{background:var(--surface-2);border:1px dashed var(--border);border-radius:10px;padding:18px;}
+  /* ---- htmx search ---- */
+  .lab-search{display:flex;align-items:center;gap:10px;margin-bottom:14px;}
+  .lab-search input{flex:1;padding:11px 14px;border:1px solid var(--border);border-radius:10px;
+    font-size:14px;font-family:inherit;background:var(--surface);color:var(--text);}
+  .lab-search .htmx-indicator{opacity:0;font-size:12px;color:var(--accent);font-weight:700;transition:opacity .2s;}
+  .lab-search.htmx-request .htmx-indicator{opacity:1;}          /* htmx toggles this class while a request is in flight */
+  .lab-meta{font-size:12.5px;color:var(--text-2);margin-bottom:8px;}
+  .lab-table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  .lab-table th{text-align:left;padding:7px 9px;border-bottom:2px solid var(--border);color:var(--text-2);
+    font-size:11px;text-transform:uppercase;letter-spacing:.03em;}
+  .lab-table td{padding:7px 9px;border-bottom:1px solid var(--border-2);}
+  .lab-table code{font-size:11.5px;color:var(--accent);}
+  .lab-table tbody tr{animation:labRow .3s ease both;}          /* rows fade+rise in on every swap */
+  @keyframes labRow{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+  .lab-empty{padding:22px;text-align:center;color:var(--muted);font-size:13px;}
+  /* ---- Alpine widgets ---- */
+  .lab-tabs{display:flex;gap:6px;margin-bottom:12px;}
+  .lab-tab{padding:8px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface);
+    cursor:pointer;font-size:13px;font-weight:600;color:var(--text-2);font-family:inherit;}
+  .lab-tab.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .lab-panel{padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;font-size:14px;}
+  .lab-counter{display:flex;align-items:center;gap:14px;}
+  .lab-counter b{font-size:26px;min-width:44px;text-align:center;font-variant-numeric:tabular-nums;}
+  .lab-btn{padding:8px 15px;border-radius:9px;border:1px solid var(--border);background:var(--surface);
+    cursor:pointer;font-weight:700;font-family:inherit;color:var(--text);}
+  .lab-btn.p{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .lab-note{margin-top:12px;font-size:11.5px;color:var(--muted);}
+  .lab-note code{background:var(--surface-2);padding:1px 5px;border-radius:5px;}
+  #lab-chart{margin-top:6px;}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-head">
+  <h1>UI Lab <span>· htmx · Alpine · animation</span></h1>
+  <p class="sub">A safe, isolated playground for newer front-end tech on real data.
+     These libraries load <b>only on this page</b> — the rest of the app is untouched.</p>
+</div>
+
+<div class="lab-wrap">
+
+  {# ========================================================================
+     1. htmx — LIVE SEARCH. Type → htmx GETs the search URL and swaps the
+        results fragment in. No fetch(), no JSON, no DOM code. If JS is off,
+        the same box still works as a normal GET form (progressive fallback).
+     ==================================================================== #}
+  <div class="lab-sec">
+    <h2>Live search <span class="lab-tag">htmx</span></h2>
+    <p class="hint">One input, two attributes. htmx sends the request and drops the server’s
+       HTML straight into the page.</p>
+    <div class="lab-demo">
+      {# hx-get: where to fetch · hx-target: what to replace · hx-trigger: when.
+         hx-indicator points at the spinner text; htmx adds .htmx-request while loading. #}
+      <form class="lab-search"
+            hx-get="{% url 'b2b_ui_lab_search' %}"
+            hx-target="#lab-results"
+            hx-swap="innerHTML"
+            hx-trigger="input changed delay:300ms, submit"
+            hx-indicator="this">
+        <input type="text" name="q" placeholder="Search item master — name, EAN, or item no…"
+               autocomplete="off" aria-label="Search items">
+        <span class="htmx-indicator">searching…</span>
+      </form>
+      <div id="lab-results">{% include 'online_b2b/_ui_lab_rows.html' %}</div>
+    </div>
+    <div class="lab-note">Attributes only: <code>hx-get</code> · <code>hx-target</code> ·
+       <code>hx-trigger="input changed delay:300ms"</code>. The server returns the same
+       <code>_ui_lab_rows.html</code> partial used for the first paint — one template, no duplication.</div>
+  </div>
+
+  {# ========================================================================
+     2. Alpine — page-local UI state (tabs + counter), no separate JS file.
+        x-data declares state; @click mutates it; x-show/x-text/:class react.
+     ==================================================================== #}
+  <div class="lab-sec" x-data="{ tab: 'a', n: 1 }">
+    <h2>Interactive state <span class="lab-tag">Alpine</span></h2>
+    <p class="hint">State lives in the HTML (<code>x-data</code>). No event wiring, no querySelector.</p>
+    <div class="lab-demo">
+      <div class="lab-tabs">
+        {# :class binds the active style reactively; @click sets state #}
+        <button class="lab-tab" :class="tab==='a' && 'on'" @click="tab='a'">Overview</button>
+        <button class="lab-tab" :class="tab==='b' && 'on'" @click="tab='b'">Details</button>
+        <button class="lab-tab" :class="tab==='c' && 'on'" @click="tab='c'">Notes</button>
+      </div>
+      {# x-show + x-transition = animated show/hide, declaratively #}
+      <div class="lab-panel" x-show="tab==='a'" x-transition>Overview panel — switches with a fade+slide.</div>
+      <div class="lab-panel" x-show="tab==='b'" x-transition>Details panel — Alpine keeps only the active one visible.</div>
+      <div class="lab-panel" x-show="tab==='c'" x-transition>Notes panel — try clicking the tabs above.</div>
+
+      <div class="lab-counter" style="margin-top:16px;">
+        <button class="lab-btn" @click="n = Math.max(0, n-1)">−</button>
+        <b x-text="n"></b>
+        <button class="lab-btn p" @click="n++">+</button>
+        <span style="font-size:13px;color:var(--text-2)">reactive counter (<code>x-text="n"</code>)</span>
+      </div>
+    </div>
+    <div class="lab-note">Everything here is in the markup: <code>x-data</code>, <code>@click</code>,
+       <code>x-show</code>, <code>x-transition</code>, <code>x-text</code>. Zero custom JS.</div>
+  </div>
+
+  {# ========================================================================
+     3. Animation — CSS keyframes + Alpine transitions. A collapsible reveal.
+     ==================================================================== #}
+  <div class="lab-sec" x-data="{ open: false }">
+    <h2>Animation <span class="lab-tag">CSS + Alpine</span></h2>
+    <p class="hint">Search rows already fade-and-rise in (CSS keyframes). Here’s a smooth collapsible.</p>
+    <div class="lab-demo">
+      <button class="lab-btn p" @click="open = !open" x-text="open ? 'Hide details ▲' : 'Show details ▼'"></button>
+      <div x-show="open" x-collapse.duration.300ms style="margin-top:12px;">
+        <div class="lab-panel">This block expands and collapses smoothly using
+           <code>x-collapse</code> (Alpine’s animation plugin is bundled in the CDN build).</div>
+      </div>
+    </div>
+    <div class="lab-note">Prefers-reduced-motion is respected globally by the enhance layer.</div>
+  </div>
+
+  {# ========================================================================
+     4. Charts — we already standardise on ApexCharts (no new lib). Reused
+        here to show the house style. Tiny demo series (front-end only).
+     ==================================================================== #}
+  <div class="lab-sec">
+    <h2>Charts <span class="lab-tag">ApexCharts (existing standard)</span></h2>
+    <p class="hint">No new charting library — ApexCharts already powers Analytics &amp; the Hub, so we reuse it.</p>
+    <div class="lab-demo"><div id="lab-chart"></div></div>
+    <div class="lab-note">Same library as <code>analytics.html</code> — consistency over adding a second chart lib.</div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block body_end %}
+{{ block.super }}   {# keep the global enhance layer + loading overlay #}
+{# --- new tech, vendored locally, loaded ONLY on this page --- #}
+<script src="{% static 'online_b2b/vendor/htmx.min.js' %}" defer></script>
+<script src="{% static 'online_b2b/vendor/alpine.min.js' %}" defer></script>
+<script src="{% static 'online_b2b/vendor/apexcharts.min.js' %}"></script>
+<script>
+  // Tiny ApexCharts demo (front-end only) — mirrors the house chart style.
+  window.addEventListener('DOMContentLoaded', function () {
+    if (!window.ApexCharts) return;
+    var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    new ApexCharts(document.querySelector('#lab-chart'), {
+      chart: { type: 'area', height: 200, toolbar: { show: false }, animations: { easing: 'easeinout', speed: 700 } },
+      series: [{ name: 'Demo intake', data: [31, 40, 28, 51, 42, 62, 58] }],
+      xaxis: { categories: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] },
+      colors: ['#4f46e5'], dataLabels: { enabled: false }, stroke: { curve: 'smooth', width: 2 },
+      fill: { type: 'gradient', gradient: { opacityFrom: .4, opacityTo: .05 } },
+      grid: { borderColor: dark ? '#272c3a' : '#eef1f5' },
+      theme: { mode: dark ? 'dark' : 'light' },
+      tooltip: { theme: dark ? 'dark' : 'light' }
+    }).render();
+  });
+</script>
+{% endblock %}

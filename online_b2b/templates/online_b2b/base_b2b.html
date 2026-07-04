@@ -8,6 +8,12 @@ extend THIS instead of core/base.html and keep filling title/breadcrumb/content.
 {% block sidebar %}{% include 'online_b2b/_sidebar.html' %}{% endblock %}
 
 {% block body_end %}
+{% load static %}
+{# Global UI enhancement skeleton (dark mode · toasts · ⌘K palette · table
+   upgrades) — one layer for every B2B page; see static/online_b2b/enhance.* #}
+<link rel="stylesheet" href="{% static 'online_b2b/enhance.css' %}">
+<script defer src="{% static 'online_b2b/enhance.js' %}"></script>
+
 {# Reusable processing overlay — opt in per element with data-loading="message". #}
 <div id="b2b-load" aria-hidden="true">
   <div class="b2b-load-card">

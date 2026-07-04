@@ -170,21 +170,24 @@ def _marketplace_exceptions(name: str) -> list:
     if low == 'swiggy':
         deals = [r for r in allx if r.get('kind') == 'swiggy_deal']
         if deals:
-            rows = [[_clip(r.get('note') or r.get('source_code')),
+            rows = [[r.get('item_id') or '—', r.get('source_code') or '—',
+                     _clip(r.get('note')),
                      f"₹{r.get('override_mrp') or '—'}",
                      f"₹{r.get('cost_after_gst') or '—'}"] for r in deals]
             cards.append({'title': f'Deal SKUs ({len(deals)})', 'kind': 'deal',
                           'detail': 'Per-SKU negotiated deal prices — the agreed Cost '
                           'after GST is used as our CP (not MRP × margin). Full list:',
                           'ex_label': f'All {len(deals)}',
-                          'ex_head': ['SKU', 'MRP', '→ CP (after GST)'], 'ex_rows': rows})
+                          'ex_head': ['Item No', 'EAN', 'SKU', 'MRP', '→ CP (after GST)'],
+                          'ex_rows': rows})
     # Myntra (and any marketplace) negotiated deal SKUs — the agreed transfer
     # price (Cost With GST) becomes the expected CP. List every one so the
     # operator can tally, same as the Swiggy deal card.
     mp_deals = [r for r in allx if r.get('kind') == 'myntra_deal'
                 and str(r.get('marketplace') or '').strip().lower() == low]
     if mp_deals:
-        rows = [[_clip(r.get('note') or r.get('source_code')),
+        rows = [[r.get('item_id') or '—', r.get('source_code') or '—',
+                 _clip(r.get('note')),
                  f"₹{r.get('override_mrp') or '—'}",
                  f"₹{r.get('cost_with_gst') or '—'}"] for r in mp_deals]
         cards.append({'title': f'Deal SKUs ({len(mp_deals)})', 'kind': 'deal',
@@ -192,7 +195,7 @@ def _marketplace_exceptions(name: str) -> list:
                       'agreed Cost With GST (transfer price) is used as the expected CP '
                       '(÷(1+GST)), not MRP × margin. Full list:',
                       'ex_label': f'All {len(mp_deals)}',
-                      'ex_head': ['SKU', 'MRP', '→ CP (transfer, inc GST)'],
+                      'ex_head': ['Item No', 'EAN', 'SKU', 'MRP', '→ CP (transfer, inc GST)'],
                       'ex_rows': rows})
     # DB overrides tagged to this marketplace, grouped by effect type. EVERY SKU is
     # listed (not just one example) so the operator can tally the full set.
@@ -932,9 +935,39 @@ def _load_meta(token: str):
         return None, d
 
 
+# Per-token locks serialise the read-modify-write of meta.json so concurrent
+# save-decision POSTs (Apply-to-selected fires several at once) don't clobber
+# each other or read a half-written file.
+import threading as _threading  # noqa: E402
+_META_LOCKS: dict = {}
+_META_LOCKS_GUARD = _threading.Lock()
+
+
+def _meta_lock(token: str):
+    with _META_LOCKS_GUARD:
+        lk = _META_LOCKS.get(token)
+        if lk is None:
+            lk = _META_LOCKS[token] = _threading.Lock()
+        return lk
+
+
 def _save_meta(d: Path, meta: dict) -> None:
-    """Persist a token's meta.json (draft flag, decisions, locked, …)."""
-    (d / 'meta.json').write_text(json.dumps(meta), encoding='utf-8')
+    """Persist a token's meta.json ATOMICALLY (temp + os.replace) so a concurrent
+    reader never sees a partially-written file — fixes the save-decision race /
+    intermittent 404. Callers that read-modify-write should hold ``_meta_lock``."""
+    import tempfile
+    p = d / 'meta.json'
+    fd, tmp = tempfile.mkstemp(dir=str(d), suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(meta, f)
+        os.replace(tmp, p)   # atomic on the same filesystem (incl. Windows)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _preview_sig(meta) -> str:
@@ -1343,25 +1376,30 @@ def generate_d365(request, token):
 def save_decision(request, token):
     """Persist ONE affected line's decision (Action / Override CP / Remark) to
     the upload session as the operator sets it — so decisions survive an EAN
-    re-validate and the final lock just commits what's saved. Returns JSON."""
-    meta, d = _load_meta(token)
-    if not meta:
-        return JsonResponse({'ok': False, 'error': 'expired'}, status=404)
-    if meta.get('locked'):
-        return JsonResponse({'ok': False, 'error': 'locked'})
+    re-validate and the final lock just commits what's saved. Returns JSON.
+
+    The whole read-modify-write is serialised per token (``_meta_lock``) +
+    written atomically, so the several near-simultaneous POSTs from
+    Apply-to-selected neither clobber each other nor 404 on a half-written file."""
     key = (request.POST.get('key') or '').strip()
     if not key:
         return JsonResponse({'ok': False, 'error': 'no key'})
     action = (request.POST.get('action') or '').strip()
     ocp = (request.POST.get('override_cp') or '').strip()
     remark = (request.POST.get('remark') or '').strip()
-    decisions = dict(meta.get('decisions') or {})
-    if action or remark or ocp:
-        decisions[key] = {'action': action, 'remark': remark, 'override_cp': ocp}
-    else:
-        decisions.pop(key, None)
-    meta['decisions'] = decisions
-    (d / 'meta.json').write_text(json.dumps(meta), encoding='utf-8')
+    with _meta_lock(token):
+        meta, d = _load_meta(token)
+        if not meta:
+            return JsonResponse({'ok': False, 'error': 'expired'}, status=404)
+        if meta.get('locked'):
+            return JsonResponse({'ok': False, 'error': 'locked'})
+        decisions = dict(meta.get('decisions') or {})
+        if action or remark or ocp:
+            decisions[key] = {'action': action, 'remark': remark, 'override_cp': ocp}
+        else:
+            decisions.pop(key, None)
+        meta['decisions'] = decisions
+        _save_meta(d, meta)
     return JsonResponse({'ok': True, 'saved': len(decisions)})
 
 
@@ -1437,14 +1475,38 @@ def _full_workbook(outdir: Path):
 
 @login_required
 def review_download(request, token):
-    """Download the FULL preview workbook (Summary / Validation / Raw Data /
-    Headers / Lines) — explicitly NOT the headers-only *_d365.xlsx package."""
+    """Download the FULL preview/review workbook — every line (Summary /
+    Validation / Raw Data / Headers / Lines). NOT the *_d365.xlsx package, and
+    NOT decision-filtered (use review_download_completed for accepted-only)."""
     d = _token_dir(token)
     f = _full_workbook(d / 'output')
     if not f:
         raise Http404("Preview workbook not found.")
     return FileResponse(open(f, 'rb'), as_attachment=True,
                         filename=_full_name(f.name))
+
+
+@login_required
+def review_download_completed(request, token):
+    """Download the SO Workbook with LOCKED decisions applied — accepted lines
+    only, Overrides repriced (post-lock companion to review_download). Same full
+    multi-sheet workbook, just the decided/accepted set."""
+    meta, d = _load_meta(token)
+    if not meta:
+        raise Http404("Upload not found or expired.")
+    if not meta.get('locked'):
+        messages.error(request, "Lock & Record first, then download the completed workbook.")
+        return redirect('b2b_review', token=token)
+    paths = [str(d / n) for n in meta['files']]
+    res = engine_bridge.export_decided_workbook(
+        meta['marketplace'], paths,
+        warehouse=meta['warehouse'], margin_pct=meta['margin_pct'] / 100.0,
+        actions=meta.get('decisions') or {}, ean_fixes=meta.get('ean_fixes'))
+    if not res.get('ok') or not os.path.exists(res.get('path', '')):
+        messages.error(request, res.get('error', 'Completed workbook generation failed.'))
+        return redirect('b2b_review', token=token)
+    return FileResponse(open(res['path'], 'rb'), as_attachment=True,
+                        filename=f"{meta['marketplace']}_SO_Workbook_Completed.xlsx")
 
 
 # ── Bulk import (ERP Sales Orders) ──────────────────────────────────────
@@ -2120,3 +2182,26 @@ def sales_validation_download(request, token):
         raise Http404("Reconciliation file not found or expired.")
     return FileResponse(open(xp, 'rb'), as_attachment=True,
                         filename='sales_reconciliation.xlsx')
+
+
+# ── UI Lab (learning surface: htmx · Alpine · animation) ────────────────────
+# Isolated, staff-facing page that demonstrates the newer front-end tech on
+# REAL data without touching any production flow. htmx/Alpine load ONLY here
+# (see the template), so the blast radius is this one page.
+@login_required
+def ui_lab(request):
+    """Render the UI Lab page. Thin view — reuses the existing item_master
+    search service (no new query), so htmx has real data to fetch."""
+    from .services import item_master_loader as iml
+    ctx = {'result': iml.list_items('', limit=12)}   # initial rows for first paint
+    return render(request, 'online_b2b/ui_lab.html', ctx)
+
+
+@login_required
+def ui_lab_search(request):
+    """htmx endpoint: return ONLY the results partial for a search term.
+    htmx swaps this fragment into the page — no full reload, no hand-written
+    fetch/JSON. Reuses iml.list_items (same code path as the Item Master page)."""
+    from .services import item_master_loader as iml
+    res = iml.list_items(request.GET.get('q', ''), limit=25)
+    return render(request, 'online_b2b/_ui_lab_rows.html', {'result': res})

@@ -54,7 +54,7 @@
     <div class="card c3"><span class="ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><div><div class="n">{{ s.lines }}</div><div class="l">Line items</div></div></div>
     <div class="card c5"><span class="ic">{% include 'online_b2b/_icons.html' with i='hash' %}</span><div><div class="n">{{ s.qty|compact }}</div><div class="l">Qty</div></div></div>
     <div class="card c4"><span class="ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><div><div class="n">{{ s.value|inr_short }}</div><div class="l">Value</div></div></div>
-    <div class="card c6"><span class="ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><div><div class="n">{{ s.affected }}</div><div class="l">Affected</div></div></div>
+    <div class="card c6"><span class="ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><div><div class="n">{{ s.affected }}</div><div class="l">Affected lines</div></div></div>
     <div class="card c8"><span class="ic">{% include 'online_b2b/_icons.html' with i='refresh' %}</span><div><div class="n">{{ s.skipped }}</div><div class="l">Already up.</div></div></div>
   </div>
 
@@ -66,6 +66,20 @@
       {% if exc_count %}<span class="exc-poke-n">{{ exc_count }}</span> engine exception(s) <span class="muted">(vendor deal / override / EAN remap)</span>{% endif %}{% if exc_count and s.affected %} · {% endif %}{% if s.affected %}<span class="exc-poke-n">{{ s.affected }}</span> mismatch(es) need a decision{% endif %}.
     </div>
     <a href="{% url 'b2b_rules' %}" class="exc-poke-link" target="_blank">See the rules →</a>
+  </div>
+  {% endif %}
+
+  {% if r.unmapped %}
+  <!-- Missing ship-to mapping — high-visibility, jumps to the Mapping tab -->
+  <div class="exc-poke" style="border-color:#dc2626;background:#fdecec;cursor:pointer;"
+       onclick="var t=document.querySelector('.tab[data-tab=mapping]');if(t){t.click();t.scrollIntoView({behavior:'smooth',block:'center'});}">
+    <span class="exc-poke-ic" style="color:#dc2626;">🗺️</span>
+    <div class="exc-poke-txt">
+      <b>{{ r.unmapped|length }} delivery location(s) NOT found in Ship-To mapping.</b>
+      Their orders were generated with <b>Cust No &amp; Ship-to blank</b> — open the
+      <b>Mapping</b> tab to see which, and add them.
+    </div>
+    <span class="exc-poke-link" style="color:#dc2626;">View Mapping →</span>
   </div>
   {% endif %}
 
@@ -107,15 +121,20 @@
   <div class="confirm-bar{% if locked %} locked{% endif %}" id="confirmBar">
     <div class="cb-text">
       {% if locked %}
-        🔒 <b>Decisions locked &amp; recorded</b> (run #{{ run_id }}). Generate the ERP <b>D365 dump</b> (Excludes dropped, Overrides repriced), or download the full SO Workbook.
+        🔒 <b>Decisions locked &amp; recorded</b> (run #{{ run_id }}). Generate the ERP <b>D365 dump</b>, or download the <b>Completed</b> SO Workbook (accepted lines only — Excludes dropped, Overrides repriced).
       {% else %}
-        {% if s.affected %}<span class="cb-warn">⚠ {{ s.affected }} affected line(s)</span> — decide each (Include / Override / Exclude) in the <b>Affected</b> tab, then{% endif %}
+        {% if s.affected %}<span class="cb-warn">⚠ {{ s.affected }} affected line(s)</span> — decide each (Include / Override / Exclude) in the <b>Affected line items</b> tab, then{% endif %}
         lock &amp; record <b>{{ s.pos }} PO(s)</b> · <b>{{ s.lines }} line(s)</b>.
         {% if s.skipped %}<span class="cb-muted">({{ s.skipped }} already uploaded → will skip)</span>{% endif %}
       {% endif %}
     </div>
     <div class="cb-actions">
-      {% if has_preview %}<a href="{% url 'b2b_review_download' token=token %}" class="btn-ghost">⬇ Download SO Workbook</a>{% endif %}
+      {# Auto-switch: COMPLETE (every line) before lock; FINAL (accepted only, overrides repriced) after lock. Same label. #}
+      {% if locked %}
+        <a href="{% url 'b2b_review_download_completed' token=token %}" class="btn-ghost" data-loading-click="Building workbook" title="Final — accepted lines pushed to D365 (Excludes dropped, Overrides repriced)">⬇ Download SO Workbook</a>
+      {% elif has_preview %}
+        <a href="{% url 'b2b_review_download' token=token %}" class="btn-ghost" title="Complete — every line">⬇ Download SO Workbook</a>
+      {% endif %}
       {% if locked %}
         <a href="{% url 'b2b_run_detail' run_id=run_id %}" class="btn-ghost">View run →</a>
         <button class="btn-primary" type="submit" formaction="{% url 'b2b_generate_d365' token=token %}" formnovalidate onclick="var b=this;b.innerHTML='<span class=&quot;btn-spin&quot;></span> Generating…';setTimeout(function(){b.innerHTML='⬇ Generate D365 dump';},4500);">⬇ Generate D365 dump</button>
@@ -144,7 +163,8 @@
   <div class="tabs">
     <button class="tab on" data-tab="lines">Line items <span class="tcount">{{ r.lines|length }}</span></button>
     <button class="tab" data-tab="orders">Orders <span class="tcount">{{ r.headers|length }}</span></button>
-    <button class="tab" data-tab="affected">Affected <span class="tcount">{{ r.affected|length }}</span></button>
+    <button class="tab" data-tab="affected">Affected line items <span class="tcount">{{ r.affected|length }}</span></button>
+    <button class="tab" data-tab="mapping" style="{% if r.unmapped %}color:#dc2626;{% endif %}">Mapping <span class="tcount" style="{% if r.unmapped %}background:#fdecec;color:#dc2626;{% endif %}">{{ r.unmapped|length }}</span></button>
     <button class="tab" data-tab="skipped">Already uploaded <span class="tcount">{{ r.skipped|length }}</span></button>
   </div>
 
@@ -195,6 +215,40 @@
         {% empty %}<tr><td colspan="6" class="muted">No orders.</td></tr>{% endfor %}
       </tbody>
     </table>
+  </div>
+
+  <!-- Mapping: per-PO ship-to resolution (EXACT / FUZZY / UNMAPPED) -->
+  <div class="tabpane" data-pane="mapping" style="display:none;">
+    <p class="aff-hint">Every PO's delivery location and how it resolved to a Ship-To.
+      <b style="color:#0f9d6b;">● Exact</b> = safe · <b style="color:#b45309;">● Fuzzy</b> = matched by similarity, confirm &amp; promote to exact · <b style="color:#dc2626;">● Unmapped</b> = no match (Cust/Ship-to blank), add it. Fix any on the
+      <a href="{% url 'b2b_ship_to' %}" target="_blank">Ship-To Mapping</a> page.</p>
+    {% if r.mapping_report %}
+    <table class="grid">
+      <thead><tr><th>PO</th><th>Location (from PO)</th><th></th><th>Mapped Ship-To</th><th>Cust · Code</th><th>Match</th><th>Remark</th></tr></thead>
+      <tbody>
+        {% for m in r.mapping_report %}
+        <tr class="{% if m.match_type == 'UNMAPPED' %}rnim{% elif m.match_type == 'FUZZY' %}rmis{% endif %}">
+          <td class="mono">{{ m.po }}</td>
+          <td class="loc" title="{{ m.location }}">{{ m.location|default:'—' }}</td>
+          <td style="color:var(--muted,#9aa1b2);">→</td>
+          <td class="loc" title="{{ m.mapped_location }}">{{ m.mapped_location|default:'—' }}</td>
+          <td class="mono">{% if m.ship_to %}{{ m.cust_no }} · {{ m.ship_to }}{% else %}<span style="color:#dc2626;">— blank —</span>{% endif %}</td>
+          <td>
+            {% if m.match_type == 'EXACT' %}<span style="background:#e7f6ef;color:#0f9d6b;font-weight:800;font-size:11px;padding:2px 9px;border-radius:20px;">EXACT</span>
+            {% elif m.match_type == 'FUZZY' %}<span style="background:#fdf1e3;color:#b45309;font-weight:800;font-size:11px;padding:2px 9px;border-radius:20px;">FUZZY</span>
+            {% else %}<span style="background:#fdecec;color:#dc2626;font-weight:800;font-size:11px;padding:2px 9px;border-radius:20px;">UNMAPPED</span>{% endif %}
+          </td>
+          <td style="font-size:12px;color:var(--text-2,#5b6478);">
+            {{ m.remark }}
+            {% if m.match_type != 'EXACT' %} <a href="{% url 'b2b_ship_to' %}" target="_blank" style="color:var(--accent,#4f46e5);font-weight:600;text-decoration:none;white-space:nowrap;">+ exact map</a>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="aff-hint" style="color:#0f9d6b;">✓ No ship-to resolution to show for this run.</p>
+    {% endif %}
   </div>
 
   <!-- Affected -->

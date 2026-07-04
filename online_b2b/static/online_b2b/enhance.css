@@ -1,0 +1,145 @@
+/* =========================================================================
+   enhance.css — global, dependency-free UI enhancement layer for the B2B app.
+   Loaded once from base_b2b.html (body_end), AFTER b2b.css, so its
+   :root[data-theme=dark] overrides win over b2b.css's light :root tokens.
+   Additive only — never restyles existing components destructively; new
+   behaviour opts in via JS-added classes (.enh-*).
+   ========================================================================= */
+
+/* ---- 1. Dark theme -------------------------------------------------------
+   Re-point the SAME design tokens b2b.css already uses, so every tokenised
+   component (cards, pills, buttons) flips automatically. Chrome that predates
+   the token system (header/footer/sidebar) is handled explicitly below. */
+:root[data-theme="dark"]{
+  --bg:#0e1016; --surface:#171a23; --surface-2:#1d212c;
+  --border:#272c3a; --border-2:#222634;
+  --text:#e6e8ef; --text-2:#a4adc0; --muted:#727a8e;
+  --accent:#7c83ff; --accent-2:#8b90ff; --accent-soft:#22263c;
+  --green:#34d399; --green-soft:#122a20;
+  --amber:#fbbf24; --amber-soft:#2b2210;
+  --red:#f87171; --red-soft:#2b1618;
+  --shadow:0 1px 2px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.45);
+  --shadow-lg:0 10px 30px rgba(0,0,0,.55);
+  color-scheme:dark;
+}
+/* Smooth, opt-out-able theme cross-fade */
+:root.enh-theming, :root.enh-theming *{
+  transition:background-color .28s ease, border-color .28s ease, color .18s ease !important;
+}
+/* Chrome (from core/style.css — hardcoded light) re-skinned for dark */
+:root[data-theme="dark"] body{background:var(--bg);}
+:root[data-theme="dark"] .header,
+:root[data-theme="dark"] .footer{background:var(--surface);border-color:var(--border);}
+:root[data-theme="dark"] .header{border-bottom:1px solid var(--border);}
+:root[data-theme="dark"] .header__username,
+:root[data-theme="dark"] .footer__description,
+:root[data-theme="dark"] .copyright__content p{color:var(--text-2);}
+/* Catch common literal-white surfaces from per-page inline styles */
+:root[data-theme="dark"] [style*="background:#fff"],
+:root[data-theme="dark"] [style*="background: #fff"],
+:root[data-theme="dark"] [style*="background:#ffffff"],
+:root[data-theme="dark"] [style*="background-color:#fff"]{
+  background:var(--surface) !important;
+}
+
+/* ---- 2. Header controls (theme toggle + ⌘K launcher, injected by JS) ---- */
+.enh-ctl{display:inline-flex;align-items:center;gap:6px;background:var(--surface,#fff);
+  border:1px solid var(--border,#e5e7eb);color:var(--text-2,#5b6478);cursor:pointer;
+  height:34px;padding:0 12px;border-radius:9px;font-size:13px;font-weight:600;
+  font-family:inherit;transition:background .15s,border-color .15s,color .15s;}
+.enh-ctl:hover{border-color:var(--accent,#4f46e5);color:var(--accent,#4f46e5);}
+.enh-ctl svg{width:16px;height:16px;}
+.enh-kbd{display:inline-flex;align-items:center;gap:2px;padding:2px 6px;border-radius:6px;
+  background:var(--surface-2,#f1f3f7);border:1px solid var(--border,#e5e7eb);
+  font-size:11px;font-weight:700;color:var(--muted,#9aa1b2);line-height:1;}
+.enh-ctl .enh-kbd{background:transparent;border-color:var(--border-2,#eee);}
+
+/* ---- 3. Toasts ----------------------------------------------------------- */
+.enh-toasts{position:fixed;right:20px;bottom:20px;z-index:10050;display:flex;
+  flex-direction:column;gap:10px;max-width:min(380px,calc(100vw - 40px));pointer-events:none;}
+.enh-toast{pointer-events:auto;display:flex;align-items:flex-start;gap:11px;
+  background:var(--surface,#fff);border:1px solid var(--border,#e5e7eb);
+  border-left:4px solid var(--accent,#4f46e5);border-radius:12px;padding:13px 15px;
+  box-shadow:var(--shadow-lg,0 10px 30px rgba(16,24,40,.14));
+  font-size:13.5px;color:var(--text,#1d2433);line-height:1.4;
+  animation:enhToastIn .32s cubic-bezier(.2,.9,.25,1);will-change:transform,opacity;}
+.enh-toast.enh-out{animation:enhToastOut .26s ease forwards;}
+.enh-toast .enh-tx{flex:1;min-width:0;}
+.enh-toast .enh-tt{font-weight:800;margin:0 0 1px;}
+.enh-toast .enh-tc{color:var(--text-2,#5b6478);}
+.enh-toast .enh-tclose{background:none;border:0;cursor:pointer;color:var(--muted,#9aa1b2);
+  font-size:17px;line-height:1;padding:0 2px;flex:none;}
+.enh-toast .enh-ticon{flex:none;width:20px;height:20px;}
+.enh-toast.ok   {border-left-color:var(--green,#0f9d6b);} .enh-toast.ok .enh-ticon{color:var(--green,#0f9d6b);}
+.enh-toast.warn {border-left-color:var(--amber,#d97706);} .enh-toast.warn .enh-ticon{color:var(--amber,#d97706);}
+.enh-toast.error{border-left-color:var(--red,#dc2626);}  .enh-toast.error .enh-ticon{color:var(--red,#dc2626);}
+.enh-toast.info .enh-ticon{color:var(--accent,#4f46e5);}
+@keyframes enhToastIn{from{opacity:0;transform:translateX(24px) scale(.96);}to{opacity:1;transform:none;}}
+@keyframes enhToastOut{to{opacity:0;transform:translateX(24px) scale(.96);}}
+
+/* ---- 4. Command palette (⌘K) -------------------------------------------- */
+.enh-cmdk{position:fixed;inset:0;z-index:10060;display:none;
+  align-items:flex-start;justify-content:center;padding-top:12vh;
+  background:rgba(15,18,28,.5);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);}
+.enh-cmdk.on{display:flex;animation:enhFade .16s ease;}
+@keyframes enhFade{from{opacity:0;}to{opacity:1;}}
+.enh-cmdk-panel{width:min(600px,92vw);max-height:70vh;display:flex;flex-direction:column;
+  background:var(--surface,#fff);border:1px solid var(--border,#e5e7eb);border-radius:16px;
+  box-shadow:0 24px 70px -18px rgba(0,0,0,.5);overflow:hidden;
+  animation:enhPop .2s cubic-bezier(.2,.85,.25,1);}
+@keyframes enhPop{from{transform:translateY(-10px) scale(.98);opacity:0;}to{transform:none;opacity:1;}}
+.enh-cmdk-in{display:flex;align-items:center;gap:10px;padding:15px 18px;border-bottom:1px solid var(--border,#e5e7eb);}
+.enh-cmdk-in svg{width:18px;height:18px;color:var(--muted,#9aa1b2);flex:none;}
+.enh-cmdk-in input{flex:1;border:0;outline:0;background:transparent;font-size:16px;
+  font-family:inherit;color:var(--text,#1d2433);}
+.enh-cmdk-in input::placeholder{color:var(--muted,#9aa1b2);}
+.enh-cmdk-list{overflow-y:auto;padding:8px;}
+.enh-cmdk-sec{font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted,#9aa1b2);padding:10px 12px 5px;}
+.enh-cmdk-item{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:10px;
+  cursor:pointer;color:var(--text,#1d2433);text-decoration:none;font-size:14px;}
+.enh-cmdk-item .enh-ci{width:26px;height:26px;flex:none;display:grid;place-items:center;
+  border-radius:8px;background:var(--accent-soft,#eef0fe);color:var(--accent,#4f46e5);font-size:14px;}
+.enh-cmdk-item .enh-cl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.enh-cmdk-item .enh-cs{font-size:11.5px;color:var(--muted,#9aa1b2);}
+.enh-cmdk-item.sel,.enh-cmdk-item:hover{background:var(--accent-soft,#eef0fe);}
+:root[data-theme="dark"] .enh-cmdk-item.sel,
+:root[data-theme="dark"] .enh-cmdk-item:hover{background:#22263c;}
+.enh-cmdk-empty{padding:26px 12px;text-align:center;color:var(--muted,#9aa1b2);font-size:13px;}
+
+/* ---- 5. Progressive table upgrades (opt-in via .enh-table added by JS) --- */
+.enh-table thead th{position:sticky;top:0;z-index:2;background:var(--surface-2,#fafbfc);
+  cursor:pointer;user-select:none;white-space:nowrap;}
+.enh-table thead th.enh-nosort{cursor:default;}
+.enh-table thead th .enh-arrow{opacity:.28;font-size:10px;margin-left:4px;}
+.enh-table thead th[aria-sort="ascending"]  .enh-arrow{opacity:1;}
+.enh-table thead th[aria-sort="descending"] .enh-arrow{opacity:1;}
+.enh-table tbody tr{transition:background .12s;}
+.enh-table tbody tr:hover{background:var(--accent-soft,#eef0fe);}
+:root[data-theme="dark"] .enh-table tbody tr:hover{background:#1d2130;}
+.enh-num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";}
+/* Density toggle (body.enh-dense) — tightens data tables app-wide */
+body.enh-dense .enh-table th,
+body.enh-dense .enh-table td{padding-top:6px !important;padding-bottom:6px !important;font-size:12.5px;}
+
+/* ---- 6. Global polish ---------------------------------------------------- */
+:where(a,button,input,select,textarea,[tabindex]):focus-visible{
+  outline:2px solid var(--accent,#4f46e5);outline-offset:2px;border-radius:4px;}
+/* Themed scrollbars */
+.enh-table tbody, .enh-cmdk-list, .b2b-app{scrollbar-width:thin;
+  scrollbar-color:var(--border,#d5d9e2) transparent;}
+:root[data-theme="dark"] ::-webkit-scrollbar-thumb{background:#2b3040;}
+::-webkit-scrollbar{width:11px;height:11px;}
+::-webkit-scrollbar-thumb{background:var(--border,#d5d9e2);border-radius:8px;
+  border:3px solid transparent;background-clip:content-box;}
+::-webkit-scrollbar-thumb:hover{background:var(--muted,#9aa1b2);background-clip:content-box;}
+
+/* Skeleton shimmer utility (for future loading states: <div class="enh-skel">) */
+.enh-skel{background:linear-gradient(90deg,var(--surface-2,#eef1f5) 25%,var(--border-2,#e3e7ee) 37%,var(--surface-2,#eef1f5) 63%);
+  background-size:400% 100%;animation:enhShimmer 1.4s ease infinite;border-radius:8px;min-height:14px;}
+@keyframes enhShimmer{0%{background-position:100% 0;}100%{background-position:-100% 0;}}
+
+@media (prefers-reduced-motion: reduce){
+  .enh-toast,.enh-cmdk,.enh-cmdk-panel,.enh-skel{animation:none !important;}
+  :root.enh-theming, :root.enh-theming *{transition:none !important;}
+}

@@ -67,10 +67,16 @@ def _to_date(x):
         return x.date()
     if isinstance(x, _dt.date):
         return x
-    try:
-        return _dt.datetime.strptime(str(x)[:10], '%Y-%m-%d').date()
-    except (ValueError, TypeError):
-        return None
+    # ISO first (unambiguous), then Indian DAY-FIRST formats. Trying day-first
+    # (never month-first) means an ambiguous '01-07-2026' resolves to 1 Jul,
+    # not 7 Jan — and a parseable date is never silently dropped to None.
+    s = str(x).strip()[:10]
+    for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%d.%m.%Y', '%d/%m/%Y'):
+        try:
+            return _dt.datetime.strptime(s, fmt).date()
+        except (ValueError, TypeError):
+            continue
+    return None
 
 
 def business_days(start, end) -> int:

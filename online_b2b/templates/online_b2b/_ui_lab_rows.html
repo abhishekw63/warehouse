@@ -1,0 +1,27 @@
+{% comment %}
+Results partial for the UI Lab htmx demo. Rendered BOTH on first page load
+and on every htmx search swap — one template, one code path (no duplication).
+htmx replaces the #lab-results container with exactly this fragment.
+{% endcomment %}
+<div class="lab-meta">
+  {% if result.q %}<b>{{ result.total }}</b> match{{ result.total|pluralize:"es" }} for
+    "<b>{{ result.q }}</b>"{% else %}Showing latest <b>{{ result.shown }}</b> items{% endif %}
+</div>
+{% if result.rows %}
+<table class="lab-table">
+  <thead><tr><th>Item No</th><th>EAN</th><th>Description</th><th style="text-align:right">MRP ₹</th><th>GST</th></tr></thead>
+  <tbody>
+    {% for r in result.rows %}
+    <tr>
+      <td><code>{{ r.item_no }}</code></td>
+      <td>{{ r.ean|default:"—" }}</td>
+      <td>{{ r.description|default:"—"|truncatechars:60 }}</td>
+      <td class="enh-num" style="text-align:right">{{ r.mrp|default:"—" }}</td>
+      <td>{{ r.gst_code|default:"—" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="lab-empty">No items match — try part of a name, EAN, or item number.</div>
+{% endif %}
