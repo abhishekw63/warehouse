@@ -154,4 +154,5 @@ class ProjectMapView(_StaffOnly, TemplateView):
         ctx['routes'] = pm.routes()
         ctx['models'] = pm.models()
         ctx['summary'] = pm.summary()
+        ctx['updated'] = pm.last_updated()
         return ctx

@@ -1454,12 +1454,13 @@ def discard(request, token):
 
 
 def _full_name(name: str) -> str:
-    """Clear download name for the FULL workbook (all sheets) so it's never
-    confused with the headers-only ``*_d365.xlsx`` import package."""
+    """Clear download name for the REVIEW workbook (every line, all sheets) so
+    it's never confused with the post-lock **Completed** workbook (accepted-only)
+    or the headers-only ``*_d365.xlsx`` import package."""
     for s in ('_so_', '_to_'):
         if s in name:
-            return name.replace(s, '_full_')
-    return 'full_' + name
+            return name.replace(s, '_Review_')
+    return 'Review_' + name
 
 
 def _full_workbook(outdir: Path):
@@ -1473,17 +1474,49 @@ def _full_workbook(outdir: Path):
     return files[0] if files else None
 
 
+def _count_pos(path) -> int:
+    """POs in a workbook = data rows of its 'Headers (SO)' / 'Headers (TO)'
+    sheet(s) (one row per document)."""
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(path, read_only=True)
+        n = 0
+        for sh in ('Headers (SO)', 'Headers (TO)'):
+            if sh in wb.sheetnames:
+                n += sum(1 for r in wb[sh].iter_rows(min_row=2, values_only=True)
+                         if r and r[0] not in (None, ''))
+        wb.close()
+        return n
+    except Exception:  # noqa: BLE001 — naming is best-effort, never block a download
+        return 0
+
+
+def _lot_name(marketplace: str, path, kind: str) -> str:
+    """Self-describing download name: ``{Mp}_{N}po_{dd-mm-YYYY_HHMMSS}_{kind}`` so
+    the lot size + run timestamp are obvious and Review vs Completed never clash."""
+    import re as _re
+    import time as _time
+    name = os.path.basename(str(path))
+    m = _re.search(r'(\d{2}-\d{2}-\d{4}_\d{6})', name)
+    ts = m.group(1) if m else _time.strftime(
+        '%d-%m-%Y_%H%M%S', _time.localtime(os.path.getmtime(path)))
+    mp = str(marketplace or 'SO').replace(' ', '')
+    return f"{mp}_{_count_pos(path)}po_{ts}_{kind}.xlsx"
+
+
 @login_required
 def review_download(request, token):
     """Download the FULL preview/review workbook — every line (Summary /
     Validation / Raw Data / Headers / Lines). NOT the *_d365.xlsx package, and
     NOT decision-filtered (use review_download_completed for accepted-only)."""
-    d = _token_dir(token)
+    meta, d = _load_meta(token)
+    if not meta:
+        raise Http404("Upload not found or expired.")
     f = _full_workbook(d / 'output')
     if not f:
         raise Http404("Preview workbook not found.")
     return FileResponse(open(f, 'rb'), as_attachment=True,
-                        filename=_full_name(f.name))
+                        filename=_lot_name(meta.get('marketplace', ''), f, 'review'))
 
 
 @login_required
@@ -1506,7 +1539,7 @@ def review_download_completed(request, token):
         messages.error(request, res.get('error', 'Completed workbook generation failed.'))
         return redirect('b2b_review', token=token)
     return FileResponse(open(res['path'], 'rb'), as_attachment=True,
-                        filename=f"{meta['marketplace']}_SO_Workbook_Completed.xlsx")
+                        filename=_lot_name(meta['marketplace'], res['path'], 'completed'))
 
 
 # ── Bulk import (ERP Sales Orders) ──────────────────────────────────────

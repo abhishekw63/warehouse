@@ -74,6 +74,10 @@ CHANNELS: list[Channel] = [
     Channel('mt_rl', 'Reliance Retail (Centro)', 'Offline', '', True, parent='mt_select'),
     Channel('mt_met', 'Metro Cash & Carry', 'Offline', '', True, parent='mt_select'),
     Channel('mt_ls', 'Lifestyle', 'Offline', '', True, parent='mt_select'),
+    # Manash = Purplle offline (daily-task tracking only for now).
+    Channel('mt_manash', 'Manash', 'Offline', '', True, parent='mt_select'),
+    # Reliance Smart Bazaar = Reliance hypermarket (cust 20615), separate from Centro.
+    Channel('mt_rsb', 'Reliance Smart Bazaar', 'Offline', '', True, parent='mt_select'),
     Channel('off_inst', 'OFF-INSTITUTIONAL', 'Offline', '', False),
     Channel('eka', 'EKA', 'Offline', '', False),
 ]

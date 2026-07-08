@@ -532,6 +532,17 @@ class Processor:
         # applied exception (EPISENSE-style), not a mismatch. Runs for every
         # channel; no-op unless a line carries a '<MP> deal' label. [[deals]]
         self._accept_deal_exceptions(result)
+        # Per-PO info notes for already-uploaded (deduped) POs are misleading —
+        # that PO isn't in Line items (it sits under 'Already uploaded'), so a
+        # note like "Swiggy deal price applied: PO X" points at a line the
+        # operator can't see. Drop such notes so notifications cover NEW POs
+        # only. Preview only (dedup ran); the every-line export keeps all notes.
+        if not skip_dedup and self.notes:
+            skipped_pos = {str(s.get('po', '')) for s in (self.skipped or [])
+                           if s.get('po')}
+            if skipped_pos:
+                self.notes = [n for n in self.notes
+                              if not any(po in n for po in skipped_pos)]
         self.result = result
         return None
 
@@ -571,11 +582,65 @@ class Processor:
         err = self._run(skip_dedup=True)
         if err:
             return err
-        self.result = self._apply_decisions(actions)   # accepted-only + overrides
+        # Build the FULL workbook (self.result unfiltered) so Headers / Summary /
+        # Validation / Raw Data stay byte-identical to the review workbook — the
+        # Summary's Excluded/Dropped + Final Qty columns already report the drop.
+        # Then finalize the **Lines (SO) sheet ONLY** to the accepted set. This is
+        # the whole difference between review and completed. [[completed-lines-only]]
         path = self._export(actions)
         if not path:
             return {'ok': False, 'error': 'Completed workbook export failed.'}
+        try:
+            self._finalize_lines_so(path, actions or {})
+        except Exception as e:  # noqa: BLE001 — never lose the workbook over this
+            self.warnings.append(f"Lines (SO) finalize skipped ({type(e).__name__}).")
         return {'ok': True, 'path': str(path)}
+
+    def _finalize_lines_so(self, path, actions) -> None:
+        """In-place: drop EXCLUDEd rows + reprice OVERRIDE rows on the
+        **'Lines (SO)' sheet ONLY** (matched on Document No. + item No.). Every
+        other sheet is left exactly as the review workbook, so completed and
+        review differ solely in Lines (SO)."""
+        excl, over = set(), {}
+        for key, dec in (actions or {}).items():
+            parts = str(key).split('|')
+            if len(parts) < 2:
+                continue
+            po, item = parts[0], parts[1]
+            act = str((dec or {}).get('action') or '').upper()
+            if act == 'EXCLUDE':
+                excl.add((po, item))
+            elif act == 'OVERRIDE':
+                try:
+                    over[(po, item)] = round(float(dec.get('override_cp')), 2)
+                except (TypeError, ValueError):
+                    pass
+        if not excl and not over:
+            return
+        import openpyxl
+        wb = openpyxl.load_workbook(path)
+        try:
+            if 'Lines (SO)' not in wb.sheetnames:
+                return
+            ws = wb['Lines (SO)']
+            hdr = {str(c.value).strip(): i for i, c in enumerate(ws[1], 1)}
+            c_po, c_item, c_up = (hdr.get('Document No.'), hdr.get('No.'),
+                                  hdr.get('Unit Price'))
+            if not c_po or not c_item:
+                return
+            drop = []
+            for r in range(2, ws.max_row + 1):
+                k = (str(ws.cell(r, c_po).value or '').strip(),
+                     str(ws.cell(r, c_item).value or '').strip())
+                if k in excl:
+                    drop.append(r)
+                elif k in over and c_up:
+                    ws.cell(r, c_up).value = over[k]
+            for r in reversed(drop):
+                ws.delete_rows(r, 1)
+            wb.save(path)
+        finally:
+            wb.close()
 
     def generate_d365(self, out_path, actions=None) -> dict:
         """Build the ERP-uploadable D365 package at ``out_path`` from LOCKED
@@ -2102,10 +2167,47 @@ class BlinkMPProcessor(Processor):
         return dict(self._dates or {})
 
 
+class RelianceProcessor(Processor):
+    """Reliance (**online**, cust 20015) PO PDFs — base flow + one our-layer fix.
+
+    The frozen ``reliance_pdf_parser`` sets ``__loc__`` to the delivery **city**,
+    so Gurgaon-district DCs collide: ``GURGAON`` substring-matches
+    ``'Reliance Retail Limited-Gurgaon'`` (20015_5) and never reaches Farukhnagar
+    (20015_6). We read the delivery **pincode** and, for the deliberate pincode
+    splits in :mod:`reliance_shipto`, override ``__loc__`` so the correct
+    ``ship_to`` flows to the D365 output, the record AND the tracker Location
+    (e.g. 122506 → 'FARUKHNAGAR' → 20015_6). Scoped to Reliance; unknown pincodes
+    and all other channels are untouched. [[dmart-shipto-fix]]
+    """
+
+    def _run(self, skip_dedup=False):
+        from . import reliance_shipto
+        try:
+            import online_po_processor.engine.reliance_pdf_parser as _rp
+        except Exception:  # noqa: BLE001 — no parser → base flow, no override
+            return super()._run(skip_dedup=skip_dedup)
+        _orig = _rp.reliance_po_to_dataframe
+
+        def _patched(po):
+            df = _orig(po)
+            new_loc = reliance_shipto.loc_override_for_pin(
+                getattr(po.header, 'delivery_pin', ''))
+            if new_loc:                       # only known pincode splits act
+                df['__loc__'] = new_loc
+            return df
+
+        _rp.reliance_po_to_dataframe = _patched
+        try:
+            return super()._run(skip_dedup=skip_dedup)
+        finally:                              # never leave the parser patched
+            _rp.reliance_po_to_dataframe = _orig
+
+
 _PROCESSORS = {'Flipkart': FlipkartProcessor, 'Flipkart-TO': FlipkartTOProcessor,
                'Meesho-TO': MeeshoTOProcessor, 'Dmart': DmartProcessor,
                'Firstcry': FirstcryProcessor, 'Myntra': MyntraProcessor,
-               'Swiggy': SwiggyProcessor, 'BlinkMP': BlinkMPProcessor}
+               'Swiggy': SwiggyProcessor, 'BlinkMP': BlinkMPProcessor,
+               'Reliance': RelianceProcessor}
 
 
 def processor_for(marketplace, po_paths, warehouse=None, margin_pct=None,

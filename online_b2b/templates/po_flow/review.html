@@ -221,6 +221,11 @@
     <div class="lo-lock"><span class="lo-shackle"></span><span class="lo-body"><i class="lo-key"></i></span></div>
     <div class="lo-title">Recording…</div>
     <div class="lo-track"><div class="lo-fill" id="loFill"></div></div>
+    <ul class="lo-steps">
+      <li data-s="1"><span class="lo-dot"></span>Recording POs to the database</li>
+      <li data-s="2"><span class="lo-dot"></span>Generating the D365 dump</li>
+      <li data-s="3"><span class="lo-dot"></span>Finalizing &amp; saving</li>
+    </ul>
     <div class="lo-err" id="loErr"></div>
   </div>
 </div>
@@ -279,24 +284,49 @@
       if (!b || !b.hasAttribute('formaction')) { e.preventDefault(); }
     });
   }
+  // ── Record via AJAX — stepped progress overlay, on par with Online B2B ──
   var ov = document.getElementById('lockOverlay'), fill = document.getElementById('loFill'), errBox = document.getElementById('loErr');
+  var steps = ov ? ov.querySelectorAll('.lo-steps li') : [];
+  var timers = [];
   function setFill(p){ if (fill) fill.style.width = p + '%'; }
+  function clearTimers(){ timers.forEach(clearTimeout); timers = []; }
+  function startProgress(){
+    ov.classList.remove('done', 'error'); errBox.textContent = '';
+    steps.forEach(function (s){ s.classList.remove('active', 'done'); });
+    ov.classList.add('show'); document.body.classList.add('lo-open');
+    setFill(9);
+    var i = 0, marks = [34, 64, 88];
+    (function adv(){
+      if (i > 0) steps[i - 1].classList.add('done');
+      if (i < steps.length){ steps[i].classList.add('active'); setFill(marks[i]); i++; timers.push(setTimeout(adv, 640)); }
+    })();
+  }
+  function finishProgress(){
+    clearTimers();
+    steps.forEach(function (s){ s.classList.remove('active'); s.classList.add('done'); });
+    setFill(100); ov.classList.add('done');
+  }
+  function failProgress(msg){
+    clearTimers(); ov.classList.add('error');
+    errBox.textContent = msg || 'Recording failed — nothing was recorded. Please try again.';
+    timers.push(setTimeout(function (){
+      ov.classList.remove('show', 'error'); document.body.classList.remove('lo-open');
+      if (lockBtn) lockBtn.disabled = false;
+    }, 2400));
+  }
   if (lockBtn && form && window.fetch) {
     lockBtn.addEventListener('click', function () {
       if (lockBtn.disabled) return; lockBtn.disabled = true;
-      ov.classList.add('show'); document.body.classList.add('lo-open'); errBox.textContent = '';
-      setFill(12); var grow = setInterval(function(){ var w=(parseFloat(fill.style.width)||12); if(w<88) setFill(w+7); }, 220);
+      startProgress();
       var fd = new FormData(form); fd.append('confirm', '1');   // explicit intent
       fetch(form.action, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' },
         body: fd, credentials: 'same-origin' })
         .then(function (r) { return r.json(); })
         .then(function (j) {
-          clearInterval(grow); setFill(100);
-          if (!j.ok) { errBox.textContent = j.error || 'Nothing recorded.';
-            setTimeout(function(){ ov.classList.remove('show'); document.body.classList.remove('lo-open'); lockBtn.disabled = false; }, 2200); return; }
+          if (!j.ok) { failProgress(j.error || 'Nothing recorded.'); return; }
+          finishProgress();
           setTimeout(function () { window.location = j.review_url || window.location.href; }, 650);
-        }).catch(function () { clearInterval(grow); errBox.textContent = 'Network error — nothing recorded.';
-          setTimeout(function(){ ov.classList.remove('show'); document.body.classList.remove('lo-open'); lockBtn.disabled = false; }, 2200); });
+        }).catch(function () { failProgress('Network error — nothing recorded.'); });
     });
   }
 })();

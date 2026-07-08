@@ -48,7 +48,8 @@
   <!-- Upload -->
   <div class="im-card reveal">
     <h2>Upload &amp; reconcile</h2>
-    <form method="post" action="{% url 'b2b_sales_validation_run' %}" enctype="multipart/form-data" class="im-up" data-loading="Reconciling the D365 export against the recorded run">
+    <form method="post" action="{% url 'b2b_sales_validation_run' %}" enctype="multipart/form-data" class="im-up" data-loading="Reconciling the D365 export against the recorded run"
+          data-loading-steps="Reading the D365 export|Matching to the recorded run|Comparing PO · qty · line · address|Building the side-by-side">
       {% csrf_token %}
       <label class="im-file">
         <span class="imf-l">① Sales Order Headers</span>

@@ -129,11 +129,11 @@
       {% endif %}
     </div>
     <div class="cb-actions">
-      {# Auto-switch: COMPLETE (every line) before lock; FINAL (accepted only, overrides repriced) after lock. Same label. #}
+      {# Auto-switch by lock state: (Review)=every line, unchanged · (Completed)=accepted-only, Excludes dropped, Overrides repriced. #}
       {% if locked %}
-        <a href="{% url 'b2b_review_download_completed' token=token %}" class="btn-ghost" data-loading-click="Building workbook" title="Final — accepted lines pushed to D365 (Excludes dropped, Overrides repriced)">⬇ Download SO Workbook</a>
+        <a href="{% url 'b2b_review_download_completed' token=token %}" id="dlWorkbook" class="btn-ghost" data-loading-click="Building workbook" title="Completed — accepted lines pushed to D365 (Excludes dropped, Overrides repriced)">⬇ Download SO Workbook (Completed)</a>
       {% elif has_preview %}
-        <a href="{% url 'b2b_review_download' token=token %}" class="btn-ghost" title="Complete — every line">⬇ Download SO Workbook</a>
+        <a href="{% url 'b2b_review_download' token=token %}" id="dlWorkbook" class="btn-ghost" title="Review — every line, exactly as previewed (unchanged)">⬇ Download SO Workbook (Review)</a>
       {% endif %}
       {% if locked %}
         <a href="{% url 'b2b_run_detail' run_id=run_id %}" class="btn-ghost">View run →</a>
@@ -654,11 +654,15 @@
       var txt = bar.querySelector('.cb-text');
       var act = bar.querySelector('.cb-actions');
       if (txt) txt.innerHTML = '🔒 <b>Decisions locked &amp; recorded</b> (run #' + j.run_id +
-        '). Generate the ERP <b>D365 dump</b> (Excludes dropped, Overrides repriced), or download the full SO Workbook.';
+        '). Generate the ERP <b>D365 dump</b>, or download the <b>Completed</b> SO Workbook (accepted lines only — Excludes dropped, Overrides repriced).';
       if (act) {
-        var dl = act.querySelector('a.btn-ghost');
-        var keep = dl ? dl.outerHTML : '';
-        act.innerHTML = keep +
+        // Swap the download button to the COMPLETED route. The pre-lock button
+        // pointed at the Review/full workbook; it must NOT persist after an
+        // in-place lock (that bug served the full file post-lock).
+        var completedDl = '<a href="' + COMPLETED_DL_URL + '" id="dlWorkbook" class="btn-ghost" ' +
+          'data-loading-click="Building workbook" title="Completed — accepted lines pushed to ' +
+          'D365 (Excludes dropped, Overrides repriced)">⬇ Download SO Workbook (Completed)</a>';
+        act.innerHTML = completedDl +
           ' <a href="' + j.run_url + '" class="btn-ghost">View run →</a>' +
           ' <button class="btn-primary" type="submit" formaction="' + j.d365_url +
           '" formnovalidate onclick="var b=this;b.innerHTML=\'<span class=&quot;btn-spin&quot;></span> Generating…\';setTimeout(function(){b.innerHTML=\'⬇ Generate D365 dump\';},4500);">⬇ Generate D365 dump</button>';
@@ -670,6 +674,7 @@
 
   var HUB_URL = "{% url 'b2b_dashboard' %}";
   var UPLOAD_URL = "{% url 'b2b_upload' %}";
+  var COMPLETED_DL_URL = "{% url 'b2b_review_download_completed' token=token %}";
 
   function flourish(j) {
     var f = document.createElement('div');

@@ -867,9 +867,40 @@ def issues(marketplace='', q='', status='', resolution='pending',
                         f"WHERE {_AFFECTED_SQL} AND {_RESOLVED_SQL}{date_sql}",
                         tuple(date_params))
             out['resolved_total'] = cur.fetchone()[0]
+            # Unresolved (pending) total for the simplified 2-card view.
+            cur.execute(f"SELECT COUNT(*) FROM order_lines_full "
+                        f"WHERE {_AFFECTED_SQL} AND {_PENDING_SQL}{date_sql}",
+                        tuple(date_params))
+            out['pending_total'] = cur.fetchone()[0]
         out['ok'] = True
     except Exception as e:  # noqa: BLE001
         out['error'] = f"{type(e).__name__}: {e}"
+    return out
+
+
+def mp_lot_qty(marketplace='', date_from='', date_to='') -> dict:
+    """Total UPLOADED lot qty per marketplace over the given upload-date window
+    (``run_ts``) — ALL lines, not just affected ones. Used by the Issues email
+    to compute the uploaded-% (lot − excluded) ÷ lot. Returns ``{mp: qty}``."""
+    out: dict = {}
+    try:
+        with _conn() as (cur, d):
+            ph = d['ph']
+            where = ['1=1']
+            params: list = []
+            if marketplace:
+                where.append(f"marketplace={ph}"); params.append(marketplace)
+            if date_from:
+                where.append(f"DATE(run_ts) >= {ph}"); params.append(date_from)
+            if date_to:
+                where.append(f"DATE(run_ts) <= {ph}"); params.append(date_to)
+            cur.execute(
+                f"SELECT marketplace, SUM(qty) FROM order_lines_full "
+                f"WHERE {' AND '.join(where)} GROUP BY marketplace", tuple(params))
+            for mp, q in cur.fetchall():
+                out[str(mp or '—')] = int(q or 0)
+    except Exception:  # noqa: BLE001 — best-effort; email falls back to flagged qty
+        pass
     return out
 
 

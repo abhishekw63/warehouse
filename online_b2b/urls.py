@@ -1,9 +1,16 @@
 from django.urls import path
 
 from . import views
+from . import full_validation_views as _fullval  # STANDALONE feature (removable)
 
 urlpatterns = [
     path('', views.CentralHubView.as_view(), name='b2b_dashboard'),
+    # ── Full Validation (standalone; delete these 3 lines + the module/template/
+    #    sidebar link to remove the whole feature) ────────────────────────────
+    path('full-validation/', _fullval.full_validation, name='b2b_full_validation'),
+    path('full-validation/run/', _fullval.full_validation_run, name='b2b_full_validation_run'),
+    path('full-validation/<str:token>/download/', _fullval.full_validation_download,
+         name='b2b_full_validation_download'),
     path('online/', views.dashboard, name='b2b_online'),
     path('offline/', views.OfflineBranchView.as_view(), name='b2b_offline'),
     path('analytics/', views.AnalyticsView.as_view(), name='b2b_analytics'),

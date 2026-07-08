@@ -14,6 +14,10 @@
     <div>
       <h1>Project Map <span>· zero → hero</span></h1>
       <p class="src">The whole system — file tree, every route, every DB table, and the data flow. Auto-generated from the live code, so it updates whenever the code changes.</p>
+      <p class="pm-updated" style="margin:6px 0 0;font-size:12px;color:var(--muted,#64748b);">
+        <span title="This page is rebuilt from the live codebase on every load — it can't go stale.">⟳ Generated live · <b>{{ updated.generated_at }}</b></span>
+        {% if updated.commit_hash %}<span style="margin-left:6px;">· reflects code as of latest commit <b class="mono">{{ updated.commit_hash }}</b> <span style="opacity:.8;">({{ updated.commit_date }}){% if updated.commit_msg %} — {{ updated.commit_msg|truncatechars:64 }}{% endif %}</span></span>{% endif %}
+      </p>
     </div>
     <a href="{% url 'dev_dashboard' %}" class="back">← Dev · Health</a>
   </div>

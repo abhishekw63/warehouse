@@ -1,8 +1,7 @@
 <div class="iss-kpis">
-  <div class="ik mis" data-filter="status:MISMATCH" title="Mismatch in this view — click to filter"><div class="n">{{ d.counts.MISMATCH|default:0 }}</div><div class="l">Mismatch</div>{% if d.counts_total.MISMATCH != d.counts.MISMATCH %}<div class="ik-of">of {{ d.counts_total.MISMATCH }} total</div>{% endif %}</div>
-  <div class="ik nim" data-filter="status:NOT_IN_MASTER" title="Not-in-master in this view — click to filter"><div class="n">{{ d.counts.NOT_IN_MASTER|default:0 }}</div><div class="l">Not in master</div>{% if d.counts_total.NOT_IN_MASTER != d.counts.NOT_IN_MASTER %}<div class="ik-of">of {{ d.counts_total.NOT_IN_MASTER }} total</div>{% endif %}</div>
-  <div class="ik tot" data-filter="status:" title="Show all statuses"><div class="n">{{ d.rows|length }}</div><div class="l">Shown</div></div>
-  <div class="ik res" data-filter="resolution:resolved" title="Click to view resolved lines"><div class="n">{{ d.resolved_total }}</div><div class="l">Resolved →</div></div>
+  {# Simplified to just Unresolved / Resolved — use the Status filter for mismatch / not-in-master. #}
+  <div class="ik mis" data-filter="resolution:pending" title="Unresolved (pending) issue lines — click to view"><div class="n">{{ d.pending_total }}</div><div class="l">Unresolved</div></div>
+  <div class="ik res" data-filter="resolution:resolved" title="Resolved issue lines — click to view"><div class="n">{{ d.resolved_total }}</div><div class="l">Resolved →</div></div>
 </div>
 
 <div class="iss-scroll">
@@ -35,12 +34,14 @@
       {% if i.received_ean %}
       <td><span class="ean-fixed">corrected ✓</span></td>
       <td class="muted">EAN → <span class="mono">{{ i.ean }}</span></td>
-      {% elif i.status == 'NOT_IN_MASTER' %}
+      {% elif i.status == 'NOT_IN_MASTER' and not i.action %}
       <td colspan="2">
         <div class="iss-eanfix" data-line="{{ i.line_id }}">
           <input class="ef-in" data-line="{{ i.line_id }}" placeholder="correct EAN…"
                  autocomplete="off" maxlength="20" inputmode="numeric">
           <button type="button" class="ef-go" data-line="{{ i.line_id }}" data-ean="{{ i.ean }}">Fix &amp; resolve</button>
+          <button type="button" class="ef-drop" data-line="{{ i.line_id }}"
+                  title="Not a real SKU (e.g. a virtual combo) — already dropped from the PO. Marks this resolved as Excluded.">Exclude (drop)</button>
           <span class="ef-msg" data-line="{{ i.line_id }}"></span>
         </div>
       </td>

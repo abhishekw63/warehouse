@@ -159,12 +159,94 @@ def _register_web_channels(eng) -> None:
             expected_landing_ratio=None,      # no price check (mapping-only)
         )
 
+    # Manash = Purplle OFFLINE. Same tab-separated '.XLS' as online Purplle
+    # (normalised by _normalize_manash_excel); multi-store — the 'Address' column
+    # is the ship-to lookup key (exact-matches del_location for party 'Manash',
+    # cust 20328). Mapping-only like LS: NO price/CP check (MT rule).
+    if 'PPL' not in eng.CHANNELS:
+        eng.CHANNELS['PPL'] = eng.ChannelConfig(
+            code='PPL',
+            display_name='Manash (Purplle offline)',
+            party='Manash',                   # ship_to_mapping party (cust 20328)
+            input_folder_name='Input_MANASH',
+            output_folder_name='Output_MANASH',
+            sell_to='20328',
+            csv_required_cols=['PO Document Number', 'Address', 'EAN Number', 'Qty'],
+            csv_po_col='PO Document Number',
+            csv_store_col='Address',          # source Address → del_location (exact)
+            csv_id_col='EAN Number',
+            csv_qty_col='Qty',
+            csv_mrp_col='MRP',
+            csv_cost_col='Price',             # reference only (no check below)
+            csv_value_col='Total value',      # Price × Qty (computed in normalizer)
+            csv_date_col='PO Date',
+            csv_expdate_col='Expiry Date',
+            lookup_via='EAN',
+            channel_master_sheet=None,
+            store_match='exact',
+            tester_unit_price=None,           # no testers
+            expected_landing_ratio=None,      # NO price check (mapping-only)
+        )
+
+    # Reliance Smart Bazaar (Reliance's HYPERMARKET format) — cust 20615, a
+    # DIFFERENT customer from Reliance Retail/Centro (RL, cust 20043). Same
+    # 'PurchaseOrders*.xlsx' schema as Metro (sheet 'Purchase Orders', DC_CODE +
+    # PURCH_ORDER_NUMBER + EAN_NO + TOTAL_QUANTITY + MRP + dates), so it reuses
+    # _normalize_metro_excel. Store key = DC_CODE (FR73/FRBS/6220/…) matched
+    # EXACT to the party='Reliance Smart Bazaar' Del Location. NO price check
+    # (mapping-only, MT rule); the effective supply margin is computed + noted.
+    if 'RSB' not in eng.CHANNELS:
+        eng.CHANNELS['RSB'] = eng.ChannelConfig(
+            code='RSB',
+            display_name='Reliance Smart Bazaar',
+            party='Reliance Smart Bazaar',    # ship_to_mapping party (cust 20615)
+            input_folder_name='Input_RSB',
+            output_folder_name='Output_RSB',
+            sell_to='20615',                  # Reliance Retail Limited (Smart Bazaar)
+            csv_required_cols=['PURCH_ORDER_NUMBER', 'DC_CODE', 'EAN_NO',
+                               'TOTAL_QUANTITY'],
+            csv_po_col='PURCH_ORDER_NUMBER',
+            csv_store_col='DC_CODE',          # DC code → Del Location (exact)
+            csv_id_col='EAN_NO',
+            csv_qty_col='TOTAL_QUANTITY',
+            csv_mrp_col='MRP_PER_UNIT',
+            csv_cost_col='LANDING_COST_INCL_TAX_PER_UNIT',   # inc-GST (reference)
+            csv_value_col='COST_PRICE_INCL_TAX_PER_PO_OU',   # inc-GST line total
+            csv_date_col='PURCH_ORDER_DATE',
+            csv_expdate_col='EXPECTED_DATE',
+            lookup_via='EAN',
+            channel_master_sheet=None,
+            store_match='exact',
+            tester_unit_price=None,           # no testers
+            expected_landing_ratio=None,      # no price check (mapping-only)
+        )
+
+    # Lulu (LL): Lulu now sends a clean tabular EXCEL instead of the PDF, so
+    # flip LL's input PDF → Excel for 100% accuracy. REVERSIBLE + non-destructive:
+    # the frozen PDF config + parse_lulu_pdf are left fully intact — we only clear
+    # LL.pdf_parser at runtime (so the .xlsx is read as Excel) and normalise the
+    # Excel into the columns LL already maps (see _normalize_lulu_excel). Set
+    # LULU_EXCEL_MODE=False below to restore the PDF path with zero code churn.
+    if LULU_EXCEL_MODE and 'LL' in eng.CHANNELS:
+        eng.CHANNELS['LL'].pdf_parser = None
+    # LL's ship-to rows live under party 'Lulu' in ship_to_mapping (the name-based
+    # convention, same as Metro/Manash/Naturals) but the frozen config says
+    # party='LL' — so ship-to never resolved. Align the party to the data.
+    if 'LL' in eng.CHANNELS and eng.CHANNELS['LL'].party == 'LL':
+        eng.CHANNELS['LL'].party = 'Lulu'
+
+
+# Lulu input switch: True = read the new Excel (PDF path OFF, reversible);
+# False = restore the frozen 'lulu' PDF parser. See _register_web_channels + the
+# LL routing in MTProcessor._load.
+LULU_EXCEL_MODE = True
+
 
 # MT (Modern Trade) child channels exposed on the web. MT is the parent
 # marketplace; these are its children (the operator picks one). Off Institutional
 # (INST) is a SEPARATE parent and is not listed here. SS is verified end-to-end;
 # the others share the same generic pipeline (test each before production use).
-WEB_CHANNELS = ['SS', 'HG', 'NT', 'BN', 'LL', 'RL', 'MET', 'LS']
+WEB_CHANNELS = ['SS', 'HG', 'NT', 'BN', 'LL', 'RL', 'MET', 'LS', 'PPL', 'RSB']
 
 # ── Per-channel input REQUIREMENTS ──────────────────────────────────────
 # Shown on the upload page (so the operator knows what each channel demands)
@@ -200,6 +282,19 @@ CHANNEL_REQUIREMENTS: dict = {
            'if_absent': 'No price check — records the inc-GST value; the effective supply margin '
                         '(Item Unit Value ÷ MRP) is computed and noted. No tester sheet → no '
                         'testers. Not blocked.'},
+    'PPL': {'required': "Manash (Purplle offline) tab-separated '.XLS' — same format as online "
+                           'Purplle (PO Document Number, EAN Number, Qty, MRP, Price, Plant, '
+                           'Address + dates). The Address column is the ship-to lookup key.',
+               'optional': '', 'if_absent': 'Mapping-only — NO price check. Records value = Price × Qty '
+               '(MRP × 0.70 × Qty). Unknown Address → flagged, never silent.'},
+    'RSB': {'required': 'Reliance Smart Bazaar tabular Excel (PurchaseOrders*.xlsx, sheet '
+                        '"Purchase Orders") — DC_CODE, PURCH_ORDER_NUMBER, EAN_NO, '
+                        'TOTAL_QUANTITY, MRP + dates. DC_CODE (FR73/FRBS/6220/…) is the '
+                        'ship-to lookup key (exact) — cust 20615, separate from Centro.',
+            'optional': 'PO PDF(s) — reference for the per-store delivery address cross-check.',
+            'if_absent': 'No price check — records the inc-GST value; the effective supply '
+            'margin (landing ex-GST ÷ MRP) is computed and noted. Unknown DC_CODE → flagged, '
+            'never silent.'},
 }
 
 
@@ -252,6 +347,43 @@ def _normalize_reliance_excel(src_path) -> str:
     return path
 
 
+def _normalize_lulu_excel(src_path):
+    """Lulu '<PONumber>.XLSX' → the flat shape the LL ChannelConfig reads
+    (PO No · Store · EAN · Qty · MRP · Gross Price · Amount · PO Date ·
+    Delivery Date). Lulu now sends a clean tabular Excel — this replaces the PDF
+    path (parse_lulu_pdf) 1:1. Drops the trailing total row, cleans EAN + PO,
+    emits day-first date STRINGS (engine re-parses dayfirst). Store = the exact
+    'Delivery to' (e.g. 'Lulu Hypermarket,Hyderabad') → exact ship-to match.
+    Returns ``(temp_path, note)``."""
+    import tempfile
+
+    import pandas as pd
+    df = pd.read_excel(src_path)
+    df = df[df['PO Number'].notna()].copy()          # drop the total row
+    # Store = the delivery CITY (last comma token of 'Delivery to', e.g.
+    # 'Lulu Hypermarket,Hyderabad' → 'Hyderabad') — LL resolves ship-to via
+    # store_match='city_in_name' (the city must appear in the Del Location name),
+    # exactly like the PDF path fed the city.
+    out = pd.DataFrame({
+        'PO No':       [_cid(v) for v in df['PO Number']],
+        'Store':       df['Delivery to'].astype(str).str.split(',').str[-1].str.strip(),
+        'EAN':         [_cid(v) for v in df['EAN']],
+        'Qty':         pd.to_numeric(df['Total Quantity'], errors='coerce'),
+        'MRP':         pd.to_numeric(df['MRP'], errors='coerce'),
+        'Gross Price': pd.to_numeric(df['Gross Price'], errors='coerce'),
+        'Amount':      pd.to_numeric(df['Total Invoice Cost'], errors='coerce'),
+    })
+    for col in ('PO Date', 'Delivery Date'):
+        out[col] = (pd.to_datetime(df[col], errors='coerce')
+                    .dt.strftime('%d-%m-%Y').fillna(''))
+    fd, path = tempfile.mkstemp(suffix='_lulu_norm.xlsx')
+    os.close(fd)
+    out.to_excel(path, index=False)
+    note = (f"Lulu read from EXCEL ({len(out)} line(s)) — PDF path OFF (reversible). "
+            f"Store = 'Delivery to' → exact ship-to match.")
+    return path, note
+
+
 def _normalize_metro_excel(src_path):
     """Metro 'PurchaseOrders*.xlsx' → the flat shape the MET ChannelConfig reads:
     read the 'Purchase Orders' sheet (not 'Sheet1'), drop the junk 'Unnamed'
@@ -287,7 +419,7 @@ def _normalize_metro_excel(src_path):
     m = marg.dropna()
     note = ''
     if len(m):
-        note = (f"Metro supply margin (landing ex-GST ÷ MRP): avg {m.mean():.1f}% "
+        note = (f"Supply margin (landing ex-GST ÷ MRP): avg {m.mean():.1f}% "
                 f"· range {m.min():.1f}–{m.max():.1f}% across {len(m)} line(s). "
                 f"No price check — informational.")
     return path, note
@@ -388,6 +520,53 @@ def _normalize_lifestyle_excel(src_path):
             f"· range {m.min():.1f}–{m.max():.1f}% across {len(m)} line(s). "
             f"No price check — informational.")
     return path, notes
+
+
+def _normalize_manash_excel(src_path):
+    """Manash (Purplle offline) tab-separated '.XLS' → the flat .xlsx the MANASH
+    ChannelConfig reads. Same source shape as online Purplle. Cleans the
+    zero-padded/quote-suffixed EAN ('000008904473100590'' → '8904473100590');
+    the 'Address' column is the ship-to lookup key (exact-matches del_location
+    for party 'Manash'). Value = Price × Qty (= MRP × 0.70 × Qty, inc-GST
+    landing) — NO price check (mapping-only, MT rule). Returns (temp_path, notes)."""
+    import tempfile
+
+    import re as _re
+
+    import pandas as pd
+    df = pd.read_csv(src_path, sep='\t', dtype=str, engine='python').fillna('')
+    df = df[df['PO Document Number'].astype(str).str.strip() != ''].copy()
+
+    _ILLEGAL = _re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')   # openpyxl-illegal control chars
+
+    def _cln(v):
+        return _ILLEGAL.sub('', str(v)).strip()
+
+    def _ean(v):
+        s = _cln(v).strip("'")
+        return s.lstrip('0') or s
+
+    qty = pd.to_numeric(df['Qty'], errors='coerce').fillna(0)
+    price = pd.to_numeric(df['Price'], errors='coerce').fillna(0)
+    out = pd.DataFrame({
+        'PO Document Number': [_cln(v) for v in df['PO Document Number']],
+        'Address': [_cln(v) for v in df['Address']],           # ship-to lookup key
+        'EAN Number': [_ean(v) for v in df['EAN Number']],
+        'Qty': qty,
+        'MRP': pd.to_numeric(df['MRP'], errors='coerce').fillna(0),
+        'Price': price,
+        'Total value': (price * qty).round(2),                 # inc-GST landing value
+        'PO Date': [_cln(v) for v in df['PO Date']],
+        'Expiry Date': [_cln(v) for v in df['Expiry Date']],
+    })
+    fd, path = tempfile.mkstemp(suffix='_manash_norm.xlsx')
+    os.close(fd)
+    out.to_excel(path, index=False)
+
+    # Ship-to resolution (source Address → del_location) + never-silent warnings
+    # for genuinely-unmapped stores are handled by the engine itself (same as
+    # every MT channel), so no redundant note here.
+    return path, []
 
 
 def _parse_reliance_pdf(path) -> dict:
@@ -650,8 +829,9 @@ class MTProcessor:
                 if str(p).lower().endswith(('.xlsx', '.xls')) else p
                 for p in engine_paths]
 
-        # ── Metro: read the 'Purchase Orders' sheet, clean, + margin note. ──
-        if channel.code == 'MET':
+        # ── Metro / Reliance Smart Bazaar: identical 'Purchase Orders' schema —
+        #    read that sheet, clean, + supply-margin note. ──
+        if channel.code in ('MET', 'RSB'):
             norm = []
             for p in engine_paths:
                 if str(p).lower().endswith(('.xlsx', '.xls')):
@@ -659,6 +839,20 @@ class MTProcessor:
                     norm.append(Path(np))
                     if mnote:
                         self.notes.append(mnote)
+                else:
+                    norm.append(p)
+            engine_paths = norm
+
+        # ── Lulu: read the new tabular Excel → LL columns (PDF path OFF, see
+        #    LULU_EXCEL_MODE). Reversible; the frozen PDF parser stays intact. ──
+        if channel.code == 'LL' and LULU_EXCEL_MODE:
+            norm = []
+            for p in engine_paths:
+                if str(p).lower().endswith(('.xlsx', '.xls')):
+                    np, lnote = _normalize_lulu_excel(p)
+                    norm.append(Path(np))
+                    if lnote:
+                        self.notes.append(lnote)
                 else:
                     norm.append(p)
             engine_paths = norm
@@ -671,6 +865,19 @@ class MTProcessor:
                     np, lnotes = _normalize_lifestyle_excel(p)
                     norm.append(Path(np))
                     self.notes.extend(lnotes)
+                else:
+                    norm.append(p)
+            engine_paths = norm
+
+        # ── Manash (Purplle offline): tab-separated '.XLS' → clean .xlsx; Address
+        #    is the ship-to lookup key (exact). Mapping-only (no price check). ──
+        if channel.code == 'PPL':
+            norm = []
+            for p in engine_paths:
+                if str(p).lower().endswith(('.xls', '.xlsx', '.csv', '.txt')):
+                    np, mnotes = _normalize_manash_excel(p)
+                    norm.append(Path(np))
+                    self.notes.extend(mnotes)
                 else:
                     norm.append(p)
             engine_paths = norm

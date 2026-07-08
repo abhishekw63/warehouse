@@ -104,8 +104,18 @@ class IssuesEmailReport(EmailReport):
         self.note = (note or '').strip()
         self._to = _clean_emails(to) if to is not None else None
         self._cc = _clean_emails(cc) if cc is not None else None
-        data = order_db.issues(limit=0, **self.filters)
+        # COMBINED email: always include BOTH unresolved + resolved lines (the
+        # page's resolution filter only scopes the on-screen view — management
+        # wants one combined mail). Every other filter (marketplace / status /
+        # date / search) still applies.
+        fetch = {**self.filters, 'resolution': 'all'}
+        data = order_db.issues(limit=0, **fetch)
         self.rows = data.get('rows', []) if data.get('ok') else []
+        # Tag each row's resolution state — resolved = an action was set OR the
+        # EAN was corrected (a NOT_IN_MASTER that's been fixed).
+        for r in self.rows:
+            r['_resolved'] = bool((r.get('action') or '').strip()
+                                  or r.get('received_ean'))
         # Tally actions for the summary line.
         self.tally: dict = {}
         for r in self.rows:
@@ -141,6 +151,7 @@ class IssuesEmailReport(EmailReport):
         loss_mm = Decimal('0')
         loss_nim = Decimal('0')
         loss_exc = Decimal('0')
+        by_mp: dict = {}   # marketplace → {qty, value, loss, mm, nim, exc}
         for r in self.rows:
             qty = int(_num(r.get('qty')))
             rate = _unit_rate(r)
@@ -149,13 +160,40 @@ class IssuesEmailReport(EmailReport):
             tot_val += line_val
             status = (r.get('status') or '').upper()
             action = (r.get('action') or '').upper()
+            mp = (r.get('marketplace') or r.get('marketplace_label') or r.get('mp') or '—')
+            g = by_mp.setdefault(str(mp), {'qty': 0, 'value': Decimal('0'), 'loss': Decimal('0'),
+                                           'mm': Decimal('0'), 'nim': Decimal('0'), 'exc': Decimal('0'),
+                                           'exc_qty': 0})
+            g['qty'] += qty
+            g['value'] += line_val
             if action == 'EXCLUDE':
                 loss_exc += line_val
+                g['exc'] += line_val
+                g['exc_qty'] += qty
+                g['loss'] += line_val
             elif status == 'NOT_IN_MASTER':
                 loss_nim += line_val
+                g['nim'] += line_val
+                g['loss'] += line_val
             elif status == 'MISMATCH':
-                loss_mm += abs(_num(r.get('diff'))) * qty
+                lm = abs(_num(r.get('diff'))) * qty
+                loss_mm += lm
+                g['mm'] += lm
+                g['loss'] += lm
         loss_total = loss_mm + loss_nim + loss_exc
+        # Full uploaded lot qty per MP (same date/marketplace scope) so we can
+        # show uploaded-% = (lot − excluded qty) ÷ lot. Best-effort: if the DB
+        # gives us no lot for an MP, fall back to that MP's flagged qty (⇒ 100%
+        # unless excluded), never a misleading blank.
+        lot = order_db.mp_lot_qty(
+            marketplace=self.filters.get('marketplace', '') or '',
+            date_from=self.filters.get('date_from', '') or '',
+            date_to=self.filters.get('date_to', '') or '')
+        for mp, g in by_mp.items():
+            lot_qty = lot.get(mp) or g['qty']
+            g['lot_qty'] = lot_qty
+            up = lot_qty - g['exc_qty']
+            g['uploaded_pct'] = (Decimal(up) / Decimal(lot_qty) * 100) if lot_qty else Decimal('0')
         return {
             'total_qty': tot_qty,
             'total_value': tot_val,
@@ -163,30 +201,39 @@ class IssuesEmailReport(EmailReport):
             'loss_mismatch': loss_mm,
             'loss_not_in_master': loss_nim,
             'loss_excluded': loss_exc,
+            'loss_by_mp': by_mp,
         }
 
     # ── header ──────────────────────────────────────────────────────────
+    def _counts(self) -> tuple:
+        """(unresolved, resolved) line counts."""
+        nu = sum(1 for r in self.rows if not r.get('_resolved'))
+        return nu, len(self.rows) - nu
+
     def subject(self) -> str:
-        res = self.filters.get('resolution', 'pending') or 'pending'
         mp = self.filters.get('marketplace') or 'All MPs'
         d = _dt.date.today().strftime('%d-%b-%Y')
-        return (f"Online B2B — Issue lines ({res}): {len(self.rows)} "
+        nu, nr = self._counts()
+        return (f"Online B2B — Issue lines: {nu} unresolved · {nr} resolved "
                 f"[{mp}] — {d}")
 
     # ── body ────────────────────────────────────────────────────────────
     def _summary_line(self) -> str:
         if not self.rows:
             return 'No issue lines in the selected filter.'
+        nu, nr = self._counts()
         parts = []
         for code in ('EXCLUDE', 'OVERRIDE', 'KEEP', ''):
             n = self.tally.get(code, 0)
             if n:
                 parts.append(f"{n} {_ACTION_LABEL[code].lower()}")
-        return f"{len(self.rows)} flagged line(s) — " + ', '.join(parts) + '.'
+        tail = (' — ' + ', '.join(parts)) if parts else ''
+        return (f"{len(self.rows)} flagged line(s): <b>{nu} unresolved</b>, "
+                f"<b>{nr} resolved</b>{tail}.")
 
     def _scope_line(self) -> str:
         f = self.filters
-        bits = [f"Resolution: <b>{escape(f.get('resolution', 'pending') or 'pending')}</b>"]
+        bits = ["Resolution: <b>combined (unresolved + resolved)</b>"]
         if f.get('marketplace'):
             bits.append(f"Marketplace: <b>{escape(f['marketplace'])}</b>")
         if f.get('status'):
@@ -240,14 +287,60 @@ class IssuesEmailReport(EmailReport):
             f'<div style="{loss_val}">{_rupee(s["loss_total"])}</div>'
             f'<div style="font-size:11px;color:#7f1d1d;margin-top:3px;">'
             f'{breakdown}</div></div>'
-            '</div>')
+            '</div>'
+            + self._loss_by_mp_block())
 
-    def html(self) -> str:
-        th = ('padding:8px 10px;text-align:left;font-size:12px;color:#fff;'
-              'background:#1A237E;white-space:nowrap;')
+    def _loss_by_mp_block(self) -> str:
+        """Per-marketplace loss breakdown (Qty / Value / Loss + buckets) so
+        stakeholders see WHERE the exposure sits, not just the grand total."""
+        by_mp = self.summary.get('loss_by_mp') or {}
+        if len(by_mp) < 1:
+            return ''
+        th = ('padding:7px 10px;text-align:left;font-size:10.5px;color:#334155;'
+              'background:#eef2f7;white-space:nowrap;text-transform:uppercase;'
+              'letter-spacing:.04em;border-bottom:2px solid #dbe3ec;')
+        thr = th + 'text-align:right;'
+        td = 'padding:6px 10px;font-size:12px;border-bottom:1px solid #eef1f5;'
+        tdr = td + 'text-align:right;font-variant-numeric:tabular-nums;'
+        rows = ''
+        for mp, g in sorted(by_mp.items(), key=lambda x: -x[1]['loss']):
+            pct = g.get('uploaded_pct', Decimal('0'))
+            # Green only when the WHOLE lot went through (100.00%); any exclusion
+            # drops below 100 and shows amber. 2 dp so "99.87%" never rounds up
+            # to a misleading "100%".
+            pct_col = '#0f9d6b' if pct >= Decimal('100') else '#b45309'
+            excl_note = (f'<span style="font-size:10px;color:#94a3b8;">'
+                         f'({g.get("exc_qty", 0):,} excl / {g.get("lot_qty", g["qty"]):,} lot)</span>'
+                         if g.get('exc_qty') else '')
+            rows += (
+                f'<tr><td style="{td}"><b>{escape(mp)}</b></td>'
+                f'<td style="{tdr}">{g.get("lot_qty", g["qty"]):,}</td>'
+                f'<td style="{tdr}color:{pct_col};font-weight:700;">{pct:.2f}% {excl_note}</td>'
+                f'<td style="{tdr}">{_rupee(g["value"])}</td>'
+                f'<td style="{tdr}color:#b91c1c;font-weight:700;">{_rupee(g["loss"])}</td>'
+                f'<td style="{tdr}">{_rupee(g["mm"])}</td>'
+                f'<td style="{tdr}">{_rupee(g["nim"])}</td>'
+                f'<td style="{tdr}">{_rupee(g["exc"])}</td></tr>')
+        return (
+            '<div style="margin:0 0 16px;">'
+            '<div style="font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;'
+            'color:#64748b;margin:0 0 6px;">Loss by marketplace</div>'
+            '<table style="border-collapse:collapse;width:100%;border:1px solid #e5e7eb;">'
+            f'<thead><tr><th style="{th}">Marketplace</th><th style="{thr}">Lot Qty</th>'
+            f'<th style="{thr}">Uploaded %</th><th style="{thr}">Value</th><th style="{thr}">Loss</th>'
+            f'<th style="{thr}">Mismatch</th><th style="{thr}">Not-in-master</th>'
+            f'<th style="{thr}">Excluded</th></tr></thead>'
+            f'<tbody>{rows}</tbody></table></div>')
+
+    def _lines_table(self, rows) -> str:
+        """One issue-lines table for a subset of rows (used for the Unresolved
+        and Resolved sections)."""
+        th = ('padding:8px 10px;text-align:left;font-size:11.5px;color:#334155;'
+              'background:#eef2f7;white-space:nowrap;text-transform:uppercase;'
+              'letter-spacing:.02em;border-bottom:2px solid #dbe3ec;')
         td = 'padding:7px 10px;font-size:12px;border-bottom:1px solid #eef0f4;'
         rows_html = []
-        for i, r in enumerate(self.rows):
+        for i, r in enumerate(rows):
             act = (r.get('action') or '').upper()
             bg = '#ffffff' if i % 2 == 0 else '#f7f8fb'
             badge = (f'<span style="display:inline-block;padding:2px 8px;'
@@ -271,8 +364,35 @@ class IssuesEmailReport(EmailReport):
                 f'</tr>')
         body = ''.join(rows_html) or (
             f'<tr><td colspan="12" style="{td}text-align:center;color:#6b7280;">'
-            f'No issue lines.</td></tr>')
+            f'No lines.</td></tr>')
+        return (
+            '<table style="border-collapse:collapse;width:100%;border:1px solid #e5e7eb;">'
+            '<thead><tr>'
+            f'<th style="{th}">MP</th><th style="{th}">PO</th><th style="{th}">Item</th>'
+            f'<th style="{th}">EAN</th><th style="{th}">Description</th>'
+            f'<th style="{th}text-align:right;">Qty</th>'
+            f'<th style="{th}text-align:right;">Our CP</th>'
+            f'<th style="{th}text-align:right;">Their CP</th>'
+            f'<th style="{th}text-align:right;">Diff</th>'
+            f'<th style="{th}">Status</th><th style="{th}">Action</th><th style="{th}">Remark</th>'
+            '</tr></thead>'
+            f'<tbody>{body}</tbody></table>')
 
+    def html(self) -> str:
+        """Combined issue-lines email: summary + loss-by-MP, then TWO labelled
+        sections — Unresolved (needs action) and Resolved — in one mail."""
+        unresolved = [r for r in self.rows if not r.get('_resolved')]
+        resolved = [r for r in self.rows if r.get('_resolved')]
+
+        def section(title, color, sub_rows):
+            if not sub_rows:
+                return ''
+            return (f'<div style="margin:20px 0 7px;font-size:13px;font-weight:800;'
+                    f'color:{color};letter-spacing:.01em;">{title} ({len(sub_rows)})</div>'
+                    + self._lines_table(sub_rows))
+
+        empty = ('<p style="font-size:12px;color:#6b7280;">No issue lines in the '
+                 'selected scope.</p>' if not self.rows else '')
         return f"""\
 <div style="font-family:Segoe UI,Arial,sans-serif;color:#0f172a;max-width:1000px;">
   <h2 style="margin:0 0 4px;color:#1A237E;">RENÉE · Online B2B — Issue lines</h2>
@@ -280,18 +400,9 @@ class IssuesEmailReport(EmailReport):
   <p style="margin:0 0 16px;font-size:12px;color:#475569;">{self._scope_line()}</p>
   {self._note_block()}
   {self._summary_block()}
-  <table style="border-collapse:collapse;width:100%;border:1px solid #e5e7eb;">
-    <thead><tr>
-      <th style="{th}">MP</th><th style="{th}">PO</th><th style="{th}">Item</th>
-      <th style="{th}">EAN</th><th style="{th}">Description</th>
-      <th style="{th}text-align:right;">Qty</th>
-      <th style="{th}text-align:right;">Our CP</th>
-      <th style="{th}text-align:right;">Their CP</th>
-      <th style="{th}text-align:right;">Diff</th>
-      <th style="{th}">Status</th><th style="{th}">Action</th><th style="{th}">Remark</th>
-    </tr></thead>
-    <tbody>{body}</tbody>
-  </table>
+  {section('⚠ Unresolved — needs action', '#b45309', unresolved)}
+  {section('✓ Resolved', '#0f9d6b', resolved)}
+  {empty}
   <p style="margin:16px 0 0;font-size:11px;color:#94a3b8;">
     Auto-generated from the Order Management dashboard · {_dt.datetime.now():%d-%b-%Y %H:%M}.
   </p>

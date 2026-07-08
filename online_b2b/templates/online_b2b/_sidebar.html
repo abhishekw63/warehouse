@@ -38,6 +38,9 @@
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='clock' %}</span><span class="side-label">TAT · SLA</span></a>
     <a href="{% url 'b2b_sales_validation' %}" class="sn{% if '/sales-validation' in request.path %} on{% endif %}" title="Sales Validation">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='po' %}</span><span class="side-label">Sales Validation</span></a>
+    {# STANDALONE Full Validation (removable) #}
+    <a href="{% url 'b2b_full_validation' %}" class="sn{% if '/full-validation' in request.path %} on{% endif %}" title="Full Validation">
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><span class="side-label">Full Validation</span></a>
 
     <div class="side-sep">Process</div>
     <a href="{% url 'b2b_upload' %}" class="sn{% if '/upload' in request.path or '/review' in request.path %} on{% endif %}" title="Process PO">

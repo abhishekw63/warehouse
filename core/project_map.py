@@ -125,3 +125,26 @@ def summary() -> dict:
         tl += ln
     return {'apps': len(tree), 'files': tf, 'lines': tl,
             'routes': len(routes()), 'models': len(models())}
+
+
+def last_updated() -> dict:
+    """Freshness stamp for the map. ``generated_at`` = now (the page is rebuilt
+    from the live code on every load). ``commit_*`` = the latest git commit the
+    code reflects, so it's obvious how recent the underlying source is even
+    though the map itself never goes stale. Git is best-effort."""
+    import datetime
+    import subprocess
+    out = {'generated_at': datetime.datetime.now().strftime('%d %b %Y · %H:%M'),
+           'commit_hash': '', 'commit_date': '', 'commit_msg': ''}
+    try:
+        raw = subprocess.check_output(
+            ['git', 'log', '-1', '--format=%h\x1f%cd\x1f%s',
+             '--date=format:%d %b %Y · %H:%M'],
+            cwd=str(BASE), stderr=subprocess.DEVNULL, timeout=3
+        ).decode('utf-8', 'ignore').strip()
+        parts = raw.split('\x1f')
+        if len(parts) == 3:
+            out['commit_hash'], out['commit_date'], out['commit_msg'] = parts
+    except Exception:  # noqa: BLE001 — git optional; generated_at is always present
+        pass
+    return out

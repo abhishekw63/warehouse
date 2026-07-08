@@ -20,6 +20,7 @@ extend THIS instead of core/base.html and keep filling title/breadcrumb/content.
     <div class="b2b-load-spin"></div>
     <div class="b2b-load-msg">Processing…</div>
     <div class="b2b-load-sub">This can take a few seconds — please don't close the tab.</div>
+    <ul class="b2b-load-steps" hidden></ul>
   </div>
 </div>
 <style>
@@ -40,23 +41,64 @@ extend THIS instead of core/base.html and keep filling title/breadcrumb/content.
   .b2b-load-sub{font-size:12px;color:var(--muted,#64748b);margin-top:6px;}
   .b2b-load-dots::after{content:'';animation:b2bDots 1.2s steps(4,end) infinite;}
   @keyframes b2bDots{0%{content:'';}25%{content:'.';}50%{content:'..';}75%{content:'...';}100%{content:'';}}
-  @media (prefers-reduced-motion: reduce){.b2b-load-spin{animation-duration:1.6s;}#b2b-load{animation:none;}.b2b-load-card{animation:none;}}
+  /* Optional stepped progress (opt in via data-loading-steps="a|b|c"). */
+  .b2b-load-steps{list-style:none;margin:18px auto 2px;padding:0;display:grid;gap:10px;text-align:left;max-width:300px;}
+  .b2b-load-steps[hidden]{display:none;}
+  .b2b-load-steps li{display:flex;align-items:center;gap:11px;font-size:13px;color:var(--muted,#9aa1b2);transition:color .3s;}
+  .bld-dot{width:16px;height:16px;border-radius:50%;border:2px solid color-mix(in srgb,var(--muted,#9aa1b2) 45%,transparent);
+    flex:0 0 auto;position:relative;box-sizing:border-box;}
+  .b2b-load-steps li.active{color:var(--text,#1f2333);font-weight:600;}
+  .b2b-load-steps li.active .bld-dot{border-color:var(--accent,#4f46e5);border-top-color:transparent;animation:b2bSpin .7s linear infinite;}
+  .b2b-load-steps li.done{color:var(--text-2,#475066);}
+  .b2b-load-steps li.done .bld-dot{border-color:#10b981;background:#10b981;animation:none;}
+  .b2b-load-steps li.done .bld-dot::after{content:'✓';position:absolute;inset:0;display:grid;place-items:center;color:#fff;font-size:10px;font-weight:700;line-height:1;}
+  @media (prefers-reduced-motion: reduce){.b2b-load-spin,.b2b-load-steps li.active .bld-dot{animation-duration:1.6s;}#b2b-load{animation:none;}.b2b-load-card{animation:none;}}
 </style>
 <script>
 (function () {
   var ov = document.getElementById('b2b-load');
   if (!ov) return;
   var msgEl = ov.querySelector('.b2b-load-msg');
-  function show(msg) {
+  var stepsEl = ov.querySelector('.b2b-load-steps');
+  var stepTimer = null;
+  function clearSteps() {
+    if (stepTimer) { clearTimeout(stepTimer); stepTimer = null; }
+    if (stepsEl) { stepsEl.innerHTML = ''; stepsEl.hidden = true; }
+  }
+  // Drive an animated checklist (spinning dot → green ✓) through the phases —
+  // same feel as the lock overlay. Timed, not backend-wired (full-page submit),
+  // so it's a reassuring "what's happening" indicator; the page navigates away
+  // when the real work finishes.
+  function runSteps(labels) {
+    if (!stepsEl || !labels.length) return;
+    labels.forEach(function (s) {
+      var li = document.createElement('li');
+      li.innerHTML = '<span class="bld-dot"></span>' + s;
+      stepsEl.appendChild(li);
+    });
+    stepsEl.hidden = false;
+    var items = stepsEl.querySelectorAll('li'), i = 0;
+    (function adv() {
+      if (i > 0) { items[i - 1].classList.remove('active'); items[i - 1].classList.add('done'); }
+      if (i < items.length) {
+        items[i].classList.add('active'); i++;
+        // Hold the LAST step spinning until navigation; advance the rest.
+        if (i < items.length) stepTimer = setTimeout(adv, 850);
+      }
+    })();
+  }
+  function show(msg, steps) {
+    clearSteps();
     msgEl.innerHTML = (msg || 'Processing') + '<span class="b2b-load-dots"></span>';
+    if (steps) runSteps(steps.split('|').map(function (s) { return s.trim(); }).filter(Boolean));
     ov.classList.add('on'); ov.setAttribute('aria-hidden', 'false');
   }
-  function hide() { ov.classList.remove('on'); ov.setAttribute('aria-hidden', 'true'); }
+  function hide() { clearSteps(); ov.classList.remove('on'); ov.setAttribute('aria-hidden', 'true'); }
   // Forms that opt in: show overlay on submit, disable submit buttons (no double-post).
   document.querySelectorAll('form[data-loading]').forEach(function (f) {
     f.addEventListener('submit', function () {
       if (f.checkValidity && !f.checkValidity()) return;     // let invalid forms surface errors
-      show(f.getAttribute('data-loading'));
+      show(f.getAttribute('data-loading'), f.getAttribute('data-loading-steps'));
       f.querySelectorAll('button[type=submit],input[type=submit]').forEach(function (b) {
         b.disabled = true; b.classList.add('is-loading');
       });
@@ -64,7 +106,9 @@ extend THIS instead of core/base.html and keep filling title/breadcrumb/content.
   });
   // Buttons / links that opt in (slow GET navigations).
   document.querySelectorAll('[data-loading-click]').forEach(function (el) {
-    el.addEventListener('click', function () { show(el.getAttribute('data-loading-click')); });
+    el.addEventListener('click', function () {
+      show(el.getAttribute('data-loading-click'), el.getAttribute('data-loading-steps'));
+    });
   });
   // Never leave the overlay stuck when returning via the back/forward cache.
   window.addEventListener('pageshow', function (e) { if (e.persisted) hide(); });
