@@ -1,7 +1,14 @@
+{% load b2b_extras %}
 <div class="iss-kpis">
-  {# Simplified to just Unresolved / Resolved — use the Status filter for mismatch / not-in-master. #}
+  {# Line-state cards (click to filter) + decided-value cards (the loss) — all scoped to the current filter incl. date range. #}
   <div class="ik mis" data-filter="resolution:pending" title="Unresolved (pending) issue lines — click to view"><div class="n">{{ d.pending_total }}</div><div class="l">Unresolved</div></div>
   <div class="ik res" data-filter="resolution:resolved" title="Resolved issue lines — click to view"><div class="n">{{ d.resolved_total }}</div><div class="l">Resolved →</div></div>
+  {% if d.kpi %}
+  <div class="ik excl" title="Excluded (dropped) lines · qty"><div class="n">{{ d.kpi.excluded_qty|default:0|indnum }}</div><div class="l">Excluded Qty</div></div>
+  <div class="ik excl" title="Excluded value — the real loss (dropped from D365)"><div class="n" style="color:#b91c1c;">{{ d.kpi.excluded_value|default:0|inr }}</div><div class="l">Excluded Value (loss)</div></div>
+  <div class="ik incl" title="Included despite the issue — intimation, NOT a loss · qty"><div class="n">{{ d.kpi.included_qty|default:0|indnum }}</div><div class="l">Included Qty</div></div>
+  <div class="ik incl" title="Included value — kept & processed (intimation)"><div class="n" style="color:#0a7d5a;">{{ d.kpi.included_value|default:0|inr }}</div><div class="l">Included Value</div></div>
+  {% endif %}
 </div>
 
 <div class="iss-scroll">

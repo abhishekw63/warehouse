@@ -6,7 +6,7 @@
 > bottom. Keep the diagrams honest; if a diagram and the code disagree, the
 > code is right and the diagram must be fixed.
 
-Last updated: 2026-06-27 · Covers: Manual + Auto modes, web-only order store (web-owned lock/dedup, no order_issue_lines), DB-sourced tracker, channel_sku_map, unified exceptions overlay, pricing-rule banner, 18 marketplaces.
+Last updated: 2026-07-11 · Covers: Manual + Auto modes, web-only order store (web-owned lock/dedup, no order_issue_lines), DB-sourced tracker, channel_sku_map, unified exceptions overlay, pricing-rule banner, 18+ marketplaces (MT children now incl. H&B).
 
 ---
 
@@ -372,6 +372,41 @@ instead of a single number that lies for rule-based marketplaces.
 
 ## 10. Changelog (append one line per development)
 
+- **2026-07-16** — **Issues email: Indian ₹ grouping** (`_ind`/`_rupee` → ₹22,47,616.24),
+  bigger KPI numbers, new **By-SKU issue table** (affected qty · PO count · MP count+names)
+  and a **separate EAN-remaps table** (received→correct EAN, qty, POs, MPs). **SO Workbook
+  SKU Summary**: re-appended the earlier SKU-level diff columns (Our/Their MRP · MRP varies ·
+  OK/Mismatch/Not-in-Master Qty · Worst Diff) after the demand columns.
+- **2026-07-15** — **SKU tab / SKU Summary — one shared source**. New
+  `Processor.sku_rows()` (per-SKU rollup: qty demanded · # POs · inc-GST value
+  = Σ unit CP × (1+GST) × qty · unit price CP · **Deal SKU** + **Overridden**
+  flags) feeds BOTH the review page **SKU** tab (via the preview dict) and the
+  workbook **SKU Summary** sheet (`_append_sku_sheet`, now yellow-highlights
+  overridden rows). One change → renders both sides (review + downloaded
+  review/completed workbooks). Additive; engine sheets untouched.
+- **2026-07-15** — **Zepto deal SKUs** (`ZeptoProcessor` + `overrides_store.zepto_deal_map`,
+  kind `zepto_deal`). Zepto negotiates a flat per-SKU **Unit Base Cost** (already net
+  of GST) — written to the D365 unit price **AS-IS** (no ÷(1+GST), unlike Myntra's
+  with-GST transfer price). Applied post-hoc (frozen engine's deal path is Swiggy-only),
+  then the shared `_accept_deal_exceptions` marks the line **OK + 'Zepto deal'** (⚑
+  EXCEPTION column + yellow row highlight), forcing the deal price into D365 — same SOP
+  as Swiggy/Myntra deals, never a red MISMATCH, never silent. **Zepto-ONLY.** Seeded 2
+  SKUs (8906121647822 lip mini, 8904473102655 Korean Glow serum) @ ₹41.53. Surfaced on
+  the SKU Exceptions page (subtype 'Zepto deal SKU') + a Rules §4 card.
+- **2026-07-11** — **H&B (Health & Beauty) integrated as an MT child** (party `h&b`,
+  cust/sell-to **20040** — ship-to prefix `20040_n`; an earlier 20010 was wrong). Input = Excel BINARY `.xlsb` ('Renee Rep PO Excel *.xlsb',
+  one 'Sheet1' with all POs); normalised by `_normalize_hb_excel` (Document-Date
+  serial → day-first, de-.0 PO/Site/EAN) — mirrors LS. **Store key = numeric
+  `Site` code matched EXACT to the `party='h&b'` Del Location.** Since the D365
+  ship-to is keyed by name (`H&B-Crown`), the file's Site codes (1007…) were added
+  as exact `del_location` rows: matched **PO PDF delivery pincode + address** (59/62
+  auto, 3003→20040_96 manual, 1069→20040_134 new store from its PO GSTIN
+  `07AABCH8673G1ZD`). 134 ship-to addresses filled from the D365 'Ship-to Address
+  List'. Mapping-only (NO price check — MT rule; effective Net-price÷MRP ratio noted).
+  Registered in `WEB_CHANNELS` + `CHANNEL_REQUIREMENTS`; routing in `MTProcessor._load`.
+  E2E verified on the 08-07-2026 file: 62 POs / 2,275 lines / 6,116 qty, 0 UNMAPPED,
+  **External Document No. = the H&B PO** (`Purchasing Document`, via the shared
+  `mt_workbook._fix_external_doc`), **8-sheet unified layout**. See [[hb-mt-channel]].
 - **2026-07-03** — **LS store-grouped TESTER generation in the MT flow.** The operator may
   drop a tester-requirement sheet (`STORE CODE, EAN, Tester Req, Commercial Remarks`)
   alongside the LS `.xlsb`. New service `offline/services/tester.py` detects it BY COLUMNS

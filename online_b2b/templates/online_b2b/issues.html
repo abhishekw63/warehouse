@@ -60,6 +60,63 @@
   .em-status.ok{ color:#15803d; } .em-status.err{ color:#b91c1c; }
   .em-spin{ width:15px; height:15px; border:2px solid rgba(255,255,255,.5); border-top-color:#fff; border-radius:50%; display:inline-block; vertical-align:-2px; margin-right:6px; animation:emspin .7s linear infinite; }
   @keyframes emspin{ to{ transform:rotate(360deg); } }
+
+  /* ================= Issues page — frontend overhaul ================= */
+  .iss-wrap{ font-family:Inter,'Segoe UI',system-ui,sans-serif; }
+  .iss-head{ display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin:2px 0 18px; }
+  .iss-head h1{ font-size:25px; font-weight:800; letter-spacing:-.02em; color:#1e2a52; margin:0; }
+  .iss-head .sub{ margin:5px 0 0; font-size:12.5px; color:#6b7280; max-width:76ch; line-height:1.5; }
+  .iss-head .back{ font-size:13px; font-weight:600; color:#4f46e5; text-decoration:none; white-space:nowrap;
+    padding:8px 13px; border-radius:10px; transition:.15s; }
+  .iss-head .back:hover{ background:#eef0ff; }
+
+  /* toolbar surfaces */
+  #iss-filters, .bulk-bar{ background:#fff; border:1px solid #e7e9f1; border-radius:14px;
+    box-shadow:0 1px 3px rgba(16,24,40,.045); }
+  #iss-filters{ display:flex; flex-wrap:wrap; margin:0 0 12px; }
+  .bulk-bar{ display:flex; align-items:center; gap:10px; padding:11px 16px; margin:0 0 16px; }
+  .bulk-bar .bb-label{ font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; color:#8890a2; }
+  .bulk-bar select, .bulk-bar input{ height:36px; box-sizing:border-box; border:1px solid #dcdce6; border-radius:9px;
+    padding:0 11px; font:inherit; font-size:13px; background:#fff; }
+  .bulk-bar .btn-primary{ height:36px; padding:0 18px; border:0; border-radius:9px; background:#4f46e5; color:#fff;
+    font-weight:700; cursor:pointer; transition:.15s; } .bulk-bar .btn-primary:hover{ background:#4338ca; }
+
+  /* KPI stat cards — the dashboard row on top */
+  .iss-kpis{ display:grid; grid-template-columns:repeat(auto-fit,minmax(155px,1fr)); gap:12px; margin:0 0 16px; }
+  .iss-kpis .ik{ background:#fff; border:1px solid #e7e9f1; border-left:none; border-radius:14px; padding:15px 18px;
+    box-shadow:0 1px 3px rgba(16,24,40,.05); position:relative; overflow:hidden; min-width:0; transition:box-shadow .15s,transform .15s; }
+  .iss-kpis .ik::before{ content:''; position:absolute; left:0; top:0; bottom:0; width:4px; background:#4f46e5; }
+  .iss-kpis .ik.mis::before,.iss-kpis .ik.excl::before{ background:#e11d48; }
+  .iss-kpis .ik.res::before,.iss-kpis .ik.incl::before{ background:#10b981; }
+  .iss-kpis .ik.excl{ background:linear-gradient(180deg,#fff,#fff7f7); }
+  .iss-kpis .ik.incl{ background:linear-gradient(180deg,#fff,#f5fdf9); }
+  .iss-kpis .ik .n{ font-size:24px; font-weight:800; letter-spacing:-.02em; color:#0f172a; line-height:1.1;
+    font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .iss-kpis .ik .l{ font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#8890a2; margin-top:6px; }
+  .iss-kpis .ik.mis,.iss-kpis .ik.res{ cursor:pointer; }
+  .iss-kpis .ik.mis:hover,.iss-kpis .ik.res:hover{ box-shadow:0 8px 22px -10px rgba(16,24,40,.3); transform:translateY(-2px); }
+
+  /* table */
+  .iss-scroll{ background:#fff; border:1px solid #e7e9f1; border-radius:14px;
+    box-shadow:0 1px 3px rgba(16,24,40,.045); overflow:auto; }
+  table.grid.compact{ width:100%; border-collapse:collapse; font-size:12px; }
+  table.grid.compact thead th{ position:sticky; top:0; background:#f7f8fb; color:#5b6478; text-align:left; font-size:10px;
+    font-weight:800; text-transform:uppercase; letter-spacing:.03em; padding:10px; border-bottom:1px solid #e8ecf3; white-space:nowrap; z-index:1; }
+  table.grid.compact thead th.r{ text-align:right; }
+  table.grid.compact tbody td{ padding:8px 10px; border-bottom:1px solid #f2f4f8; vertical-align:middle; }
+  table.grid.compact tbody tr:last-child td{ border-bottom:0; }
+  table.grid.compact tbody tr:hover td{ background:#f8fafc; }
+  table.grid.compact tr.rmis td{ background:#fff9f9; } table.grid.compact tr.rmis:hover td{ background:#fff1f1; }
+  table.grid.compact tr.rnim td{ background:#fffdf4; } table.grid.compact tr.rnim:hover td{ background:#fdf9ea; }
+  table.grid.compact td.mono{ font-family:ui-monospace,Consolas,monospace; color:#475569; }
+  table.grid.compact td.desc{ max-width:260px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  table.grid.compact .muted{ color:#94a3b8; }
+  .st{ display:inline-block; padding:2px 9px; border-radius:20px; font-size:10px; font-weight:800; letter-spacing:.02em; }
+  .st.mismatch{ background:#fee2e2; color:#b91c1c; } .st.not_in_master{ background:#fef3c7; color:#92400e; }
+  .st.nim{ background:#fef3c7; color:#92400e; }
+  .exc{ color:#7c3aed; font-weight:700; font-size:10.5px; }
+  .act-sel,.act-rem,.ef-in{ height:32px; box-sizing:border-box; border:1px solid #dcdce6; border-radius:8px; padding:0 9px; font:inherit; font-size:12px; background:#fff; }
+  .act-sel:focus,.act-rem:focus,.ef-in:focus{ outline:none; border-color:#4f46e5; box-shadow:0 0 0 3px rgba(79,70,229,.12); }
 </style>
 {% endblock %}
 
@@ -98,9 +155,9 @@
       <input type="text" name="q" placeholder="search…" autocomplete="off"></div>
     <div class="fg"><label>Upload date</label>
       <div class="iss-daterow">
-        <input type="date" name="date_from" autocomplete="off" aria-label="From date">
+        <input type="date" name="date_from" value="{{ d.date_from }}" autocomplete="off" aria-label="From date">
         <span class="iss-dash">–</span>
-        <input type="date" name="date_to" autocomplete="off" aria-label="To date">
+        <input type="date" name="date_to" value="{{ d.date_to }}" autocomplete="off" aria-label="To date">
       </div></div>
     <div class="fg iss-actions">
       <button type="button" id="iss-today" class="iss-today" title="Show issues uploaded today">Today</button>
@@ -196,6 +253,17 @@
   }
   function updateExport() { if (exportLink) exportLink.href = exportBase + '?' + filterParams().toString(); }
 
+  // Lift the KPI card row OUT of the results container to ABOVE the bulk-set
+  // bar (it renders inside the partial so it stays live on every filtered load).
+  function relocateKpis() {
+    var bulk = document.querySelector('.bulk-bar');
+    if (!bulk || !bulk.parentNode) return;
+    var old = document.getElementById('iss-kpis-top');
+    if (old) old.remove();
+    var kpis = results.querySelector('.iss-kpis');
+    if (kpis) { kpis.id = 'iss-kpis-top'; bulk.parentNode.insertBefore(kpis, bulk); }
+  }
+
   function load() {
     var p = filterParams();
     if (ctrl) ctrl.abort(); ctrl = new AbortController();
@@ -203,7 +271,7 @@
     p.set('partial', '1');
     fetch(base + '?' + p.toString(), { headers: { 'X-Requested-With': 'XMLHttpRequest' }, signal: ctrl.signal })
       .then(function (r) { return r.text(); })
-      .then(function (html) { results.innerHTML = html; results.classList.remove('loading'); spin.hidden = true; bindActions(); updateExport(); })
+      .then(function (html) { results.innerHTML = html; relocateKpis(); results.classList.remove('loading'); spin.hidden = true; bindActions(); updateExport(); })
       .catch(function (e) { if (e.name !== 'AbortError') { results.classList.remove('loading'); spin.hidden = true; } });
   }
 
@@ -325,6 +393,7 @@
     load();
   });
   updateExport();
+  relocateKpis();          // lift the KPI row above the bulk bar on first paint
 
   document.getElementById('bulk-apply').addEventListener('click', function () {
     var act = document.getElementById('bulk-action').value;

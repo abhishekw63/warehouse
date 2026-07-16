@@ -1,0 +1,93 @@
+{% extends 'core/base.html' %}
+{% load static grn_extras %}
+{% block title %}GRN — Result{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+  <a href="{% url 'departments' %}">Departments</a>
+  <a href="{% url 'grn_index' %}"> / GRN</a> <span>/ Result</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap grn-wrap">
+  <div class="b2b-head">
+    <div>
+      <h1>GRN Result <span>· {{ d.marketplace|default:'—' }}</span></h1>
+      <p class="src">{{ d.totals.parsed }} of {{ d.totals.files }} file(s) parsed ·
+        {{ d.totals.pos }} PO(s) · {{ d.totals.lines }} line(s).</p>
+    </div>
+    <div class="grn-actions">
+      <a href="{% url 'grn_export' token=token %}" class="dl-btn">↓ Download Excel</a>
+      <a href="{% url 'grn_index' %}" class="btn-ghost">+ New</a>
+    </div>
+  </div>
+
+  {% if d.errors %}
+  <div class="banner err">{{ d.errors|length }} file(s) could not be parsed:
+    {% for e in d.errors %}<div class="mono" style="font-size:11px;">{{ e.file }} — {{ e.error }}</div>{% endfor %}
+  </div>
+  {% endif %}
+  {% if not d.ok %}
+    <div class="banner err">Nothing parsed — is this a Blinkit GRN PDF?</div>
+  {% else %}
+
+  {% with t=d.totals %}
+  <div class="grn-kpis">
+    <div class="grn-kpi"><div class="n">{{ t.pos }}</div><div class="l">POs</div></div>
+    <div class="grn-kpi"><div class="n">{{ t.lines }}</div><div class="l">Lines</div></div>
+    <div class="grn-kpi"><div class="n">{{ t.po_qty }}</div><div class="l">PO Qty</div></div>
+    <div class="grn-kpi"><div class="n">{{ t.grn_qty }}</div><div class="l">GRN Qty</div></div>
+    <div class="grn-kpi"><div class="n">{{ t.fill_rate }}%</div><div class="l">Fill Rate</div></div>
+    <div class="grn-kpi loss"><div class="n">₹{{ t.gmv_loss }}</div><div class="l">GMV Loss</div></div>
+    <div class="grn-kpi ok"><div class="n">{{ t.full }}</div><div class="l">Full</div></div>
+    <div class="grn-kpi warn"><div class="n">{{ t.partial }}</div><div class="l">Partial</div></div>
+    <div class="grn-kpi bad"><div class="n">{{ t.not_grn }}</div><div class="l">Not GRNed</div></div>
+  </div>
+  {% endwith %}
+
+  <div class="grn-seg-h">PO Summary</div>
+  <div class="scroll">
+  <table class="grid compact">
+    <thead><tr>{% for c in d.summary_columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      {% for r in d.po_summaries %}
+      <tr>{% for c in d.summary_columns %}<td class="{% if c == 'PO Number' %}mono{% endif %}">{{ r|dictkey:c|default_if_none:'—' }}</td>{% endfor %}</tr>
+      {% empty %}<tr><td class="muted">No summary rows.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <div class="grn-seg-h">Line Items <span class="count">{{ d.items|length }}</span></div>
+  <div class="scroll">
+  <table class="grid compact grn-lines">
+    <thead><tr>{% for c in d.item_columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      {% for r in d.items %}
+      <tr class="st-{{ r|dictkey:d.status_column|slugify }}">
+        {% for c in d.item_columns %}<td class="{% if c == 'PO Number' or c == 'UPC / GTIN' or c == 'Item Code' %}mono{% endif %}">{{ r|dictkey:c|default_if_none:'—' }}</td>{% endfor %}
+      </tr>
+      {% empty %}<tr><td class="muted">No line items.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% endif %}
+</div>
+
+<style>
+  .grn-actions{display:flex;gap:8px;align-items:center;}
+  .grn-kpis{display:flex;flex-wrap:wrap;gap:10px;margin:6px 0 20px;}
+  .grn-kpi{min-width:96px;padding:11px 15px;border:1px solid var(--border);border-radius:12px;
+    background:var(--surface);}
+  .grn-kpi .n{font-size:20px;font-weight:800;color:var(--text);}
+  .grn-kpi .l{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:2px;}
+  .grn-kpi.loss .n{color:#b91c1c;} .grn-kpi.ok .n{color:#0f9d6b;}
+  .grn-kpi.warn .n{color:#b45309;} .grn-kpi.bad .n{color:#b91c1c;}
+  .grn-seg-h{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;
+    color:var(--accent);margin:18px 0 8px;}
+  .grn-seg-h .count{color:var(--muted);font-weight:600;}
+  .grn-lines tr.st-full-grn td:last-child{color:#0f9d6b;font-weight:700;}
+  .grn-lines tr.st-partial-grn td:last-child{color:#b45309;font-weight:700;}
+  .grn-lines tr.st-not-grned td{background:color-mix(in srgb,#ef4444 6%,transparent);}
+  .grn-lines tr.st-not-grned td:last-child{color:#b91c1c;font-weight:700;}
+</style>
+{% endblock %}

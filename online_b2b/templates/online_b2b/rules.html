@@ -187,6 +187,24 @@
         {% endif %}
       </div>
 
+      <!-- Zepto deal SKUs -->
+      <div class="exc-card e-deal">
+        <div class="exc-h">Zepto · Deal SKUs{% if zepto_deals %} <span class="count">{{ zepto_deals|length }}</span>{% endif %} <span class="exc-scope">Zepto only</span></div>
+        <p>Zepto negotiates <b>per-SKU deal prices</b> (a flat <b>Unit Base Cost</b>, already net of GST). Keyed by EAN → that base cost is written to the D365 unit price <b>as-is</b> (no ÷GST, unlike Myntra's with-GST transfer price). Handled just like the Swiggy/Myntra deals: accepted as an <b>exception</b> (yellow ⚑), not a mismatch.</p>
+        {% if zepto_deals %}
+        <div class="deal-list">
+          {% for s in zepto_deals %}
+          <div class="deal-row">
+            <span class="deal-name" title="{{ s.note|default:s.source_code }} · EAN {{ s.source_code }}">{{ s.note|default:s.source_code }}</span>
+            <span class="deal-px">MRP ₹{{ s.override_mrp|default:'—' }} → CP ₹{{ s.cost_after_gst|default:'—' }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="eg">A Zepto campaign SKU carries an explicit base cost; the engine forces that exact figure instead of recomputing from MRP.</div>
+        {% endif %}
+      </div>
+
       <!-- Myntra Goddess -->
       <div class="exc-card e-vcp">
         <div class="exc-h">Myntra · Goddess (Use Vendor CP)</div>

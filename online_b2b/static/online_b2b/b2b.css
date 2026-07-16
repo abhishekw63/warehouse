@@ -181,6 +181,9 @@ table.grid tbody tr:hover td{background:var(--surface-2);}
 .ik .l{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-2);font-weight:600;margin-top:4px;}
 .ik.mis{border-left-color:var(--red);} .ik.nim{border-left-color:var(--amber);} .ik.tot{border-left-color:var(--muted);}
 .ik.res{border-left-color:var(--green);}
+.ik.excl{border-left-color:var(--red);} .ik.incl{border-left-color:var(--green);}
+.iss-kpis .ik.excl,.iss-kpis .ik.incl{cursor:default;}
+.iss-kpis .ik.excl:hover,.iss-kpis .ik.incl:hover{transform:none;box-shadow:var(--shadow);}
 /* issues page — wider, tighter top gap, fitted table */
 .iss-wrap{max-width:1560px;margin:16px auto 48px;}
 /* Wide pages (Analytics) fill the available width */

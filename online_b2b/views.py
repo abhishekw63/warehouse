@@ -285,10 +285,12 @@ class RulesView(LoginRequiredMixin, TemplateView):
             from .services import overrides_store
             allx = overrides_store.list_all()
             ctx['swiggy_deals'] = [r for r in allx if r.get('kind') == 'swiggy_deal']
+            ctx['zepto_deals'] = [r for r in allx if r.get('kind') == 'zepto_deal']
             ctx['exc_groups'] = _group_exceptions(allx)
             ctx['exc_total'] = len(allx)
         except Exception:  # noqa: BLE001
             ctx['swiggy_deals'] = []
+            ctx['zepto_deals'] = []
             ctx['exc_groups'] = []
             ctx['exc_total'] = 0
         # MT (Modern Trade) child channels + their per-channel input requirements
@@ -591,7 +593,25 @@ def _issue_filters(request) -> dict:
 
 @login_required
 def issues(request):
-    data = order_db.issues(**_issue_filters(request))
+    filters = _issue_filters(request)
+    # Fresh open (no query params) → default to TODAY · All resolution, so the
+    # page lands on today's issues. Any interaction (AJAX/Reset sends params)
+    # keeps the operator's explicit choice — Reset still clears to all-time.
+    if not request.GET:
+        import datetime as _dt
+        _today = _dt.date.today().isoformat()
+        filters['resolution'] = 'all'
+        filters['date_from'] = _today
+        filters['date_to'] = _today
+    data = order_db.issues(**filters)
+    # Value KPIs (excluded/included qty + value, the loss) — same source as the
+    # email, date-filtered — so the page cards match the mail and change with the
+    # filter. Best-effort; the page still renders if this fails.
+    try:
+        from .services.issue_email import IssuesEmailReport
+        data['kpi'] = IssuesEmailReport(filters).summary
+    except Exception:  # noqa: BLE001
+        data['kpi'] = {}
     if _is_ajax(request):
         return render(request, 'online_b2b/_issues_table.html', {'d': data})
     return render(request, 'online_b2b/issues.html',
@@ -709,8 +729,9 @@ def daily_tasks(request):
     from .services import daily_checklist as dc
     data = dc.get_day(request.GET.get('day'))
     if _is_ajax(request):
-        return JsonResponse({'ok': True, 'data': data})
-    return render(request, 'online_b2b/daily_tasks.html', {'d': data})
+        return JsonResponse({'ok': True, 'data': data, 'adhoc': dc.adhoc_list()})
+    return render(request, 'online_b2b/daily_tasks.html',
+                  {'d': data, 'adhoc': dc.adhoc_list()})
 
 
 @login_required
@@ -723,8 +744,84 @@ def daily_tasks_toggle(request):
         request.POST.get('channel', ''),
         request.POST.get('step', ''),
         request.POST.get('checked') in ('1', 'true', 'True', 'on'),
-        user=request.user.get_username())
+        user=request.user.get_username(),
+        remark=request.POST.get('remark', ''))
     return JsonResponse(res)
+
+
+@login_required
+@require_POST
+def daily_hold_reason(request):
+    """Edit the Hold reason on a channel already on hold (no un-hold)."""
+    from .services import daily_checklist as dc
+    return JsonResponse(dc.set_hold_reason(
+        request.POST.get('day'), request.POST.get('channel', ''),
+        request.POST.get('remark', ''), user=request.user.get_username()))
+
+
+@login_required
+def daily_email_preview(request):
+    """Render (NO send) the Daily Activity email for a day — the modal shows
+    subject + recipients + the exact HTML that will be sent. Accepts optional
+    ``note`` / ``to`` / ``cc`` so the preview reflects the operator's edits."""
+    from .services.daily_email import DailyTasksEmailReport
+    note, to, cc = _email_extras(request)
+    rep = DailyTasksEmailReport(request.GET.get('day'), note=note, to=to, cc=cc)
+    p = rep.preview()
+    return JsonResponse({'ok': True, 'subject': p['subject'], 'html': p['html'],
+                         'to': p['to'], 'cc': p['cc'],
+                         'count': len(rep.active)})
+
+
+@login_required
+@require_POST
+def daily_email_send(request):
+    """Send the Daily Activity email for a day. The day comes via the query
+    string; the note + edited To/Cc via POST. Returns JSON — never sends
+    silently on error, and never falls back to config defaults if the operator
+    supplied an empty/invalid To."""
+    from .services.daily_email import DailyTasksEmailReport
+    note, to, cc = _email_extras(request)
+    rep = DailyTasksEmailReport(request.GET.get('day'), note=note, to=to, cc=cc)
+    if to is not None and not rep._to:
+        return JsonResponse(
+            {'ok': False, 'error': 'No valid recipient in "To" — add your '
+             'senior\'s email before sending.'})
+    if not rep.recipients().get('to'):
+        return JsonResponse(
+            {'ok': False, 'error': 'No recipient configured — add a "To" address '
+             'before sending.'})
+    ok, reason = rep.send()
+    return JsonResponse({'ok': ok, 'error': reason, 'count': len(rep.active)})
+
+
+@login_required
+@require_POST
+def daily_adhoc_add(request):
+    """Add a personal ad-hoc task (random / Outlook item) to the Daily page."""
+    from .services import daily_checklist as dc
+    return JsonResponse(dc.adhoc_add(
+        request.POST.get('title', ''), request.POST.get('note', ''),
+        request.POST.get('due', ''), user=request.user.get_username()))
+
+
+@login_required
+@require_POST
+def daily_adhoc_toggle(request):
+    """Tick / untick an ad-hoc task (records done time + user)."""
+    from .services import daily_checklist as dc
+    return JsonResponse(dc.adhoc_toggle(
+        request.POST.get('id'),
+        request.POST.get('done') in ('1', 'true', 'True', 'on'),
+        user=request.user.get_username()))
+
+
+@login_required
+@require_POST
+def daily_adhoc_delete(request):
+    """Delete an ad-hoc task."""
+    from .services import daily_checklist as dc
+    return JsonResponse(dc.adhoc_delete(request.POST.get('id')))
 
 
 @login_required
@@ -1137,6 +1234,17 @@ def review(request, token):
     # that these lines deviate from the flat marketplace rule.
     exc_count = sum(1 for ln in (res.get('lines') or [])
                     if (ln.get('exception_label') or '').strip())
+    # KPI: qty on affected (MISMATCH / NOT_IN_MASTER) lines, and the share of qty
+    # that is clean (OK). ok% = OK-qty / total-qty — e.g. 98% means only 2% of
+    # the ordered units are flagged. Qty-weighted, not line-weighted.
+    _AFF = {'MISMATCH', 'NOT_IN_MASTER'}
+    total_qty = affected_qty = 0
+    for ln in (res.get('lines') or []):
+        q = int(ln.get('qty') or 0)
+        total_qty += q
+        if (ln.get('status') or '') in _AFF:
+            affected_qty += q
+    ok_qty_pct = round((total_qty - affected_qty) * 100 / total_qty, 1) if total_qty else 100.0
     return render(request, 'online_b2b/review.html',
                   {'token': token, 'meta': meta, 'r': res,
                    'has_preview': has_preview,
@@ -1145,6 +1253,7 @@ def review(request, token):
                    'run_id': meta.get('run_id'),
                    'exc_count': exc_count, 'nim_lines': nim_lines,
                    'auto_fixed': auto_fixed,
+                   'affected_qty': affected_qty, 'ok_qty_pct': ok_qty_pct,
                    'margin': meta.get('margin_pct')})
 
 
@@ -1216,19 +1325,71 @@ class SaveReviewLaterView(LoginRequiredMixin, View):
         _save_meta(d, meta)
         # Parking a run = an unresolved CP issue → auto-HOLD that channel on
         # today's Daily Tasks so it's not chased as pending until it's resolved
-        # (finalizing the run un-holds it). Best-effort — never blocks the park.
+        # (finalizing the run un-holds it). The draft note rides along as the
+        # hold reason. Best-effort — never blocks the park.
         try:
             from .services import daily_checklist as dc
             from .services import marketplaces as reg
             ch = reg.db_key_to_channel().get(str(meta.get('marketplace')))
             if ch:
                 dc.toggle(None, ch, 'hold', True,
-                          getattr(request.user, 'username', '') or 'system')
+                          getattr(request.user, 'username', '') or 'system',
+                          remark=meta.get('draft_note', '') or 'Parked for review')
         except Exception:  # noqa: BLE001
             pass
+        # NOTE: the CP-issue email is sent MANUALLY (a button on the review page),
+        # NOT automatically on park — see `draft_email_send`.
         if request.headers.get('x-requested-with') == 'XMLHttpRequest':
             return JsonResponse({'ok': True, 'redirect': '/b2b/drafts/'})
         return redirect('b2b_drafts')
+
+
+@login_required
+@require_POST
+def draft_email_send(request, token):
+    """Send (or re-send) a run's **CP-issue email** to the stakeholders — the
+    ecom team sees which item has which issue + affected qty. Triggered manually
+    from the Review page or the Review-Later list (parking also auto-sends once).
+    Works for any run with flagged lines, parked or not."""
+    meta, d = _load_meta(token)
+    if not meta:
+        return JsonResponse({'ok': False, 'error': 'Run not found or expired.'}, status=404)
+    try:
+        res = _cached_preview(token, d, meta)
+    except Exception as e:  # noqa: BLE001
+        return JsonResponse({'ok': False, 'error': f'Could not load the run: {e}'},
+                            status=400)
+    affected = res.get('affected') or []
+    if not affected:
+        return JsonResponse({'ok': False,
+                             'error': 'No flagged lines on this run — nothing to email.'})
+    # Same KPI row as the review page (POs/lines/qty/value/affected/affected-qty/OK-qty).
+    summary = res.get('summary') or {}
+    _AFF = {'MISMATCH', 'NOT_IN_MASTER'}
+    _tq = _aq = 0
+    for _ln in (res.get('lines') or []):
+        try:
+            _q = int(float(_ln.get('qty') or 0))
+        except (TypeError, ValueError):
+            _q = 0
+        _tq += _q
+        if (_ln.get('status') or '') in _AFF:
+            _aq += _q
+    kpis = {'pos': summary.get('pos'), 'lines': summary.get('lines'),
+            'qty': summary.get('qty'), 'value': summary.get('value'),
+            'affected': summary.get('affected'), 'affected_qty': _aq,
+            'ok_qty_pct': round((_tq - _aq) * 100 / _tq, 1) if _tq else 100.0}
+    from .services.issue_email import ReviewLaterEmailReport
+    note, to, cc = _email_extras(request)
+    rep = ReviewLaterEmailReport(
+        marketplace=meta.get('marketplace', ''), affected=affected,
+        note=note or meta.get('draft_note', ''), draft_at=meta.get('draft_at', ''),
+        to=to, cc=cc, kpis=kpis)
+    if to is not None and not rep._to:
+        return JsonResponse({'ok': False, 'error': 'No valid recipient in "To".'})
+    ok, reason = rep.send()
+    return JsonResponse({'ok': ok, 'error': None if ok else reason,
+                         'to': rep.recipients()['to'], 'lines': len(affected)})
 
 
 class DraftsView(LoginRequiredMixin, TemplateView):
@@ -1274,10 +1435,22 @@ def confirm(request, token):
         if k and (a or r):
             actions[k] = {'action': a, 'remark': r, 'override_cp': ocp}
 
+    # A finalized "Review-later" draft belongs to the day it was PARKED, not
+    # today — back-date the whole recorded run (run_ts + created_at on headers &
+    # lines) to draft_at so Daily Tasks / analytics credit the park day. Normal
+    # runs pass as_of=None → stamped now. Bad/absent draft_at → falls back to now.
+    as_of = None
+    if meta.get('draft') and meta.get('draft_at'):
+        import datetime as _dt
+        try:
+            as_of = _dt.datetime.strptime(meta['draft_at'][:19], '%Y-%m-%d %H:%M:%S')
+        except (ValueError, TypeError):
+            as_of = None
+
     res = engine_bridge.confirm(
         meta['marketplace'], paths, warehouse=meta['warehouse'],
         margin_pct=meta['margin_pct'] / 100.0, actions=actions,
-        ean_fixes=meta.get('ean_fixes'))
+        ean_fixes=meta.get('ean_fixes'), as_of=as_of)
 
     if not res.get('ok'):
         err = res.get('error', 'Push failed.')
@@ -1325,7 +1498,10 @@ def confirm(request, token):
             from .services import marketplaces as reg
             ch = reg.db_key_to_channel().get(str(meta.get('marketplace')))
             if ch:
-                dc.toggle(None, ch, 'hold', False,
+                # The hold was placed on the PARK day, so un-hold THAT day (not
+                # today) — matches the back-dated record. Fall back to today.
+                hold_day = as_of.date().isoformat() if as_of else None
+                dc.toggle(hold_day, ch, 'hold', False,
                           getattr(request.user, 'username', '') or 'system')
         except Exception:  # noqa: BLE001
             pass
@@ -1534,10 +1710,19 @@ def review_download_completed(request, token):
     res = engine_bridge.export_decided_workbook(
         meta['marketplace'], paths,
         warehouse=meta['warehouse'], margin_pct=meta['margin_pct'] / 100.0,
-        actions=meta.get('decisions') or {}, ean_fixes=meta.get('ean_fixes'))
+        actions=meta.get('decisions') or {}, ean_fixes=meta.get('ean_fixes'),
+        # Drop POs already uploaded in an EARLIER run from the import file so
+        # D365 doesn't get duplicate SOs (this run's new POs stay). The Review
+        # download is unaffected. [[completed-dedup]]
+        exclude_uploaded_run_id=meta.get('run_id'))
     if not res.get('ok') or not os.path.exists(res.get('path', '')):
         messages.error(request, res.get('error', 'Completed workbook generation failed.'))
         return redirect('b2b_review', token=token)
+    # Downloading the Completed workbook is a real workflow milestone → auto-tick
+    # the Daily Tasks "Workbook downloaded" step for this channel/today. Never
+    # blocks the download (the helper swallows its own errors).
+    from .services import daily_checklist as _dc
+    _dc.mark_workbook_downloaded(meta['marketplace'], user=request.user.get_username())
     return FileResponse(open(res['path'], 'rb'), as_attachment=True,
                         filename=_lot_name(meta['marketplace'], res['path'], 'completed'))
 
@@ -1639,6 +1824,50 @@ def download(request, run_id):
         raise Http404("Output file not found for this run.")
     return FileResponse(open(path, 'rb'), as_attachment=True,
                         filename=_full_name(os.path.basename(path)))
+
+
+def _delete_run_files(run_id) -> list:
+    """Remove the web-owned file sidecars of a run (SO workbook, D365 dump, and
+    the run-index json). Returns the list of paths actually removed. Best-effort:
+    a missing/locked file never blocks the DB delete."""
+    removed = []
+    idx = _load_run_index(run_id)
+    for key in ('output_path', 'd365_path'):
+        p = idx.get(key)
+        if p and os.path.exists(p):
+            try:
+                os.remove(p); removed.append(p)
+            except OSError:
+                pass
+    for sc in (_RUNS_INDEX / f"{run_id}.json", _RUNS_INDEX / f"{run_id}_d365.xlsx"):
+        if sc.exists():
+            try:
+                sc.unlink(); removed.append(str(sc))
+            except OSError:
+                pass
+    return removed
+
+
+@login_required
+@require_POST
+def run_delete(request, run_id):
+    """HARD-DELETE a whole run — its runs row, order_headers, order_lines +
+    validation, and the file sidecars. Destructive & irreversible; POST-only and
+    guarded by a typed confirmation on the run page. No other run is touched."""
+    before = order_db.run_summary(run_id)
+    res = order_db.delete_run(run_id)
+    if not res.get('ok'):
+        messages.error(request, f"Could not delete run {run_id}: "
+                                f"{res.get('error', 'unknown error')}")
+        return redirect('b2b_run_detail', run_id=run_id)
+    files = _delete_run_files(run_id)
+    mp = (before.get('marketplaces') or '—') if before.get('ok') else '—'
+    messages.success(
+        request,
+        f"🗑 Run {run_id} deleted — {mp}: {res['headers']} PO header(s), "
+        f"{res['lines']} line(s), {res['validation']} validation row(s), "
+        f"{len(files)} file(s) removed.")
+    return redirect('b2b_dashboard')
 
 
 # ── Item Master (DB) ────────────────────────────────────────────────────────
@@ -1782,6 +2011,48 @@ def item_master_search(request):
         'total': res['total'], 'shown': res['shown'], 'q': res['q'],
         'rows': [_im_row_json(r) for r in res['rows']],
     })
+
+
+@login_required
+def item_master_export(request):
+    """Download the item master as .xlsx — ALL rows (no cap), honouring the same
+    `?q=` search as the on-page browser. Read-only."""
+    import datetime as _dt
+    import io as _io
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from .services import item_master_loader as iml
+    q = (request.GET.get('q', '') or '').strip()
+    rows = iml.export_rows(q)
+    cols = [('item_no', 'Item No'), ('ean', 'EAN'),
+            ('description', 'Description'), ('mrp', 'MRP'),
+            ('gst_code', 'GST Code'), ('hsn', 'HSN'),
+            ('mrp_start', 'MRP Start'), ('mrp_end', 'MRP End')]
+    wb = Workbook(); ws = wb.active; ws.title = 'Item Master'
+    hf = Font(bold=True, color='FFFFFF'); navy = PatternFill('solid', fgColor='1A237E')
+    for c, (_k, h) in enumerate(cols, 1):
+        cell = ws.cell(1, c, h)
+        cell.font = hf; cell.fill = navy
+        cell.alignment = Alignment(horizontal='center')
+    for r, row in enumerate(rows, 2):
+        for c, (k, _h) in enumerate(cols, 1):
+            v = row.get(k)
+            ws.cell(r, c, str(v) if k in ('mrp_start', 'mrp_end') and v is not None else v)
+    ws.freeze_panes = 'A2'
+    for col in ws.columns:
+        L = col[0].column_letter
+        w = max((len(str(c.value or '')) for c in col), default=8)
+        ws.column_dimensions[L].width = min(w + 2, 60)
+    buf = _io.BytesIO(); wb.save(buf); buf.seek(0)
+    stamp = _dt.datetime.now().strftime('%Y%m%d_%H%M%S')
+    scope = 'filtered' if q else 'all'
+    fname = f"item_master_{scope}_{len(rows)}items_{stamp}.xlsx"
+    resp = HttpResponse(
+        buf.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = f'attachment; filename="{fname}"'
+    return resp
 
 
 # ── GT Select (Offline parent — D365-finalised; import headers + lines) ─────
@@ -2238,3 +2509,218 @@ def ui_lab_search(request):
     from .services import item_master_loader as iml
     res = iml.list_items(request.GET.get('q', ''), limit=25)
     return render(request, 'online_b2b/_ui_lab_rows.html', {'result': res})
+
+
+# ── SKU price/CP exceptions — operator-managed (feeds the engine's exception
+#    overlay; additive, the engine already auto-reads item_exceptions) ────────
+@login_required
+def exceptions_page(request):
+    """Manage per-marketplace SKU exceptions (Use Vendor CP / Override MRP /
+    Override Margin / EAN remap). Rows land in `item_exceptions` (source=manual)
+    and are applied automatically on the next run — no engine change.
+
+    Presented marketplace-wise: each MP shows its own SKU exceptions; MPs with
+    none show 'all flat <margin>%'. Rows enriched with item name/no from master."""
+    import datetime as _dt
+    from collections import OrderedDict
+
+    from .services import overrides_store as ov
+    ov.ensure_tables()
+    rows = ov.list_with_ids()
+
+    # Enrich each row with the item name + item no from the DB master (lookup by
+    # EAN or by item no — source_code can be either).
+    by_ean, by_item, gst_of = {}, {}, {}
+    try:
+        with order_db._conn() as (cur, d):
+            cur.execute('SELECT ean, item_no, description, gst_code FROM item_master')
+            for ean, it, desc, gst in cur.fetchall():
+                if ean:
+                    by_ean[str(ean).strip()] = (str(it), desc)
+                    gst_of[str(ean).strip()] = gst
+                if it:
+                    by_item[str(it).strip()] = desc
+                    gst_of[str(it).strip()] = gst
+    except Exception:  # noqa: BLE001
+        pass
+
+    def _f(x):
+        try:
+            return float(str(x).strip())
+        except (TypeError, ValueError):
+            return None
+
+    def _gst_div(code):
+        c = str(code or '').upper()
+        if '18' in c:
+            return 1.18
+        if '12' in c:
+            return 1.12
+        if '5' in c and '15' not in c and '25' not in c:
+            return 1.05
+        if '3' in c:
+            return 1.03
+        if '0' in c:
+            return 1.00
+        return 1.18
+
+    def _eff(r, gdiv=1.18):
+        # Two operator kinds only: EAN Remap, or Override CP. For CP we show the
+        # ACTUAL overridden unit price (₹) — never an internal margin %.
+        if r.get('maps_to'):
+            return ('remap', 'EAN Remap', f"→ {r['maps_to']}")
+        # Deal SKUs carry a negotiated cost. 'Cost after GST' is already the
+        # pre-GST CP; 'Cost With GST' (Myntra transfer price) → ÷(1+GST), exactly
+        # as the engine writes it to the D365 Lines unit price (engine_bridge
+        # expected_cp = transfer ÷ gst_div).
+        price = _f(r.get('cost_after_gst'))
+        if price is None:
+            cwg = _f(r.get('cost_with_gst'))
+            if cwg:
+                price = round(cwg / gdiv, 2)
+        if price is None:
+            mrp, mgn = _f(r.get('override_mrp')), _f(r.get('override_margin'))
+            if mrp and mgn:
+                price = round(mrp * mgn / 100 / gdiv, 2)   # CP = MRP×keep% ÷ (1+GST)
+            elif mrp:
+                price = mrp
+        if price:
+            return ('cp', 'Override CP', f"₹{price:g}")
+        if r.get('use_vendor_cp'):
+            return ('cp', 'Override CP', 'vendor CP')
+        return ('cp', 'Override CP', '—')
+
+    def _ago(v):
+        """'2 days ago' style relative string + absolute for the tooltip."""
+        if not v:
+            return '', ''
+        try:
+            dtv = v if hasattr(v, 'year') else _dt.datetime.fromisoformat(str(v)[:19])
+        except (ValueError, TypeError):
+            return str(v), str(v)
+        delta = _dt.datetime.now() - dtv
+        s = int(delta.total_seconds())
+        if s < 3600:
+            rel = f"{max(s // 60, 0)}m ago"
+        elif s < 86400:
+            rel = f"{s // 3600}h ago"
+        elif s < 86400 * 30:
+            rel = f"{s // 86400}d ago"
+        else:
+            rel = dtv.strftime('%d %b %Y')
+        return rel, dtv.strftime('%d %b %Y, %H:%M')
+
+    # Deal-SKU rows carry no Marketplace column, so attribute them by kind
+    # (swiggy_deal → Swiggy, myntra_deal → Myntra) — else they'd read as
+    # '(unassigned)' and the channel would wrongly look flat.
+    _KIND_MP = {'swiggy_deal': 'Swiggy', 'myntra_deal': 'Myntra',
+                'zepto_deal': 'Zepto'}
+    eff_counts: dict = {}
+    for r in rows:
+        code = str(r.get('source_code') or '').strip()
+        item_no, desc = by_ean.get(code, (code if code in by_item else '', by_item.get(code, '')))
+        r['item_no'] = item_no
+        r['item_name'] = desc or ''
+        r['eff_kind'], r['eff_label'], r['eff_detail'] = _eff(r, _gst_div(gst_of.get(code)))
+        # Internal sub-type — kept in the remark column, NOT a top-level label
+        # (the two operator categories stay Override CP / EAN Remap only).
+        if r.get('kind') == 'swiggy_deal':
+            r['subtype'] = 'Swiggy deal SKU'
+        elif r.get('kind') == 'myntra_deal':
+            r['subtype'] = 'Myntra deal SKU'
+        elif r.get('kind') == 'zepto_deal':
+            r['subtype'] = 'Zepto deal SKU'
+        elif r.get('use_vendor_cp'):
+            r['subtype'] = 'Vendor CP'
+        elif r.get('maps_to'):
+            r['subtype'] = 'EAN remap'
+        elif r.get('override_margin'):
+            r['subtype'] = 'Margin override'
+        elif r.get('override_mrp'):
+            r['subtype'] = 'MRP override'
+        else:
+            r['subtype'] = ''
+        r['created_rel'], r['created_abs'] = _ago(r.get('created_at'))
+        r['updated_rel'], r['updated_abs'] = _ago(r.get('updated_at'))
+        r['mp_eff'] = ((r.get('marketplace') or '').strip()
+                       or _KIND_MP.get(r.get('kind'), ''))
+        eff_counts[r['eff_kind']] = eff_counts.get(r['eff_kind'], 0) + 1
+
+    # De-dup twins: some SKUs carry BOTH a legacy 'use vendor CP' row AND a deal
+    # row with the actual fixed transfer price (e.g. Myntra matte-lock ↔ ₹63.35).
+    # Show the fixed price once — drop the redundant vendor-CP twin from the view
+    # (display only; the engine + DB are untouched). SKUs that are genuinely
+    # vendor-CP with no fixed number (e.g. Goddess) keep their row.
+    def _has_fixed(r):
+        return bool(_f(r.get('cost_after_gst')) or _f(r.get('cost_with_gst'))
+                    or (_f(r.get('override_mrp')) and _f(r.get('override_margin'))))
+    _fixed_keys = {(r['mp_eff'], str(r.get('source_code') or '').strip())
+                   for r in rows if _has_fixed(r)}
+    rows = [r for r in rows
+            if not (r.get('use_vendor_cp') and not r.get('maps_to') and not _has_fixed(r)
+                    and (r['mp_eff'], str(r.get('source_code') or '').strip()) in _fixed_keys)]
+    # Recount effects after the de-dup so the effect-lens totals stay honest.
+    eff_counts = {}
+    for r in rows:
+        eff_counts[r['eff_kind']] = eff_counts.get(r['eff_kind'], 0) + 1
+
+    # Group by (effective) marketplace (order: most exceptions first).
+    groups: dict = OrderedDict()
+    for r in rows:
+        mp = r['mp_eff'] or '(unassigned)'
+        groups.setdefault(mp, []).append(r)
+    grouped = sorted(
+        ({'mp': mp, 'rows': rs, 'count': len(rs),
+          'n_manual': sum(1 for x in rs if x.get('source') == 'manual'),
+          'margin': engine_bridge.default_margin_pct(mp) if mp != '(unassigned)' else None}
+         for mp, rs in groups.items()),
+        key=lambda g: (-g['count'], g['mp']))
+
+    # Marketplaces with NO exceptions → 'all flat <margin>%'.
+    flat = [{'mp': mp, 'margin': engine_bridge.default_margin_pct(mp)}
+            for mp in engine_bridge.PILOT_MARKETPLACES if mp not in groups]
+
+    # Effect lens — the TWO operator categories only (must match _eff()'s
+    # eff_kind: 'cp' / 'remap'), ordered, with a label + count.
+    _EFF_ORDER = [('cp', 'Override CP'), ('remap', 'EAN Remap')]
+    by_effect = [{'kind': k, 'label': lbl, 'count': eff_counts.get(k, 0)}
+                 for k, lbl in _EFF_ORDER if eff_counts.get(k)]
+
+    return render(request, 'online_b2b/exceptions.html', {
+        'rows': rows, 'grouped': grouped, 'flat_mps': flat, 'by_effect': by_effect,
+        'marketplaces': engine_bridge.PILOT_MARKETPLACES,
+        'counts': ov.table_counts(),
+        'n_manual': sum(1 for r in rows if r.get('source') == 'manual'),
+        'n_mp_with': len(grouped), 'n_flat': len(flat)})
+
+
+@login_required
+@require_POST
+def exception_add(request):
+    from .services import overrides_store as ov
+    res = ov.add_manual(
+        marketplace=request.POST.get('marketplace', ''),
+        source_code=request.POST.get('source_code', ''),
+        maps_to=request.POST.get('maps_to', ''),
+        override_mrp=request.POST.get('override_mrp', ''),
+        override_margin=request.POST.get('override_margin', ''),
+        use_vendor_cp=request.POST.get('use_vendor_cp', ''),
+        note=request.POST.get('note', ''))
+    return JsonResponse(res)
+
+
+@login_required
+@require_POST
+def exception_update(request, row_id):
+    from .services import overrides_store as ov
+    fields = {k: request.POST[k] for k in
+              ('marketplace', 'source_code', 'maps_to', 'override_mrp',
+               'override_margin', 'use_vendor_cp', 'note') if k in request.POST}
+    return JsonResponse(ov.update_manual(row_id, **fields))
+
+
+@login_required
+@require_POST
+def exception_delete(request, row_id):
+    from .services import overrides_store as ov
+    return JsonResponse(ov.delete_manual(row_id))

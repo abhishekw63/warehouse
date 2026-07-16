@@ -1923,6 +1923,28 @@ class MarketplaceEngine:
             return run_margin_pct, None
         rules = rules_cfg.get('rules', [])
 
+        # ── ⏳ TEMP per-item keep% override (highest priority) ───────────────
+        # Hard-pins keep% by Item No for a handful of SKUs the name heuristic
+        # gets wrong (e.g. body mists that read as Cosmetics 66% but are
+        # Perfume 69%). Deliberately a STOPGAP: remove ``item_keep_overrides``
+        # from the config once the HSN-based (33030050 → Perfume) or exact
+        # perfume lookup is finalised. Each hit is logged so the audit trail
+        # shows a pinned (not computed) margin. [[nykaa-temp-item-margin]]
+        overrides = rules_cfg.get('item_keep_overrides') or {}
+        ov = overrides.get(str(item_no), overrides.get(item_no))
+        if ov is not None:
+            keep = float(ov) / 100.0
+            label = f'TEMP-override {ov}%'
+            okey = ('margin_override', str(item_no))
+            if okey not in warned_keys:
+                warned_keys.add(okey)
+                result.warnings.append((
+                    po, '',
+                    f"⏳ TEMP margin override: Item {item_no} pinned to {ov}% "
+                    f"keep (hard-coded stopgap — revisit when HSN/name "
+                    f"classification is finalised)."))
+            return keep, label
+
         # Row HSN (for the cross-check) — same coercion as _check_hsn.
         hsn_col = config.get('hsn_col')
         hsn_val = ''

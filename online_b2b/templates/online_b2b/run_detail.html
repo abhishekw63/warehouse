@@ -22,6 +22,32 @@
     {% if has_d365 %}
       <a href="{% url 'b2b_download_d365' run_id=run_id %}" class="dl-btn d365" title="The decided D365 dump saved when this run was locked">↓ D365 dump</a>
     {% endif %}
+      <button type="button" class="dl-btn danger" id="rd-delbtn"
+              title="Permanently delete this run and everything tied to it">🗑 Delete run</button>
+    </div>
+  </div>
+
+  {# ── Delete-run confirmation modal (typed guard) ── #}
+  <div class="rd-modal" id="rd-delmodal" hidden>
+    <div class="rd-modal-card">
+      <h3>Delete run #{{ run_id }}?</h3>
+      <p class="rd-modal-sub">This permanently removes the run and <b>everything tied to it</b>:</p>
+      <ul class="rd-modal-list">
+        <li>{% if d.run %}{{ d.run.marketplaces }} · {% endif %}{{ d.orders|length }} PO header(s)</li>
+        <li>{{ d.lines|length }} line item(s) + their validation / decisions</li>
+        <li>the saved SO workbook &amp; D365 dump file(s)</li>
+      </ul>
+      <p class="rd-modal-warn">⚠ This cannot be undone. No other run is affected.</p>
+      <label class="rd-modal-typed">Type <b>DELETE</b> to confirm:
+        <input type="text" id="rd-delconfirm" autocomplete="off" placeholder="DELETE">
+      </label>
+      <form method="post" action="{% url 'b2b_run_delete' run_id=run_id %}" id="rd-delform">
+        {% csrf_token %}
+        <div class="rd-modal-foot">
+          <button type="button" class="btn-clear" id="rd-delcancel">Cancel</button>
+          <button type="submit" class="dl-btn danger" id="rd-delgo" disabled>Delete run</button>
+        </div>
+      </form>
     </div>
   </div>
 
@@ -120,4 +146,44 @@
 
   <p style="margin-top:20px;"><a href="{% url 'b2b_dashboard' %}" class="back">← Back to dashboard</a></p>
 </div>
+
+<style>
+  .dl-btn.danger{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;}
+  .dl-btn.danger:hover{background:#fee2e2;border-color:#fca5a5;}
+  .rd-modal{position:fixed;inset:0;z-index:120;display:flex;align-items:center;
+    justify-content:center;background:rgba(15,23,42,.5);padding:20px;}
+  .rd-modal[hidden]{display:none;}
+  .rd-modal-card{background:var(--surface,#fff);border-radius:14px;max-width:440px;
+    width:100%;padding:22px 24px;box-shadow:0 24px 60px rgba(0,0,0,.28);}
+  .rd-modal-card h3{margin:0 0 8px;color:#b91c1c;font-size:18px;}
+  .rd-modal-sub{margin:0 0 8px;font-size:13px;color:var(--text-2,#475569);}
+  .rd-modal-list{margin:0 0 12px;padding-left:18px;font-size:13px;color:var(--text,#0f172a);}
+  .rd-modal-list li{margin:3px 0;}
+  .rd-modal-warn{margin:0 0 14px;font-size:12.5px;font-weight:700;color:#b45309;
+    background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;}
+  .rd-modal-typed{display:block;font-size:12.5px;color:var(--text-2,#475569);margin-bottom:14px;}
+  .rd-modal-typed input{display:block;width:100%;margin-top:6px;padding:9px 12px;
+    border:1px solid var(--border,#e5e7eb);border-radius:9px;font-size:14px;
+    letter-spacing:.08em;box-sizing:border-box;}
+  .rd-modal-foot{display:flex;justify-content:flex-end;gap:10px;}
+  .dl-btn.danger[disabled]{opacity:.5;cursor:not-allowed;}
+</style>
+<script>
+(function () {
+  var open = document.getElementById('rd-delbtn');
+  var modal = document.getElementById('rd-delmodal');
+  var cancel = document.getElementById('rd-delcancel');
+  var field = document.getElementById('rd-delconfirm');
+  var go = document.getElementById('rd-delgo');
+  if (!open || !modal) return;
+  function show(v) { modal.hidden = !v; if (v) { field.value = ''; go.disabled = true; field.focus(); } }
+  open.addEventListener('click', function () { show(true); });
+  cancel.addEventListener('click', function () { show(false); });
+  modal.addEventListener('click', function (e) { if (e.target === modal) show(false); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !modal.hidden) show(false); });
+  field.addEventListener('input', function () {
+    go.disabled = field.value.trim().toUpperCase() !== 'DELETE';
+  });
+})();
+</script>
 {% endblock %}

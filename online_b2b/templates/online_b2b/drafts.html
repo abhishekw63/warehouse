@@ -22,6 +22,10 @@
   .ropen{display:inline-block;background:#2f6feb;color:#fff;text-decoration:none;font-weight:700;
     font-size:12.5px;padding:7px 13px;border-radius:8px;}
   .ropen:hover{background:#245ad0;}
+  .dl-email{background:#fff;color:#b45309;border:1px solid #f0c98a;font-weight:700;font-size:12.5px;
+    padding:7px 12px;border-radius:8px;cursor:pointer;margin-right:8px;}
+  .dl-email:hover{background:#fff8ed;}
+  .dl-email:disabled{opacity:.6;cursor:default;}
   .empty{text-align:center;color:#98a2b3;padding:48px 20px;background:#fff;border:1px dashed #d7dbe6;border-radius:12px;}
   .empty b{color:#475467;}
 </style>{% endblock %}
@@ -50,7 +54,11 @@
         <td>{{ d.pos }}</td>
         <td>{% if d.undecided %}<span class="pill warn">{{ d.undecided }} pending</span>{% else %}<span class="pill ok">all set</span>{% endif %}</td>
         <td class="note" title="{{ d.note }}">{{ d.note|default:"—" }}</td>
-        <td><a class="ropen" href="{% url 'b2b_review' token=d.token %}?revalidate=1">Reopen &amp; re-validate →</a></td>
+        <td style="white-space:nowrap;text-align:right;">
+          <button class="dl-email" type="button"
+                  data-url="{% url 'b2b_review_email_issue' token=d.token %}"
+                  title="Email this parked run's flagged CP-issue line(s) to the ecom team">✉ Email issue</button>
+          <a class="ropen" href="{% url 'b2b_review' token=d.token %}?revalidate=1">Reopen &amp; re-validate →</a></td>
       </tr>
       {% endfor %}
     </tbody>
@@ -59,4 +67,33 @@
   <div class="empty">No parked runs. When a CP issue can't be decided at review, use <b>Save for Review Later</b> — it'll show up here.</div>
   {% endif %}
 </div>
+
+<script>
+(function () {
+  var csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '';
+  document.querySelectorAll('.dl-email').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      if (btn.disabled) return;
+      var orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '✉ Sending…';
+      fetch(btn.dataset.url, { method: 'POST', credentials: 'same-origin',
+        headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          btn.disabled = false;
+          if (j.ok) {
+            btn.innerHTML = '✓ Emailed';
+            var msg = 'Issue email sent to ' + (j.to || []).join(', ') + ' (' + j.lines + ' line(s)).';
+            if (window.B2B && B2B.toast) B2B.toast(msg, 'ok'); else alert(msg);
+            setTimeout(function () { btn.innerHTML = orig; }, 4000);
+          } else {
+            btn.innerHTML = orig;
+            if (window.B2B && B2B.toast) B2B.toast(j.error || 'Could not send.', 'err');
+            else alert(j.error || 'Could not send the email.');
+          }
+        })
+        .catch(function () { btn.disabled = false; btn.innerHTML = orig; alert('Network error — email not sent.'); });
+    });
+  });
+})();
+</script>
 {% endblock %}

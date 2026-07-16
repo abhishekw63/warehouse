@@ -479,6 +479,29 @@ def list_items(q: str = '', limit: int = 100) -> dict:
         return {'rows': [], 'total': 0, 'shown': 0, 'q': q}
 
 
+def export_rows(q: str = '') -> list:
+    """ALL item_master rows (optionally filtered by the same search as
+    :func:`list_items`) for a full export — no row limit. Read-only."""
+    q = (q or '').strip()
+    cols = ['item_no', 'ean', 'description', 'mrp', 'gst_code', 'hsn',
+            'mrp_start', 'mrp_end']
+    try:
+        with _conn() as (cur, d):
+            ph = d['ph']
+            where, args = '', []
+            if q:
+                like = f"%{q}%"
+                where = (f"WHERE item_no LIKE {ph} OR ean LIKE {ph} OR "
+                         f"description LIKE {ph}")
+                args = [like, like, like]
+            cur.execute(
+                f"SELECT {', '.join(cols)} FROM {_MASTER_TABLE} {where} "
+                f"ORDER BY item_no", args)
+            return [dict(zip(cols, r)) for r in cur.fetchall()]
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def resolve_in_master(key) -> dict | None:
     """Look up ``key`` (an EAN or an Item No) in item_master. Returns
     ``{item_no, ean, description, mrp}`` on hit, else None. Used to validate an

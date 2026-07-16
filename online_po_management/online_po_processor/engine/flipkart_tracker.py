@@ -65,6 +65,7 @@ LOCATION_MARKETPLACE: Dict[str, str] = {
     'luc_gsh_wh_nl_01nl': _FK_HYPERLOCAL,
     'lud_gsh_wh_nl_01nl': _FK_HYPERLOCAL,      # added 2026-06-23 (was missing)
     'pat_sh_wh_nl_01nl':  _FK_HYPERLOCAL,
+    'pun_dhl_wh_nl_01nl': _FK_HYPERLOCAL,      # added 2026-07-14: Maval/Pune (Hyperlocal)
     'sai_gsh_wh_nl_01nl': _FK_HYPERLOCAL,
     'son_gsh_wh_nl_01nl': _FK_HYPERLOCAL,
     'ulu_sh_wh_nl_01nl':  _FK_HYPERLOCAL,      # operator: Hyperlocal (not Grocery)

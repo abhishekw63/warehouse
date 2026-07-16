@@ -336,12 +336,18 @@ def web_dedup(result, marketplace) -> list:
     return skipped
 
 
-def record_run_headers(result, marketplace, warehouse, output_file='') -> dict:
+def record_run_headers(result, marketplace, warehouse, output_file='',
+                       as_of=None) -> dict:
     """Web-owned replica of the engine's ``record_manual`` — write ``runs`` +
     ``order_headers`` DIRECTLY (no engine history store, so ``order_issue_lines``
     is never recreated). Reuses the engine's PURE ``order_rows_from_result`` for
     header derivation, so the rows are byte-identical to the old path. Returns
-    ``{run_id, new_orders}``."""
+    ``{run_id, new_orders}``.
+
+    ``as_of`` (a ``datetime``) BACK-DATES ``run_ts`` + ``created_at`` to that
+    moment instead of now — used when finalizing a *Review-later* draft, so the
+    whole record belongs to the day the draft was parked (see the confirm flow).
+    ``None`` = stamp now (the normal path)."""
     import datetime as _dt2
     import os as _os
 
@@ -353,7 +359,7 @@ def record_run_headers(result, marketplace, warehouse, output_file='') -> dict:
     rows = order_rows_from_result(result, marketplace, warehouse or '', output_file)
     if not rows:
         return {'run_id': None, 'new_orders': 0}
-    run_ts = _dt2.datetime.now()
+    run_ts = as_of or _dt2.datetime.now()
     source = (f"MANUAL: {_os.path.basename(output_file)}" if output_file
               else 'MANUAL')
     meta = {
@@ -375,14 +381,14 @@ def record_run_headers(result, marketplace, warehouse, output_file='') -> dict:
             (run_ts, source, meta['marketplaces'], meta['total_pos'],
              meta['total_items'], meta['total_qty'], meta['total_value']))
         run_id = cur.lastrowid
-        hcols = ('run_id, run_ts, mode, segment, marketplace, marketplace_label, '
-                 'po, location, warehouse, po_date, exp_date, order_type, items, '
-                 'qty, order_value, output_file')
-        marks = ', '.join([ph] * 16)
+        hcols = ('run_id, run_ts, created_at, mode, segment, marketplace, '
+                 'marketplace_label, po, location, warehouse, po_date, exp_date, '
+                 'order_type, items, qty, order_value, output_file')
+        marks = ', '.join([ph] * 17)
         for o in rows:
             cur.execute(
                 f"INSERT INTO order_headers ({hcols}) VALUES ({marks})",
-                (run_id, run_ts, 'MANUAL', o.get('segment', ORDER_SEGMENT),
+                (run_id, run_ts, run_ts, 'MANUAL', o.get('segment', ORDER_SEGMENT),
                  o['marketplace'], o['marketplace_label'], o['po'], o['location'],
                  o['warehouse'], _to_date(o['po_date']), _to_date(o['exp_date']),
                  o['order_type'], o['items'], o['qty'], o['order_value'],
@@ -461,15 +467,19 @@ def apply_issue_ean_fix(line_id, correct_ean) -> dict:
 
 
 def build_lines(result, run_id=None, output_file: str = '', actions=None,
-                ean_fixes=None) -> list[dict]:
+                ean_fixes=None, as_of=None) -> list[dict]:
     """One dict per SO line from an engine ``ProcessingResult`` (reads only).
     Carries the full comparison columns so affected = status filter. ``actions``
     is an optional ``{"po|item_no|ean": {"action":..,"remark":..}}`` map of the
-    operator's per-line decision captured on the review screen."""
+    operator's per-line decision captured on the review screen.
+
+    ``as_of`` (a ``datetime``) BACK-DATES each line's ``run_ts`` to that moment
+    instead of now — keeps a finalized *Review-later* draft's lines on the day it
+    was parked (matches the back-dated headers). ``None`` = now."""
     actions = actions or {}
     ean_fixes = ean_fixes or {}
     basis = getattr(result, 'compare_basis', None) or 'landing'
-    run_ts = _dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    run_ts = (as_of or _dt.datetime.now()).strftime('%Y-%m-%d %H:%M:%S')
     otype = 'TO' if getattr(result, 'output_type', 'so') == 'to' else 'SO'
     out: list[dict] = []
     for so in result.rows:

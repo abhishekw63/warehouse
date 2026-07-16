@@ -34,6 +34,7 @@ _TABLE = 'item_exceptions'
 KIND_EXC = 'exception'      # Master Exceptions row (remap / price / vendor_cp)
 KIND_DEAL = 'swiggy_deal'   # Swiggy Deal SKUs row
 KIND_MYNTRA_DEAL = 'myntra_deal'   # Myntra negotiated per-SKU transfer prices
+KIND_ZEPTO_DEAL = 'zepto_deal'     # Zepto negotiated per-SKU base cost (as-is CP)
 
 # Unified columns. source_code = 'Source Code' (exception) OR 'EAN' (swiggy deal);
 # override_mrp = 'Override MRP' OR 'Correct MRP'; note = 'Note' OR 'Name'.
@@ -103,7 +104,8 @@ def ensure_tables() -> None:
         for col, ddl in (
                 ('kind', "VARCHAR(16) DEFAULT 'exception'"),
                 ('item_id', 'VARCHAR(40)'), ('correct_gst', 'VARCHAR(40)'),
-                ('cost_with_gst', 'VARCHAR(40)'), ('cost_after_gst', 'VARCHAR(40)')):
+                ('cost_with_gst', 'VARCHAR(40)'), ('cost_after_gst', 'VARCHAR(40)'),
+                ('created_at', 'DATETIME')):
             try:
                 cur.execute(f"ALTER TABLE {_TABLE} ADD COLUMN {col} {ddl}")
             except Exception:  # noqa: BLE001 — column already exists
@@ -248,6 +250,26 @@ def myntra_deal_map() -> dict:
     return out
 
 
+def zepto_deal_map() -> dict:
+    """``{clean EAN: negotiated Unit Base Cost}`` for the Zepto deal SKUs. Unlike
+    Myntra's transfer price, this value is already the per-unit CP AFTER GST (the
+    'Unit Base Cost'), so it is written to the D365 unit price AS-IS — no ÷(1+GST).
+    Zepto-only; applied post-hoc in :class:`ZeptoProcessor` (never in the engine's
+    Swiggy-only deal sheet)."""
+    out: dict = {}
+    for r in _fetch(f"WHERE kind='{KIND_ZEPTO_DEAL}'"):
+        ean = _s(r.get('source_code'))
+        if ean.endswith('.0'):
+            ean = ean[:-2]
+        try:
+            v = float(_s(r.get('cost_after_gst')))
+        except (TypeError, ValueError):
+            continue
+        if ean and v > 0:
+            out[ean] = v
+    return out
+
+
 def build_overlay_workbook() -> str | None:
     """Regenerate the engine's two overlay sheets from the ONE table (split by
     ``kind``) so its own parsers interpret them identically. Returns a temp path
@@ -292,3 +314,77 @@ def status() -> dict:
 
 def list_all() -> list:
     return _fetch("ORDER BY kind, source_code")
+
+
+# ── Manual CRUD (operator-managed exceptions) ───────────────────────────────
+# Manual rows carry source='manual' so a bundled/Excel re-seed (`replace_all`,
+# which deletes only source<>'manual') NEVER wipes them. Additive — the engine
+# already reads every row via build_overlay_workbook(); nothing else changes.
+def add_manual(marketplace: str, source_code: str, *, maps_to: str = '',
+               override_mrp: str = '', override_margin: str = '',
+               use_vendor_cp: str = '', note: str = '') -> dict:
+    """Insert one operator-added exception (kind='exception', source='manual')."""
+    source_code = (source_code or '').strip()
+    if not source_code:
+        return {'ok': False, 'error': 'SKU / Source Code is required.'}
+    ensure_tables()
+    now = _dt.datetime.now()
+    vcp = 'Y' if str(use_vendor_cp).strip().lower() in ('y', 'yes', 'true', '1', 'on') else ''
+    with _conn() as (cur, d):
+        ph = d['ph']
+        cur.execute(
+            f"INSERT INTO {_TABLE} (kind, source_code, maps_to, override_mrp, "
+            f"override_margin, use_vendor_cp, marketplace, note, source, "
+            f"created_at, updated_at) "
+            f"VALUES ('exception',{ph},{ph},{ph},{ph},{ph},{ph},{ph},'manual',{ph},{ph})",
+            (source_code, (maps_to or '').strip(), (override_mrp or '').strip(),
+             (override_margin or '').strip(), vcp, (marketplace or '').strip(),
+             (note or '').strip(), now, now))
+        cur.connection.commit()
+        return {'ok': True, 'id': cur.lastrowid}
+
+
+def update_manual(row_id, **fields) -> dict:
+    """Edit a MANUAL exception row (never an Excel-sourced one)."""
+    allowed = {'marketplace', 'source_code', 'maps_to', 'override_mrp',
+               'override_margin', 'use_vendor_cp', 'note'}
+    sets = {k: v for k, v in fields.items() if k in allowed}
+    if 'use_vendor_cp' in sets:
+        sets['use_vendor_cp'] = 'Y' if str(sets['use_vendor_cp']).strip().lower() in (
+            'y', 'yes', 'true', '1', 'on') else ''
+    if not sets:
+        return {'ok': False, 'error': 'Nothing to update.'}
+    ensure_tables()
+    with _conn() as (cur, d):
+        ph = d['ph']
+        assigns = ', '.join(f"{k}={ph}" for k in sets)
+        cur.execute(f"UPDATE {_TABLE} SET {assigns}, updated_at={ph} "
+                    f"WHERE id={ph} AND source='manual'",
+                    tuple(sets.values()) + (_dt.datetime.now(), row_id))
+        n = cur.rowcount
+        cur.connection.commit()
+    return {'ok': bool(n), 'error': None if n else 'Row not found or not editable (Excel-sourced).'}
+
+
+def delete_manual(row_id) -> dict:
+    """Delete a MANUAL exception row (Excel-sourced rows are protected)."""
+    ensure_tables()
+    with _conn() as (cur, d):
+        ph = d['ph']
+        cur.execute(f"DELETE FROM {_TABLE} WHERE id={ph} AND source='manual'", (row_id,))
+        n = cur.rowcount
+        cur.connection.commit()
+    return {'ok': bool(n), 'error': None if n else 'Row not found or not deletable (Excel-sourced).'}
+
+
+def list_with_ids() -> list:
+    """Every exception row incl. its id + when it was last set (for the UI)."""
+    try:
+        with _conn() as (cur, d):
+            cur.execute(f"SELECT id, {', '.join(_COLS[:-2])}, source, created_at, "
+                        f"updated_at FROM {_TABLE} "
+                        f"ORDER BY (source='manual') DESC, marketplace, source_code")
+            cols = ['id'] + _COLS[:-2] + ['source', 'created_at', 'updated_at']
+            return [dict(zip(cols, r)) for r in cur.fetchall()]
+    except Exception:  # noqa: BLE001
+        return []

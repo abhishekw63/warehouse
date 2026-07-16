@@ -216,7 +216,19 @@ def review_context(spec: FlowSpec, token: str, meta: dict) -> dict:
     """Build the full template context for the shared ``review.html``."""
     payload = preview(spec, token, meta)
     _overlay_decisions(payload, meta)
+    # Qty-weighted KPIs (parity with the Online B2B review): total qty on
+    # affected lines, and the share of qty that is clean (OK). Derived from the
+    # already-computed lines — no processor/engine change.
+    _AFF = {'MISMATCH', 'NOT_IN_MASTER'}
+    total_qty = affected_qty = 0
+    for ln in (payload.get('lines') or []):
+        q = int(ln.get('qty') or 0)
+        total_qty += q
+        if (ln.get('status') or '') in _AFF:
+            affected_qty += q
+    ok_qty_pct = round((total_qty - affected_qty) * 100 / total_qty, 1) if total_qty else 100.0
     return {
+        'affected_qty': affected_qty, 'ok_qty_pct': ok_qty_pct,
         'spec': spec,
         'title': spec.title,
         'segment': spec.segment,

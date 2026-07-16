@@ -1,0 +1,380 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static b2b_extras %}
+{% block title %}Online B2B — SKU Exceptions{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<style>
+  /* ── SKU Exceptions · pricing-override control panel ─────────────────── */
+  .xc{--ink:#0f172a;--mut:#64748b;--line:#e6e8f0;--navy:#1e2a52;--acc:#4f46e5;
+      --cp:#1d4ed8;--cp-s:#e6efff;--remap:#7c3aed;--remap-s:#f3ecff;
+      max-width:1240px;margin:0 auto;padding:6px 4px 56px;color:var(--ink);
+      font-variant-numeric:tabular-nums;}
+
+  .xhero{background:linear-gradient(120deg,#1e2a52,#28356b 60%,#343f78);border-radius:18px;
+    padding:22px 26px;color:#fff;margin:2px 0 20px;box-shadow:0 12px 30px -14px rgba(30,42,82,.55);}
+  .xhero h1{font-size:23px;font-weight:800;margin:0 0 3px;letter-spacing:-.01em;}
+  .xhero p{margin:0;font-size:13px;color:#c3cae6;max-width:80ch;line-height:1.5;}
+  .xstats{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px;}
+  .xstat{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-radius:12px;
+    padding:11px 16px;min-width:120px;}
+  .xstat b{display:block;font-size:25px;font-weight:800;line-height:1;}
+  .xstat span{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:#aeb7de;display:block;margin-top:5px;}
+  .xstat.accent b{color:#c7d0ff;}
+
+  .xadd{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px 18px 18px;margin:0 0 18px;
+    box-shadow:0 2px 8px -4px rgba(15,23,42,.08);}
+  .xadd summary{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:#334155;
+    cursor:pointer;list-style:none;display:flex;align-items:center;gap:8px;}
+  .xadd summary::-webkit-details-marker{display:none;}
+  .xadd summary .plus{width:22px;height:22px;border-radius:7px;background:var(--acc);color:#fff;
+    display:grid;place-items:center;font-size:15px;font-weight:700;}
+  .xgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:13px 14px;align-items:end;margin-top:15px;}
+  .xf label{display:block;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--mut);margin:0 0 5px;}
+  .xf input,.xf select{width:100%;box-sizing:border-box;padding:9px 11px;border:1px solid #d7dbe6;border-radius:9px;
+    font-size:13px;background:#fff;color:var(--ink);transition:border-color .15s,box-shadow .15s;}
+  .xf input:focus,.xf select:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px #eef2ff;}
+  .xf .hint{font-size:10.5px;color:#94a3b8;margin-top:4px;}
+  .xvcp{display:flex;align-items:center;gap:8px;padding:9px 11px;border:1px dashed #b6e6c9;border-radius:9px;
+    background:#e7f6ec;font-size:12.5px;color:#0a7d5a;font-weight:700;}
+  .xvcp input{width:16px;height:16px;accent-color:#0a7d5a;}
+  .xbtn{background:var(--acc);color:#fff;border:0;font-weight:700;font-size:13.5px;padding:10px 22px;border-radius:10px;
+    cursor:pointer;transition:background .15s,transform .06s;}
+  .xbtn:hover{background:#4338ca;} .xbtn:active{transform:translateY(1px);} .xbtn:disabled{opacity:.55;cursor:default;}
+
+  .xlens{display:inline-flex;background:#eef1f7;border-radius:11px;padding:4px;gap:3px;margin:0 0 16px;}
+  .xlens button{border:0;background:none;font:inherit;font-size:12.5px;font-weight:700;color:#5b6478;padding:7px 15px;
+    border-radius:8px;cursor:pointer;transition:background .18s,color .18s,box-shadow .18s;}
+  .xlens button.on{background:#fff;color:var(--navy);box-shadow:0 1px 4px rgba(15,23,42,.12);}
+  .xview[hidden]{display:none;}
+  .xview{animation:xfade .3s ease;}
+  @keyframes xfade{from{opacity:0;}to{opacity:1;}}
+
+  /* ── Full-width marketplace cards (stacked; scroll inside) ── */
+  .mpstack{display:flex;flex-direction:column;gap:14px;}
+  .mpc{background:#fff;border:1px solid var(--line);border-radius:16px;overflow:hidden;
+    box-shadow:0 2px 10px -6px rgba(15,23,42,.12);}
+  .mpc-h{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #f0f2f7;
+    cursor:pointer;user-select:none;transition:background .15s;}
+  .mpc-h:hover{background:#fafbfe;}
+  .mpc.collapsed .mpc-h{border-bottom-color:transparent;}
+  .mpc-av{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;color:#fff;font-weight:800;font-size:14px;flex-shrink:0;}
+  .mpc-h .nm{font-size:15.5px;font-weight:800;color:var(--navy);line-height:1.1;}
+  .mpc-h .sub{font-size:10.5px;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em;margin-top:2px;}
+  .mpc-cnt{margin-left:auto;font-size:12px;font-weight:800;color:#475569;background:#f1f5f9;border-radius:20px;padding:4px 12px;}
+  .mpc-chev{color:#b6bfd0;font-size:14px;transition:transform .26s ease;line-height:1;}
+  .mpc.collapsed .mpc-chev{transform:rotate(-90deg);}
+  .mpc-b{max-height:290px;overflow-y:auto;transition:max-height .3s ease;}
+  .mpc.collapsed .mpc-b{max-height:0;overflow:hidden;}
+  .mpc-b::-webkit-scrollbar{width:9px;} .mpc-b::-webkit-scrollbar-thumb{background:#dbe1ec;border-radius:8px;}
+  .mpc-b::-webkit-scrollbar-thumb:hover{background:#c3cbdb;}
+
+  .mptbl{width:100%;border-collapse:collapse;font-size:12.5px;}
+  .mptbl thead th{position:sticky;top:0;background:#f7f9fc;color:#5b6478;text-align:left;font-size:10px;
+    font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:8px 14px;border-bottom:1px solid #e8ecf3;z-index:1;}
+  .mptbl td{padding:9px 14px;border-bottom:1px solid #f2f4f8;vertical-align:middle;}
+  .mptbl tr:last-child td{border-bottom:0;} .mptbl tbody tr:hover td{background:#f8fafc;}
+  .mptbl .nm{font-weight:600;color:var(--ink);max-width:280px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .mptbl .code{font-family:ui-monospace,Consolas,monospace;color:#64748b;white-space:nowrap;}
+  .mptbl .val{font-weight:700;color:#334155;white-space:nowrap;}
+  .mptbl .rem{color:#94a3b8;max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .mptbl .ts{color:#a2abbb;white-space:nowrap;font-size:11px;}
+  .subt{display:inline-block;font-size:9.5px;font-weight:800;color:#64748b;background:#eef1f7;border-radius:5px;
+    padding:1px 6px;margin-right:6px;letter-spacing:.02em;}
+
+  .chip{font-size:10px;font-weight:800;padding:2px 9px;border-radius:20px;white-space:nowrap;letter-spacing:.02em;}
+  .chip.cp{background:var(--cp-s);color:var(--cp);} .chip.remap{background:var(--remap-s);color:var(--remap);}
+
+  .act{display:flex;gap:4px;justify-content:flex-end;}
+  .ibtn{border:1px solid #e6e9f0;background:#fff;border-radius:7px;width:26px;height:26px;display:grid;place-items:center;
+    cursor:pointer;color:#8a93a6;font-size:13px;transition:all .14s;}
+  .ibtn:hover{border-color:#cbd2e0;color:#334155;background:#f6f8fc;}
+  .ibtn.del:hover{color:#dc2626;border-color:#fecaca;background:#fef2f2;}
+  .ibtn:disabled{opacity:.35;cursor:not-allowed;background:#fff;} .ibtn:disabled:hover{color:#8a93a6;border-color:#e6e9f0;background:#fff;}
+
+  /* inline edit row */
+  .edrow td{background:#f7f9ff;padding:12px 14px;}
+  .edform{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;align-items:end;}
+  .edform label{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;color:#64748b;display:block;margin-bottom:3px;}
+  .edform input{width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #d7dbe6;border-radius:7px;font-size:12.5px;}
+  .edform .save{background:var(--acc);color:#fff;border:0;border-radius:7px;padding:8px 16px;font-weight:700;font-size:12.5px;cursor:pointer;}
+  .edform .cancel{background:#fff;border:1px solid #d7dbe6;border-radius:7px;padding:8px 14px;font-weight:700;font-size:12.5px;cursor:pointer;color:#64748b;}
+
+  /* flat strip */
+  .flatwrap{margin-top:20px;}
+  .flatwrap h3{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;
+    margin:0 0 10px;display:flex;align-items:center;gap:8px;}
+  .flatwrap h3::after{content:"";flex:1;height:1px;background:var(--line);}
+  .flatchips{display:flex;flex-wrap:wrap;gap:9px;}
+  .flatchip{background:#f8fafc;border:1px solid #e9edf3;border-radius:11px;padding:8px 13px;font-size:12.5px;color:#64748b;
+    display:flex;align-items:center;gap:9px;}
+  .flatchip b{color:#334155;font-weight:700;}
+  .flatchip .fm{font-size:10.5px;color:#0a7d5a;background:#e7f6ec;border-radius:20px;padding:2px 8px;font-weight:800;}
+  .flatchip .dot{width:7px;height:7px;border-radius:50%;background:#cbd5e1;}
+
+  /* ── By effect · same card shell, effect-tinted header ── */
+  .effc-h{display:flex;align-items:center;gap:12px;padding:13px 16px;border-bottom:1px solid #f0f2f7;}
+  .effc.cp .effc-h{background:linear-gradient(90deg,#eef4ff,#fff 70%);}
+  .effc.remap .effc-h{background:linear-gradient(90deg,#f5eeff,#fff 70%);}
+  .effc-ic{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;font-weight:800;font-size:17px;color:#fff;flex-shrink:0;}
+  .effc.cp .effc-ic{background:var(--cp);box-shadow:0 4px 12px -4px rgba(29,78,216,.5);}
+  .effc.remap .effc-ic{background:var(--remap);box-shadow:0 4px 12px -4px rgba(124,58,237,.5);}
+  .effc .nm{font-size:15.5px;font-weight:800;color:var(--navy);line-height:1.1;}
+  .effc .sub{font-size:11px;color:#94a3b8;margin-top:2px;}
+  .mpline{display:inline-flex;align-items:center;gap:7px;font-weight:700;color:#334155;white-space:nowrap;}
+  .mpdot{width:9px;height:9px;border-radius:50%;flex-shrink:0;box-shadow:0 0 0 3px rgba(0,0,0,.03);}
+
+  /* effect + full list share the table look */
+  .fulltbl{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden;font-size:12.5px;}
+  /* scoped !important so the global table-enhance layer can't wash out the navy head */
+  .xc .fulltbl thead th{background:var(--navy) !important;color:#fff !important;text-align:left;padding:10px 12px;
+    font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;font-weight:700;white-space:nowrap;border:0 !important;}
+  .xc .fulltbl thead th a,.xc .fulltbl thead th span{color:#fff !important;}
+  .fulltbl td{padding:9px 12px;border-top:1px solid #eef1f6;vertical-align:middle;}
+  .fulltbl tbody tr:hover td{background:#f7f9ff;}
+  .mono{font-family:ui-monospace,Consolas,monospace;} .scrollx{overflow-x:auto;border-radius:14px;}
+  .src{font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;}
+  .src.manual{background:#e0f2fe;color:#075985;} .src.excel{background:#f1f5f9;color:#64748b;}
+  .effsec{margin:0 0 14px;}
+  @media (prefers-reduced-motion:reduce){.xbtn,.ibtn,.mpc-b,.mpc-chev{transition:none;}.xview{animation:none;}}
+</style>{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_dashboard' %}"> / Online B2B</a> <span>/ SKU Exceptions</span>
+{% endblock %}
+
+{% block content %}
+<div class="xc" data-add-url="{% url 'b2b_exception_add' %}">
+
+  <div class="xhero">
+    <h1>SKU Exceptions</h1>
+    <p>Per-marketplace overrides the engine applies on every run. Two kinds only — <b>Override&nbsp;CP</b> (price change) and <b>EAN&nbsp;Remap</b>. Everything else runs on the flat marketplace margin.</p>
+    <div class="xstats">
+      <div class="xstat accent"><b>{{ counts.total }}</b><span>Total exceptions</span></div>
+      <div class="xstat"><b>{{ n_mp_with }}</b><span>Marketplaces with rules</span></div>
+      <div class="xstat"><b>{{ n_flat }}</b><span>Marketplaces flat</span></div>
+      <div class="xstat"><b>{{ n_manual }}</b><span>Added by you</span></div>
+    </div>
+  </div>
+
+  <details class="xadd" open>
+    <summary><span class="plus">＋</span> Add an exception</summary>
+    <form id="ex-form" onsubmit="return false;">
+      <div class="xgrid">
+        <div class="xf"><label>Marketplace</label>
+          <select name="marketplace" required><option value="">Select…</option>
+            {% for m in marketplaces %}<option value="{{ m }}">{{ m }}</option>{% endfor %}</select></div>
+        <div class="xf"><label>SKU / Source code</label>
+          <input type="text" name="source_code" placeholder="EAN or Item No." required>
+          <div class="hint">as the marketplace sends it</div></div>
+        <div class="xf"><label>Use Vendor CP</label>
+          <label class="xvcp"><input type="checkbox" name="use_vendor_cp"> accept the PO's unit price</label></div>
+        <div class="xf"><label>Override MRP</label><input type="text" name="override_mrp" placeholder="optional"></div>
+        <div class="xf"><label>Override margin %</label><input type="text" name="override_margin" placeholder="e.g. 69"></div>
+        <div class="xf"><label>Maps to (EAN remap)</label><input type="text" name="maps_to" placeholder="optional"></div>
+        <div class="xf" style="grid-column:1/-1;"><label>Note</label>
+          <input type="text" name="note" placeholder="why this exception — for the record"></div>
+        <div class="xf"><button class="xbtn" id="ex-add-btn" type="submit">Add exception</button></div>
+      </div>
+    </form>
+  </details>
+
+  <div class="xlens" role="tablist">
+    <button class="on" data-lens="mp">By marketplace</button>
+    <button data-lens="eff">By effect</button>
+    <button data-lens="all">Full list</button>
+  </div>
+
+  <!-- ═══ BY MARKETPLACE ═══ -->
+  <div class="xview" data-view="mp">
+    {% if grouped %}
+    <div class="mpstack">
+      {% for g in grouped %}
+      <div class="mpc">
+        <div class="mpc-h">
+          <div class="mpc-av" style="background:{{ g.mp|mp_color }};">{{ g.mp|first_letters }}</div>
+          <div><div class="nm">{{ g.mp }}</div>
+            <div class="sub">{% if g.margin %}flat {{ g.margin }}% · {% endif %}{{ g.count }} exception{{ g.count|pluralize }} · {{ g.n_manual }} manual</div></div>
+          <div class="mpc-cnt">{{ g.count }}</div>
+          <span class="mpc-chev" aria-hidden="true">▾</span>
+        </div>
+        <div class="mpc-b">
+          <table class="mptbl">
+            <thead><tr><th>Item</th><th>SKU / Code</th><th>Effect</th><th>Value</th><th>Remark</th><th>Added</th><th></th></tr></thead>
+            <tbody>
+              {% for r in g.rows %}
+              <tr data-id="{{ r.id }}"
+                  data-mp="{{ r.marketplace }}" data-src="{{ r.source }}"
+                  data-mrp="{{ r.override_mrp }}" data-margin="{{ r.override_margin }}"
+                  data-maps="{{ r.maps_to }}" data-note="{{ r.note }}">
+                <td class="nm" title="{{ r.item_name }}">{{ r.item_name|default:"—" }}</td>
+                <td class="code">{{ r.source_code }}{% if r.item_no %}<br><span style="color:#a9b2c3;">#{{ r.item_no }}</span>{% endif %}</td>
+                <td><span class="chip {{ r.eff_kind }}">{{ r.eff_label }}</span></td>
+                <td class="val">{{ r.eff_detail }}</td>
+                <td class="rem" title="{{ r.note }}">{% if r.subtype %}<span class="subt">{{ r.subtype }}</span>{% endif %}{{ r.note }}</td>
+                <td class="ts" title="{% if r.updated_abs %}updated {{ r.updated_abs }}{% endif %}">{% if r.created_rel %}{{ r.created_rel }}{% else %}{{ r.updated_rel }}{% endif %}</td>
+                <td><div class="act">
+                  {% if r.source == 'manual' %}
+                  <button class="ibtn edit" title="Edit">✎</button>
+                  <button class="ibtn del" data-id="{{ r.id }}" title="Delete">🗑</button>
+                  {% else %}<button class="ibtn" disabled title="Excel-sourced — via master re-seed">🔒</button>{% endif %}
+                </div></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p style="color:#94a3b8;padding:24px;">No exceptions yet — every marketplace runs on its flat margin. Add one above.</p>
+    {% endif %}
+
+    {% if flat_mps %}
+    <div class="flatwrap">
+      <h3>No exceptions · running flat</h3>
+      <div class="flatchips">
+        {% for f in flat_mps %}
+        <div class="flatchip"><span class="dot"></span><b>{{ f.mp }}</b><span class="fm">flat {{ f.margin }}%</span></div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ═══ BY EFFECT ═══ -->
+  <div class="xview" data-view="eff" hidden>
+    <div class="mpstack">
+    {% for e in by_effect %}
+      <div class="mpc effc {{ e.kind }}">
+        <div class="effc-h">
+          <span class="effc-ic">{% if e.kind == 'cp' %}₹{% else %}⇄{% endif %}</span>
+          <div><div class="nm">{{ e.label }}</div>
+            <div class="sub">{% if e.kind == 'cp' %}Engine forces this unit price instead of the flat margin{% else %}Engine swaps the incoming EAN before matching{% endif %}</div></div>
+          <div class="mpc-cnt">{{ e.count }}</div>
+        </div>
+        <div class="mpc-b">
+          <table class="mptbl">
+            <thead><tr><th>Marketplace</th><th>Item</th><th>SKU / Code</th>
+              <th>{% if e.kind == 'cp' %}Overridden price{% else %}Maps to{% endif %}</th><th>Remark</th><th>Added</th></tr></thead>
+            <tbody>
+              {% for r in rows %}{% if r.eff_kind == e.kind %}
+              <tr>
+                <td><span class="mpline"><span class="mpdot" style="background:{{ r.mp_eff|mp_color }};"></span>{{ r.mp_eff|default:"—" }}</span></td>
+                <td class="nm" title="{{ r.item_name }}">{{ r.item_name|default:"—" }}</td>
+                <td class="code">{{ r.source_code }}</td>
+                <td class="val">{{ r.eff_detail }}</td>
+                <td class="rem" title="{{ r.note }}">{% if r.subtype %}<span class="subt">{{ r.subtype }}</span>{% endif %}{{ r.note }}</td>
+                <td class="ts">{{ r.created_rel|default:r.updated_rel }}</td>
+              </tr>
+              {% endif %}{% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    {% empty %}<p style="color:#94a3b8;padding:24px;">No exceptions to break down yet.</p>{% endfor %}
+    </div>
+  </div>
+
+  <!-- ═══ FULL LIST ═══ -->
+  <div class="xview" data-view="all" hidden>
+    <div class="scrollx">
+    <table class="fulltbl">
+      <thead><tr><th>Marketplace</th><th>Item</th><th>SKU / Code</th><th>Item No.</th><th>Effect</th>
+        <th>Value</th><th>Remark</th><th>Source</th><th>Added</th><th>Updated</th></tr></thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td style="font-weight:700;color:#334155;white-space:nowrap;">{{ r.mp_eff|default:"—" }}</td>
+          <td>{{ r.item_name|default:"—" }}</td>
+          <td class="mono">{{ r.source_code }}</td>
+          <td class="mono" style="color:#64748b;">{{ r.item_no|default:"—" }}</td>
+          <td><span class="chip {{ r.eff_kind }}">{{ r.eff_label }}</span></td>
+          <td style="font-weight:700;color:#475569;">{{ r.eff_detail }}</td>
+          <td style="color:#94a3b8;max-width:240px;" title="{{ r.note }}">{% if r.subtype %}<span class="subt">{{ r.subtype }}</span>{% endif %}{{ r.note|truncatechars:40 }}</td>
+          <td>{% if r.source == 'manual' %}<span class="src manual">manual</span>{% else %}<span class="src excel">system</span>{% endif %}</td>
+          <td class="mono" style="color:#a2abbb;" title="{{ r.created_abs }}">{{ r.created_rel|default:"—" }}</td>
+          <td class="mono" style="color:#a2abbb;" title="{{ r.updated_abs }}">{{ r.updated_rel|default:"—" }}</td>
+        </tr>
+        {% empty %}<tr><td colspan="10" style="text-align:center;color:#94a3b8;padding:30px;">No exceptions yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var xc = document.querySelector('.xc');
+  var csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '';
+  function post(url, body) {
+    return fetch(url, { method: 'POST', credentials: 'same-origin',
+      headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest',
+                 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body }).then(function (r) { return r.json(); });
+  }
+  // Lens toggle (fade handled by CSS animation on .xview)
+  var lensBtns = xc.querySelectorAll('.xlens button'), views = xc.querySelectorAll('.xview');
+  lensBtns.forEach(function (b) { b.addEventListener('click', function () {
+    lensBtns.forEach(function (x) { x.classList.toggle('on', x === b); });
+    views.forEach(function (p) { p.hidden = p.dataset.view !== b.dataset.lens; });
+  }); });
+  // Collapse / expand a marketplace card by clicking its header (chevron rotates).
+  // Ignore clicks on the action buttons so edit/delete still work.
+  xc.querySelectorAll('.mpc-h').forEach(function (h) {
+    h.addEventListener('click', function (ev) {
+      if (ev.target.closest('.ibtn')) return;
+      h.parentElement.classList.toggle('collapsed');
+    });
+  });
+  // Add
+  var form = document.getElementById('ex-form'), addBtn = document.getElementById('ex-add-btn');
+  form.addEventListener('submit', function () {
+    var fd = new FormData(form);
+    if (!fd.get('marketplace') || !fd.get('source_code')) { alert('Marketplace and SKU are required.'); return; }
+    addBtn.disabled = true; addBtn.textContent = 'Adding…';
+    post(xc.dataset.addUrl, new URLSearchParams(fd).toString())
+      .then(function (j) { if (j.ok) location.reload();
+        else { addBtn.disabled = false; addBtn.textContent = 'Add exception'; alert(j.error || 'Could not add.'); } })
+      .catch(function () { addBtn.disabled = false; addBtn.textContent = 'Add exception'; alert('Network error.'); });
+  });
+  // Delete + Edit (delegated)
+  xc.addEventListener('click', function (ev) {
+    var del = ev.target.closest('.ibtn.del');
+    if (del && !del.disabled) {
+      if (!confirm('Delete this exception?')) return;
+      del.disabled = true;
+      post('/b2b/exceptions/' + del.dataset.id + '/delete/', '')
+        .then(function (j) { if (j.ok) location.reload(); else { del.disabled = false; alert(j.error || 'Could not delete.'); } })
+        .catch(function () { del.disabled = false; alert('Network error.'); });
+      return;
+    }
+    var edit = ev.target.closest('.ibtn.edit');
+    if (edit) { openEdit(edit.closest('tr')); }
+  });
+  function esc(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML.replace(/"/g, '&quot;'); }
+  function openEdit(tr) {
+    if (tr.nextSibling && tr.nextSibling.classList && tr.nextSibling.classList.contains('edrow')) return;
+    var d = tr.dataset, cols = tr.children.length;
+    var er = document.createElement('tr'); er.className = 'edrow';
+    er.innerHTML = '<td colspan="' + cols + '"><form class="edform">' +
+      '<div><label>Override MRP</label><input name="override_mrp" value="' + esc(d.mrp) + '"></div>' +
+      '<div><label>Override margin %</label><input name="override_margin" value="' + esc(d.margin) + '"></div>' +
+      '<div><label>Maps to (EAN)</label><input name="maps_to" value="' + esc(d.maps) + '"></div>' +
+      '<div style="grid-column:span 2;"><label>Note</label><input name="note" value="' + esc(d.note) + '"></div>' +
+      '<div style="display:flex;gap:8px;"><button type="submit" class="save">Save</button>' +
+      '<button type="button" class="cancel">Cancel</button></div></form></td>';
+    tr.after(er);
+    var f = er.querySelector('.edform');
+    f.querySelector('.cancel').addEventListener('click', function () { er.remove(); });
+    f.addEventListener('submit', function (e) { e.preventDefault();
+      var body = new URLSearchParams(new FormData(f)).toString();
+      post('/b2b/exceptions/' + d.id + '/update/', body)
+        .then(function (j) { if (j.ok) location.reload(); else alert(j.error || 'Could not save.'); })
+        .catch(function () { alert('Network error.'); });
+    });
+  }
+})();
+</script>
+{% endblock %}

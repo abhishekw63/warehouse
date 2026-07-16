@@ -926,6 +926,16 @@ MARKETPLACE_CONFIGS: Dict[str, Dict[str, Any]] = {
             'default_keep_pct': 66,           # Cosmetics — 34% off MRP
             'default_label': 'Cosmetics',
             'flag_hsn_conflicts': True,       # ⚠ highlight name-vs-HSN clashes
+            # ── ⏳ TEMP: hard-pinned keep% by Item No (STOPGAP) ──────────────
+            # These body mists read as Cosmetics 66% by name but Nykaa treats
+            # them as Perfume (69%, HSN 33030050). Pinned here until the
+            # HSN-3303→Perfume rule is confirmed & switched on. The two Princess
+            # sets are pinned to 66% (Cosmetics) just to make the intent explicit.
+            # REMOVE this whole block once HSN classification is finalised.
+            'item_keep_overrides': {
+                '200079': 69, '200159': 69, '200601': 69, '200868': 69,  # body mists → Perfume
+                '201259': 66, '201260': 66,                              # Princess sets → Cosmetics
+            },
         },
         # Per-line amount = Unit Cost × Qty (file's 'PO Amount' is the
         # whole-PO total repeated on every line, not per-line).

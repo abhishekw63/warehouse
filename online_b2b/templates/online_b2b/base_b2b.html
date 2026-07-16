@@ -110,6 +110,46 @@ extend THIS instead of core/base.html and keep filling title/breadcrumb/content.
       show(el.getAttribute('data-loading-click'), el.getAttribute('data-loading-steps'));
     });
   });
+  // Expose the overlay so any page can drive it (extend, don't duplicate).
+  window.B2B = window.B2B || {};
+  window.B2B.load = { show: show, hide: hide };
+
+  // Download links that opt in via data-download-modal="message": FETCH the file
+  // as a blob so the modal reflects the REAL server build time, then save it and
+  // dismiss with a toast. A native <a download> gives no progress and can't hide
+  // the overlay. Delegated → also works for buttons injected after an in-place lock.
+  document.addEventListener('click', function (ev) {
+    var a = ev.target.closest('[data-download-modal]');
+    if (!a) return;
+    ev.preventDefault();
+    if (a.dataset.dlBusy) return;                 // guard against double-click
+    var url = a.getAttribute('href') || a.dataset.href;
+    if (!url || url === '#') return;
+    a.dataset.dlBusy = '1'; a.classList.add('is-loading');
+    show(a.getAttribute('data-download-modal') || 'Preparing your download',
+         a.getAttribute('data-loading-steps'));
+    fetch(url, { credentials: 'same-origin' })
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        var cd = r.headers.get('Content-Disposition') || '';
+        var m = /filename\*?=(?:UTF-8'')?["']?([^"';]+)/i.exec(cd);
+        var name = m ? decodeURIComponent(m[1]) : 'workbook.xlsx';
+        return r.blob().then(function (b) { return { b: b, name: name }; });
+      })
+      .then(function (o) {
+        var u = URL.createObjectURL(o.b), t = document.createElement('a');
+        t.href = u; t.download = o.name; document.body.appendChild(t); t.click(); t.remove();
+        setTimeout(function () { URL.revokeObjectURL(u); }, 4000);
+        hide();
+        if (B2B.toast) B2B.toast('Downloaded ' + o.name, { type: 'success', title: 'Ready' });
+      })
+      .catch(function (e) {
+        hide();
+        if (B2B.toast) B2B.toast('Download failed — ' + e.message, { type: 'error', title: 'Download' });
+        else alert('Download failed: ' + e.message);
+      })
+      .then(function () { delete a.dataset.dlBusy; a.classList.remove('is-loading'); });
+  });
   // Never leave the overlay stuck when returning via the back/forward cache.
   window.addEventListener('pageshow', function (e) { if (e.persisted) hide(); });
 })();

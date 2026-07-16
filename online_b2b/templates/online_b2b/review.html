@@ -49,12 +49,14 @@
   {% else %}
   {% with s=r.summary %}
 
-  <div class="kpis" style="grid-template-columns:repeat(6,1fr);">
+  <div class="kpis" style="grid-template-columns:repeat(8,1fr);">
     <div class="card c1"><span class="ic">{% include 'online_b2b/_icons.html' with i='po' %}</span><div><div class="n">{{ s.pos }}</div><div class="l">POs</div></div></div>
     <div class="card c3"><span class="ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><div><div class="n">{{ s.lines }}</div><div class="l">Line items</div></div></div>
     <div class="card c5"><span class="ic">{% include 'online_b2b/_icons.html' with i='hash' %}</span><div><div class="n">{{ s.qty|compact }}</div><div class="l">Qty</div></div></div>
     <div class="card c4"><span class="ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><div><div class="n">{{ s.value|inr_short }}</div><div class="l">Value</div></div></div>
     <div class="card c6"><span class="ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><div><div class="n">{{ s.affected }}</div><div class="l">Affected lines</div></div></div>
+    <div class="card c6"><span class="ic">{% include 'online_b2b/_icons.html' with i='hash' %}</span><div><div class="n">{{ affected_qty|compact }}</div><div class="l">Affected qty</div></div></div>
+    <div class="card {% if ok_qty_pct >= 98 %}c2{% else %}c6{% endif %}"><span class="ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><div><div class="n">{{ ok_qty_pct }}%</div><div class="l">OK qty</div></div></div>
     <div class="card c8"><span class="ic">{% include 'online_b2b/_icons.html' with i='refresh' %}</span><div><div class="n">{{ s.skipped }}</div><div class="l">Already up.</div></div></div>
   </div>
 
@@ -131,9 +133,9 @@
     <div class="cb-actions">
       {# Auto-switch by lock state: (Review)=every line, unchanged · (Completed)=accepted-only, Excludes dropped, Overrides repriced. #}
       {% if locked %}
-        <a href="{% url 'b2b_review_download_completed' token=token %}" id="dlWorkbook" class="btn-ghost" data-loading-click="Building workbook" title="Completed — accepted lines pushed to D365 (Excludes dropped, Overrides repriced)">⬇ Download SO Workbook (Completed)</a>
+        <a href="{% url 'b2b_review_download_completed' token=token %}" id="dlWorkbook" class="btn-ghost" data-download-modal="Building the Completed SO Workbook — accepted lines only" title="Completed — accepted lines pushed to D365 (Excludes dropped, Overrides repriced)">⬇ Download SO Workbook (Completed)</a>
       {% elif has_preview %}
-        <a href="{% url 'b2b_review_download' token=token %}" id="dlWorkbook" class="btn-ghost" title="Review — every line, exactly as previewed (unchanged)">⬇ Download SO Workbook (Review)</a>
+        <a href="{% url 'b2b_review_download' token=token %}" id="dlWorkbook" class="btn-ghost" data-download-modal="Building the SO Workbook" title="Review — every line, exactly as previewed (unchanged)">⬇ Download SO Workbook (Review)</a>
       {% endif %}
       {% if locked %}
         <a href="{% url 'b2b_run_detail' run_id=run_id %}" class="btn-ghost">View run →</a>
@@ -142,6 +144,9 @@
         <button class="btn-discard" type="submit" form="discard-form" formnovalidate>Discard</button>
         <button class="btn-ghost" type="submit" form="save-later-form" formnovalidate
                 title="Park this whole run — decide the CP issue later (after the team corrects it) without re-uploading">🕒 Save for Review Later</button>
+        {% if r.affected %}<button class="btn-ghost" id="emailIssueBtn" type="button"
+                data-url="{% url 'b2b_review_email_issue' token=token %}"
+                title="Email these {{ r.affected|length }} flagged CP-issue line(s) to the ecom team so they can resolve the price / SKU">✉ Email issue</button>{% endif %}
         <button class="btn-primary" id="lockBtn" type="button">🔒 Lock &amp; Record</button>
       {% endif %}
     </div>
@@ -163,6 +168,7 @@
   <div class="tabs">
     <button class="tab on" data-tab="lines">Line items <span class="tcount">{{ r.lines|length }}</span></button>
     <button class="tab" data-tab="orders">Orders <span class="tcount">{{ r.headers|length }}</span></button>
+    <button class="tab" data-tab="sku">SKU <span class="tcount">{{ r.sku_rows|length }}</span></button>
     <button class="tab" data-tab="affected">Affected line items <span class="tcount">{{ r.affected|length }}</span></button>
     <button class="tab" data-tab="mapping" style="{% if r.unmapped %}color:#dc2626;{% endif %}">Mapping <span class="tcount" style="{% if r.unmapped %}background:#fdecec;color:#dc2626;{% endif %}">{{ r.unmapped|length }}</span></button>
     <button class="tab" data-tab="skipped">Already uploaded <span class="tcount">{{ r.skipped|length }}</span></button>
@@ -190,8 +196,8 @@
           <td><span class="st {{ l.status|lower }}">{{ l.status|default:'OK' }}</span></td>
           <td>
             {% if l.decision.action == 'EXCLUDE' %}<span class="dec dec-excl" title="dropped from the D365 dump (kept in the SO Workbook)">⊘ Excluded</span>
-            {% elif l.decision.action == 'OVERRIDE' %}<span class="dec dec-ovr" title="included at an operator CP">✎ Override{% if l.decision.override_cp %} @ {{ l.decision.override_cp }}{% endif %}</span>
-            {% elif l.decision.action == 'INCLUDE' %}<span class="dec dec-inc" title="included as-is (flagged)">✓ Included</span>
+            {% elif l.decision.action == 'OVERRIDE' %}<span class="dec dec-ovr" title="included priced at OUR CP">✓ Incl. (our CP){% if l.decision.override_cp %} @ {{ l.decision.override_cp }}{% endif %}</span>
+            {% elif l.decision.action == 'INCLUDE' %}<span class="dec dec-inc" title="included as-is, at their CP">✓ Incl. (their CP)</span>
             {% elif l.status == 'MISMATCH' or l.status == 'NOT_IN_MASTER' %}<span class="dec dec-need" title="affected — set a decision on the Affected tab">● needs decision</span>
             {% else %}<span class="dec dec-ok" title="clean — ready to go">ready</span>{% endif %}
           </td>
@@ -215,6 +221,35 @@
         {% empty %}<tr><td colspan="6" class="muted">No orders.</td></tr>{% endfor %}
       </tbody>
     </table>
+  </div>
+
+  <!-- SKU summary: per-SKU demand rollup (mirrors the workbook 'SKU Summary' sheet) -->
+  <div class="tabpane" data-pane="sku" style="display:none;">
+    <p class="aff-hint">Per-SKU demand across this run — <b>qty</b>, <b>#&nbsp;POs</b>,
+      inc-GST <b>value</b> (line value) and the <b>unit price</b> (CP sent to D365).
+      <b style="color:#b45309;">● Highlighted</b> rows are <b>overridden</b> (deal SKU /
+      vendor CP / manual) — their price isn't the flat margin. Same data as the
+      <b>SKU&nbsp;Summary</b> sheet in the downloaded workbook.</p>
+    <div class="scroll">
+    <table class="grid">
+      <thead><tr><th>Item No</th><th>EAN</th><th>Description</th><th class="r">Qty</th>
+        <th class="r"># POs</th><th class="r">Value (inc GST)</th><th class="r">Unit Price (CP)</th>
+        <th>Overridden</th><th>Note</th></tr></thead>
+      <tbody>
+        {% for s in r.sku_rows %}
+        <tr style="{% if s.overridden %}background:#fff8e1;{% endif %}">
+          <td class="mono">{{ s.item_no|default:'—' }}</td><td class="mono">{{ s.ean }}</td>
+          <td class="desc" title="{{ s.description }}">{{ s.description }}</td>
+          <td class="r">{{ s.qty }}</td><td class="r">{{ s.pos }}</td>
+          <td class="r">{{ s.value_incgst|inr_short }}</td>
+          <td class="r">{% if s.unit_price != None %}₹{{ s.unit_price }}{% if s.unit_price_varies %} <span class="muted">(varies)</span>{% endif %}{% else %}—{% endif %}</td>
+          <td>{% if s.overridden %}<b style="color:#b45309;">Yes</b>{% else %}<span class="muted">No</span>{% endif %}</td>
+          <td class="desc" title="{{ s.note_full }}">{{ s.note_full }}</td>
+        </tr>
+        {% empty %}<tr><td colspan="9" class="muted">No SKUs.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    </div>
   </div>
 
   <!-- Mapping: per-PO ship-to resolution (EXACT / FUZZY / UNMAPPED) -->
@@ -253,7 +288,7 @@
 
   <!-- Affected -->
   <div class="tabpane" data-pane="affected" style="display:none;">
-    <p class="aff-hint">Decide each flagged line — drives the <b>D365 dump</b>: <b>Include</b> = as-is · <b>Override</b> = include with the CP you set (pre-filled with Their CP) · <b>Exclude</b> = drop from D365. A <b>NOT_IN_MASTER</b> line needs a <b>Correct EAN</b> (typed in its row) → Apply &amp; re-validate. The full SO Workbook keeps every line.</p>
+    <p class="aff-hint">Decide each flagged line — drives the <b>D365 dump</b>: <b>Include (their CP)</b> = as-is at the vendor's CP · <b>Include (our CP)</b> = include but priced at <b>our</b> CP · <b>Exclude</b> = drop from D365. A <b>NOT_IN_MASTER</b> line needs a <b>Correct EAN</b> (typed in its row) → Apply &amp; re-validate. The full SO Workbook keeps every line.</p>
     {% if nim_lines and not locked %}
     <div class="aff-eanbar">
       <span>⛔ <b>{{ nim_lines|length }} line(s) not in master</b> — type the <b>Correct EAN</b> in the row(s) below, then</span>
@@ -267,11 +302,10 @@
       <span class="abk-grp">
         <select id="bulkAction" class="act-sel">
           <option value="">Action…</option>
-          <option value="INCLUDE">Include (as-is)</option>
-          <option value="OVERRIDE">Override CP</option>
+          <option value="INCLUDE">Include (their CP)</option>
+          <option value="OVERRIDE">Include (our CP)</option>
           <option value="EXCLUDE">Exclude (drop)</option>
         </select>
-        <input id="bulkOcp" type="number" step="0.01" placeholder="Override CP" class="act-ocp abk-ocp" autocomplete="off">
         <button type="button" id="bulkApplyAct" class="btn-mini">Apply to selected</button>
       </span>
       <span class="abk-sep">or</span>
@@ -291,7 +325,7 @@
         <th class="r">Our Land</th><th class="r">Their Land</th>
         <th class="r">Our CP</th><th class="r">Their CP</th>
         <th class="r">Diff</th><th>Basis</th><th>Status</th>
-        <th>Action</th><th class="r">Override CP</th><th>Remark</th></tr></thead>
+        <th>Action</th><th class="r">Applied CP</th><th>Remark</th></tr></thead>
       <tbody>
         {% for l in r.affected %}
         <tr class="{% if l.status == 'MISMATCH' %}rmis{% else %}rnim{% endif %}">
@@ -326,17 +360,18 @@
           <td>
             <input type="hidden" name="aff_key" value="{{ l.po }}|{{ l.item_no }}|{{ l.ean }}">
             <select name="aff_action" class="act-sel"{% if locked %} disabled{% endif %}>
-              <option value="INCLUDE" {% if l.decision.action == 'INCLUDE' %}selected{% endif %}>Include (as-is)</option>
-              <option value="OVERRIDE" {% if l.decision.action == 'OVERRIDE' %}selected{% endif %}>Override CP</option>
+              <option value="INCLUDE" {% if l.decision.action == 'INCLUDE' %}selected{% endif %}>Include (their CP)</option>
+              <option value="OVERRIDE" {% if l.decision.action == 'OVERRIDE' %}selected{% endif %}>Include (our CP)</option>
               <option value="EXCLUDE" {% if l.decision.action == 'EXCLUDE' %}selected{% endif %}>Exclude</option>
             </select>
           </td>
           <td class="r"><input type="number" step="0.01" name="aff_override_cp" class="act-ocp"
                 value="{{ l.decision.override_cp|default:'' }}"
+                data-ourcp="{{ l.our_cp|default_if_none:'' }}"
                 data-vendorcp="{{ l.vendor_cp|default_if_none:'' }}"
-                placeholder="{{ l.vendor_cp|default_if_none:'—' }}"
-                autocomplete="off"
-                {% if locked %}readonly{% elif l.decision.action != 'OVERRIDE' %}readonly{% endif %}></td>
+                placeholder="—"
+                title="Auto-set to OUR CP when 'Include (our CP)' is chosen"
+                autocomplete="off" readonly></td>
           <td><input type="text" name="aff_remark" class="act-rem" value="{{ l.decision.remark|default:'' }}" placeholder="remark…" autocomplete="off" maxlength="255"{% if locked %} readonly{% endif %}>
             <span class="dec-saved"{% if not l.decision.action %} hidden{% endif %} title="decision saved">✓ set</span></td>
           {% endif %}
@@ -428,7 +463,8 @@
     });
   });
 
-  // Override CP: enable + pre-fill with Their CP only when "Override" is chosen.
+  // Applied CP: "Include (our CP)" (OVERRIDE) auto-fills OUR CP; the field stays
+  // read-only — the operator doesn't price it, it IS our CP. Other actions clear it.
   document.querySelectorAll('#confirm-form tbody .act-sel').forEach(function (sel) {
     if (sel.disabled) return;                       // locked → leave as recorded
     var row = sel.closest('tr');                    // skip the bulk-bar select (not in a row)
@@ -436,14 +472,12 @@
     var cp = row.querySelector('.act-ocp');
     if (!cp) return;
     function sync() {
-      if (sel.value === 'OVERRIDE') {
-        cp.removeAttribute('readonly');
-        if (!cp.value) cp.value = cp.getAttribute('data-vendorcp') || '';
-        cp.focus();
+      if (sel.value === 'OVERRIDE') {               // Include (our CP)
+        cp.value = cp.getAttribute('data-ourcp') || '';
       } else {
         cp.value = '';
-        cp.setAttribute('readonly', 'readonly');
       }
+      cp.setAttribute('readonly', 'readonly');      // always read-only now
     }
     sel.addEventListener('change', sync);
   });
@@ -452,6 +486,36 @@
   var saveUrl = "{% url 'b2b_save_decision' token=token %}";
   var csrfEl = document.querySelector('#confirm-form [name=csrfmiddlewaretoken]');
   var csrf = csrfEl ? csrfEl.value : '';
+
+  // ✉ Email issue — send the flagged CP-issue lines to the ecom stakeholders.
+  var emailBtn = document.getElementById('emailIssueBtn');
+  if (emailBtn) emailBtn.addEventListener('click', function () {
+    if (emailBtn.disabled) return;
+    var orig = emailBtn.innerHTML;
+    emailBtn.disabled = true; emailBtn.innerHTML = '✉ Sending…';
+    fetch(emailBtn.dataset.url, { method: 'POST', credentials: 'same-origin',
+      headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        emailBtn.disabled = false;
+        if (j.ok) {
+          emailBtn.innerHTML = '✓ Emailed';
+          var to = (j.to || []).join(', ');
+          if (window.B2B && B2B.toast) B2B.toast('Issue email sent to ' + to + ' (' + j.lines + ' line(s)).', 'ok');
+          else alert('Issue email sent to ' + to + ' (' + j.lines + ' flagged line(s)).');
+          setTimeout(function () { emailBtn.innerHTML = orig; }, 4000);
+        } else {
+          emailBtn.innerHTML = orig;
+          if (window.B2B && B2B.toast) B2B.toast(j.error || 'Could not send.', 'err');
+          else alert(j.error || 'Could not send the email.');
+        }
+      })
+      .catch(function () {
+        emailBtn.disabled = false; emailBtn.innerHTML = orig;
+        alert('Network error — email not sent.');
+      });
+  });
+
   function saveDecision(tr) {
     var keyEl = tr.querySelector('input[name=aff_key]');
     var sel = tr.querySelector('.act-sel');
@@ -513,7 +577,6 @@
   var bulkApply = document.getElementById('bulkApplyAct');
   if (bulkApply) bulkApply.addEventListener('click', function () {
     var act = document.getElementById('bulkAction').value;
-    var ocp = document.getElementById('bulkOcp').value;
     var rows = checkedRows();
     if (!act || !rows.length) { return; }
     var applied = 0, skipped = 0;
@@ -522,11 +585,11 @@
       if (!sel || sel.disabled) return;
       if (!setSelVal(sel, act)) { skipped++; return; }   // e.g. INCLUDE on a NOT_IN_MASTER row
       var rowOcp = tr.querySelector('.act-ocp');
-      if (act === 'OVERRIDE' && rowOcp) {
-        rowOcp.removeAttribute('readonly');
-        if (ocp) rowOcp.value = ocp;
-        else if (!rowOcp.value) rowOcp.value = rowOcp.getAttribute('data-vendorcp') || '';
-      } else if (rowOcp) { rowOcp.value = ''; rowOcp.setAttribute('readonly', 'readonly'); }
+      if (rowOcp) {
+        // "Include (our CP)" → each row's OWN our CP; other actions clear it.
+        rowOcp.value = (act === 'OVERRIDE') ? (rowOcp.getAttribute('data-ourcp') || '') : '';
+        rowOcp.setAttribute('readonly', 'readonly');
+      }
       saveDecision(tr);
       applied++;
     });
@@ -660,7 +723,7 @@
         // pointed at the Review/full workbook; it must NOT persist after an
         // in-place lock (that bug served the full file post-lock).
         var completedDl = '<a href="' + COMPLETED_DL_URL + '" id="dlWorkbook" class="btn-ghost" ' +
-          'data-loading-click="Building workbook" title="Completed — accepted lines pushed to ' +
+          'data-download-modal="Building the Completed SO Workbook — accepted lines only" title="Completed — accepted lines pushed to ' +
           'D365 (Excludes dropped, Overrides repriced)">⬇ Download SO Workbook (Completed)</a>';
         act.innerHTML = completedDl +
           ' <a href="' + j.run_url + '" class="btn-ghost">View run →</a>' +
@@ -676,6 +739,30 @@
   var UPLOAD_URL = "{% url 'b2b_upload' %}";
   var COMPLETED_DL_URL = "{% url 'b2b_review_download_completed' token=token %}";
 
+  // Fetch a workbook as a blob (so we see the real build time), save it, toast.
+  // Used for the auto-download after lock — toast feedback, not the big overlay,
+  // so it doesn't stack on top of the "Locked & recorded" modal.
+  function autoDownload(url, label) {
+    if (window.B2B && B2B.toast) B2B.toast((label || 'Preparing the download') + '…',
+      { type: 'info', title: 'SO Workbook', timeout: 9000 });
+    return fetch(url, { credentials: 'same-origin' }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      var cd = r.headers.get('Content-Disposition') || '';
+      var m = /filename\*?=(?:UTF-8'')?["']?([^"';]+)/i.exec(cd);
+      var name = m ? decodeURIComponent(m[1]) : 'SO_Workbook.xlsx';
+      return r.blob().then(function (b) { return { b: b, name: name }; });
+    }).then(function (o) {
+      var u = URL.createObjectURL(o.b), t = document.createElement('a');
+      t.href = u; t.download = o.name; document.body.appendChild(t); t.click(); t.remove();
+      setTimeout(function () { URL.revokeObjectURL(u); }, 4000);
+      if (window.B2B && B2B.toast) B2B.toast('SO Workbook downloaded — ' + o.name,
+        { type: 'success', title: 'Ready' });
+    }).catch(function (e) {
+      if (window.B2B && B2B.toast) B2B.toast('Auto-download failed — ' + e.message +
+        '. Use the “Download SO Workbook” button.', { type: 'error', title: 'SO Workbook', timeout: 8000 });
+    });
+  }
+
   function flourish(j) {
     var f = document.createElement('div');
     f.className = 'lock-done';
@@ -684,13 +771,19 @@
     f.innerHTML = '<div class="ld-card"><div class="lo-lock locked-glow"><span class="lo-shackle"></span>' +
       '<span class="lo-body"><i class="lo-key"></i></span></div>' +
       '<div class="ld-title">Locked &amp; recorded ✓</div>' +
-      '<div class="ld-sub">Run #' + j.run_id + ' · ' + j.pos + ' PO(s) · ' + j.lines + ' line(s) pushed to the DB</div>' +
+      '<div class="ld-sub">Run #' + j.run_id + ' · ' + j.pos + ' PO(s) · ' + j.lines + ' line(s) pushed to the DB' +
+        '<br><span class="ld-auto" style="display:inline-block;margin-top:6px;font-weight:700;color:#6366f1;">⬇ SO Workbook downloading automatically…</span></div>' +
       '<div class="ld-actions">' + d365 +
+        '<a class="ld-btn" href="' + COMPLETED_DL_URL + '" data-download-modal="Building the Completed SO Workbook — accepted lines only">⬇ SO Workbook</a>' +
         '<a class="ld-btn" href="' + j.run_url + '">View run →</a>' +
         '<a class="ld-btn ld-hub" href="' + HUB_URL + '">⌂ Back to Hub</a>' +
         '<a class="ld-btn ld-ghost" href="' + UPLOAD_URL + '">＋ New upload</a>' +
       '</div>' +
       '<button type="button" class="ld-close">stay on this page ✕</button></div>';
+    // Kick off the Completed SO Workbook download automatically once locked.
+    autoDownload(COMPLETED_DL_URL, 'Building the Completed SO Workbook').then(function () {
+      var a = f.querySelector('.ld-auto'); if (a) { a.textContent = '✓ SO Workbook downloaded'; a.style.color = '#10b981'; }
+    });
     var burst = document.createElement('div');
     burst.className = 'ld-confetti';
     var cols = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7'];

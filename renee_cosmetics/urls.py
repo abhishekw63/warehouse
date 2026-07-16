@@ -18,13 +18,19 @@ Including another URLconf
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
+from django.templatetags.static import static as static_url
 from django.urls import include, path
+from django.views.generic.base import RedirectView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    # Browsers probe /favicon.ico at the domain root — point it at our icon
+    # so it resolves instead of logging a 404.
+    path('favicon.ico', RedirectView.as_view(url=static_url('core/favicon.ico'), permanent=True)),
     path('', include('core.urls')),
     path('offline/', include('offline.urls')),
     path('b2b/', include('online_b2b.urls')),
+    path('grn/', include('grn.urls')),
 ]
 
 if settings.DEBUG:

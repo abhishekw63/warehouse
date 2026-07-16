@@ -3,7 +3,7 @@ Expects: c = channel dict, steps_len = number of default step columns.{% endcomm
 <td class="dt-ch">
   <span class="dt-dot {% if c.on_hold %}hold{% elif c.no_po %}nopo{% elif c.done %}ok{% elif c.done_steps %}part{% endif %}"></span>
   <span class="dt-name">{{ c.display }}</span>{% if not c.live %} <span class="dt-soon" title="not web-integrated — tick manually">manual</span>{% endif %}
-  {% if c.on_hold %}<span class="dt-hold-badge" title="On hold since {{ c.hold_at }}{% if c.hold_by %} · {{ c.hold_by }}{% endif %} — parked, not counted as pending until un-held">⏸ ON HOLD</span>{% endif %}
+  {% if c.on_hold %}<span class="dt-hold-badge" title="On hold since {{ c.hold_at }}{% if c.hold_by %} · {{ c.hold_by }}{% endif %}{% if c.hold_reason %} — {{ c.hold_reason }}{% endif %} — parked, not counted as pending until un-held">⏸ ON HOLD</span>{% endif %}
   <label class="dt-nopo-t" title="No PO received for this channel today — marks it handled without ticking the steps"><input type="checkbox" class="dt-nopo-cb" data-channel="{{ c.key }}" data-step="nopo" {% if c.no_po %}checked{% endif %}> no PO today</label>
   <label class="dt-hold-t" title="Put this channel ON HOLD (e.g. an unresolved CP issue) — parked, not chased, until you un-hold it"><input type="checkbox" class="dt-hold-cb" data-channel="{{ c.key }}" data-step="hold" {% if c.on_hold %}checked{% endif %}> hold</label>
 </td>
@@ -29,4 +29,4 @@ Expects: c = channel dict, steps_len = number of default step columns.{% endcomm
 </td>
 {% endfor %}
 {% endif %}
-<td class="dt-prog">{% if c.on_hold %}<span class="dt-hold-lbl">⏸ on hold{% if c.hold_at %} · {{ c.hold_at }}{% endif %}</span>{% elif c.no_po %}<span class="dt-nopo-lbl">— no PO{% if c.no_po_at %} · {{ c.no_po_at }}{% endif %}</span>{% else %}<div class="dt-pbar"><span style="width:{{ c.pct }}%"></span></div>{% endif %}</td>
+<td class="dt-prog">{% if c.on_hold %}<span class="dt-hold-lbl">⏸ on hold{% if c.hold_at %} · {{ c.hold_at }}{% endif %}</span><input type="text" class="dt-hold-rin" data-channel="{{ c.key }}" maxlength="500" value="{{ c.hold_reason }}" placeholder="＋ add reason…" title="Type a reason for the hold, then press Enter">{% elif c.no_po %}<span class="dt-nopo-lbl">— no PO{% if c.no_po_at %} · {{ c.no_po_at }}{% endif %}</span>{% else %}<div class="dt-pbar"><span style="width:{{ c.pct }}%"></span></div>{% endif %}</td>

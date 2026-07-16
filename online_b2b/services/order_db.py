@@ -1249,3 +1249,70 @@ def run_detail(run_id: int) -> dict:
     except Exception as e:  # noqa: BLE001
         out['error'] = f"{type(e).__name__}: {e}"
     return out
+
+
+def run_summary(run_id) -> dict:
+    """Lightweight header-level summary of a run (marketplaces / #POs / qty /
+    value / line + validation counts) WITHOUT deleting anything — used to show
+    the operator exactly what a delete would remove. Read-only."""
+    try:
+        rid = int(run_id)
+    except (TypeError, ValueError):
+        return {'ok': False, 'error': 'bad run_id'}
+    try:
+        with _conn() as (cur, d):
+            ot, ph = d['orders'], d['ph']
+            cur.execute(
+                f"SELECT COALESCE(GROUP_CONCAT(DISTINCT marketplace_label),''), "
+                f"COUNT(*), COUNT(DISTINCT po), COALESCE(SUM(qty),0), "
+                f"COALESCE(SUM(order_value),0), MAX(run_ts) "
+                f"FROM {ot} WHERE run_id={ph}", (rid,))
+            h = cur.fetchone()
+            cur.execute(f"SELECT COUNT(*) FROM order_lines WHERE run_id={ph}", (rid,))
+            lines = int(cur.fetchone()[0] or 0)
+            cur.execute(
+                f"SELECT COUNT(*) FROM order_line_validation WHERE line_id IN "
+                f"(SELECT line_id FROM order_lines WHERE run_id={ph})", (rid,))
+            val = int(cur.fetchone()[0] or 0)
+        return {'ok': True, 'run_id': rid,
+                'marketplaces': h[0] or '', 'headers': int(h[1] or 0),
+                'pos': int(h[2] or 0), 'qty': int(h[3] or 0),
+                'value': float(h[4] or 0), 'run_ts': str(h[5] or ''),
+                'lines': lines, 'validation': val,
+                'exists': bool((h[1] or 0) or lines)}
+    except Exception as e:  # noqa: BLE001
+        return {'ok': False, 'error': f'{type(e).__name__}: {e}'}
+
+
+def delete_run(run_id) -> dict:
+    """HARD-DELETE an entire run and everything tied to it, in one transaction:
+    ``order_line_validation`` (via its lines) → ``order_lines`` →
+    ``order_headers`` → the ``runs`` row. DESTRUCTIVE and irreversible — the
+    caller is responsible for confirmation. Returns per-table row counts.
+
+    Note: the DB-side file sidecars (SO workbook / D365 dump / run-index json)
+    are removed by the VIEW layer, which owns the filesystem paths."""
+    try:
+        rid = int(run_id)
+    except (TypeError, ValueError):
+        return {'ok': False, 'error': 'bad run_id'}
+    try:
+        with _conn() as (cur, d):
+            ot, ph = d['orders'], d['ph']
+            # validation first (explicit — don't rely on FK cascade being ON)
+            cur.execute(
+                f"DELETE FROM order_line_validation WHERE line_id IN "
+                f"(SELECT line_id FROM (SELECT line_id FROM order_lines "
+                f"WHERE run_id={ph}) AS t)", (rid,))
+            n_val = cur.rowcount
+            cur.execute(f"DELETE FROM order_lines WHERE run_id={ph}", (rid,))
+            n_lines = cur.rowcount
+            cur.execute(f"DELETE FROM {ot} WHERE run_id={ph}", (rid,))
+            n_hdr = cur.rowcount
+            cur.execute(f"DELETE FROM runs WHERE run_id={ph}", (rid,))
+            n_run = cur.rowcount
+            cur.connection.commit()
+        return {'ok': True, 'run_id': rid, 'validation': n_val,
+                'lines': n_lines, 'headers': n_hdr, 'runs': n_run}
+    except Exception as e:  # noqa: BLE001
+        return {'ok': False, 'error': f'{type(e).__name__}: {e}'}

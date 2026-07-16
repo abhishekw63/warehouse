@@ -24,12 +24,14 @@
 
   {% with s=s %}
   {% if slots.top %}{% include slots.top %}{% endif %}
-  <div class="kpis" style="grid-template-columns:repeat(6,1fr);">
+  <div class="kpis" style="grid-template-columns:repeat(8,1fr);">
     <div class="card c1"><span class="ic">{% include 'online_b2b/_icons.html' with i='po' %}</span><div><div class="n">{{ s.pos|default:0 }}</div><div class="l">POs</div></div></div>
     <div class="card c3"><span class="ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><div><div class="n">{{ s.lines|default:0 }}</div><div class="l">Line items</div></div></div>
     <div class="card c5"><span class="ic">{% include 'online_b2b/_icons.html' with i='hash' %}</span><div><div class="n">{{ s.qty|default:0|compact }}</div><div class="l">Qty</div></div></div>
     <div class="card c4"><span class="ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><div><div class="n">{{ s.value|default:0|inr_short }}</div><div class="l">Value</div></div></div>
-    <div class="card c6"><span class="ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><div><div class="n">{{ s.affected|default:0 }}</div><div class="l">Affected</div></div></div>
+    <div class="card c6"><span class="ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><div><div class="n">{{ s.affected|default:0 }}</div><div class="l">Affected lines</div></div></div>
+    <div class="card c6"><span class="ic">{% include 'online_b2b/_icons.html' with i='hash' %}</span><div><div class="n">{{ affected_qty|default:0|compact }}</div><div class="l">Affected qty</div></div></div>
+    <div class="card {% if ok_qty_pct >= 98 %}c2{% else %}c6{% endif %}"><span class="ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><div><div class="n">{{ ok_qty_pct }}%</div><div class="l">OK qty</div></div></div>
     <div class="card c8"><span class="ic">{% include 'online_b2b/_icons.html' with i='refresh' %}</span><div><div class="n">{{ s.skipped|default:0 }}</div><div class="l">Already up.</div></div></div>
   </div>
 

@@ -66,6 +66,9 @@
           <input type="text" id="imq" value="{{ overview.q }}" placeholder="Search item no / EAN / description…" autocomplete="off">
           <span class="ims-spin" id="imspin" hidden></span>
         </div>
+        <a class="btn-clear" id="im-export"
+           href="{% url 'b2b_item_master_export' %}{% if overview.q %}?q={{ overview.q|urlencode }}{% endif %}"
+           title="Download the item master as Excel (respects the current search)">⬇ Export</a>
         <button type="button" class="btn-primary" id="im-addbtn">＋ Add item</button>
       </div>
     </div>
@@ -143,7 +146,16 @@
   var spin  = document.getElementById('imspin');
   if (!input || !tbody) return;
   var URL = "{% url 'b2b_item_master_search' %}";
+  var EXPORT_URL = "{% url 'b2b_item_master_export' %}";
+  var exportBtn = document.getElementById('im-export');
   var timer = null, ctl = null;
+
+  // keep the Export link pointed at the CURRENT search term (all rows if blank)
+  function syncExport() {
+    if (!exportBtn) return;
+    var q = input.value.trim();
+    exportBtn.href = EXPORT_URL + (q ? ('?q=' + encodeURIComponent(q)) : '');
+  }
 
   function esc(s) { var d = document.createElement('div'); d.textContent = (s == null ? '' : s); return d.innerHTML; }
   function render(data) {
@@ -177,7 +189,7 @@
       .then(function (data) { render(data); if (spin) spin.hidden = true; })
       .catch(function () { if (spin) spin.hidden = true; });
   }
-  input.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(go, 160); });
+  input.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(go, 160); syncExport(); });
 })();
 </script>
 {% endblock %}

@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     'online_b2c',
     'inventory',
     'other',
+    'grn',
 ]
 
 MIDDLEWARE = [

@@ -221,6 +221,38 @@ def _register_web_channels(eng) -> None:
             expected_landing_ratio=None,      # no price check (mapping-only)
         )
 
+    # H&B (Health & Beauty) — cust 20010. Excel BINARY workbook ('Renee Rep PO
+    # Excel *.xlsb', one 'Sheet1' with ALL POs); EAN lookup; store key = numeric
+    # 'Site' code matched EXACT to the party='h&b' Del Location. Mapping-only
+    # (MT rule): NO price check. Normalised by _normalize_hb_excel (serial→date,
+    # de-.0 ids). Site codes are added to Ship-To B2B separately (authoritative
+    # list); until a Site is mapped its lines flag UNMAPPED (never silent).
+    if 'HB' not in eng.CHANNELS:
+        eng.CHANNELS['HB'] = eng.ChannelConfig(
+            code='HB',
+            display_name='Health & Beauty',
+            party='h&b',                      # ship_to_mapping party (cust 20040)
+            input_folder_name='Input_HB',
+            output_folder_name='Output_HB',
+            sell_to='20040',                  # H&B Stores Limited (ship-to 20040_n)
+            csv_required_cols=['Purchasing Document', 'Site', 'EAN',
+                               'Order Quantity'],
+            csv_po_col='Purchasing Document',
+            csv_store_col='Site',             # numeric Site code → Del Location
+            csv_id_col='EAN',
+            csv_qty_col='Order Quantity',
+            csv_mrp_col='MRP',
+            csv_cost_col='Net price',         # post-GST unit cost (reference only)
+            csv_value_col='Net Order Value',  # inc-GST line total (in file)
+            csv_date_col='Document Date',
+            csv_expdate_col=None,             # no expected-delivery col in file
+            lookup_via='EAN',
+            channel_master_sheet=None,
+            store_match='exact',
+            tester_unit_price=None,           # no testers
+            expected_landing_ratio=None,      # NO price check (mapping-only)
+        )
+
     # Lulu (LL): Lulu now sends a clean tabular EXCEL instead of the PDF, so
     # flip LL's input PDF → Excel for 100% accuracy. REVERSIBLE + non-destructive:
     # the frozen PDF config + parse_lulu_pdf are left fully intact — we only clear
@@ -246,7 +278,7 @@ LULU_EXCEL_MODE = True
 # marketplace; these are its children (the operator picks one). Off Institutional
 # (INST) is a SEPARATE parent and is not listed here. SS is verified end-to-end;
 # the others share the same generic pipeline (test each before production use).
-WEB_CHANNELS = ['SS', 'HG', 'NT', 'BN', 'LL', 'RL', 'MET', 'LS', 'PPL', 'RSB']
+WEB_CHANNELS = ['SS', 'HG', 'NT', 'BN', 'LL', 'RL', 'MET', 'LS', 'PPL', 'RSB', 'HB']
 
 # ── Per-channel input REQUIREMENTS ──────────────────────────────────────
 # Shown on the upload page (so the operator knows what each channel demands)
@@ -287,6 +319,12 @@ CHANNEL_REQUIREMENTS: dict = {
                            'Address + dates). The Address column is the ship-to lookup key.',
                'optional': '', 'if_absent': 'Mapping-only — NO price check. Records value = Price × Qty '
                '(MRP × 0.70 × Qty). Unknown Address → flagged, never silent.'},
+    'HB': {'required': "H&B (Health & Beauty) replenishment workbook (.xlsb, 'Renee Rep "
+                       "PO Excel *.xlsb', one 'Sheet1' with all POs) — Purchasing Document, "
+                       'Site (store code), EAN, Order Quantity, MRP, Net price + Document Date.',
+           'optional': '', 'if_absent': 'Mapping-only — NO price check. Records the inc-GST '
+           'value; the effective supply ratio (Net price ÷ MRP) is computed and noted. '
+           'Unknown Site code → flagged UNMAPPED, never silent (add it to Ship-To B2B, cust 20010).'},
     'RSB': {'required': 'Reliance Smart Bazaar tabular Excel (PurchaseOrders*.xlsx, sheet '
                         '"Purchase Orders") — DC_CODE, PURCH_ORDER_NUMBER, EAN_NO, '
                         'TOTAL_QUANTITY, MRP + dates. DC_CODE (FR73/FRBS/6220/…) is the '
@@ -522,6 +560,60 @@ def _normalize_lifestyle_excel(src_path):
     return path, notes
 
 
+def _normalize_hb_excel(src_path):
+    """H&B (Health & Beauty) 'Renee Rep PO Excel *.xlsb' → the flat .xlsx the HB
+    ChannelConfig reads. Source is an Excel BINARY workbook ('Sheet1', ALL POs),
+    'Document Date' as an Excel SERIAL int, and the store key = the numeric
+    'Site' code (matched EXACT to the party='h&b' Del Location once the Site
+    codes are loaded into Ship-To B2B — until then those lines flag UNMAPPED,
+    never silent). We (1) read via pyxlsb, (2) serial→day-first date, (3) de-.0
+    PO / Site / EAN, (4) note the effective supply ratio (Net price ÷ MRP).
+    Returns ``(temp_path, notes)``. Mapping-only — NO price check (MT rule)."""
+    import datetime as _dt
+    import tempfile
+
+    import pandas as pd
+    df = pd.read_excel(src_path, sheet_name='Sheet1', engine='pyxlsb')
+    df = df[df['Purchasing Document'].notna()].copy()
+
+    def _serial(v):
+        # Excel serial int → DAY-FIRST 'dd-mm-YYYY' (the frozen engine parses the
+        # date cell with dayfirst=True; an ISO string would be misread).
+        try:
+            d = _dt.date(1899, 12, 30) + _dt.timedelta(days=int(float(v)))
+            return d.strftime('%d-%m-%Y')
+        except (TypeError, ValueError):
+            return ''
+
+    mrp = pd.to_numeric(df['MRP'], errors='coerce')
+    net = pd.to_numeric(df['Net price'], errors='coerce')     # post-GST unit cost
+    ratio = (net / mrp * 100).where(mrp > 0)
+    out = pd.DataFrame({
+        'Purchasing Document': [_cid(v) for v in df['Purchasing Document']],
+        'Site': [_cid(v) for v in df['Site']],
+        'Site Name': df['Site Name'].astype(str),
+        'EAN': [_cid(v) for v in df['EAN']],
+        'Order Quantity': pd.to_numeric(df['Order Quantity'], errors='coerce'),
+        'MRP': mrp,
+        'Net price': net,
+        'Net Order Value': pd.to_numeric(df['Net Order Value'],
+                                         errors='coerce').round(2),
+        'Document Date': [_serial(v) for v in df['Document Date']],
+    })
+    fd, path = tempfile.mkstemp(suffix='_hb_norm.xlsx')
+    os.close(fd)
+    out.to_excel(path, index=False)
+
+    notes: list[str] = []
+    r = ratio.dropna()
+    if len(r):
+        notes.append(
+            f"H&B supply ratio (Net price ÷ MRP): avg {r.mean():.1f}% · range "
+            f"{r.min():.1f}–{r.max():.1f}% across {len(r)} line(s). No price "
+            f"check (mapping-only) — informational.")
+    return path, notes
+
+
 def _normalize_manash_excel(src_path):
     """Manash (Purplle offline) tab-separated '.XLS' → the flat .xlsx the MANASH
     ChannelConfig reads. Same source shape as online Purplle. Cleans the
@@ -638,10 +730,13 @@ def _parse_lifestyle_pdf(path) -> dict:
     return out
 
 # Channels where the store PO (External Doc No) is a SAFE dedup key — i.e. unique
-# per store. ONLY HG. Other MT channels can reuse the same PO number across
-# different locations, so ext-doc dedup would wrongly skip valid orders there.
+# per store. Other MT channels can reuse the same PO number across different
+# locations, so ext-doc dedup would wrongly skip valid orders there.
 # Do NOT make this uniform — add a channel only after confirming its PO is unique.
-_EXTDOC_DEDUP_CHANNELS = {'HG'}
+#   HG — store PO unique per store.
+#   HB — Health & Beauty (Dabur): External Doc = the store PO (e.g. 4600336371),
+#        one PO per DC/store delivery, never reused → safe to dedup on it.
+_EXTDOC_DEDUP_CHANNELS = {'HG', 'HB'}
 
 
 def line_key(po: str, item_no: str, ean: str) -> str:
@@ -869,6 +964,19 @@ class MTProcessor:
                     norm.append(p)
             engine_paths = norm
 
+        # ── H&B: read the .xlsb, serial→date; store key = numeric Site code
+        #    (exact match to party='h&b' Del Location). Mapping-only. ──
+        if channel.code == 'HB':
+            norm = []
+            for p in engine_paths:
+                if str(p).lower().endswith(('.xlsb', '.xlsx', '.xls')):
+                    np, hnotes = _normalize_hb_excel(p)
+                    norm.append(Path(np))
+                    self.notes.extend(hnotes)
+                else:
+                    norm.append(p)
+            engine_paths = norm
+
         # ── Manash (Purplle offline): tab-separated '.XLS' → clean .xlsx; Address
         #    is the ship-to lookup key (exact). Mapping-only (no price check). ──
         if channel.code == 'PPL':
@@ -888,6 +996,10 @@ class MTProcessor:
                 engine_paths, channel, bundle, store_override='')
         self.report = db_note + buf.getvalue()
 
+        # ── Naturals: recover an UNRESOLVED ship-to from the PDF filename city. ──
+        if channel.code == 'NT':
+            self._fix_naturals_city(eng, batch, channel, bundle)
+
         # ── Optional PDF cross-check (address vs D365 + PO totals + PO date). ──
         if channel.code == 'RL':
             self._reliance_crosscheck(batch)
@@ -900,6 +1012,39 @@ class MTProcessor:
             if self._pdf_paths and LS_PDF_VERIFICATION:
                 self._lifestyle_crosscheck(batch, channel)
         return eng, channel, batch
+
+    def _fix_naturals_city(self, eng, batch, channel, bundle) -> None:
+        """Naturals ship-to recovery. The frozen ``parse_naturals_pdf`` reads the
+        delivery city as the word before the last 6-digit pincode — which grabs
+        the STATE (e.g. 'Nadu' from 'Tamil Nadu') when a PO writes
+        '<City>, Tamil Nadu <PIN>' (Tirupur does; Bengaluru/Erode don't). The PDF
+        FILENAME ('Renee PO no NNN - <City>.pdf') is the reliable city, so when a
+        PO's ship-to came out BLANK we re-derive the city from the filename and
+        re-resolve. ADDITIVE — runs only on unresolved POs, never disturbs a good
+        resolution; if the re-resolve still fails the original warning stands."""
+        import re as _re
+        for pf in getattr(batch, 'po_files', []):
+            if getattr(pf, 'ship_to', ''):          # already resolved fine
+                continue
+            m = _re.search(r'-\s*([A-Za-z][A-Za-z .&]+?)\s*\.(?:pdf|xlsx?)$',
+                           pf.source_name or '', _re.I)
+            if not m:
+                continue
+            city = m.group(1).strip()
+            if not city or city.lower() == (pf.store_name or '').lower():
+                continue
+            old = pf.store_name
+            pf.store_name = city
+            try:
+                eng._resolve_ship_to(pf, channel, bundle)
+            except Exception:  # noqa: BLE001 — never break the run over recovery
+                pf.store_name = old
+                continue
+            if getattr(pf, 'ship_to', ''):
+                self.notes.append(
+                    f"Naturals: PO {pf.po_no or pf.source_name} ship-to recovered "
+                    f"from the filename city '{city}' — the PDF put the state "
+                    f"before the pincode, so the parser read '{old}'. → {pf.ship_to}.")
 
     def _condense_ls_multistore_warnings(self, batch) -> None:
         """TASK A — Lifestyle only. The frozen engine appends, per PO, a warning

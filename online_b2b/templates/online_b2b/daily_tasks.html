@@ -12,12 +12,20 @@
 <div class="b2b-wrap dt-wrap">
   <div class="b2b-head">
     <div>
-      <h1>Daily Tasks <span>· {{ d.day }}{% if d.is_today %} (today){% endif %}</span></h1>
+      <h1>Daily Tasks <span>· {{ d.day_label }}{% if d.is_today %} (today){% endif %}</span></h1>
       <p class="src">Tick each step as you finish it — <b>Uploaded (web)</b> auto-ticks from what you actually recorded. Every tick is time-stamped so you always know where you left off.</p>
     </div>
     <div class="dt-daynav">
-      <a class="btn-ghost" href="?day={{ d.day|add:'-0' }}" id="dt-prev">← Prev</a>
-      <a class="btn-primary" href="{% url 'b2b_daily' %}">Today</a>
+      <button type="button" class="dt-email" id="dt-email" title="Email this day's activity to your senior">
+        ✉ Email senior</button>
+      <div class="dt-datepick" title="Jump to any date">
+        <a class="dt-arrow" href="?day={{ d.prev_day }}" title="Previous day">‹</a>
+        <input type="date" id="dt-cal" value="{{ d.day }}" max="{{ d.today }}"
+               aria-label="Pick a date">
+        {% if d.next_day %}<a class="dt-arrow" href="?day={{ d.next_day }}" title="Next day">›</a>
+        {% else %}<span class="dt-arrow disabled" aria-disabled="true">›</span>{% endif %}
+      </div>
+      {% if not d.is_today %}<a class="btn-primary" href="{% url 'b2b_daily' %}">Today</a>{% endif %}
     </div>
   </div>
 
@@ -75,8 +83,87 @@
   </div>
   {% endfor %}
 
+  {# ── My Tasks — personal ad-hoc / Outlook / one-off items so nothing is lost ── #}
+  <div class="dt-seg dt-adhoc" id="dt-adhoc">
+    <div class="dt-seg-h">My Tasks
+      <span class="dt-ad-sub">Random asks, Outlook threads &amp; one-offs — they carry over every day until you tick them, so nothing gets forgotten.</span>
+    </div>
+    <div class="dt-ad-card">
+      <form class="dt-ad-add" id="dt-ad-add" autocomplete="off">
+        <input type="text" id="dt-ad-title" class="dt-ad-in" maxlength="500"
+               placeholder="Add a task — e.g. “Reply to Amazon reco thread”, “Send DMart PO to finance”…">
+        <input type="date" id="dt-ad-due" class="dt-ad-due" title="Optional due date">
+        <button type="submit" class="dt-ad-btn">＋ Add</button>
+      </form>
+
+      <div class="dt-ad-list" id="dt-ad-open">
+        {% for t in adhoc.open %}
+        <div class="dt-ad-row{% if t.overdue %} od{% endif %}" data-id="{{ t.id }}">
+          <label class="dt-ad-chk"><input type="checkbox" class="dt-ad-cb"><span class="dt-ad-mark"></span></label>
+          <div class="dt-ad-body">
+            <div class="dt-ad-t">{{ t.title }}</div>
+            <div class="dt-ad-meta">
+              {% if t.due %}<span class="dt-ad-due-b{% if t.overdue %} od{% endif %}">📅 {{ t.due }}{% if t.overdue %} · overdue{% endif %}</span>{% endif %}
+              <span class="dt-ad-age">added {{ t.added }}{% if t.by %} · {{ t.by }}{% endif %}{% if t.age %} · {{ t.age }}d ago{% endif %}</span>
+            </div>
+          </div>
+          <button type="button" class="dt-ad-del" title="Delete">✕</button>
+        </div>
+        {% endfor %}
+        <div class="dt-ad-empty"{% if adhoc.open %} style="display:none"{% endif %}>Nothing pending — you're all caught up. ✓</div>
+      </div>
+
+      <details class="dt-ad-done-wrap"{% if adhoc.done_today %} open{% endif %}>
+        <summary>Completed today (<span id="dt-ad-donen">{{ adhoc.done_today|length }}</span>)</summary>
+        <div class="dt-ad-list dt-ad-donelist" id="dt-ad-done">
+          {% for t in adhoc.done_today %}
+          <div class="dt-ad-row done" data-id="{{ t.id }}">
+            <label class="dt-ad-chk"><input type="checkbox" class="dt-ad-cb" checked><span class="dt-ad-mark"></span></label>
+            <div class="dt-ad-body">
+              <div class="dt-ad-t">{{ t.title }}</div>
+              <div class="dt-ad-meta"><span class="dt-ad-age">done {{ t.done_at }}{% if t.done_by %} · {{ t.done_by }}{% endif %}</span></div>
+            </div>
+            <button type="button" class="dt-ad-del" title="Delete">✕</button>
+          </div>
+          {% endfor %}
+        </div>
+      </details>
+    </div>
+  </div>
+
   <input type="hidden" id="dt-csrf" value="{{ csrf_token }}">
   <input type="hidden" id="dt-day" value="{{ d.day }}">
+</div>
+
+{# Reusable email preview/send modal — same skeleton as the Issues page #}
+<div id="email-modal" class="em-overlay" hidden
+     data-preview-url="{% url 'b2b_daily_email_preview' %}"
+     data-send-url="{% url 'b2b_daily_email_send' %}">
+  <div class="em-card">
+    <div class="em-head">
+      <h3 id="em-title">Email daily activity</h3>
+      <button type="button" class="em-x" id="em-close" aria-label="Close">✕</button>
+    </div>
+    <div class="em-meta">
+      <div class="em-row"><label class="em-lbl" for="em-to-in">To</label>
+        <input type="text" id="em-to-in" class="em-in" autocomplete="off"
+               placeholder="senior@company.com, …" aria-label="To recipients"></div>
+      <div class="em-row"><label class="em-lbl" for="em-cc-in">Cc</label>
+        <input type="text" id="em-cc-in" class="em-in" autocomplete="off"
+               placeholder="optional cc, comma-separated" aria-label="Cc recipients"></div>
+      <div class="em-row"><span class="em-lbl">Subject</span><span id="em-subject" class="em-subj">—</span></div>
+      <div class="em-row em-note-row"><label class="em-lbl" for="em-note">Note</label>
+        <textarea id="em-note" class="em-note" rows="2" autocomplete="off"
+                  placeholder="Add a message for your senior (optional) — shown at the top of the email…"></textarea></div>
+    </div>
+    <div class="em-preview"><iframe id="em-frame" title="Email preview"></iframe></div>
+    <div class="em-foot">
+      <span id="em-status" class="em-status"></span>
+      <span style="flex:1"></span>
+      <button type="button" class="btn-ghost" id="em-cancel">Cancel</button>
+      <button type="button" class="btn-primary" id="em-send">Send email</button>
+    </div>
+  </div>
 </div>
 
 <style>
@@ -126,6 +213,24 @@
   .dt-dot.hold{background:#f59e0b;}
   .dt-hold-badge{font-size:9.5px;font-weight:800;letter-spacing:.4px;color:#fff;background:#f59e0b;padding:2px 7px;border-radius:20px;margin-left:8px;vertical-align:middle;}
   .dt-hold-lbl{font-size:11px;color:#b45309;font-weight:700;font-style:italic;}
+  /* inline hold-reason field — minimal, mirrors the My Tasks adder input */
+  .dt-hold-rin{display:block;margin-top:3px;width:100%;max-width:240px;
+               font:inherit;font-size:11px;color:#92400e;background:transparent;
+               border:0;border-bottom:1px dashed #f0c98a;padding:1px 0;}
+  .dt-hold-rin::placeholder{color:#c8922f;opacity:.8;}
+  .dt-hold-rin:focus{outline:none;border-bottom-color:#d97706;background:#fffdf7;}
+  .dt-hold-rin.saved{border-bottom-color:transparent;color:#7c4a06;font-weight:600;}
+  /* date picker / day nav */
+  .dt-datepick{display:inline-flex;align-items:center;gap:2px;border:1px solid var(--line,#e2e8f0);
+               border-radius:9px;padding:2px 4px;background:var(--card,#fff);}
+  .dt-datepick input[type=date]{border:0;background:none;font:inherit;font-size:12.5px;
+               color:var(--text);padding:3px 4px;cursor:pointer;font-weight:700;}
+  .dt-datepick input[type=date]:focus{outline:none;}
+  .dt-arrow{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;
+            border-radius:6px;font-size:17px;line-height:1;color:var(--accent);text-decoration:none;
+            font-weight:800;}
+  .dt-arrow:hover{background:color-mix(in srgb,var(--accent) 12%,transparent);}
+  .dt-arrow.disabled{color:var(--muted);opacity:.4;pointer-events:none;}
   tr.dt-hold{background:#fffaf0;}
   tr.dt-hold .dt-box{opacity:.35;pointer-events:none;}
   /* Expandable MT-Select parent (container) row + its nested children */
@@ -152,12 +257,85 @@
   .dt-cstep{display:inline-flex;align-items:center;gap:6px;margin:0 18px 0 0;font-size:12px;}
   .dt-cstep .dt-clabel{color:var(--text);}
   .dt-cstep .dt-time{display:inline;margin:0 0 0 2px;}
+  /* ── My Tasks (personal ad-hoc list) ── */
+  .dt-adhoc{margin-top:26px;}
+  .dt-ad-sub{display:block;font-size:11px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);margin-top:4px;}
+  .dt-ad-card{border:1px solid var(--border);border-radius:12px;background:var(--surface);padding:14px 16px;}
+  .dt-ad-add{display:flex;gap:8px;margin-bottom:12px;}
+  .dt-ad-in{flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2);color:var(--text);font-size:13px;}
+  .dt-ad-in:focus{outline:none;border-color:var(--accent);background:var(--surface);}
+  .dt-ad-due{padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2);color:var(--text);font-size:12px;}
+  .dt-ad-btn{padding:9px 16px;border:0;border-radius:9px;background:var(--accent);color:#fff;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap;transition:.15s;}
+  .dt-ad-btn:hover{filter:brightness(1.06);}
+  .dt-ad-list{display:flex;flex-direction:column;gap:2px;}
+  .dt-ad-row{display:flex;align-items:flex-start;gap:11px;padding:9px 8px;border-radius:8px;transition:background .12s;}
+  .dt-ad-row:hover{background:color-mix(in srgb,var(--accent) 4%,transparent);}
+  .dt-ad-row:hover .dt-ad-del{opacity:.6;}
+  .dt-ad-row.od{background:color-mix(in srgb,#ef4444 6%,transparent);}
+  .dt-ad-chk{position:relative;display:inline-flex;cursor:pointer;flex:none;margin-top:1px;}
+  .dt-ad-chk input{position:absolute;opacity:0;width:0;height:0;}
+  .dt-ad-mark{width:19px;height:19px;border:2px solid #cbd5e1;border-radius:6px;background:#fff;transition:.15s;}
+  .dt-ad-chk input:checked ~ .dt-ad-mark{background:#10b981;border-color:#10b981;}
+  .dt-ad-chk input:checked ~ .dt-ad-mark::after{content:'✓';color:#fff;font-size:13px;font-weight:800;position:absolute;left:4px;top:0;}
+  .dt-ad-body{flex:1;min-width:0;}
+  .dt-ad-t{font-size:13.5px;color:var(--text);line-height:1.35;word-break:break-word;}
+  .dt-ad-meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:3px;font-size:10.5px;color:var(--muted);}
+  .dt-ad-due-b{font-weight:700;color:var(--accent);}
+  .dt-ad-due-b.od{color:#ef4444;}
+  .dt-ad-row.done .dt-ad-t{text-decoration:line-through;color:var(--muted);}
+  .dt-ad-del{border:0;background:none;color:#ef4444;font-size:13px;cursor:pointer;opacity:0;padding:2px 5px;flex:none;transition:opacity .12s;line-height:1;}
+  .dt-ad-del:hover{opacity:1 !important;}
+  .dt-ad-empty{font-size:12.5px;color:var(--muted);font-style:italic;padding:10px 8px;}
+  .dt-ad-done-wrap{margin-top:10px;border-top:1px dashed var(--border);padding-top:8px;}
+  .dt-ad-done-wrap summary{font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;text-transform:uppercase;letter-spacing:.04em;list-style:none;}
+  .dt-ad-done-wrap summary::-webkit-details-marker{display:none;}
+  .dt-ad-done-wrap summary::before{content:'▸ ';color:var(--accent);}
+  .dt-ad-done-wrap[open] summary::before{content:'▾ ';}
+  .dt-ad-donelist{margin-top:6px;}
+  /* ── Email senior button + reusable email modal (skeleton) ── */
+  .dt-email{height:36px;display:inline-flex;align-items:center;gap:7px;padding:0 15px;
+    background:#1A237E;color:#fff;border:none;border-radius:8px;font-weight:600;
+    white-space:nowrap;cursor:pointer;box-shadow:0 7px 15px -7px rgba(26,35,126,.6);transition:.15s;}
+  .dt-email:hover{background:#283593;transform:translateY(-1px);}
+  .em-overlay{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;
+    background:rgba(15,23,42,.5);backdrop-filter:blur(2px);}
+  .em-overlay[hidden]{display:none;}
+  .em-card{background:#fff;width:min(980px,95vw);max-height:92vh;border-radius:16px;display:flex;flex-direction:column;
+    box-shadow:0 30px 80px -20px rgba(15,23,42,.6);overflow:hidden;animation:emPop .22s cubic-bezier(.2,.85,.25,1);}
+  @keyframes emPop{from{transform:translateY(12px) scale(.97);opacity:0;}to{transform:none;opacity:1;}}
+  .em-head{display:flex;align-items:center;justify-content:space-between;padding:15px 22px;border-bottom:1px solid var(--border);background:var(--surface-2);}
+  .em-head h3{margin:0;font-size:16px;font-weight:700;color:var(--text);letter-spacing:-.01em;}
+  .em-x{background:none;border:none;font-size:17px;cursor:pointer;color:var(--muted);line-height:1;padding:4px;border-radius:7px;transition:.15s;}
+  .em-x:hover{background:var(--border);color:var(--text);}
+  .em-meta{padding:14px 22px;font-size:12.5px;display:grid;gap:9px;border-bottom:1px solid var(--border);background:#fff;}
+  .em-meta .em-row{display:flex;align-items:center;gap:12px;}
+  .em-meta .em-note-row{align-items:flex-start;}
+  .em-meta .em-lbl{flex:0 0 auto;width:66px;color:var(--muted);font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.05em;}
+  .em-meta .em-note-row .em-lbl{padding-top:9px;}
+  .em-meta .em-in,.em-meta .em-note{flex:1;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:9px;padding:8px 11px;font:inherit;font-size:12.5px;background:#f8fafc;color:#334155;transition:.15s;}
+  .em-meta .em-note{resize:vertical;min-height:40px;line-height:1.45;}
+  .em-meta .em-in:hover,.em-meta .em-note:hover{background:#fff;border-color:#cbd5e1;}
+  .em-meta .em-in:focus,.em-meta .em-note:focus{outline:none;background:#fff;border-color:#818cf8;box-shadow:0 0 0 3px rgba(129,140,248,.18);}
+  .em-meta .em-in.bad{border-color:#f43f5e;box-shadow:0 0 0 3px rgba(244,63,94,.12);}
+  .em-meta .em-subj{flex:1;font-weight:600;color:var(--text);}
+  .em-preview{flex:1;overflow:auto;background:#f1f5f9;min-height:200px;}
+  .em-preview iframe{width:100%;height:46vh;border:0;background:#fff;display:block;}
+  .em-foot{display:flex;align-items:center;gap:10px;padding:14px 20px;border-top:1px solid var(--border);}
+  .em-status{font-size:12.5px;font-weight:600;}
+  .em-status.ok{color:#15803d;} .em-status.err{color:#b91c1c;}
+  .em-spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.5);border-top-color:#fff;border-radius:50%;display:inline-block;vertical-align:-2px;margin-right:6px;animation:emspin .7s linear infinite;}
+  @keyframes emspin{to{transform:rotate(360deg);}}
 </style>
 <script>
 (function () {
   var csrf = document.getElementById('dt-csrf').value;
   var day = document.getElementById('dt-day').value;
   var toggleUrl = "{% url 'b2b_daily_toggle' %}";
+  // Calendar: jump to the picked date (query-param nav, no future dates).
+  var cal = document.getElementById('dt-cal');
+  if (cal) cal.addEventListener('change', function () {
+    if (cal.value) window.location.search = '?day=' + cal.value;
+  });
   var STEPS = {{ d.steps|length }};
   var TOTAL = {{ d.total_channels }};
 
@@ -214,10 +392,11 @@
     });
   }
 
-  function post(cb, onOk) {
+  function post(cb, onOk, extra) {
     var want = cb.checked; cb.disabled = true;
     var body = new URLSearchParams({ day: day, channel: cb.dataset.channel,
       step: cb.dataset.step, checked: want ? '1' : '0' });
+    if (extra) { Object.keys(extra).forEach(function (k) { body.set(k, extra[k]); }); }
     fetch(toggleUrl, { method: 'POST', headers: { 'X-CSRFToken': csrf,
       'X-Requested-With': 'XMLHttpRequest',
       'Content-Type': 'application/x-www-form-urlencoded' }, body: body })
@@ -276,12 +455,20 @@
           badge.textContent = '⏸ ON HOLD';
           cell.insertBefore(badge, cell.querySelector('.dt-nopo-t'));
         } else if (!on && badge) { badge.remove(); }
-        // progress cell: hold label ↔ progress bar (recompute sets the width)
+        if (badge) { badge.title = 'On hold' + (j && j.at ? ' since ' + j.at : ''); }
+        // progress cell: hold label + inline reason field ↔ progress bar
         var prog = tr.querySelector('td.dt-prog');
         if (prog) {
-          prog.innerHTML = on
-            ? '<span class="dt-hold-lbl">⏸ on hold' + (j && j.at ? ' · ' + j.at : '') + '</span>'
-            : '<div class="dt-pbar"><span style="width:0%"></span></div>';
+          if (on) {
+            prog.innerHTML = '<span class="dt-hold-lbl">⏸ on hold' + (j && j.at ? ' · ' + j.at : '') + '</span>'
+              + '<input type="text" class="dt-hold-rin" data-channel="' + cb.dataset.channel
+              + '" maxlength="500" value="" placeholder="＋ add reason…"'
+              + ' title="Type a reason for the hold, then press Enter">';
+            var rin = prog.querySelector('.dt-hold-rin');
+            if (rin) rin.focus();          // ready to type immediately, no dialog
+          } else {
+            prog.innerHTML = '<div class="dt-pbar"><span style="width:0%"></span></div>';
+          }
         }
         recompute();
         // recompute skips held rows, so set this row's dot explicitly on hold
@@ -289,6 +476,34 @@
       });
     });
   });
+
+  // Inline hold-reason field — save on Enter or blur (like the My Tasks adder).
+  var holdReasonUrl = "{% url 'b2b_daily_hold_reason' %}";
+  function saveHoldReason(rin) {
+    var val = rin.value.trim();
+    if (val === rin.dataset.saved) return;          // unchanged → skip
+    rin.dataset.saved = val;
+    fetch(holdReasonUrl, { method: 'POST', headers: { 'X-CSRFToken': csrf,
+      'X-Requested-With': 'XMLHttpRequest',
+      'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ day: day, channel: rin.dataset.channel, remark: val }) })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) { alert(j.error || 'Could not save the reason.'); return; }
+        rin.classList.toggle('saved', !!val);
+        var badge = rin.closest('tr').querySelector('.dt-hold-badge');
+        if (badge) badge.title = 'On hold' + (val ? ' — ' + val : '');
+      })
+      .catch(function () { alert('Network error — please retry.'); });
+  }
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === 'Enter' && ev.target.classList.contains('dt-hold-rin')) {
+      ev.preventDefault(); ev.target.blur();
+    }
+  });
+  document.addEventListener('blur', function (ev) {
+    if (ev.target.classList && ev.target.classList.contains('dt-hold-rin')) saveHoldReason(ev.target);
+  }, true);
 
   // Expandable parent (MT Select): click the header row to slide its children
   // open/closed. Default collapsed. Clicks on the child checkboxes never bubble
@@ -316,7 +531,166 @@
     ptr.addEventListener('click', function () { toggleParent(ptr); });
   });
 
+  // Seed inline hold-reason fields with their server value so blur won't re-POST
+  // an unchanged reason, and show the saved (non-editing) style when filled.
+  document.querySelectorAll('.dt-hold-rin').forEach(function (rin) {
+    rin.dataset.saved = rin.value.trim();
+    rin.classList.toggle('saved', !!rin.value.trim());
+  });
+
   recomputeParents();   // seed the parent bars/counts from server-rendered state
+
+  // ── My Tasks (personal ad-hoc list) ────────────────────────────────────────
+  var adAddUrl = "{% url 'b2b_daily_adhoc_add' %}";
+  var adTogUrl = "{% url 'b2b_daily_adhoc_toggle' %}";
+  var adDelUrl = "{% url 'b2b_daily_adhoc_delete' %}";
+
+  function adPost(url, data) {
+    return fetch(url, { method: 'POST', headers: { 'X-CSRFToken': csrf,
+      'X-Requested-With': 'XMLHttpRequest',
+      'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(data) }).then(function (r) { return r.json(); });
+  }
+  function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  function adRefreshEmpty() {
+    var openList = document.getElementById('dt-ad-open');
+    var empty = openList.querySelector('.dt-ad-empty');
+    var any = openList.querySelectorAll('.dt-ad-row').length > 0;
+    if (empty) empty.style.display = any ? 'none' : '';
+  }
+  function adBind(row) {
+    var cb = row.querySelector('.dt-ad-cb');
+    var del = row.querySelector('.dt-ad-del');
+    if (cb) cb.addEventListener('change', function () {
+      var done = cb.checked; cb.disabled = true;
+      adPost(adTogUrl, { id: row.dataset.id, done: done ? '1' : '0' }).then(function (j) {
+        cb.disabled = false;
+        if (!j.ok) { cb.checked = !done; alert('Could not save.'); return; }
+        row.remove();
+        var target = done ? document.getElementById('dt-ad-done') : document.getElementById('dt-ad-open');
+        row.classList.toggle('done', done);
+        row.classList.remove('od');
+        // strip due/overdue meta styling; show the done/added stamp
+        var meta = row.querySelector('.dt-ad-meta');
+        if (done && meta) meta.innerHTML = '<span class="dt-ad-age">done ' + (j.done_at || 'just now') + '</span>';
+        if (done) { document.querySelector('.dt-ad-done-wrap').open = true; }
+        target.insertBefore(row, done ? target.firstChild : target.querySelector('.dt-ad-empty'));
+        var dn = document.getElementById('dt-ad-donen');
+        if (dn) dn.textContent = document.querySelectorAll('#dt-ad-done .dt-ad-row').length;
+        adRefreshEmpty();
+      }).catch(function () { cb.disabled = false; cb.checked = !done; alert('Network error.'); });
+    });
+    if (del) del.addEventListener('click', function () {
+      if (!confirm('Delete this task?')) return;
+      adPost(adDelUrl, { id: row.dataset.id }).then(function (j) {
+        if (j.ok) { row.remove(); adRefreshEmpty();
+          var dn = document.getElementById('dt-ad-donen');
+          if (dn) dn.textContent = document.querySelectorAll('#dt-ad-done .dt-ad-row').length; }
+      });
+    });
+  }
+  document.querySelectorAll('#dt-adhoc .dt-ad-row').forEach(adBind);
+
+  var addForm = document.getElementById('dt-ad-add');
+  if (addForm) addForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var titleEl = document.getElementById('dt-ad-title');
+    var dueEl = document.getElementById('dt-ad-due');
+    var title = titleEl.value.trim();
+    if (!title) { titleEl.focus(); return; }
+    var btn = addForm.querySelector('.dt-ad-btn'); btn.disabled = true;
+    adPost(adAddUrl, { title: title, due: dueEl.value || '' }).then(function (j) {
+      btn.disabled = false;
+      if (!j.ok) { alert(j.error || 'Could not add.'); return; }
+      var due = dueEl.value || '';
+      var overdue = due && due < day;
+      var row = document.createElement('div');
+      row.className = 'dt-ad-row' + (overdue ? ' od' : '');
+      row.dataset.id = j.id;
+      row.innerHTML =
+        '<label class="dt-ad-chk"><input type="checkbox" class="dt-ad-cb"><span class="dt-ad-mark"></span></label>' +
+        '<div class="dt-ad-body"><div class="dt-ad-t">' + esc(title) + '</div>' +
+        '<div class="dt-ad-meta">' +
+          (due ? '<span class="dt-ad-due-b' + (overdue ? ' od' : '') + '">📅 ' + due + (overdue ? ' · overdue' : '') + '</span>' : '') +
+          '<span class="dt-ad-age">added just now</span></div></div>' +
+        '<button type="button" class="dt-ad-del" title="Delete">✕</button>';
+      var openList = document.getElementById('dt-ad-open');
+      openList.insertBefore(row, openList.querySelector('.dt-ad-empty'));
+      adBind(row);
+      adRefreshEmpty();
+      titleEl.value = ''; dueEl.value = ''; titleEl.focus();
+    }).catch(function () { btn.disabled = false; alert('Network error — please retry.'); });
+  });
+
+  // ── Email daily activity to senior (preview → send) ─────────────────────────
+  (function () {
+    var modal = document.getElementById('email-modal');
+    var openBtn = document.getElementById('dt-email');
+    if (!modal || !openBtn) return;
+    var $ = function (id) { return document.getElementById(id); };
+    var toIn = $('em-to-in'), ccIn = $('em-cc-in'), noteIn = $('em-note');
+    var lastCount = 0, prefilled = false, reTimer = null;
+    var EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+    function dayParams() { var p = new URLSearchParams(); if (day) p.set('day', day); return p; }
+    function splitEmails(v) { return (v || '').split(/[,;\n]+/).map(function (s) { return s.trim(); }).filter(Boolean); }
+    function invalidEmails(v) { return splitEmails(v).filter(function (e) { return !EMAIL_RE.test(e); }); }
+    function extraParams(p) { if (prefilled) { p.set('to', toIn.value); p.set('cc', ccIn.value); } p.set('note', noteIn.value); return p; }
+    function setStatus(html, cls) { var s = $('em-status'); s.innerHTML = html || ''; s.className = 'em-status' + (cls ? ' ' + cls : ''); }
+    function close() { modal.hidden = true; setStatus(''); }
+
+    function loadPreview(isInitial) {
+      setStatus('Loading preview…'); $('em-send').disabled = true;
+      fetch(modal.getAttribute('data-preview-url') + '?' + extraParams(dayParams()).toString(),
+            { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (!j.ok) { setStatus(j.error || 'Could not build preview.', 'err'); return; }
+          if (isInitial && !prefilled) {
+            toIn.value = (j.to || []).join(', '); ccIn.value = (j.cc || []).join(', '); prefilled = true;
+          }
+          $('em-subject').textContent = j.subject || '—';
+          $('em-frame').srcdoc = j.html || '';
+          lastCount = j.count || 0; refreshSendState();
+        })
+        .catch(function () { setStatus('Could not load preview — please retry.', 'err'); });
+    }
+    function refreshSendState() {
+      var badTo = invalidEmails(toIn.value), badCc = invalidEmails(ccIn.value);
+      toIn.classList.toggle('bad', badTo.length > 0); ccIn.classList.toggle('bad', badCc.length > 0);
+      var hasTo = splitEmails(toIn.value).length > 0;
+      if (badTo.length || badCc.length) { setStatus('Fix invalid email(s): ' + badTo.concat(badCc).join(', '), 'err'); $('em-send').disabled = true; return; }
+      if (!hasTo) { setStatus('Add your senior’s "To" email.', 'err'); $('em-send').disabled = true; return; }
+      setStatus(lastCount + ' active channel(s) will be emailed to ' + splitEmails(toIn.value).length + ' recipient(s).');
+      $('em-send').disabled = false;
+    }
+    function scheduleRepreview() { clearTimeout(reTimer); reTimer = setTimeout(function () { loadPreview(false); }, 500); }
+
+    openBtn.addEventListener('click', function () {
+      modal.hidden = false; prefilled = false; lastCount = 0;
+      $('em-frame').srcdoc = ''; noteIn.value = ''; loadPreview(true);
+    });
+    $('em-close').addEventListener('click', close);
+    $('em-cancel').addEventListener('click', close);
+    modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
+    toIn.addEventListener('input', refreshSendState);
+    ccIn.addEventListener('input', refreshSendState);
+    noteIn.addEventListener('input', scheduleRepreview);
+
+    $('em-send').addEventListener('click', function () {
+      if (invalidEmails(toIn.value).length || invalidEmails(ccIn.value).length || !splitEmails(toIn.value).length) { refreshSendState(); return; }
+      $('em-send').disabled = true; setStatus('<span class="em-spin"></span>Sending…');
+      var body = new URLSearchParams();
+      body.set('to', toIn.value); body.set('cc', ccIn.value); body.set('note', noteIn.value);
+      fetch(modal.getAttribute('data-send-url') + '?' + dayParams().toString(), {
+        method: 'POST', body: body.toString(),
+        headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded' }
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        if (j.ok) { setStatus('✓ Sent to your senior.', 'ok'); setTimeout(close, 1500); }
+        else { setStatus(j.error || 'Send failed.', 'err'); $('em-send').disabled = false; }
+      }).catch(function () { setStatus('Network error — please retry.', 'err'); $('em-send').disabled = false; });
+    });
+  })();
 })();
 </script>
 {% endblock %}

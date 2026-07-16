@@ -373,6 +373,9 @@ class Processor:
         # operator's pending EAN corrections for THIS upload ({wrong → correct})
         self.ean_fixes = dict(ean_fixes or {})
         self.warnings: list[str] = []
+        # (msg, po) for each ENGINE warning, so preview can drop warnings that
+        # belong to already-uploaded (deduped) POs — see _run's post-dedup filter.
+        self._engine_warn: list[tuple[str, str]] = []
         # Informational notes (successful, non-problem messages e.g. "compiled N
         # per-PO files") — shown separately from warnings so a clean run doesn't
         # read as "1 warning".
@@ -487,6 +490,35 @@ class Processor:
                     f"'{self.marketplace}' (party '{party}'). Add it on the "
                     f"Ship-To Mapping page."}
 
+        # ── Retire provisional warehouse aliases that now map EXACT ──────────
+        # TO channels (Flipkart-TO / Meesho-TO) decode a raw FC code to a
+        # friendly Ship-To name via a config ``warehouse_aliases`` bridge, which
+        # the engine flags FUZZY (raw ≠ friendly). Once the operator adds the RAW
+        # code as an exact Ship-To B2B row, skip the alias so the match reads
+        # EXACT. Data-driven + generic — the alias auto-retires per code; the
+        # frozen config is never mutated (we prune a deep copy). [[fk-alias-exact]]
+        cmode = (self.config.get('consignment_mode') or {})
+        if cmode.get('warehouse_aliases'):
+            import copy as _copy
+            from .order_db import _conn
+            with _conn() as (cur, dd):
+                ph = dd['ph']
+                cur.execute(
+                    f"SELECT del_location FROM ship_to_mapping WHERE party={ph}",
+                    (party,))
+                exact_locs = {str(r[0]).strip().lower() for r in cur.fetchall()}
+            retire = {k for k in cmode['warehouse_aliases']
+                      if str(k).strip().lower() in exact_locs}
+            if retire:
+                cm2 = _copy.deepcopy(cmode)
+                for k in retire:
+                    cm2['warehouse_aliases'].pop(k, None)
+                self.config = {**self.config, 'consignment_mode': cm2}
+                self.warnings.append(
+                    f"{len(retire)} warehouse alias(es) now resolve EXACT from "
+                    f"Ship-To B2B — provisional alias retired: "
+                    f"{', '.join(sorted(retire))}.")
+
         if iml.table_count() == 0:
             return {'ok': False, 'error': "Item master DB is empty — upload it on "
                     "the Item Master page first."}
@@ -503,7 +535,10 @@ class Processor:
             master.add_session_aliases(self.ean_fixes)
 
         engine = env['MarketplaceEngine'](mapping, master=master)
-        result = self.run_engine(engine, files, config)
+        # Use self.config (NOT the local `config`) — the warehouse-alias retire
+        # block above prunes self.config; passing the stale local would keep the
+        # retired aliases and the promoted codes would still read FUZZY.
+        result = self.run_engine(engine, files, self.config)
 
         result.margin_pct = self.margin_pct
         result.warehouse_display = self.warehouse
@@ -511,6 +546,7 @@ class Processor:
         import re as _re
         for _po, _loc, msg in result.warnings:
             self.warnings.append(msg)
+            self._engine_warn.append((msg, str(_po or '')))
             if 'not found in mapping' in msg:
                 m = _re.search(r"Location '(.*?)' not found", msg)
                 loc = _loc or (m.group(1) if m else '')
@@ -526,6 +562,17 @@ class Processor:
                 self.skipped = lines_store.web_dedup(result, self.marketplace) or []
             except Exception as e:  # noqa: BLE001
                 self.warnings.append(f"Dedup check skipped ({type(e).__name__}: {e}).")
+            # Per-PO engine warnings (e.g. "Cost mismatch: Item …") for POs that
+            # were ALREADY uploaded in an earlier run are noise here — those POs
+            # aren't in Line items (they sit under 'Already uploaded'), so the
+            # operator can't act on them. Drop such warnings so the review shows
+            # only issues on the NEW POs. Preview only (dedup ran); the full
+            # every-line export keeps all warnings (skip_dedup=True there).
+            skipped_pos = {str(s.get('po', '')) for s in (self.skipped or [])
+                           if s.get('po')}
+            if skipped_pos and self._engine_warn:
+                self.warnings = [msg for (msg, wpo) in self._engine_warn
+                                 if not (wpo and wpo in skipped_pos)]
 
         self.post_process(result, env)
         # Deal SKUs (Swiggy/Myntra) → accept the revised negotiated price as an
@@ -574,19 +621,41 @@ class Processor:
         r2.rows = rows
         return r2
 
-    def export_decided_workbook(self, actions=None) -> dict:
+    def export_decided_workbook(self, actions=None,
+                                exclude_uploaded_run_id=None) -> dict:
         """The full multi-sheet SO Workbook, but with the operator's LOCKED
         decisions applied — EXCLUDE rows dropped, OVERRIDE rows repriced (same
         filter the D365 dump uses). Powers the post-lock **"Download SO Workbook
-        (Completed)"**; the review download stays the every-line workbook."""
+        (Completed)"**; the review download stays the every-line workbook.
+
+        ``exclude_uploaded_run_id`` (the current run) → drop POs that were
+        already uploaded in an EARLIER run from the WHOLE workbook, so the file
+        you import to D365 never re-creates a duplicate SO. Only prior-run POs
+        drop (keyed on run_id ≠ current), so this run's new POs stay; the dropped
+        set is listed on an **'Already Uploaded'** sheet (never silent). The
+        Review download is unaffected (it serves the stored full file)."""
         err = self._run(skip_dedup=True)
         if err:
             return err
-        # Build the FULL workbook (self.result unfiltered) so Headers / Summary /
-        # Validation / Raw Data stay byte-identical to the review workbook — the
-        # Summary's Excluded/Dropped + Final Qty columns already report the drop.
-        # Then finalize the **Lines (SO) sheet ONLY** to the accepted set. This is
-        # the whole difference between review and completed. [[completed-lines-only]]
+        # Dedup for the IMPORT file (Completed only): remove POs uploaded in a
+        # PRIOR run so D365 doesn't get duplicate SOs. [[completed-dedup]]
+        already_rows = []
+        if exclude_uploaded_run_id is not None:
+            already_pos = self._already_uploaded_pos(exclude_uploaded_run_id)
+            if already_pos:
+                try:
+                    from online_po_processor.auto.history_db import build_tracker_rows
+                    trk = {str(t['po']): t for t in build_tracker_rows(self.result)}
+                except Exception:  # noqa: BLE001
+                    trk = {}
+                present = {str(so.po_number) for so in self.result.rows}
+                already_rows = [trk.get(p, {'po': p})
+                                for p in sorted(already_pos & present)]
+                self.result.rows = [so for so in self.result.rows
+                                    if str(so.po_number) not in already_pos]
+        # Build the FULL workbook (of the remaining rows) so Headers / Summary /
+        # Validation / Raw Data stay consistent; then finalize the **Lines (SO)
+        # sheet ONLY** to the accepted set (the operator's decisions).
         path = self._export(actions)
         if not path:
             return {'ok': False, 'error': 'Completed workbook export failed.'}
@@ -594,7 +663,54 @@ class Processor:
             self._finalize_lines_so(path, actions or {})
         except Exception as e:  # noqa: BLE001 — never lose the workbook over this
             self.warnings.append(f"Lines (SO) finalize skipped ({type(e).__name__}).")
-        return {'ok': True, 'path': str(path)}
+        if already_rows:
+            try:
+                self._append_already_uploaded_sheet(path, already_rows)
+            except Exception as e:  # noqa: BLE001
+                self.warnings.append(f"'Already Uploaded' sheet skipped ({type(e).__name__}).")
+        return {'ok': True, 'path': str(path), 'already_uploaded': len(already_rows)}
+
+    def _already_uploaded_pos(self, current_run_id) -> set:
+        """PO numbers already recorded for THIS marketplace in some OTHER run
+        (run_id ≠ current) — i.e. genuine prior uploads. Read-only; never raises."""
+        from .order_db import _conn
+        try:
+            with _conn() as (cur, d):
+                ph = d['ph']
+                cur.execute(
+                    f"SELECT DISTINCT po FROM order_headers WHERE marketplace={ph} "
+                    f"AND run_id <> {ph}", (self.marketplace, current_run_id))
+                return {str(r[0]) for r in cur.fetchall() if r[0]}
+        except Exception:  # noqa: BLE001
+            return set()
+
+    def _append_already_uploaded_sheet(self, path, rows) -> None:
+        """Append an 'Already Uploaded' sheet listing the prior-run POs dropped
+        from this import file (PO · Marketplace · Location · Qty · Value)."""
+        import openpyxl
+        from openpyxl.styles import Alignment, Font, PatternFill
+        wb = openpyxl.load_workbook(path)
+        if 'Already Uploaded' in wb.sheetnames:
+            del wb['Already Uploaded']
+        ws = wb.create_sheet('Already Uploaded')
+        cols = [('po', 'PO'), ('market_place', 'Marketplace'),
+                ('location', 'Location'), ('order_qty', 'Qty'),
+                ('order_value', 'Value')]
+        hf = Font(bold=True, color='FFFFFF'); fill = PatternFill('solid', fgColor='B45309')
+        for c, (_k, h) in enumerate(cols, 1):
+            cell = ws.cell(1, c, h); cell.font = hf; cell.fill = fill
+            cell.alignment = Alignment(horizontal='center')
+        for r, row in enumerate(rows, 2):
+            for c, (k, _h) in enumerate(cols, 1):
+                ws.cell(r, c, row.get(k) if isinstance(row, dict) else None)
+        ws.cell(len(rows) + 3, 1,
+                f"{len(rows)} PO(s) were already uploaded in an earlier run — "
+                f"EXCLUDED from this import file to avoid duplicate SOs in D365.")
+        for col in ws.columns:
+            L = col[0].column_letter
+            w = max((len(str(c.value or '')) for c in col), default=8)
+            ws.column_dimensions[L].width = min(w + 2, 60)
+        wb.save(path)
 
     def _finalize_lines_so(self, path, actions) -> None:
         """In-place: drop EXCLUDEd rows + reprice OVERRIDE rows on the
@@ -725,7 +841,7 @@ class Processor:
 
     _EAN_MAX = 20   # matches the order_lines.ean VARCHAR(20) column
 
-    def _lines(self, run_id=None, output_file='', actions=None):
+    def _lines(self, run_id=None, output_file='', actions=None, as_of=None):
         from . import lines_store
         # Combine historical + this-session EAN fixes so build_lines can swap
         # the wrong EAN → correct on the line and stamp received_ean (audit).
@@ -733,7 +849,7 @@ class Processor:
         combined.update(self.ean_fixes)
         rows = lines_store.build_lines(self.result, run_id=run_id,
                                        output_file=output_file, actions=actions,
-                                       ean_fixes=combined)
+                                       ean_fixes=combined, as_of=as_of)
         # Defensive: a PDF parser (e.g. Myntra) can occasionally emit a
         # malformed over-long EAN — two EANs concatenated on a page wrap. The DB
         # ean column is VARCHAR(20), so one bad row would crash the WHOLE lock.
@@ -871,6 +987,103 @@ class Processor:
         ws.column_dimensions[openpyxl.utils.get_column_letter(c_fin)].width = 18
         wb.save(path)
 
+    @staticmethod
+    def _gst_mult(code) -> float:
+        """GST multiplier (1+rate) from a GST group code (e.g. 'G-18-S' → 1.18)."""
+        c = str(code or '').upper()
+        if '28' in c:
+            return 1.28
+        if '18' in c:
+            return 1.18
+        if '12' in c:
+            return 1.12
+        if '5' in c and '15' not in c and '25' not in c:
+            return 1.05
+        if '3' in c:
+            return 1.03
+        if '0' in c:
+            return 1.0
+        return 1.18
+
+    def sku_rows(self, lines=None) -> list[dict]:
+        """Per-SKU demand rollup — the **single source** for BOTH the review
+        'SKU' tab and the workbook 'SKU Summary' sheet, so one change renders on
+        both sides. Grouped by (item_no, ean): total qty demanded, # of POs it
+        appears on, inc-GST value (Σ unit CP × (1+GST) × qty), the unit price
+        (CP written to D365), and **deal-SKU / overridden** flags (→ highlight)."""
+        lines = self._lines() if lines is None else lines
+        agg: dict = {}
+        for ln in lines:
+            key = (ln.get('item_no') or '', ln.get('ean') or '')
+            a = agg.get(key)
+            if a is None:
+                a = agg[key] = {'item_no': ln.get('item_no') or '',
+                                'ean': ln.get('ean') or '',
+                                'description': ln.get('description') or '',
+                                'qty': 0, 'pos': set(), 'value': 0.0,
+                                'unit_prices': set(), 'deal': False,
+                                'overridden': False, 'labels': set(),
+                                # earlier MRP/diff rollup (kept for the workbook)
+                                'our_mrp': ln.get('our_mrp'), 'vmrps': set(),
+                                'ok': 0, 'mis': 0, 'nim': 0, 'diffs': []}
+            q = int(ln.get('qty') or 0)
+            a['qty'] += q
+            a['pos'].add(ln.get('po'))
+            up = ln.get('unit_price')
+            if up is not None:
+                a['unit_prices'].add(round(float(up), 2))
+                a['value'] += float(up) * self._gst_mult(ln.get('gst_code')) * q
+            elif ln.get('our_landing') is not None:      # landing is already inc-GST
+                a['value'] += float(ln['our_landing']) * q
+            # MRP comparison + status split + worst diff (the earlier columns)
+            st = (ln.get('status') or 'OK').upper()
+            a['ok' if st == 'OK' else 'mis' if st == 'MISMATCH'
+              else 'nim' if st == 'NOT_IN_MASTER' else 'ok'] += q
+            if ln.get('vendor_mrp') is not None:
+                try:
+                    a['vmrps'].add(round(float(ln['vendor_mrp']), 2))
+                except (TypeError, ValueError):
+                    pass
+            if ln.get('diff') is not None:
+                try:
+                    a['diffs'].append(float(ln['diff']))
+                except (TypeError, ValueError):
+                    pass
+            lbl = (ln.get('exception_label') or '').strip()
+            act = ((ln.get('action') or '')
+                   or (ln.get('decision') or {}).get('action') or '').upper()
+            if lbl:
+                a['labels'].add(lbl)
+                a['overridden'] = True
+            if act == 'OVERRIDE':
+                a['overridden'] = True
+            if 'deal' in lbl.lower():
+                a['deal'] = True
+        rows: list[dict] = []
+        for a in agg.values():
+            ups = sorted(a['unit_prices'])
+            label = ', '.join(sorted(a['labels']))
+            # Note carries WHY it's overridden (deal SKU / vendor CP / manual …);
+            # the operator only needs Overridden Yes/No + this detail.
+            note_full = label or ('Deal SKU' if a['deal'] else '')
+            rows.append({
+                'item_no': a['item_no'], 'ean': a['ean'],
+                'description': a['description'], 'qty': a['qty'],
+                'pos': len(a['pos']), 'value_incgst': round(a['value'], 2),
+                'unit_price': (ups[-1] if ups else None),
+                'unit_price_varies': len(ups) > 1,
+                'deal': a['deal'], 'overridden': a['overridden'],
+                'label': label, 'note_full': note_full,
+                # earlier SKU-level difference columns (workbook only)
+                'our_mrp': a['our_mrp'],
+                'their_mrp': (max(a['vmrps']) if a['vmrps'] else None),
+                'mrp_varies': 'YES' if len(a['vmrps']) > 1 else '',
+                'ok_qty': a['ok'], 'mismatch_qty': a['mis'], 'nim_qty': a['nim'],
+                'worst_diff': (min(a['diffs']) if a['diffs'] else None),
+            })
+        rows.sort(key=lambda r: (-r['value_incgst'], -r['qty']))
+        return rows
+
     def _sku_pivot(self, lines):
         """Per-run SKU rollup grouped by (item_no, ean): qty per status, MRP
         comparison (+ varies flag), POs, worst diff. Returns sorted rows."""
@@ -905,22 +1118,38 @@ class Processor:
         return rows
 
     def _append_sku_sheet(self, path):
+        """Write the per-run **SKU Summary** sheet from the shared
+        :meth:`sku_rows` (same data the review 'SKU' tab shows): qty demanded,
+        # POs, inc-GST value, unit price (CP), Deal SKU + Overridden flags. Rows
+        that are overridden (deal / vendor CP / manual) are **yellow-highlighted**
+        so they stand out. Additive post-process; the engine's sheets are untouched."""
         from openpyxl import load_workbook
         from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
         from openpyxl.utils import get_column_letter
-        rows = self._sku_pivot(self._lines())
+        rows = self.sku_rows(self._lines())
         wb = load_workbook(path)
         if 'SKU Summary' in wb.sheetnames:
             del wb['SKU Summary']
         ws = wb.create_sheet('SKU Summary')
-        hdr = ['Item No', 'EAN', 'Description', 'Our MRP', 'Their MRP',
-               'MRP varies', 'Tot Qty', 'OK Qty', 'Mismatch Qty',
-               'Not-in-Master Qty', '# POs', 'Worst Diff']
+        hdr = ['Item No', 'EAN', 'Description', 'Qty Demanded', '# POs',
+               'Value (inc GST)', 'Unit Price (CP)', 'Overridden', 'Note',
+               # earlier SKU-level difference columns, kept at the end
+               'Our MRP', 'Their MRP', 'MRP varies', 'OK Qty', 'Mismatch Qty',
+               'Not-in-Master Qty', 'Worst Diff']
         ws.append(hdr)
         for r in rows:
-            ws.append(r)
+            ws.append([
+                r['item_no'], r['ean'], r['description'], r['qty'], r['pos'],
+                r['value_incgst'],
+                (r['unit_price'] if not r['unit_price_varies'] else
+                 f"{r['unit_price']} (varies)"),
+                'Yes' if r['overridden'] else 'No',
+                r['note_full'],
+                r['our_mrp'], r['their_mrp'], r['mrp_varies'],
+                r['ok_qty'], r['mismatch_qty'], r['nim_qty'], r['worst_diff']])
         # ── formatting: header band, widths, alignment, borders, freeze ──
         navy = PatternFill('solid', fgColor='1A237E')
+        yellow = PatternFill('solid', fgColor='FFF3C4')     # overridden highlight
         hfont = Font(bold=True, color='FFFFFF')
         thin = Side(style='thin', color='E6E8EC')
         bd = Border(thin, thin, thin, thin)
@@ -930,15 +1159,18 @@ class Processor:
             cell.alignment = Alignment(horizontal='center', vertical='center',
                                        wrap_text=True)
             cell.border = bd
-        # per-column width + alignment (1=Item .. 12=Worst Diff)
-        widths = [11, 16, 46, 10, 10, 11, 9, 9, 13, 17, 8, 11]
-        right_cols = {4, 5, 7, 8, 9, 10, 11, 12}   # numeric columns
-        center_cols = {6}                          # MRP varies
+        widths = [11, 16, 44, 12, 7, 15, 13, 10, 24,
+                  10, 10, 10, 8, 12, 15, 10]
+        right_cols = {4, 5, 6, 7, 10, 11, 13, 14, 15, 16}
+        center_cols = {8, 12}                       # Overridden / MRP varies
         for i, w in enumerate(widths, 1):
             ws.column_dimensions[get_column_letter(i)].width = w
-        for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+        for ri, row in enumerate(ws.iter_rows(min_row=2, max_row=ws.max_row), 0):
+            hot = bool(rows[ri]['overridden']) if ri < len(rows) else False
             for cell in row:
                 cell.border = bd
+                if hot:
+                    cell.fill = yellow
                 if cell.column in right_cols:
                     cell.alignment = Alignment(horizontal='right')
                 elif cell.column in center_cols:
@@ -1092,6 +1324,7 @@ class Processor:
         return {
             'ok': True, 'summary': self._summary(lines, headers),
             'headers': headers, 'lines': lines, 'affected': affected,
+            'sku_rows': self.sku_rows(lines),
             'skipped': self.skipped, 'warnings': self.warnings,
             'unmapped': self._grouped_unmapped(),
             'mapping_report': self._mapping_report(),
@@ -1100,7 +1333,7 @@ class Processor:
         }
 
     # ── phase 2: confirm (push headers + lines) ─────────────────────────
-    def confirm(self, actions=None) -> dict:
+    def confirm(self, actions=None, as_of=None) -> dict:
         err = self._run()
         if err:
             return err
@@ -1119,14 +1352,17 @@ class Processor:
             # Web-owned write of runs + order_headers (replaces the engine's
             # record_manual → no engine history store, so order_issue_lines is
             # never recreated). Byte-identical to the old path (parity-verified).
+            # ``as_of`` back-dates the whole record to a finalized draft's park day.
             rec = lines_store.record_run_headers(
-                self.result, self.marketplace, self.warehouse, str(output_path))
+                self.result, self.marketplace, self.warehouse, str(output_path),
+                as_of=as_of)
             out['run_id'] = rec.get('run_id')
             out['new_orders'] = rec.get('new_orders', 0)
             # via _lines() so EAN fixes are applied (correct ean on the line +
             # received_ean stamped on the validation row).
             rows = self._lines(run_id=out['run_id'],
-                               output_file=str(output_path), actions=actions)
+                               output_file=str(output_path), actions=actions,
+                               as_of=as_of)
             out['lines_recorded'] = lines_store.insert_lines(
                 out['run_id'], rows).get('recorded', 0)
             # Amount-less TO (Flipkart Branch): the engine recorded order_value=0
@@ -1212,8 +1448,8 @@ class FlipkartProcessor(Processor):
                 h['marketplace_label'] = label
         return rows
 
-    def confirm(self, actions=None) -> dict:
-        out = super().confirm(actions)
+    def confirm(self, actions=None, as_of=None) -> dict:
+        out = super().confirm(actions, as_of=as_of)
         # The engine's record_manual wrote 'Flipkart Alpha'; re-stamp the
         # web-owned display column per PO from the (latest) tracker mapping.
         if out.get('ok') and out.get('run_id'):
@@ -2142,7 +2378,10 @@ class BlinkMPProcessor(Processor):
             return {}
         loc = re.search(
             r'(BCPL\s*-\s*[A-Za-z]+(?:\s+[A-Za-z0-9]+)*(?:\s*-\s*[A-Za-z0-9]+)?'
-            r'\s*(?:SR\s+Feeder|Feeder\s+Warehouse|Feeder|Warehouse)'
+            # allow an optional ' - ' right before the terminal word, so a store
+            # like "BCPL - Mumbai M12 - Feeder" (dash before a bare 'Feeder' with
+            # no trailing 'Warehouse') is captured, not just "… Feeder Warehouse".
+            r'\s*(?:-\s*)?(?:SR\s+Feeder|Feeder\s+Warehouse|Feeder|Warehouse)'
             r'(?:\s*Warehouse)?)', t, re.I)
 
         def _date(pat):
@@ -2203,11 +2442,77 @@ class RelianceProcessor(Processor):
             _rp.reliance_po_to_dataframe = _orig
 
 
+class ZeptoProcessor(Processor):
+    """Zepto has per-SKU negotiated **deal prices** (a flat 'Unit Base Cost',
+    already net of GST). The frozen engine's deal path is Swiggy-ONLY, so — exactly
+    like :class:`MyntraProcessor` — we apply Zepto's deal SKUs here and let the
+    shared :meth:`_accept_deal_exceptions` mark them **OK + 'Zepto deal'** (the ⚑
+    EXCEPTION column + yellow row highlight), with the deal price forced into the
+    D365 unit price. AS-IS: the base cost is written straight through (no ÷(1+GST),
+    unlike Myntra's with-GST transfer price). Zepto-ONLY; no other channel touched."""
+
+    @staticmethod
+    def _norm_ean(v) -> str:
+        s = str(v if v is not None else '').strip()
+        return s[:-2] if s.endswith('.0') else s
+
+    def post_process(self, result, env) -> None:
+        super().post_process(result, env)
+        try:
+            from . import overrides_store
+            deal_map = overrides_store.zepto_deal_map()
+        except Exception:  # noqa: BLE001
+            deal_map = {}
+        if not deal_map:
+            return
+        applied = mismatched = 0
+        for so in getattr(result, 'rows', None) or []:
+            cp = deal_map.get(self._norm_ean(so.ean))
+            if cp is None:
+                continue
+            # Vendor-CP acceptance (if any) wins, same rule as Myntra.
+            if str(getattr(so, 'exception_label', '') or '').startswith('Vendor CP'):
+                continue
+            expected_cp = round(float(cp), 2)     # AS-IS base cost → D365 unit price
+            so.cost_price_ref = expected_cp
+            so.forced_unit_price = expected_cp    # deal price authoritative
+            vendor_cp = getattr(so, 'fob_price', None)
+            note_status = 'OK'
+            try:
+                diff = round(float(vendor_cp) - expected_cp, 2)
+            except (TypeError, ValueError):
+                diff = None
+            if diff is not None and abs(diff) <= 1.0:
+                so.validation_status = 'OK'
+                so.exception_label = 'Zepto deal'
+                applied += 1
+            else:
+                # _accept_deal_exceptions() normalises this back to 'Zepto deal' + OK
+                so.validation_status = 'MISMATCH'
+                so.exception_label = 'Deal ≠ vendor'
+                note_status = 'MISMATCH vs deal'
+                mismatched += 1
+            try:
+                result.exceptions_applied.append({
+                    'type': 'price_override', 'po': str(so.po_number),
+                    'ean': str(so.ean), 'item_no': str(so.item_no),
+                    'detail': f"Zepto deal SKU — CP {expected_cp} "
+                              f"(Unit Base Cost, as-is) [{note_status}]"})
+            except Exception:  # noqa: BLE001
+                pass
+        if applied or mismatched:
+            self.warnings.append(
+                f"Zepto deal SKUs: {applied} line(s) at the negotiated base cost "
+                f"(CP set, marked OK); {mismatched} differ from the PO price (kept "
+                f"MISMATCH → accepted as exception, D365 uses the deal price). "
+                f"Never silent.")
+
+
 _PROCESSORS = {'Flipkart': FlipkartProcessor, 'Flipkart-TO': FlipkartTOProcessor,
                'Meesho-TO': MeeshoTOProcessor, 'Dmart': DmartProcessor,
                'Firstcry': FirstcryProcessor, 'Myntra': MyntraProcessor,
                'Swiggy': SwiggyProcessor, 'BlinkMP': BlinkMPProcessor,
-               'Reliance': RelianceProcessor}
+               'Reliance': RelianceProcessor, 'Zepto': ZeptoProcessor}
 
 
 def processor_for(marketplace, po_paths, warehouse=None, margin_pct=None,
@@ -2223,9 +2528,9 @@ def preview(marketplace: str, po_paths, warehouse=None, margin_pct=None,
 
 
 def confirm(marketplace: str, po_paths, warehouse=None, margin_pct=None,
-            actions=None, ean_fixes=None) -> dict:
+            actions=None, ean_fixes=None, as_of=None) -> dict:
     return processor_for(marketplace, po_paths, warehouse, margin_pct,
-                         ean_fixes).confirm(actions)
+                         ean_fixes).confirm(actions, as_of=as_of)
 
 
 def generate_d365(marketplace: str, po_paths, out_path, warehouse=None,
@@ -2237,9 +2542,12 @@ def generate_d365(marketplace: str, po_paths, out_path, warehouse=None,
 
 
 def export_decided_workbook(marketplace: str, po_paths, warehouse=None,
-                            margin_pct=None, actions=None, ean_fixes=None) -> dict:
+                            margin_pct=None, actions=None, ean_fixes=None,
+                            exclude_uploaded_run_id=None) -> dict:
     """Full SO Workbook with the operator's locked decisions applied (accepted
-    lines only, overrides repriced) — the post-lock "Completed" download. The
-    review download stays the full every-line workbook."""
+    lines only, overrides repriced) — the post-lock "Completed" download. Pass
+    ``exclude_uploaded_run_id`` (this run) to drop prior-run (already-uploaded)
+    POs from the import file. The review download stays the full workbook."""
     return processor_for(marketplace, po_paths, warehouse, margin_pct,
-                         ean_fixes).export_decided_workbook(actions)
+                         ean_fixes).export_decided_workbook(
+        actions, exclude_uploaded_run_id=exclude_uploaded_run_id)

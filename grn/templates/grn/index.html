@@ -1,0 +1,70 @@
+{% extends 'core/base.html' %}
+{% load static %}
+{% block title %}GRN — Upload{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+  <a href="{% url 'departments' %}">Departments</a> <span>/ GRN</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap grn-wrap">
+  <div class="b2b-head">
+    <div>
+      <h1>GRN <span>· Goods Receipt Note</span></h1>
+      <p class="src">Upload marketplace <b>GRN PDFs</b> — we extract every line (PO vs GRN qty,
+        fill rate, GMV loss) and give you a clean summary + Excel. <b>Blinkit</b> is live;
+        more marketplaces follow.</p>
+    </div>
+  </div>
+
+  {% if messages %}<div class="grn-msgs">{% for m in messages %}
+    <div class="banner {{ m.tags }}">{{ m }}</div>{% endfor %}</div>{% endif %}
+
+  <form class="grn-up" method="post" action="{% url 'grn_upload' %}" enctype="multipart/form-data">
+    {% csrf_token %}
+    <label class="grn-drop" id="grnDrop">
+      <input type="file" name="pdfs" id="grnFiles" accept="application/pdf" multiple hidden>
+      <div class="grn-drop-ic">📄</div>
+      <div class="grn-drop-t">Drop Blinkit GRN PDF(s) here, or <u>browse</u></div>
+      <div class="grn-drop-sub" id="grnPick">You can select multiple files.</div>
+    </label>
+    <button type="submit" class="btn-primary" id="grnGo" disabled>Parse GRN →</button>
+  </form>
+
+  <div class="grn-hint">
+    <b>What you get:</b> per-PO fill-rate &amp; GMV-loss summary, a line-item table colour-coded
+    by <span style="color:#0f9d6b;">Full</span> / <span style="color:#b45309;">Partial</span> /
+    <span style="color:#b91c1c;">Not-GRNed</span>, and a formatted Excel download.
+  </div>
+</div>
+
+<style>
+  .grn-up{display:flex;flex-direction:column;gap:14px;max-width:640px;margin:8px 0 18px;}
+  .grn-drop{display:flex;flex-direction:column;align-items:center;gap:8px;padding:34px 20px;
+    border:2px dashed var(--border);border-radius:14px;background:var(--surface);cursor:pointer;
+    transition:.15s;text-align:center;}
+  .grn-drop:hover,.grn-drop.drag{border-color:var(--accent);background:var(--accent-soft);}
+  .grn-drop-ic{font-size:30px;}
+  .grn-drop-t{font-size:14px;color:var(--text);font-weight:600;}
+  .grn-drop-sub{font-size:12px;color:var(--muted);}
+  .grn-hint{font-size:12.5px;color:var(--text-2);background:var(--surface-2);border:1px solid var(--border);
+    border-radius:10px;padding:11px 14px;max-width:760px;}
+  .grn-msgs{margin-bottom:12px;}
+</style>
+<script>
+(function () {
+  var drop = document.getElementById('grnDrop'), inp = document.getElementById('grnFiles');
+  var pick = document.getElementById('grnPick'), go = document.getElementById('grnGo');
+  function refresh() {
+    var n = inp.files.length;
+    pick.textContent = n ? (n + ' file(s) selected: ' + Array.from(inp.files).map(function (f) { return f.name; }).join(', ')) : 'You can select multiple files.';
+    go.disabled = !n;
+  }
+  inp.addEventListener('change', refresh);
+  ['dragover', 'dragenter'].forEach(function (e) { drop.addEventListener(e, function (ev) { ev.preventDefault(); drop.classList.add('drag'); }); });
+  ['dragleave', 'drop'].forEach(function (e) { drop.addEventListener(e, function (ev) { ev.preventDefault(); drop.classList.remove('drag'); }); });
+  drop.addEventListener('drop', function (ev) { inp.files = ev.dataTransfer.files; refresh(); });
+})();
+</script>
+{% endblock %}

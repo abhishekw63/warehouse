@@ -33,6 +33,10 @@ class Channel:
     #                     checklist; empty = use the standard 5-step flow.
     parent: str = ''    # key of the parent channel this one nests under (e.g. an
     #                     MT-Select child under 'mt_select'); '' = top-level.
+    db_label: str = ''  # ``order_headers.marketplace_label`` to match for web
+    #                     auto-detect when ``db_key`` (= marketplace) is ambiguous.
+    #                     All MT children share marketplace='MT', so they're told
+    #                     apart by their recorded label (e.g. 'Health & Glow').
 
 
 # Order here = display order on the checklist. Labels mirror the operator's
@@ -66,20 +70,31 @@ CHANNELS: list[Channel] = [
     #    (offline.services.mt_bridge.WEB_CHANNELS). Each is a normal trackable
     #    channel with its own DB rows + the standard 5 steps; the mt_select parent
     #    is just an expandable container whose progress rolls these up. ──
-    Channel('mt_ss', 'Shoppers Stop', 'Offline', '', True, parent='mt_select'),
-    Channel('mt_hg', 'H&G', 'Offline', '', True, parent='mt_select'),
-    Channel('mt_nt', 'Naturals', 'Offline', '', True, parent='mt_select'),
-    Channel('mt_bn', 'Apollo', 'Offline', '', True, parent='mt_select'),
-    Channel('mt_ll', 'Lulu', 'Offline', '', True, parent='mt_select'),
-    Channel('mt_rl', 'Reliance Retail (Centro)', 'Offline', '', True, parent='mt_select'),
-    Channel('mt_met', 'Metro Cash & Carry', 'Offline', '', True, parent='mt_select'),
-    Channel('mt_ls', 'Lifestyle', 'Offline', '', True, parent='mt_select'),
+    # db_label = the exact ``marketplace_label`` each records under (from
+    # mt_bridge.channel_choices()), so web auto-detect can tell them apart even
+    # though they all share marketplace='MT'.
+    Channel('mt_ss', 'Shoppers Stop', 'Offline', '', True, parent='mt_select', db_label='Shoppers Stop'),
+    Channel('mt_hg', 'H&G', 'Offline', '', True, parent='mt_select', db_label='Health & Glow'),
+    Channel('mt_hb', 'Health & Beauty', 'Offline', '', True, parent='mt_select', db_label='Health & Beauty'),
+    Channel('mt_nt', 'Naturals', 'Offline', '', True, parent='mt_select', db_label='Naturals'),
+    # BN = Apollo's "Beauté Netrue" beauty retail arm (Cust 20735, Apollo
+    # Pharmaproducts Pvt Ltd) — Apollo, BN and Beauté Netrue are the same party.
+    Channel('mt_bn', 'Apollo (Beauté Netrue)', 'Offline', '', True, parent='mt_select', db_label='Apollo (Beaute Netrue)'),
+    Channel('mt_ll', 'Lulu', 'Offline', '', True, parent='mt_select', db_label='Lulu Hypermarket'),
+    Channel('mt_rl', 'Reliance Retail (Centro)', 'Offline', '', True, parent='mt_select', db_label='Reliance Retail (Centro)'),
+    Channel('mt_met', 'Metro Cash & Carry', 'Offline', '', True, parent='mt_select', db_label='Metro Cash & Carry'),
+    Channel('mt_ls', 'Lifestyle', 'Offline', '', True, parent='mt_select', db_label='Lifestyle'),
     # Manash = Purplle offline (daily-task tracking only for now).
-    Channel('mt_manash', 'Manash', 'Offline', '', True, parent='mt_select'),
+    Channel('mt_manash', 'Manash', 'Offline', '', True, parent='mt_select', db_label='Manash (Purplle offline)'),
     # Reliance Smart Bazaar = Reliance hypermarket (cust 20615), separate from Centro.
-    Channel('mt_rsb', 'Reliance Smart Bazaar', 'Offline', '', True, parent='mt_select'),
+    Channel('mt_rsb', 'Reliance Smart Bazaar', 'Offline', '', True, parent='mt_select', db_label='Reliance Smart Bazaar'),
     Channel('off_inst', 'OFF-INSTITUTIONAL', 'Offline', '', False),
-    Channel('eka', 'EKA', 'Offline', '', False),
+    # EKA — own top-level offline channel (peer of GT Mass / MT / OFF-INST).
+    # Relocated from the desktop app: its store registry now lives in the DB
+    # (``eka_data`` table, see services.eka_data). db_key='EKA' → Daily Tasks
+    # auto-detects the runs recorded under marketplace='EKA'. Still desktop-
+    # processed for now (live=False, no web upload flow yet — migrated later).
+    Channel('eka', 'EKA', 'Offline', 'EKA', False),
 ]
 
 _BY_KEY = {c.key: c for c in CHANNELS}
@@ -97,6 +112,13 @@ def get(key: str) -> Channel | None:
 def db_key_to_channel() -> dict:
     """``{order_headers.marketplace value: channel.key}`` for web auto-detect."""
     return {c.db_key: c.key for c in CHANNELS if c.db_key}
+
+
+def db_label_to_channel() -> dict:
+    """``{order_headers.marketplace_label: channel.key}`` — the fine-grained
+    auto-detect key for channels that share a coarse ``marketplace`` (all MT
+    children are marketplace='MT', told apart by their label)."""
+    return {c.db_label: c.key for c in CHANNELS if c.db_label}
 
 
 def children_of(key: str) -> list[Channel]:
