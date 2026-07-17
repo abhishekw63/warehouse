@@ -80,6 +80,7 @@
   <div class="tabs">
     <button class="tab on" data-tab="lines">Line items <span class="tcount">{{ r.lines|length }}</span></button>
     <button class="tab" data-tab="orders">Orders <span class="tcount">{{ r.headers|length }}</span></button>
+    <button class="tab" data-tab="sku">SKU <span class="tcount">{{ r.sku_rows|length }}</span></button>
     {% if r.affected or r.file_issues %}<button class="tab" data-tab="affected">Affected <span class="tcount">{{ s.affected|default:0 }}</span></button>{% endif %}
     <button class="tab" data-tab="skipped">Already uploaded <span class="tcount">{{ r.skipped|length }}</span></button>
     {% if slots.tabs %}{% include slots.tabs %}{% endif %}
@@ -127,16 +128,44 @@
 
   <!-- Orders -->
   <div class="tabpane" data-pane="orders" style="display:none;">
+    <p class="aff-hint"><b style="color:#0a7d33;">✓ {{ n_clean_po }} CLEAN</b> · <b style="color:#b91c1c;">⚑ {{ n_affected_po }} AFFECTED</b>
+      — CLEAN POs go 100% through as-is; AFFECTED had lines excluded or needing a decision.</p>
     <table class="grid">
-      <thead><tr><th>PO</th><th>Location</th><th>Type</th><th class="r">Items</th><th class="r">Qty</th><th class="r">Value</th></tr></thead>
+      <thead><tr><th>PO</th><th>Location</th><th>Type</th><th class="r">Items</th><th class="r">Qty</th><th class="r">Value</th><th>Status</th></tr></thead>
       <tbody>
         {% for h in r.headers %}
         <tr><td class="mono">{{ h.po }}</td><td class="loc" title="{{ h.location }}">{{ h.location|default:'—' }}</td>
           <td><span class="pill {{ h.order_type|lower }}">{{ h.order_type }}</span></td>
-          <td class="r">{{ h.items }}</td><td class="r">{{ h.qty }}</td><td class="r">{{ h.order_value|inr_short }}</td></tr>
-        {% empty %}<tr><td colspan="6" class="muted">No orders.</td></tr>{% endfor %}
+          <td class="r">{{ h.items }}</td><td class="r">{{ h.qty }}</td><td class="r">{{ h.order_value|inr_short }}</td>
+          <td>{% if h.clean %}<span class="po-clean">✓ CLEAN</span>{% else %}<span class="po-aff">⚑ AFFECTED</span>{% endif %}</td></tr>
+        {% empty %}<tr><td colspan="7" class="muted">No orders.</td></tr>{% endfor %}
       </tbody>
     </table>
+  </div>
+
+  <!-- SKU — per-SKU demand rollup (parity with Online B2B) -->
+  <div class="tabpane" data-pane="sku" style="display:none;">
+    <p class="aff-hint">Per-SKU demand across this run — qty, # POs, value and unit price.
+      <b style="color:#b45309;">● Highlighted</b> rows are <b>overridden</b> (deal / vendor CP / manual decision).</p>
+    <div class="scroll">
+    <table class="grid">
+      <thead><tr><th>Item No</th><th>EAN</th><th>Description</th><th class="r">Qty</th><th class="r"># POs</th>
+        <th class="r">Value</th><th class="r">Unit Price</th><th>Overridden</th><th>Note</th></tr></thead>
+      <tbody>
+        {% for s in r.sku_rows %}
+        <tr style="{% if s.overridden %}background:#fff8e1;{% endif %}">
+          <td class="mono">{{ s.item_no|default:'—' }}</td><td class="mono">{{ s.ean }}</td>
+          <td class="desc" title="{{ s.description }}">{{ s.description }}</td>
+          <td class="r">{{ s.qty }}</td><td class="r">{{ s.pos }}</td>
+          <td class="r">{% if s.value != None %}{{ s.value|inr_short }}{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td class="r">{% if s.unit_price != None %}₹{{ s.unit_price }}{% if s.unit_price_varies %} <span class="muted">(varies)</span>{% endif %}{% else %}—{% endif %}</td>
+          <td>{% if s.overridden %}<b style="color:#b45309;">Yes</b>{% else %}<span class="muted">No</span>{% endif %}</td>
+          <td class="desc" title="{{ s.note }}">{{ s.note }}</td>
+        </tr>
+        {% empty %}<tr><td colspan="9" class="muted">No SKUs.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    </div>
   </div>
 
   {% if r.affected or r.file_issues %}
@@ -208,6 +237,9 @@
 </div>
 
 <style>
+  .po-clean{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10.5px;font-weight:800;background:#e7f6ec;color:#0a7d33;white-space:nowrap;}
+  .po-aff{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10.5px;font-weight:800;background:#fde7e7;color:#b91c1c;white-space:nowrap;}
+  .aff-hint{font-size:12px;color:var(--muted,#64748b);margin:0 0 10px;}
   .dec{font-size:11.5px;font-weight:700;border-radius:6px;padding:2px 8px;}
   .dec-excl{color:#b91c1c;background:#fee2e2;} .dec-ok{color:var(--muted);}
   .act-sel{padding:5px 8px;border:1px solid var(--border);border-radius:7px;font-size:12.5px;background:#fff;color:var(--text);}

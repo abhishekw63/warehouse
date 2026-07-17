@@ -1245,6 +1245,21 @@ def review(request, token):
         if (ln.get('status') or '') in _AFF:
             affected_qty += q
     ok_qty_pct = round((total_qty - affected_qty) * 100 / total_qty, 1) if total_qty else 100.0
+    # Per-PO CLEAN / AFFECTED for the Orders tab (mirrors the workbook Summary
+    # 'Status' column): a PO is AFFECTED if any line is dropped — EXCLUDEd, or an
+    # unresolved MISMATCH / NOT_IN_MASTER; else 100% goes to D365 → CLEAN.
+    affected_pos = set()
+    for ln in (res.get('lines') or []):
+        act = str((ln.get('decision') or {}).get('action') or '').upper()
+        if act == 'EXCLUDE' or (ln.get('status') in _AFF and act not in ('INCLUDE', 'OVERRIDE')):
+            affected_pos.add(str(ln.get('po') or ''))
+    n_clean_po = 0
+    for h in (res.get('headers') or []):
+        h['clean'] = str(h.get('po') or '') not in affected_pos
+        if h['clean']:
+            n_clean_po += 1
+    res['n_clean_po'] = n_clean_po
+    res['n_affected_po'] = len(res.get('headers') or []) - n_clean_po
     return render(request, 'online_b2b/review.html',
                   {'token': token, 'meta': meta, 'r': res,
                    'has_preview': has_preview,

@@ -372,6 +372,12 @@ instead of a single number that lies for rule-based marketplaces.
 
 ## 10. Changelog (append one line per development)
 
+- **2026-07-17** — **Offline parity (additive)**: shared `po_flow._sku_rows` + `_mark_clean`
+  → SKU tab + CLEAN/AFFECTED on the offline review (MT/GT/Apollo…), no engine touch.
+  **SO Workbook Summary + review Orders**: CLEAN/AFFECTED status column. **Apollo (BN)**:
+  added DARK STORE BANGALORE → 20735_24 (pin 560095) mapping. **SOP (Rules page)**: added
+  "Identify the Reliance channel" card — Centro `RL`/Renee.XLSX/20043 vs Smart Bazaar
+  `RSB`/PurchaseOrders*.xlsx/20615 vs Metro `MET`/20410; customer number is the definitive tell.
 - **2026-07-16** — **Issues email: Indian ₹ grouping** (`_ind`/`_rupee` → ₹22,47,616.24),
   bigger KPI numbers, new **By-SKU issue table** (affected qty · PO count · MP count+names)
   and a **separate EAN-remaps table** (received→correct EAN, qty, POs, MPs). **SO Workbook

@@ -380,6 +380,23 @@
     <div class="sop-step" style="--d:8"><span class="sn">8</span><div class="tx"><b>Run staging.</b> Don't forget to <b>run staging</b>, including its <b>M-Assist integration</b>.</div></div>
   </div>
 
+  <!-- Reliance-family channel identification (MT) -->
+  <div class="rule-card reveal sop-card">
+    <div class="rc-head"><span class="rc-no sop">R</span><h2>Identify the Reliance channel (MT) <span class="rc-sub">— Centro vs Smart Bazaar vs Metro · pick the right one at upload</span></h2></div>
+    <p class="rc-lead" style="margin-top:6px;">Three Reliance-family channels look alike. The <b>customer number</b> is the definitive tell; the file name is the quick tell.</p>
+    <div style="overflow-x:auto;">
+    <table class="rule-tbl">
+      <thead><tr><th>Channel</th><th>Code</th><th>Cust / Sell-to</th><th>File you receive</th><th>In-file marker</th></tr></thead>
+      <tbody>
+        <tr><td><b>Reliance Retail (Centro)</b></td><td>RL</td><td><b>20043</b></td><td><b>Renee.XLSX</b> — one row per PO line</td><td>Centro store names</td></tr>
+        <tr><td><b>Reliance Smart Bazaar</b></td><td>RSB</td><td><b>20615</b></td><td>PurchaseOrders*.xlsx (sheet "Purchase Orders")</td><td>DC_CODE — FR73 / FRBS / 6220</td></tr>
+        <tr><td><b>Metro Cash &amp; Carry</b> (Reliance-owned)</td><td>MET</td><td><b>20410</b></td><td>PurchaseOrders*.xlsx (sheet "Purchase Orders")</td><td>Metro DC codes</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="rc-lead" style="margin-top:10px;"><b>Fast tell:</b> only <b>Centro</b> arrives as <b>Renee.XLSX</b>. A <b>PurchaseOrders*.xlsx</b> is RSB <i>or</i> Metro (identical schema) — confirm by the customer number: <b>20615 = Smart Bazaar · 20410 = Metro · 20043 = Centro</b>. Any PDFs in the folder are delivery-address references only — <b>not parsed</b> (same as Apollo).</p>
+  </div>
+
   </div><!-- /seg-pane sop -->
 
 </div>
@@ -414,16 +431,63 @@
   .rule-tbl td.warn{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:#92600a;background:#fff8ed;}
   .off-meta{font-size:12.5px;color:var(--text-2);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;}
   .off-note{margin-top:14px;font-size:12.5px;color:#7a4a06;background:#fff8ed;border:1px solid #ffd9a0;border-left:4px solid #f59e0b;border-radius:10px;padding:11px 14px;line-height:1.6;}
+
+  /* ── polished motion (scroll-reveal · pane transitions · micro-interactions) ── */
+  .js-reveal .rule-card.reveal{opacity:0;transform:translateY(24px) scale(.985);
+    transition:opacity .62s cubic-bezier(.2,.8,.25,1),transform .62s cubic-bezier(.2,.8,.25,1);will-change:opacity,transform;}
+  .js-reveal .rule-card.reveal.in{opacity:1;transform:none;}
+  .rule-card{transition:box-shadow .24s ease,transform .24s ease,border-color .24s ease;}
+  .rule-card:hover{transform:translateY(-3px);box-shadow:0 20px 46px -24px var(--accent,#4f46e5);}
+  .seg-pane.on{animation:paneIn .42s cubic-bezier(.2,.8,.25,1);}
+  @keyframes paneIn{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:none;}}
+  .seg-tab{position:relative;}
+  .seg-tab:active{transform:scale(.96);}
+  .rc-no{transition:transform .32s cubic-bezier(.2,.8,.25,1);}
+  .rule-card:hover .rc-no{transform:rotate(-7deg) scale(1.09);}
+  .rule-tbl tbody tr{transition:background .16s;}
+  .rule-tbl tbody tr:hover{background:color-mix(in srgb,var(--accent,#4f46e5) 6%,transparent);}
+  @media (prefers-reduced-motion: reduce){
+    .js-reveal .rule-card.reveal{opacity:1;transform:none;transition:none;}
+    .seg-pane.on{animation:none;} .rule-card:hover{transform:none;} .rule-card:hover .rc-no{transform:none;}}
 </style>
 <script>
 (function () {
   var tabs = document.querySelectorAll('.seg-tab');
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function stagger(cards) {
+    cards.forEach(function (c, i) {
+      c.classList.remove('in');
+      if (reduce) { c.classList.add('in'); return; }
+      // clear then re-add with a small per-card delay for a cascading reveal
+      setTimeout(function () { c.classList.add('in'); }, 60 + i * 70);
+    });
+  }
+
+  // Scroll-reveal the visible pane's cards as they enter the viewport.
+  if (!reduce && 'IntersectionObserver' in window) {
+    document.documentElement.classList.add('js-reveal');
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -6% 0px' });
+    document.querySelectorAll('.seg-pane.on .rule-card.reveal').forEach(function (c) { io.observe(c); });
+  }
+
   tabs.forEach(function (t) {
     t.addEventListener('click', function () {
       tabs.forEach(function (x) { x.classList.toggle('on', x === t); });
       var seg = t.getAttribute('data-seg');
       document.querySelectorAll('.seg-pane').forEach(function (p) {
-        p.style.display = (p.getAttribute('data-pane') === seg) ? '' : 'none';
+        var show = p.getAttribute('data-pane') === seg;
+        p.style.display = show ? '' : 'none';
+        p.classList.toggle('on', show);
+        if (show) {
+          // re-trigger the pane fade + cascade its cards back in
+          p.style.animation = 'none'; void p.offsetWidth; p.style.animation = '';
+          stagger(p.querySelectorAll('.rule-card.reveal'));
+        }
       });
     });
   });

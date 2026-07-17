@@ -212,10 +212,79 @@ def _overlay_decisions(payload: dict, meta: dict) -> None:
             ln['decision'] = dec.get(ln.get('key', ''), {})
 
 
+_AFF_STATUSES = {'MISMATCH', 'NOT_IN_MASTER'}
+
+
+def _sku_rows(lines) -> list:
+    """Per-SKU demand rollup (parity with the Online B2B 'SKU' tab) — grouped by
+    (item_no, ean): qty, # POs, value (Σ unit price × qty), the unit price, and an
+    overridden flag. Computed purely from the already-resolved lines — no engine
+    touch. Value basis follows the channel's unit_price (channel-native)."""
+    agg: dict = {}
+    for ln in lines or []:
+        key = (ln.get('item_no') or '', ln.get('ean') or '')
+        a = agg.get(key)
+        if a is None:
+            a = agg[key] = {'item_no': ln.get('item_no') or '', 'ean': ln.get('ean') or '',
+                            'description': ln.get('description') or '', 'qty': 0, 'pos': set(),
+                            'value': 0.0, 'ups': set(), 'overridden': False, 'labels': set()}
+        q = int(ln.get('qty') or 0)
+        a['qty'] += q
+        a['pos'].add(ln.get('po'))
+        up = ln.get('unit_price')
+        if up not in (None, ''):
+            try:
+                upf = float(up)
+                a['ups'].add(round(upf, 2))
+                a['value'] += upf * q
+            except (TypeError, ValueError):
+                pass
+        lbl = (ln.get('exception_label') or '').strip()
+        act = str((ln.get('decision') or {}).get('action') or '').upper()
+        if lbl:
+            a['labels'].add(lbl)
+            a['overridden'] = True
+        if act in ('OVERRIDE', 'EXCLUDE', 'INCLUDE'):
+            a['overridden'] = True
+    rows = []
+    for a in agg.values():
+        ups = sorted(a['ups'])
+        # No per-line price on this channel (e.g. MT) → leave value/price blank
+        # rather than a misleading ₹0.
+        val = round(a['value'], 2) if ups else None
+        rows.append({'item_no': a['item_no'], 'ean': a['ean'], 'description': a['description'],
+                     'qty': a['qty'], 'pos': len(a['pos']), 'value': val,
+                     'unit_price': (ups[-1] if ups else None), 'unit_price_varies': len(ups) > 1,
+                     'overridden': a['overridden'], 'note': ', '.join(sorted(a['labels']))})
+    rows.sort(key=lambda r: (-(r['value'] or 0), -r['qty']))
+    return rows
+
+
+def _mark_clean(headers, lines):
+    """Flag each header CLEAN / AFFECTED (parity with the Online B2B Orders tab +
+    workbook Summary Status): a PO is AFFECTED if any of its lines is EXCLUDEd or
+    an unresolved MISMATCH / NOT_IN_MASTER; else 100% goes through → CLEAN."""
+    affected = set()
+    for ln in lines or []:
+        act = str((ln.get('decision') or {}).get('action') or '').upper()
+        if act == 'EXCLUDE' or ((ln.get('status') or '') in _AFF_STATUSES
+                                and act not in ('INCLUDE', 'OVERRIDE')):
+            affected.add(str(ln.get('po') or ''))
+    n_clean = 0
+    for h in headers or []:
+        h['clean'] = str(h.get('po') or '') not in affected
+        n_clean += 1 if h['clean'] else 0
+    return n_clean, len(headers or []) - n_clean
+
+
 def review_context(spec: FlowSpec, token: str, meta: dict) -> dict:
     """Build the full template context for the shared ``review.html``."""
     payload = preview(spec, token, meta)
     _overlay_decisions(payload, meta)
+    # Parity with Online B2B (additive, from the resolved payload only):
+    # a per-SKU rollup + per-PO CLEAN/AFFECTED status.
+    payload['sku_rows'] = _sku_rows(payload.get('lines'))
+    n_clean_po, n_affected_po = _mark_clean(payload.get('headers'), payload.get('lines'))
     # Qty-weighted KPIs (parity with the Online B2B review): total qty on
     # affected lines, and the share of qty that is clean (OK). Derived from the
     # already-computed lines — no processor/engine change.
@@ -229,6 +298,7 @@ def review_context(spec: FlowSpec, token: str, meta: dict) -> dict:
     ok_qty_pct = round((total_qty - affected_qty) * 100 / total_qty, 1) if total_qty else 100.0
     return {
         'affected_qty': affected_qty, 'ok_qty_pct': ok_qty_pct,
+        'n_clean_po': n_clean_po, 'n_affected_po': n_affected_po,
         'spec': spec,
         'title': spec.title,
         'segment': spec.segment,

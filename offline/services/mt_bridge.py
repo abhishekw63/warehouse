@@ -1643,8 +1643,16 @@ class MTProcessor:
                 continue
             loc = pf.ship_to_entry.del_location if pf.ship_to_entry else ''
             for ln in pf.lines:
-                if ln.status == 'SKIP' or not ln.item_no:
-                    continue                       # unresolved → surfaced as a warning
+                item_no = str(ln.item_no or '')
+                ean = str(getattr(ln, 'ean', '') or '')
+                # Record real product lines even when UNRESOLVED (NOT_IN_MASTER),
+                # so dropped qty is audited + surfaces on the Issues page — parity
+                # with Online B2B (never-skip-silently). Only genuinely empty rows
+                # (no item AND no EAN) are skipped. Unresolved → NOT_IN_MASTER +
+                # EXCLUDE (they never reach the D365 dump); resolved → OK.
+                if not item_no and not ean:
+                    continue
+                resolved = bool(item_no)
                 our_mrp = _f(getattr(ln, 'items_master_mrp', None))
                 # SS file carries no cost → 0 means "absent": show blank, not 0.00.
                 vendor_landing = _f(getattr(ln, 'purchase_cost', None)) or None
@@ -1658,8 +1666,8 @@ class MTProcessor:
                     'marketplace': channel.display_name,    # 'Shoppers Stop'
                     'po': pf.so_number,
                     'location': str(loc or ''),
-                    'item_no': str(ln.item_no or ''),
-                    'ean': str(getattr(ln, 'ean', '') or ''),
+                    'item_no': item_no,
+                    'ean': ean,
                     'description': (str(getattr(ln, 'items_master_desc', None)
                                         or getattr(ln, 'sku_name', '') or ''))[:255],
                     'qty': int(getattr(ln, 'quantity', 0) or 0),
@@ -1673,10 +1681,10 @@ class MTProcessor:
                     'vendor_cp': None, 'our_cp': None,      # SS validates on landing
                     'diff': diff,
                     'margin_pct': round(ratio * 100, 2) if ratio else None,
-                    'status': 'OK',
+                    'status': 'OK' if resolved else 'NOT_IN_MASTER',
                     'exception_label': '',
                     'output_file': output_file or '',
-                    'action': '', 'remark': '',
+                    'action': '' if resolved else 'EXCLUDE', 'remark': '',
                 })
         if rows:
             lines_store.insert_lines(run_id, rows)

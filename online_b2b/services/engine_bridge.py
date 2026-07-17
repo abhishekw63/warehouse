@@ -958,15 +958,21 @@ class Processor:
             return
         c_po = hdr.index('PO') + 1
         c_qty = hdr.index('Total Qty') + 1 if 'Total Qty' in hdr else None
-        c_exc, c_fin = ws.max_column + 1, ws.max_column + 2
+        c_exc, c_fin, c_stat = ws.max_column + 1, ws.max_column + 2, ws.max_column + 3
         ws.cell(1, c_exc, 'Excluded/Dropped Qty')
         ws.cell(1, c_fin, 'Final Qty (to D365)')
-        for cc in (c_exc, c_fin):
+        # CLEAN = nothing dropped, 100% of the PO goes to D365 as-is; AFFECTED =
+        # some qty was excluded. Lets the operator scan the Summary for clean POs.
+        ws.cell(1, c_stat, 'Status')
+        for cc in (c_exc, c_fin, c_stat):
             h = ws.cell(1, cc)
             h.font = Font(bold=True, color='FFFFFF')
             h.fill = PatternFill('solid', fgColor='B45309')
             h.alignment = Alignment(horizontal='center', wrap_text=True)
+        green = PatternFill('solid', fgColor='E7F6EC')
+        red = PatternFill('solid', fgColor='FDE7E7')
         total_e = sum(excl.values())
+        n_clean = n_aff = 0
         for r in range(2, ws.max_row + 1):
             po = str(ws.cell(r, c_po).value or '')
             tot = ws.cell(r, c_qty).value if c_qty else None
@@ -977,14 +983,26 @@ class Processor:
             if po.upper().startswith('TOTAL'):
                 ws.cell(r, c_exc, total_e)
                 ws.cell(r, c_fin, totf - total_e)
+                sc = ws.cell(r, c_stat, f'{n_clean} CLEAN · {n_aff} AFFECTED')
+                sc.font = Font(bold=True)
                 continue
             if not po:
                 continue
             e = excl.get(po, 0)
             ws.cell(r, c_exc, e)
             ws.cell(r, c_fin, totf - e)
+            clean = (e == 0)
+            sc = ws.cell(r, c_stat, 'CLEAN' if clean else 'AFFECTED')
+            sc.font = Font(bold=True, color='0A7D33' if clean else 'B91C1C')
+            sc.alignment = Alignment(horizontal='center')
+            sc.fill = green if clean else red
+            if clean:
+                n_clean += 1
+            else:
+                n_aff += 1
         ws.column_dimensions[openpyxl.utils.get_column_letter(c_exc)].width = 18
         ws.column_dimensions[openpyxl.utils.get_column_letter(c_fin)].width = 18
+        ws.column_dimensions[openpyxl.utils.get_column_letter(c_stat)].width = 20
         wb.save(path)
 
     @staticmethod

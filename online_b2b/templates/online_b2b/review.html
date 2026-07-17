@@ -6,6 +6,10 @@
   @keyframes cpShake{10%,90%{transform:translateX(-1px)}20%,80%{transform:translateX(2px)}
     30%,50%,70%{transform:translateX(-5px)}40%,60%{transform:translateX(5px)}}
   .cp-shake{animation:cpShake .5s;}
+  .po-clean{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10.5px;font-weight:800;
+    letter-spacing:.02em;background:#e7f6ec;color:#0a7d33;white-space:nowrap;}
+  .po-aff{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10.5px;font-weight:800;
+    letter-spacing:.02em;background:#fde7e7;color:#b91c1c;white-space:nowrap;}
   @keyframes cpFlash{0%,100%{background:transparent}25%,60%{background:#fff2c2;box-shadow:inset 0 0 0 2px #f0b400;}}
   .cp-flash>td{animation:cpFlash 1.3s ease 2;}
   .cpg-ov{position:fixed;inset:0;background:rgba(16,22,38,.52);display:flex;align-items:center;
@@ -211,14 +215,18 @@
 
   <!-- Orders -->
   <div class="tabpane" data-pane="orders" style="display:none;">
+    <p class="aff-hint"><b style="color:#0a7d33;">✓ {{ r.n_clean_po }} CLEAN</b> · <b style="color:#b91c1c;">⚑ {{ r.n_affected_po }} AFFECTED</b>
+      — CLEAN POs go 100% to D365 as-is; AFFECTED had qty excluded or lines needing a decision.</p>
     <table class="grid">
-      <thead><tr><th>PO</th><th>Location</th><th>Type</th><th class="r">Items</th><th class="r">Qty</th><th class="r">Value</th></tr></thead>
+      <thead><tr><th>PO</th><th>Location</th><th>Type</th><th class="r">Items</th><th class="r">Qty</th><th class="r">Value</th>
+        <th>Status</th></tr></thead>
       <tbody>
         {% for h in r.headers %}
         <tr><td class="mono">{{ h.po }}</td><td class="loc" title="{{ h.location }}">{{ h.location }}</td>
           <td><span class="pill {{ h.order_type|lower }}">{{ h.order_type }}</span></td>
-          <td class="r">{{ h.items }}</td><td class="r">{{ h.qty }}</td><td class="r">{{ h.order_value|inr_short }}</td></tr>
-        {% empty %}<tr><td colspan="6" class="muted">No orders.</td></tr>{% endfor %}
+          <td class="r">{{ h.items }}</td><td class="r">{{ h.qty }}</td><td class="r">{{ h.order_value|inr_short }}</td>
+          <td>{% if h.clean %}<span class="po-clean" title="No lines dropped — 100% goes to D365 as-is">✓ CLEAN</span>{% else %}<span class="po-aff" title="Some qty excluded / needs a decision — not 100% to D365">⚑ AFFECTED</span>{% endif %}</td></tr>
+        {% empty %}<tr><td colspan="7" class="muted">No orders.</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>
