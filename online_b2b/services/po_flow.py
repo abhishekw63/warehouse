@@ -277,14 +277,39 @@ def _mark_clean(headers, lines):
     return n_clean, len(headers or []) - n_clean
 
 
+def _mapping_report(headers):
+    """Per-PO ship-to resolution for a Mapping tab (parity with Online B2B):
+    MAPPED (ship-to resolved) vs UNMAPPED (blank ship-to → the SO can't reach
+    D365). Only meaningful when the channel exposes ``ship_to`` on the header.
+    Returns ``(rows, n_unmapped, has_mapping)``."""
+    rows, n_unmapped, has_mapping = [], 0, False
+    for h in headers or []:
+        if 'ship_to' not in h:
+            continue
+        has_mapping = True
+        ship = str(h.get('ship_to') or '').strip()
+        mapped = bool(ship)
+        if not mapped:
+            n_unmapped += 1
+        h['mapped'] = mapped                       # for the Orders-tab chip too
+        rows.append({'po': h.get('po'),
+                     'location': str(h.get('raw_location') or h.get('location') or ''),
+                     'ship_to': ship, 'qty': h.get('qty'),
+                     'match_type': 'MAPPED' if mapped else 'UNMAPPED'})
+    rows.sort(key=lambda r: (r['match_type'] != 'UNMAPPED', str(r['po'])))
+    return rows, n_unmapped, has_mapping
+
+
 def review_context(spec: FlowSpec, token: str, meta: dict) -> dict:
     """Build the full template context for the shared ``review.html``."""
     payload = preview(spec, token, meta)
     _overlay_decisions(payload, meta)
     # Parity with Online B2B (additive, from the resolved payload only):
-    # a per-SKU rollup + per-PO CLEAN/AFFECTED status.
+    # a per-SKU rollup + per-PO CLEAN/AFFECTED status + ship-to mapping report.
     payload['sku_rows'] = _sku_rows(payload.get('lines'))
     n_clean_po, n_affected_po = _mark_clean(payload.get('headers'), payload.get('lines'))
+    mapping_report, n_unmapped, has_mapping = _mapping_report(payload.get('headers'))
+    payload['mapping_report'] = mapping_report
     # Qty-weighted KPIs (parity with the Online B2B review): total qty on
     # affected lines, and the share of qty that is clean (OK). Derived from the
     # already-computed lines — no processor/engine change.
@@ -299,6 +324,7 @@ def review_context(spec: FlowSpec, token: str, meta: dict) -> dict:
     return {
         'affected_qty': affected_qty, 'ok_qty_pct': ok_qty_pct,
         'n_clean_po': n_clean_po, 'n_affected_po': n_affected_po,
+        'n_unmapped': n_unmapped, 'has_mapping': has_mapping,
         'spec': spec,
         'title': spec.title,
         'segment': spec.segment,

@@ -90,7 +90,9 @@ class MTFlowProcessor:
             val = float(getattr(pf, 'input_po_value_total', 0) or 0)
             # Prefer the readable store name (e.g. 'HG-VIVACITY-MUM') over the
             # bare customer number for the Orders 'Location' column.
-            loc = str(getattr(pf, 'store_name', '') or pf.ship_to or '')
+            raw_loc = str(getattr(pf, 'store_name', '') or '')
+            ship_to = str(getattr(pf, 'ship_to', '') or '')
+            loc = raw_loc or ship_to
             if po in recorded_ext:
                 skipped.append({'po': po, 'location': loc, 'qty': qty,
                                 'order_value': round(val, 2),
@@ -99,9 +101,14 @@ class MTFlowProcessor:
             npos += 1
             total_qty += qty
             total_val += val
+            # Expose the ship-to resolution so the review can flag UNMAPPED stores
+            # (parity with Online B2B's Mapping tab). mapped=False → no ship-to
+            # resolved → the SO can't reach D365; the review banner warns on it.
             headers.append({'po': po, 'location': loc, 'order_type': 'SO',
                             'items': len(pf.lines), 'qty': qty,
-                            'order_value': round(val, 2)})
+                            'order_value': round(val, 2),
+                            'raw_location': raw_loc or loc,
+                            'ship_to': ship_to, 'mapped': bool(ship_to)})
             for ln in pf.lines:
                 item_no = str(getattr(ln, 'item_no', '') or '')
                 ean = str(getattr(ln, 'ean', '') or '')
