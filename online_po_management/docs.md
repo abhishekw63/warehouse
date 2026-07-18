@@ -372,6 +372,14 @@ instead of a single number that lies for rule-based marketplaces.
 
 ## 10. Changelog (append one line per development)
 
+- **2026-07-18** — **Daily D365 triangular reconciliation** (`tools/daily_triangular_check.py`,
+  read-only): point at a day's folder (D365 Sales Orders + Sales Lines + our `*_completed.xlsx`)
+  → PO count · header + per-SKU line qty (unit-exact) · ship-to/address · pincode · Total
+  Amount (inc GST) value vs our system; saves `Triangular_Reconciliation_<date>.xlsx`; scopes
+  D365 Lines to that day's SOs; skips Flipkart-TO. **Operator runs it daily; TO BE INTEGRATED
+  as the web Sales Validation page** (thin view → this logic as a service → {ok,data,error};
+  upload the 2 D365 files). Also: offline **Mapping tab + UNMAPPED banner** (mt_flow exposes
+  ship_to → po_flow builds the report); MT NIM lines now recorded (Issues parity).
 - **2026-07-17** — **Offline parity (additive)**: shared `po_flow._sku_rows` + `_mark_clean`
   → SKU tab + CLEAN/AFFECTED on the offline review (MT/GT/Apollo…), no engine touch.
   **SO Workbook Summary + review Orders**: CLEAN/AFFECTED status column. **Apollo (BN)**:
