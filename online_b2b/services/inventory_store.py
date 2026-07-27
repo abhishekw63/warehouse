@@ -166,10 +166,11 @@ _MYSQL_DDL = [
         pattern     VARCHAR(120),
         match_type  VARCHAR(10) DEFAULT 'prefix',
         decision    VARCHAR(10) DEFAULT 'exclude',
+        warehouse   VARCHAR(40) DEFAULT '',
         note        VARCHAR(255),
         updated_by  VARCHAR(80),
         updated_at  DATETIME,
-        UNIQUE KEY uq_invrule (pattern, match_type)
+        UNIQUE KEY uq_invrule (pattern, match_type, warehouse)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
 ]
@@ -192,8 +193,9 @@ _SQLITE_DDL = [
         qty REAL DEFAULT 0)""",
     """CREATE TABLE IF NOT EXISTS inventory_bin_rule (
         id INTEGER PRIMARY KEY AUTOINCREMENT, pattern TEXT, match_type TEXT DEFAULT 'prefix',
-        decision TEXT DEFAULT 'exclude', note TEXT, updated_by TEXT, updated_at TEXT,
-        UNIQUE (pattern, match_type))""",
+        decision TEXT DEFAULT 'exclude', warehouse TEXT DEFAULT '', note TEXT,
+        updated_by TEXT, updated_at TEXT,
+        UNIQUE (pattern, match_type, warehouse))""",
 ]
 
 
@@ -201,6 +203,32 @@ def ensure_tables() -> None:
     with _conn() as (cur, d):
         for ddl in (_MYSQL_DDL if d['kind'] == 'mysql' else _SQLITE_DDL):
             cur.execute(ddl)
+        # ── migration: warehouse-scope column on pre-existing installs ──
+        # (bin rules can be scoped to ONE warehouse, e.g. QC counts as sellable in
+        # BLR but not in AHD; blank warehouse = applies to all). Idempotent.
+        try:
+            if d['kind'] == 'mysql':
+                cur.execute(
+                    "SELECT COUNT(*) FROM information_schema.columns "
+                    "WHERE table_schema=DATABASE() AND table_name='inventory_bin_rule' "
+                    "AND column_name='warehouse'")
+                if not cur.fetchone()[0]:
+                    cur.execute("ALTER TABLE inventory_bin_rule "
+                                "ADD COLUMN warehouse VARCHAR(40) DEFAULT ''")
+                    for stmt in ("ALTER TABLE inventory_bin_rule DROP INDEX uq_invrule",
+                                 "ALTER TABLE inventory_bin_rule ADD UNIQUE KEY "
+                                 "uq_invrule (pattern, match_type, warehouse)"):
+                        try:
+                            cur.execute(stmt)
+                        except Exception:  # noqa: BLE001 — index may already be shaped
+                            pass
+            else:
+                cur.execute("PRAGMA table_info(inventory_bin_rule)")
+                if 'warehouse' not in [r[1] for r in cur.fetchall()]:
+                    cur.execute("ALTER TABLE inventory_bin_rule "
+                                "ADD COLUMN warehouse TEXT DEFAULT ''")
+        except Exception:  # noqa: BLE001 — never let a migration break reads
+            pass
         # seed default rules once (idempotent — UNIQUE(pattern, match_type))
         ph = d['ph']
         now = _dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -221,26 +249,40 @@ def _first_segment(bin_code: str) -> str:
 
 
 def load_rules() -> list[dict]:
-    """All bin rules (editable list), include-first then exclude."""
+    """All bin rules (editable list). Warehouse-specific first, then global; within
+    each scope include-first then exclude — the exact order :func:`classify_bin`
+    walks (first match wins)."""
     ensure_tables()
     out = []
     with _conn() as (cur, d):
-        cur.execute("SELECT id, pattern, match_type, decision, note, updated_by, "
-                    "updated_at FROM inventory_bin_rule "
-                    "ORDER BY decision DESC, pattern")
-        cols = ['id', 'pattern', 'match_type', 'decision', 'note', 'updated_by',
-                'updated_at']
+        cur.execute("SELECT id, pattern, match_type, decision, warehouse, note, "
+                    "updated_by, updated_at FROM inventory_bin_rule "
+                    "ORDER BY (warehouse<>'') DESC, warehouse, decision DESC, pattern")
+        cols = ['id', 'pattern', 'match_type', 'decision', 'warehouse', 'note',
+                'updated_by', 'updated_at']
         out = [dict(zip(cols, r)) for r in cur.fetchall()]
     return out
 
 
-def _compile(rules: list[dict]):
-    """Split rules into (include, exclude) ordered lists of (pattern, match_type)."""
-    inc = [(str(r['pattern']).upper(), r['match_type']) for r in rules
+def _ordered(rules: list[dict]):
+    """Ordered [(pattern_up, match_type, decision)] — includes before excludes so a
+    bin that could match both counts as sellable (preserves the include-wins rule)."""
+    inc = [(str(r['pattern']).upper(), r['match_type'], 'include') for r in rules
            if r['decision'] == 'include']
-    exc = [(str(r['pattern']).upper(), r['match_type']) for r in rules
+    exc = [(str(r['pattern']).upper(), r['match_type'], 'exclude') for r in rules
            if r['decision'] == 'exclude']
-    return inc, exc
+    return inc + exc
+
+
+def _compile(rules: list[dict], warehouse: str = ''):
+    """Compile rules into the ordered match-list for ONE warehouse: that
+    warehouse's own rules FIRST (they win — e.g. QC=include in BLR beats the
+    global QC=exclude), then the global (blank-warehouse) rules. ``warehouse=''``
+    → global rules only."""
+    wh = str(warehouse or '').strip()
+    wh_rules = [r for r in rules if str(r.get('warehouse') or '').strip() == wh and wh]
+    g_rules = [r for r in rules if not str(r.get('warehouse') or '').strip()]
+    return _ordered(wh_rules) + _ordered(g_rules)
 
 
 def _match(bin_up: str, seg: str, pat: str, mt: str) -> bool:
@@ -252,42 +294,44 @@ def _match(bin_up: str, seg: str, pat: str, mt: str) -> bool:
 
 
 def classify_bin(bin_code: str, compiled=None) -> str:
-    """→ 'include' | 'exclude' | 'new'. INCLUDE wins over EXCLUDE; a bin matching
-    NEITHER list is 'new' (unknown → flag, held out of the sellable total)."""
+    """→ 'include' | 'exclude' | 'new'. Walks the compiled rule list in priority
+    order (warehouse-specific → global, include → exclude); FIRST match wins. A bin
+    matching nothing is 'new' (unknown → flagged, held out of the sellable total).
+    ``compiled`` is the list from :func:`_compile` (defaults to global rules)."""
     bin_up = str(bin_code or '').strip().upper()
     if not bin_up:
         return 'new'
     seg = _first_segment(bin_up)
     if compiled is None:
         compiled = _compile(load_rules())
-    inc, exc = compiled
-    for pat, mt in inc:
+    for pat, mt, decision in compiled:
         if _match(bin_up, seg, pat, mt):
-            return 'include'
-    for pat, mt in exc:
-        if _match(bin_up, seg, pat, mt):
-            return 'exclude'
+            return decision
     return 'new'
 
 
 # ── rule CRUD (editable include/exclude list) ───────────────────────────────
-def add_rule(pattern, match_type, decision, note='', user='') -> dict:
+def add_rule(pattern, match_type, decision, note='', user='', warehouse='') -> dict:
     pattern = str(pattern or '').strip()
     match_type = match_type if match_type in ('prefix', 'segment', 'exact') else 'prefix'
     decision = 'include' if str(decision).lower() == 'include' else 'exclude'
+    warehouse = str(warehouse or '').strip()   # '' = applies to every warehouse
     if not pattern:
         return {'ok': False, 'error': 'Pattern is required.'}
     ensure_tables()
     now = _dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     with _conn() as (cur, d):
         ph = d['ph']
-        verb = ('REPLACE INTO' if d['kind'] == 'mysql'
-                else 'INSERT OR REPLACE INTO')
+        # backend-agnostic upsert on (pattern, match_type, warehouse) — a bin rule
+        # can now exist per-warehouse, so we key on all three.
         cur.execute(
-            f"{verb} inventory_bin_rule "
-            f"(pattern, match_type, decision, note, updated_by, updated_at) "
-            f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph})",
-            (pattern.upper(), match_type, decision, note, user, now))
+            f"DELETE FROM inventory_bin_rule WHERE pattern={ph} AND match_type={ph} "
+            f"AND warehouse={ph}", (pattern.upper(), match_type, warehouse))
+        cur.execute(
+            f"INSERT INTO inventory_bin_rule "
+            f"(pattern, match_type, decision, warehouse, note, updated_by, updated_at) "
+            f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph})",
+            (pattern.upper(), match_type, decision, warehouse, note, user, now))
         cur.connection.commit()
     return {'ok': True}
 
@@ -362,7 +406,16 @@ def parse_bin_content(path) -> dict:
                             + ', '.join(missing) + '. Is this a Bin Contents export?')
             return out
         out['headers_ok'] = True
-        compiled = _compile(load_rules())
+        # Compile per-warehouse (a rule may be scoped to one WH). Cache by code so
+        # each warehouse's ordered rule-list is built once.
+        _all_rules = load_rules()
+        _compiled_cache: dict = {}
+
+        def _compiled_for(code):
+            code = str(code or '').strip()
+            if code not in _compiled_cache:
+                _compiled_cache[code] = _compile(_all_rules, code)
+            return _compiled_cache[code]
 
         def col(r, key):
             j = cmap.get(key)
@@ -387,7 +440,8 @@ def parse_bin_content(path) -> dict:
             if item in (None, ''):
                 continue
             out['file_rows'] += 1
-            wh = _wh(col(r, 'warehouse'))
+            wh_code = str(col(r, 'warehouse') or '').strip()
+            wh = _wh(wh_code)
             t = wh['totals']
             bin_code = str(col(r, 'bin_code') or '').strip()
             zone = str(col(r, 'zone_code') or '').strip()
@@ -395,7 +449,7 @@ def parse_bin_content(path) -> dict:
                 qty = float(col(r, 'available_qty') or 0)
             except (TypeError, ValueError):
                 qty = 0.0
-            decision = classify_bin(bin_code, compiled)
+            decision = classify_bin(bin_code, _compiled_for(wh_code))
             word = {'include': 'included', 'exclude': 'excluded',
                     'new': 'new'}[decision]
             t['total_lines'] += 1
@@ -520,6 +574,39 @@ def current_stock_map(warehouse='') -> dict:
         for item_no, qty in cur.fetchall():
             k = str(item_no)
             out[k] = out.get(k, 0.0) + float(qty or 0)
+    return out
+
+
+def stock_by_item() -> list[dict]:
+    """Per-item available stock across CURRENT snapshots — one row per item with a
+    per-warehouse qty map (+ total), for the Inventory stock view. Read-only.
+    Returns [{item_no, ean, description, uom, wh:{code:qty}, total}], qty-desc."""
+    ensure_tables()
+    rows: dict = {}
+    with _conn() as (cur, d):
+        cur.execute(
+            "SELECT s.item_no, s.warehouse, s.ean, s.description, s.uom, s.available_qty "
+            "FROM inventory_stock s JOIN inventory_snapshot p ON p.snapshot_id=s.snapshot_id "
+            "WHERE p.is_current=1")
+        for item_no, wh, ean, desc, uom, qty in cur.fetchall():
+            k = str(item_no or '').strip()
+            if not k:
+                continue
+            r = rows.get(k)
+            if r is None:
+                r = rows[k] = {'item_no': k, 'ean': str(ean or ''),
+                               'description': str(desc or ''), 'uom': str(uom or ''),
+                               'wh': {}, 'total': 0.0}
+            code = str(wh or '')
+            q = float(qty or 0)
+            r['wh'][code] = r['wh'].get(code, 0.0) + q
+            r['total'] += q
+            if not r['ean'] and ean:
+                r['ean'] = str(ean)
+            if not r['description'] and desc:
+                r['description'] = str(desc)
+    out = list(rows.values())
+    out.sort(key=lambda x: -x['total'])
     return out
 
 

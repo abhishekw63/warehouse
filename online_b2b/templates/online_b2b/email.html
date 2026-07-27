@@ -148,7 +148,7 @@
             <th class="r">Raw<br><small>qty / ₹</small></th>
             <th class="r">Uploaded<br><small>qty / ₹</small></th>
             <th class="r">Excluded<br><small>qty / ₹</small></th>
-            <th class="r">Tentative<br><small>bill</small></th></tr></thead>
+            <th class="r em-fillhead">Fill rate<br><small>qty (%) / ₹ (%)</small></th></tr></thead>
           <tbody>
             {% for r in s.rows %}
             {% with gid=forloop.counter|stringformat:'s'|add:'-'|add:s.key %}
@@ -166,7 +166,7 @@
               {% if r.excluded_qty or r.excluded_value %}
               <td class="r em-leg em-excl"><div class="q">{{ r.excluded_qty|indnum }} <span class="em-pct">({{ r.excluded_qty_pct }}%)</span></div><div class="v">{{ r.excluded_value|inr }} <span class="em-pct">({{ r.excluded_value_pct }}%)</span></div></td>
               {% else %}<td class="r em-none">—</td>{% endif %}
-              <td class="r {% if r.billing_value %}em-incl{% endif %}">{% if r.billing_value %}{{ r.billing_value|inr }}{% else %}—{% endif %}</td>
+              <td class="r em-leg em-fill{% if r.billing_value %} em-incl{% endif %}">{% if r.billing_value %}<div class="q">{{ r.billing_qty|indnum }} <span class="em-pct">({{ r.fill_qty_pct }}%)</span></div><div class="v">{{ r.billing_value|inr }} <span class="em-pct">({{ r.fill_val_pct }}%)</span></div>{% else %}<span class="em-none">—</span>{% endif %}</td>
               {% else %}
               <td><span class="em-pill off">○ Not today</span></td>
               <td class="r em-last" colspan="5">
@@ -186,7 +186,7 @@
               {% if p.excluded_qty or p.excluded_value %}
               <td class="r em-leg em-excl"><div class="q">{{ p.excluded_qty|indnum }} <span class="em-pct">({{ p.excluded_qty_pct }}%)</span></div><div class="v">{{ p.excluded_value|inr }} <span class="em-pct">({{ p.excluded_value_pct }}%)</span></div></td>
               {% else %}<td class="r em-none">—</td>{% endif %}
-              <td class="r {% if p.billing_value %}em-incl{% endif %}">{% if p.billing_value %}{{ p.billing_value|inr }}{% else %}—{% endif %}</td>
+              <td class="r em-leg em-fill{% if p.billing_value %} em-incl{% endif %}">{% if p.billing_value %}<div class="q">{{ p.billing_qty|indnum }} <span class="em-pct">({{ p.fill_qty_pct }}%)</span></div><div class="v">{{ p.billing_value|inr }} <span class="em-pct">({{ p.fill_val_pct }}%)</span></div>{% else %}<span class="em-none">—</span>{% endif %}</td>
             </tr>
             {# per-SKU rows are LAZY (fetched on PO click via CockpitPOSkusView, injected here) #}
             {% endwith %}
@@ -200,7 +200,7 @@
               <td class="r em-leg"><div class="q">{{ s.totals.raw_qty|indnum }}</div><div class="v">{{ s.totals.raw_value|inr }}</div></td>
               <td class="r em-leg em-incl"><div class="q">{{ s.totals.uploaded_qty|indnum }} <span class="em-pct">({{ s.totals.uploaded_qty_pct }}%)</span></div><div class="v">{{ s.totals.uploaded_value|inr }} <span class="em-pct">({{ s.totals.uploaded_value_pct }}%)</span></div></td>
               <td class="r em-leg em-excl"><div class="q">{{ s.totals.excluded_qty|indnum }} <span class="em-pct">({{ s.totals.excluded_qty_pct }}%)</span></div><div class="v">{{ s.totals.excluded_value|inr }} <span class="em-pct">({{ s.totals.excluded_value_pct }}%)</span></div></td>
-              <td class="r em-incl"><b>{% if s.totals.billing_value %}{{ s.totals.billing_value|inr }}{% else %}—{% endif %}</b></td>
+              <td class="r em-leg em-fill em-incl">{% if s.totals.billing_value %}<div class="q"><b>{{ s.totals.billing_qty|indnum }}</b> <span class="em-pct">({{ s.totals.fill_qty_pct }}%)</span></div><div class="v"><b>{{ s.totals.billing_value|inr }}</b> <span class="em-pct">({{ s.totals.fill_val_pct }}%)</span></div>{% else %}<span class="em-none">—</span>{% endif %}</td>
             </tr>
           </tbody>
         </table>
@@ -296,9 +296,9 @@
   .em-boardhead h2{margin:0;font-size:15px;font-weight:800;color:var(--text);}
   .em-daynice{font-size:12px;color:var(--muted);}
   .em-tablewrap{overflow-x:auto;}
-  .em-table{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;font-variant-numeric:tabular-nums;}
-  .em-table th,.em-table td{padding:10px 14px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);}
-  .em-table th{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);
+  .em-table{border-collapse:separate;border-spacing:0;width:100%;font-size:15px;font-variant-numeric:tabular-nums;}
+  .em-table th,.em-table td{padding:12px 16px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);}
+  .em-table th{font-size:11.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);
     background:var(--surface-2);position:sticky;top:0;}
   .em-table th.r,.em-table td.r{text-align:right;}
   .em-table tbody tr:hover td{background:var(--accent-soft);}
@@ -308,10 +308,16 @@
   .em-pill{display:inline-block;padding:3px 10px;border-radius:20px;font-weight:700;font-size:11px;white-space:nowrap;}
   .em-pill.on{color:#0f9d6b;background:#e7f6ef;}
   .em-pill.off{color:#64748b;background:#eef1f5;}
-  .em-pct{color:var(--muted);font-weight:400;font-size:10.5px;}
-  .em-leg .q{font-weight:700;}
-  .em-leg .v{font-size:11.5px;color:var(--muted);margin-top:2px;}
-  .em-table th small{font-weight:600;color:var(--muted);font-size:10px;}
+  .em-pct{color:var(--muted);font-weight:400;font-size:12px;}
+  .em-leg .q{font-weight:700;font-size:15px;}
+  .em-leg .v{font-size:13px;color:var(--muted);margin-top:3px;}
+  .em-table th small{font-weight:600;color:var(--muted);font-size:11px;}
+  /* Fill rate (in-stock share of Uploaded) — qty line accent, value line = tentative bill (green) */
+  .em-fillhead{background:color-mix(in srgb,var(--accent) 10%,var(--surface-2))!important;}
+  td.em-fill{background:color-mix(in srgb,var(--accent) 5%,transparent);}
+  td.em-fill .q{color:var(--accent);font-weight:800;}
+  td.em-fill .v{color:#0f9d6b;font-weight:700;}
+  td.em-fill .em-pct{color:var(--muted);}
   .em-table tr.em-total td{background:color-mix(in srgb,var(--accent) 8%,var(--surface));border-top:2px solid var(--border);font-weight:800;}
   .em-table tr.em-total:hover td{background:color-mix(in srgb,var(--accent) 8%,var(--surface));}
   /* drill-down */
@@ -424,6 +430,7 @@
 // PO→SKU is LAZY: SKUs are fetched on click and injected — never pre-rendered — so
 // the board stays light and a MP click can NEVER over-expand into SKUs.
 var EM_DAY = "{{ d.day|escapejs }}";
+var EM_SEG = "{{ d.seg_filter|escapejs }}";
 var EM_SKUS_URL = "{% url 'b2b_cockpit_po_skus' %}";
 
 function emSetHidden(gid, hidden) {
@@ -473,7 +480,8 @@ function emTogglePO(row) {
     + '<span class="em-dot"></span><span class="em-dot"></span> loading SKUs…</td>';
   row.parentNode.insertBefore(loader, row.nextSibling);
   fetch(EM_SKUS_URL + '?po=' + encodeURIComponent(row.getAttribute('data-po'))
-        + '&day=' + encodeURIComponent(EM_DAY) + '&pgid=' + encodeURIComponent(pgid),
+        + '&day=' + encodeURIComponent(EM_DAY) + '&seg=' + encodeURIComponent(EM_SEG)
+        + '&pgid=' + encodeURIComponent(pgid),
         { headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' })
     .then(function (r) { return r.text(); })
     .then(function (html) {

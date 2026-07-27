@@ -801,7 +801,24 @@ def daily_tasks(request):
     """Daily Activity Checklist — per-day grid of channels × workflow steps.
     Dual-render: JSON for AJAX (API-ready), template otherwise."""
     from .services import daily_checklist as dc
+    from django.urls import reverse
     data = dc.get_day(request.GET.get('day'))
+    # Per-channel "process URL" so clicking an MP name jumps straight to its upload
+    # page with the marketplace pre-selected (skip Process-PO's manual pick). Online
+    # web-integrated channels only; others get '' (plain label).
+    _upl = reverse('b2b_upload')
+
+    def _set_proc(seg_name, ch):
+        ch['process_url'] = (_upl + '?mp=' + ch['db_key']
+                             if seg_name == 'Online' and ch.get('live') and ch.get('db_key')
+                             else '')
+    for _seg in data.get('segments', []):
+        for _c in _seg.get('channels', []):
+            if _c.get('is_parent'):
+                for _kid in _c.get('children', []):
+                    _set_proc(_seg['segment'], _kid)
+            else:
+                _set_proc(_seg['segment'], _c)
     if _is_ajax(request):
         return JsonResponse({'ok': True, 'data': data, 'adhoc': dc.adhoc_list()})
     return render(request, 'online_b2b/daily_tasks.html',
@@ -915,8 +932,9 @@ class CockpitPOSkusView(View):
         po = (request.GET.get('po') or '').strip()
         day = (request.GET.get('day') or '').strip() or None
         mp = (request.GET.get('mp') or '').strip()
+        seg = (request.GET.get('seg') or '').strip()
         pgid = (request.GET.get('pgid') or '').strip()
-        skus = _se.po_skus(day=day, marketplace=mp, po=po) if po else []
+        skus = _se.po_skus(day=day, marketplace=mp, po=po, segment=seg) if po else []
         return render(request, 'online_b2b/_cockpit_po_skus.html',
                       {'skus': skus, 'pgid': pgid})
 
@@ -1336,12 +1354,15 @@ def upload(request):
                 status=200)
         raise
     else:
-        form = UploadForm()
-    # The marketplace <select> defaults to the first pilot option — server-render
-    # THAT marketplace's profile into the side panel so it shows with no flash
-    # (the panel then swaps live via AJAX on any change).
-    initial_mp = (engine_bridge.PILOT_MARKETPLACES[0]
-                  if engine_bridge.PILOT_MARKETPLACES else '')
+        # Pre-select the marketplace from ?mp= (Daily Tasks "click a channel → its
+        # upload page"); fall back to the first pilot option.
+        _mp = (request.GET.get('mp') or '').strip()
+        initial_mp = (_mp if _mp in engine_bridge.PILOT_MARKETPLACES
+                      else (engine_bridge.PILOT_MARKETPLACES[0]
+                            if engine_bridge.PILOT_MARKETPLACES else ''))
+        form = UploadForm(initial={'marketplace': initial_mp})
+    # initial_mp (set above) drives both the <select> and the server-rendered
+    # profile panel so it shows with no flash (the panel swaps live on change).
     return render(request, 'online_b2b/upload.html',
                   {'form': form,
                    'initial_mp': initial_mp,

@@ -2,7 +2,7 @@
 Expects: c = channel dict, steps_len = number of default step columns.{% endcomment %}
 <td class="dt-ch">
   <span class="dt-dot {% if c.on_hold %}hold{% elif c.no_po %}nopo{% elif c.done %}ok{% elif c.done_steps %}part{% endif %}"></span>
-  <span class="dt-name">{{ c.display }}</span>{% if not c.live %} <span class="dt-soon" title="not web-integrated — tick manually">manual</span>{% endif %}
+  {% if c.process_url %}<a class="dt-name dt-name-link" href="{{ c.process_url }}" title="Open {{ c.display }} upload page (marketplace pre-selected)">{{ c.display }} <span class="dt-go">↗</span></a>{% else %}<span class="dt-name">{{ c.display }}</span>{% endif %}{% if not c.live %} <span class="dt-soon" title="not web-integrated — tick manually">manual</span>{% endif %}
   {% if c.on_hold %}<span class="dt-hold-badge" title="On hold since {{ c.hold_at }}{% if c.hold_by %} · {{ c.hold_by }}{% endif %}{% if c.hold_reason %} — {{ c.hold_reason }}{% endif %} — parked, not counted as pending until un-held">⏸ ON HOLD</span>{% endif %}
   <label class="dt-nopo-t" title="No PO received for this channel today — marks it handled without ticking the steps"><input type="checkbox" class="dt-nopo-cb" data-channel="{{ c.key }}" data-step="nopo" {% if c.no_po %}checked{% endif %}> no PO today</label>
   <label class="dt-hold-t" title="Put this channel ON HOLD (e.g. an unresolved CP issue) — parked, not chased, until you un-hold it"><input type="checkbox" class="dt-hold-cb" data-channel="{{ c.key }}" data-step="hold" {% if c.on_hold %}checked{% endif %}> hold</label>

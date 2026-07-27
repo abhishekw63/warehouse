@@ -7,6 +7,6 @@
   {% if x.excluded_qty or x.excluded_value %}
   <td class="r em-leg em-excl"><div class="q">{{ x.excluded_qty|indnum }} <span class="em-pct">({{ x.excluded_qty_pct }}%)</span></div><div class="v">{{ x.excluded_value|inr }} <span class="em-pct">({{ x.excluded_value_pct }}%)</span></div></td>
   {% else %}<td class="r em-none">—</td>{% endif %}
-  <td class="r em-none">—</td>
+  <td class="r em-leg em-fill{% if x.billing_value %} em-incl{% endif %}">{% if x.fill_qty_pct is not None %}<div class="q">{{ x.billing_qty|indnum }} <span class="em-pct">({{ x.fill_qty_pct }}%)</span></div><div class="v">{{ x.billing_value|inr }} <span class="em-pct">({{ x.fill_val_pct }}%)</span></div>{% else %}<span class="em-none">—</span>{% endif %}</td>
 </tr>{% empty %}
 <tr class="em-sku-child em-anim" data-child="{{ pgid }}"><td colspan="7" class="em-none" style="padding:10px 16px;">No SKU lines for this PO.</td></tr>{% endfor %}

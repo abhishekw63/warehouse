@@ -205,6 +205,10 @@
   .dt-dot.nopo{background:#94a3b8;}
   tr.dt-nopo{background:#f8fafc;}
   tr.dt-nopo .dt-name{text-decoration:line-through;color:var(--muted);}
+  a.dt-name-link{color:var(--text);text-decoration:none;border-bottom:1px dashed transparent;transition:color .14s ease,border-color .14s ease;}
+  a.dt-name-link:hover{color:var(--accent);border-bottom-color:var(--accent);}
+  a.dt-name-link .dt-go{font-size:10px;color:var(--muted);opacity:0;transition:opacity .14s ease;}
+  a.dt-name-link:hover .dt-go{opacity:1;color:var(--accent);}
   tr.dt-nopo .dt-box{opacity:.35;pointer-events:none;}
   .dt-nopo-lbl{font-size:11px;color:var(--muted);font-style:italic;}
   /* "On hold" — parked (e.g. a CP issue), not chased/counted as pending */

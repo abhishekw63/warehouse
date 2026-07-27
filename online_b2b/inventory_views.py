@@ -26,7 +26,6 @@ from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
 
 from .services import inventory_store as store
-from .services import inventory_fill as fill
 
 _INV_UPLOADS = Path(settings.MEDIA_ROOT) / 'b2b_inventory'
 
@@ -34,20 +33,26 @@ _INV_UPLOADS = Path(settings.MEDIA_ROOT) / 'b2b_inventory'
 # ── dashboard ───────────────────────────────────────────────────────────────
 @login_required
 def inventory(request):
-    """Inventory cockpit: current stock per warehouse (timestamped) + the
-    fill-rate / OOS / tentative-billing rollup for the chosen scope."""
-    wh = (request.GET.get('wh') or '').strip()
-    mp = (request.GET.get('mp') or '').strip()
-    seg = (request.GET.get('seg') or '').strip()
-    date_from = (request.GET.get('from') or '').strip()
-    date_to = (request.GET.get('to') or '').strip()
+    """Inventory · Stock — pure available-stock view: how much of each SKU we hold
+    per warehouse (AHD / BLR / North), from the current Bin-Contents snapshots.
+    The fill-rate / OOS / tentative-billing analytics now live in the Fulfilment
+    Cockpit; this page is stock only."""
+    q = (request.GET.get('q') or '').strip()
 
     snaps = store.current_snapshots()
     # order snapshots by our warehouse registry, then any extras
     snap_cards = []
     for w in store.WAREHOUSES:
         s = snaps.get(w['code'])
-        snap_cards.append({'wh': w, 'snap': s})
+        card = {'wh': w, 'snap': s}
+        if s:
+            # per-bin audit → split into what we COUNTED vs EXCLUDED vs NEW, so
+            # the operator can see exactly which bins the sellable qty came from.
+            audit = store.bin_audit(s['snapshot_id'])
+            card['considered'] = [b for b in audit if b['decision'] == 'include']
+            card['excluded'] = [b for b in audit if b['decision'] == 'exclude']
+            card['new'] = [b for b in audit if b['decision'] == 'new']
+        snap_cards.append(card)
     extras = [c for k, c in snaps.items() if k not in store.WH_BY_CODE]
 
     # new-bin alerts across current snapshots (needs classification)
@@ -59,25 +64,26 @@ def inventory(request):
                            'bins': nb, 'count': len(nb),
                            'qty': round(sum(b['qty'] for b in nb), 1)})
 
-    fr = fill.fill_rate(date_from=date_from, date_to=date_to,
-                        marketplace=mp, warehouse=wh, segment=seg)
-
-    # AJAX filter change → return ONLY the fill-rate results partial (no reload).
-    if request.GET.get('partial'):
-        html = render(request, 'online_b2b/_inventory_fill.html', {'fr': fr})
-        stock_as_of = fr.get('stock_as_of') or ''
-        html['X-Stock-As-Of'] = stock_as_of
-        return html
-
-    # marketplaces present in the fill scope (for the filter dropdown)
-    mp_options = sorted({g['label'] for g in fr.get('mps', [])})
+    # per-item available stock across the warehouses (AHD / BLR / North), one row
+    # per SKU with a qty column per warehouse + total. Optional text filter.
+    wh_codes = [w['code'] for w in store.WAREHOUSES]
+    items = store.stock_by_item()
+    if q:
+        ql = q.lower()
+        items = [it for it in items
+                 if ql in it['item_no'].lower() or ql in it['description'].lower()
+                 or ql in it['ean'].lower()]
+    stock_rows = [{
+        'item_no': it['item_no'], 'ean': it['ean'],
+        'description': it['description'], 'uom': it['uom'],
+        'qtys': [round(it['wh'].get(c, 0.0)) for c in wh_codes],
+        'total': round(it['total']),
+    } for it in items]
 
     return render(request, 'online_b2b/inventory.html', {
         'snap_cards': snap_cards, 'extras': extras, 'alerts': alerts,
-        'fr': fr, 'sel_wh': wh, 'sel_mp': mp, 'sel_seg': seg,
-        'date_from': fr.get('date_from'), 'date_to': fr.get('date_to'),
-        'warehouses': store.WAREHOUSES, 'mp_options': mp_options,
-        'has_any_stock': bool(snaps),
+        'warehouses': store.WAREHOUSES, 'has_any_stock': bool(snaps),
+        'stock_rows': stock_rows, 'q': q, 'item_count': len(stock_rows),
     })
 
 
@@ -217,7 +223,8 @@ def inventory_rule_add(request):
     res = store.add_rule(
         request.POST.get('pattern', ''), request.POST.get('match_type', 'prefix'),
         request.POST.get('decision', 'exclude'), request.POST.get('note', ''),
-        user=request.user.get_username())
+        user=request.user.get_username(),
+        warehouse=request.POST.get('warehouse', ''))
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse(res)
     if res.get('ok'):

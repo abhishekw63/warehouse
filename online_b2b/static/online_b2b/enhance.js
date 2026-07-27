@@ -199,6 +199,10 @@
     rows.sort(function (a, b) {
       var x = (a.cells[col] ? a.cells[col].textContent : "").trim();
       var y = (b.cells[col] ? b.cells[col].textContent : "").trim();
+      // Empty / em-dash cells always sink to the bottom, both directions.
+      var bx = (x === "" || x === "—"), by = (y === "" || y === "—");
+      if (bx && !by) return 1;
+      if (!bx && by) return -1;
       var nx = numVal(x), ny = numVal(y), r;
       if (nx !== null && ny !== null) r = nx - ny;
       else r = x.localeCompare(y, undefined, { numeric: true });
@@ -224,11 +228,13 @@
         var isNum = seen && numeric / seen >= 0.7;
         if (isNum) for (var r2 = 0; r2 < body.length; r2++) if (body[r2].cells[ci]) body[r2].cells[ci].classList.add("enh-num");
         if (th.hasAttribute("data-nosort")) { th.classList.add("enh-nosort"); return; }
-        th.insertAdjacentHTML("beforeend", '<span class="enh-arrow">▲</span>');
+        // Neutral up/down glyph shows the column IS sortable; it snaps to a solid
+        // ▲ (asc) / ▼ (desc) once clicked.
+        th.insertAdjacentHTML("beforeend", '<span class="enh-arrow">⇅</span>');
         th.addEventListener("click", function () {
           var cur = th.getAttribute("aria-sort");
           var dir = cur === "ascending" ? "descending" : "ascending";
-          [].forEach.call(ths, function (o) { o.removeAttribute("aria-sort"); var a = o.querySelector(".enh-arrow"); if (a) a.textContent = "▲"; });
+          [].forEach.call(ths, function (o) { o.removeAttribute("aria-sort"); var a = o.querySelector(".enh-arrow"); if (a) a.textContent = "⇅"; });
           th.setAttribute("aria-sort", dir);
           th.querySelector(".enh-arrow").textContent = dir === "ascending" ? "▲" : "▼";
           sortBy(table, ci, dir);

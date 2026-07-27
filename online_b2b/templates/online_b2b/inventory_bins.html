@@ -40,17 +40,22 @@
           <option value="include">Include</option>
           <option value="exclude">Exclude</option>
         </select>
+        <select name="warehouse" title="Scope this rule to one warehouse, or all">
+          <option value="">All warehouses</option>
+          {% for w in warehouses %}<option value="{{ w.code }}">{{ w.short }} only</option>{% endfor %}
+        </select>
         <button type="submit" class="btn-primary">Add</button>
       </form>
       <div class="iv-tablewrap">
         <table class="iv-table">
-          <thead><tr><th>Pattern</th><th>Match</th><th>Decision</th><th></th></tr></thead>
+          <thead><tr><th>Pattern</th><th>Match</th><th>Decision</th><th>Scope</th><th></th></tr></thead>
           <tbody>
             {% for r in rules %}
             <tr>
               <td class="mono">{{ r.pattern }}</td>
               <td>{{ r.match_type }}</td>
               <td>{% if r.decision == 'include' %}<span class="pill good">Include</span>{% else %}<span class="pill bad">Exclude</span>{% endif %}</td>
+              <td>{% if r.warehouse %}<span class="pill wh">{{ r.warehouse }}</span>{% else %}<span class="mut">all</span>{% endif %}</td>
               <td class="r">
                 <form method="post" action="{% url 'b2b_inventory_rule_delete' r.id %}" onsubmit="return confirm('Remove this rule?')" style="display:inline;">
                   {% csrf_token %}<button type="submit" class="ivb-del" title="Remove">✕</button>
@@ -125,6 +130,7 @@
   .iv-table tr.aff td{background:color-mix(in srgb,#f59e0b 8%,transparent);}
   .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-weight:700;font-size:11px;}
   .pill.good{color:#0f9d6b;background:#e7f6ef;} .pill.bad{color:#b45309;background:#fff1e0;}
+  .pill.wh{color:#3730a3;background:#eef2ff;font-family:Consolas,monospace;font-size:10.5px;}
   .mut{color:var(--muted);}
   .ivb-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;}
   .ivb-del:hover{color:var(--red,#b3261e);}

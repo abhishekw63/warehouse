@@ -111,9 +111,11 @@
 .enh-table thead th{position:sticky;top:0;z-index:2;background:var(--surface-2,#fafbfc);
   cursor:pointer;user-select:none;white-space:nowrap;}
 .enh-table thead th.enh-nosort{cursor:default;}
-.enh-table thead th .enh-arrow{opacity:.28;font-size:10px;margin-left:4px;}
-.enh-table thead th[aria-sort="ascending"]  .enh-arrow{opacity:1;}
-.enh-table thead th[aria-sort="descending"] .enh-arrow{opacity:1;}
+.enh-table thead th.enh-nosort .enh-arrow{display:none;}
+.enh-table thead th .enh-arrow{opacity:.5;font-size:11px;margin-left:5px;color:var(--accent,#4f46e5);transition:opacity .12s;}
+.enh-table thead th:hover .enh-arrow{opacity:.85;}
+.enh-table thead th[aria-sort="ascending"]  .enh-arrow{opacity:1;font-weight:700;}
+.enh-table thead th[aria-sort="descending"] .enh-arrow{opacity:1;font-weight:700;}
 .enh-table tbody tr{transition:background .12s;}
 .enh-table tbody tr:hover{background:var(--accent-soft,#eef0fe);}
 :root[data-theme="dark"] .enh-table tbody tr:hover{background:#1d2130;}

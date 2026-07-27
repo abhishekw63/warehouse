@@ -77,11 +77,16 @@ def fill_rate(date_from='', date_to='', marketplace='', warehouse='',
             cur.execute(
                 f"SELECT marketplace, marketplace_label, po, warehouse, segment "
                 f"FROM order_headers WHERE {' AND '.join(hwhere)}", tuple(hparams))
+            # Key by PO (unique) AND by (marketplace, po). MT child channels store
+            # the header marketplace as 'MT' but their LINES carry the label
+            # ('Health & Glow'), so an (mk, po) join misses and the line would fall
+            # back to the default warehouse — losing the operator's WH choice. The
+            # PO-only key rescues that; the exact key stays for any legacy caller.
             hmap = {}
             for mk, lbl, po, wh, sg in cur.fetchall():
-                hmap[(str(mk or ''), str(po or ''))] = {
-                    'wh': store.resolve_order_wh(wh, mk, lbl),
-                    'seg': str(sg or '')}
+                rec = {'wh': store.resolve_order_wh(wh, mk, lbl), 'seg': str(sg or '')}
+                hmap[str(po or '')] = rec
+                hmap[(str(mk or ''), str(po or ''))] = rec
 
             where = [f"DATE(run_ts) >= {ph}", f"DATE(run_ts) <= {ph}"]
             params: list = [date_from, date_to]
@@ -114,7 +119,8 @@ def fill_rate(date_from='', date_to='', marketplace='', warehouse='',
         q = int(r['qty'] or 0)
         if q <= 0:
             continue
-        h = hmap.get((str(r['marketplace'] or ''), str(r['po'] or '')), {})
+        h = (hmap.get((str(r['marketplace'] or ''), str(r['po'] or '')))
+             or hmap.get(str(r['po'] or '')) or {})
         line_wh = h.get('wh') or store.DEFAULT_WH
         if warehouse and line_wh != warehouse:
             continue
@@ -129,10 +135,12 @@ def fill_rate(date_from='', date_to='', marketplace='', warehouse='',
         lines.append(r)
         demand[item] = demand.get(item, 0) + q
 
-    # per-item fill ratio
+    # per-item fill ratio. Clamp available at 0 — D365 can carry a NEGATIVE
+    # on-hand (over-picked / correction rows); a negative must read as 0% fill,
+    # never a negative ratio.
     fill: dict = {}
     for item, dqty in demand.items():
-        avail = float(stock.get(item, 0) or 0)
+        avail = max(0.0, float(stock.get(item, 0) or 0))
         fill[item] = min(avail, dqty) / dqty if dqty else 0.0
 
     def _fillable(r):
@@ -188,7 +196,7 @@ def fill_rate(date_from='', date_to='', marketplace='', warehouse='',
     # ── per-item OOS list (only items with a shortfall, worst first) ──
     items_out = []
     for item, dqty in demand.items():
-        avail = float(stock.get(item, 0) or 0)
+        avail = max(0.0, float(stock.get(item, 0) or 0))
         oos = max(dqty - avail, 0)
         meta = next((r for r in lines if r['_item'] == item), {})
         items_out.append({
@@ -218,3 +226,76 @@ def fill_rate(date_from='', date_to='', marketplace='', warehouse='',
     }
     out['ok'] = True
     return out
+
+
+def item_fill_ratios(date_from='', date_to='', marketplace='', warehouse='',
+                     segment='') -> dict:
+    """Per-item fill ratio ``{item_no: ratio}`` for the SAME scope + rules as
+    :func:`fill_rate` (shared-stock fair-share: demand is summed across ALL POs in
+    scope, so one SKU has ONE ratio no matter how many POs ordered it). Used by the
+    SKU drill-down so a per-SKU fill can be shown that reconciles EXACTLY with the
+    PO/MP/segment fill already on the board. Read-only; ``{}`` on any error.
+
+    NOTE: pass the SAME ``segment`` (and leave ``warehouse``/``marketplace`` blank)
+    the board used, or the ratios will not reconcile — the board builds with
+    ``fill_rate(date_from=day, date_to=day, segment=seg)``."""
+    from .triangular_validation import _line_val, _is_dropped  # noqa: F401
+    today = _dt.date.today().isoformat()
+    date_from = date_from or today
+    date_to = date_to or date_from
+    seg = str(segment or '').strip().lower()
+    stock = store.current_stock_map(warehouse)
+    demand: dict = {}
+    try:
+        with _conn() as (cur, d):
+            ph = d['ph']
+            hwhere = [f"DATE(run_ts) >= {ph}", f"DATE(run_ts) <= {ph}"]
+            hparams: list = [date_from, date_to]
+            if marketplace:
+                hwhere.append(f"marketplace={ph}"); hparams.append(marketplace)
+            cur.execute(
+                f"SELECT marketplace, marketplace_label, po, warehouse, segment "
+                f"FROM order_headers WHERE {' AND '.join(hwhere)}", tuple(hparams))
+            hmap = {}
+            for mk, lbl, po, wh, sg in cur.fetchall():
+                rec = {'wh': store.resolve_order_wh(wh, mk, lbl), 'seg': str(sg or '')}
+                hmap[str(po or '')] = rec           # PO-unique key (MT child safe)
+                hmap[(str(mk or ''), str(po or ''))] = rec
+            where = [f"DATE(run_ts) >= {ph}", f"DATE(run_ts) <= {ph}"]
+            params: list = [date_from, date_to]
+            if marketplace:
+                where.append(f"marketplace={ph}"); params.append(marketplace)
+            cur.execute(
+                f"SELECT po, marketplace, item_no, qty, status, action "
+                f"FROM order_lines_full WHERE {' AND '.join(where)}", tuple(params))
+            rows = cur.fetchall()
+    except Exception:  # noqa: BLE001
+        return {}
+
+    def _seg_ok(sg: str) -> bool:
+        if not seg:
+            return True
+        online = str(sg or '') == 'OnlineB2B'
+        return online if seg == 'online' else (not online)
+
+    for po, mk, item, qty, status, action in rows:
+        if _is_dropped(status, action):
+            continue
+        q = int(qty or 0)
+        if q <= 0:
+            continue
+        h = (hmap.get((str(mk or ''), str(po or '')))
+             or hmap.get(str(po or '')) or {})
+        line_wh = h.get('wh') or store.DEFAULT_WH
+        if warehouse and line_wh != warehouse:
+            continue
+        if not _seg_ok(h.get('seg', '')):
+            continue
+        it = str(item or '').strip()
+        demand[it] = demand.get(it, 0) + q
+
+    ratios: dict = {}
+    for it, dqty in demand.items():
+        avail = max(0.0, float(stock.get(it, 0) or 0))
+        ratios[it] = (min(avail, dqty) / dqty) if dqty else 0.0
+    return ratios

@@ -91,17 +91,38 @@ def _finish_pd(pd: dict, skip_skus: bool = False) -> dict:
     return fp
 
 
-def po_skus(day, marketplace, po) -> list:
+def po_skus(day, marketplace, po, segment='') -> list:
     """Finished SKU rows for ONE PO — the lazy 2nd drill level (fetched on click).
-    Lightweight: one focused query for this PO only (no fill-rate / whole-board
-    build), so expanding a PO is instant. Returns [] on any error."""
+    One focused query for this PO's lines + ONE scoped per-item fill-ratio map
+    (shared-stock, so it reconciles EXACTLY with the PO/MP/segment fill on the
+    board). ``segment`` = 'online'/'offline' — MUST match the board's scope or the
+    per-SKU fill won't tie out. Returns [] on any error."""
     try:
         pd = order_db.po_sku_detail(day=day, marketplace=marketplace, po=po)
     except Exception:  # noqa: BLE001
         return []
     skus = pd.get('skus', {}) if pd else {}
-    return [_finish_leg(sd) for _it, sd in
-            sorted(skus.items(), key=lambda kv: -kv[1]['raw_qty'])]
+    # per-item fill ratio for the board's scope — a SKU that's OOS reads its true
+    # fill here (e.g. 0%), so the PO's 68% is explainable line-by-line.
+    ratios: dict = {}
+    try:
+        from . import inventory_fill
+        ratios = inventory_fill.item_fill_ratios(date_from=day, date_to=day,
+                                                 segment=segment)
+    except Exception:  # noqa: BLE001
+        ratios = {}
+    out = []
+    for _it, sd in sorted(skus.items(), key=lambda kv: -kv[1]['raw_qty']):
+        leg = _finish_leg(sd)
+        f = ratios.get(str(_it).strip())
+        if f is not None:
+            leg['billing_qty'] = round((sd.get('uploaded_qty') or 0) * f, 1)
+            leg['billing_value'] = round((sd.get('uploaded_value') or 0) * f, 2)
+            # fill % is the ratio itself (fillable ÷ uploaded) — same for qty & value.
+            leg['fill_qty_pct'] = _pctg(leg['billing_qty'], sd.get('uploaded_qty') or 0)
+            leg['fill_val_pct'] = _pctg(leg['billing_value'], sd.get('uploaded_value') or 0)
+        out.append(leg)
+    return out
 
 
 def _num(v):
@@ -207,12 +228,12 @@ def _segment_board(day, seg_def: dict, skip_skus: bool = False) -> dict:
             b['labels'].append(lbl)
 
     for r in data.get('issues', []):
-        b = _bucket(r['marketplace'], '')
+        b = _bucket(r['marketplace'], r['marketplace'])
         if b:
             b['excluded'] += int(_num(r['count']))
 
     for r in data.get('value_legs', []):
-        b = _bucket(r['marketplace'], '')
+        b = _bucket(r['marketplace'], r['marketplace'])
         if b:
             b['raw_value'] += float(_num(r.get('raw_value')))
             b['uploaded_value'] += float(_num(r.get('uploaded_value')))
@@ -237,14 +258,14 @@ def _segment_board(day, seg_def: dict, skip_skus: bool = False) -> dict:
         tgt['excluded_value'] += float(_num(r.get('excluded_value')))
 
     for r in data.get('po_legs', []):
-        b = _bucket(r['marketplace'], '')
+        b = _bucket(r['marketplace'], r['marketplace'])
         if b:
             po = str(r.get('po') or '')
             _add_legs(b['pos_detail'].setdefault(po, _blank_pd(po)), r)
 
     # per-SKU breakdown (2nd drill level: click a PO → its SKUs)
     for r in data.get('sku_legs', []):
-        b = _bucket(r['marketplace'], '')
+        b = _bucket(r['marketplace'], r['marketplace'])
         if b:
             po = str(r.get('po') or '')
             pd = b['pos_detail'].setdefault(po, _blank_pd(po))
@@ -351,19 +372,39 @@ def build_summary(day=None, seg_filter='', segment=None, skip_skus=False) -> dic
                 # SUMS to the segment total (owner requirement).
                 channels = _channels_for(seg_def['reg'])
                 ch_bill: dict = {}
+                ch_qty: dict = {}
                 for g in fr.get('mps', []):
                     key = (_resolve_key(g.get('label'), g.get('label'), channels)
                            or str(g.get('label') or ''))
                     ch_bill[key] = ch_bill.get(key, 0.0) + float(g.get('billing') or 0)
+                    ch_qty[key] = ch_qty.get(key, 0.0) + float(g.get('fillable_qty') or 0)
                 po_bill = {str(g.get('label')): float(g.get('billing') or 0)
                            for g in fr.get('pos', [])}
+                po_qty = {str(g.get('label')): float(g.get('fillable_qty') or 0)
+                          for g in fr.get('pos', [])}
+                # Fill rate = fillable (in-stock) share of what we UPLOADED, both
+                # qty-wise and value-wise (value-wise = tentative billing). % is
+                # against the row's own Uploaded leg so it reconciles on-screen.
                 for row in board['rows']:
                     row['billing_value'] = round(ch_bill.get(row['channel'], 0.0), 2)
+                    row['billing_qty'] = round(ch_qty.get(row['channel'], 0.0), 1)
+                    row['fill_qty_pct'] = _pctg(row['billing_qty'], row.get('uploaded_qty') or 0)
+                    row['fill_val_pct'] = _pctg(row['billing_value'], row.get('uploaded_value') or 0)
                     for pd in row.get('pos_detail', []):
                         pd['billing_value'] = (round(po_bill.get(str(pd['po']), 0.0), 2)
                                                or None)
+                        pd['billing_qty'] = (round(po_qty.get(str(pd['po']), 0.0), 1)
+                                             or None)
+                        pd['fill_qty_pct'] = _pctg(pd.get('billing_qty') or 0, pd.get('uploaded_qty') or 0)
+                        pd['fill_val_pct'] = _pctg(pd.get('billing_value') or 0, pd.get('uploaded_value') or 0)
                 board['totals']['billing_value'] = round(
                     sum(r['billing_value'] or 0 for r in board['received']), 2)
+                board['totals']['billing_qty'] = round(
+                    sum(r.get('billing_qty') or 0 for r in board['received']), 1)
+                board['totals']['fill_qty_pct'] = _pctg(
+                    board['totals']['billing_qty'], board['totals'].get('uploaded_qty') or 0)
+                board['totals']['fill_val_pct'] = _pctg(
+                    board['totals']['billing_value'], board['totals'].get('uploaded_value') or 0)
                 board['fill'] = {
                     'fill_pct': fr['totals'].get('fill_pct'),
                     'oos_qty': fr['totals'].get('oos_qty'),
