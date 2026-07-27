@@ -9,13 +9,13 @@
 {% endblock %}
 
 {% block content %}
-<div class="up-wrap">
+<div class="up-shell">
+  <div class="up-main">
   <div class="b2b-head">
     <div>
       <h1>Process PO</h1>
       <p class="src">Runs the production engine with the bundled master &amp; Ship-To mapping, then records the result into the order DB.</p>
     </div>
-    <a href="{% url 'b2b_dashboard' %}" class="back">← Dashboard</a>
   </div>
 
   <form method="post" enctype="multipart/form-data" class="up-card" id="up-form">
@@ -80,10 +80,132 @@
       <div class="proc-meta"><span id="proc-pct">0%</span><span id="proc-time">elapsed 0:00</span></div>
     </div>
   </div>
+  </div><!-- /up-main -->
+
+  {% comment %}Anticipatory marketplace profile: a live "little copy" of the selected MP's Rules/template page. Server-rendered for the default MP (no flash), then swapped via AJAX on the marketplace select change. READ-ONLY.{% endcomment %}
+  <aside class="up-aside" aria-label="Marketplace profile">
+    <div class="up-aside-head">
+      <span class="up-aside-eyebrow">Marketplace profile</span>
+      <span class="up-aside-hint" id="mp-panel-hint">live · updates on selection →</span>
+    </div>
+    <div class="mp-panel" id="mp-panel" data-url-tpl="{% url 'b2b_mp_profile' '__MP__' %}"
+         aria-live="polite">
+      {% include 'online_b2b/_mp_profile.html' %}
+    </div>
+  </aside>
 </div>
 
 <style>
-  .up-wrap{max-width:660px;margin:28px auto 64px;padding:0 20px;color:var(--text);}
+  /* Stacked shell: a compact upload form on TOP (full width), the live
+     marketplace profile panel FULL-WIDTH BELOW it — so the panel and its
+     raw-file table get the whole width (nothing cramped / side-scrolled).
+     Flex column is inherently responsive; the form band keeps its own grid. */
+  .up-shell{max-width:1640px;margin:24px auto 64px;padding:0 20px;color:var(--text);
+    display:flex;flex-direction:column;gap:30px;}
+  .up-main{min-width:0;width:100%;}
+  .up-aside{min-width:0;width:100%;}
+  .up-aside-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:0 2px 10px;}
+  .up-aside-eyebrow{font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
+  .up-aside-hint{font-size:11.5px;font-weight:600;color:var(--accent);opacity:.85;}
+
+  /* ── Live profile panel — a compact, theme-aware "little copy" of the full
+       Rules → template page. Cross-fades on marketplace change. ── */
+  .mp-panel{--r-po:#4f46e5;--r-loc:#0d9488;--r-item:#7c3aed;--r-qty:#d97706;
+    --r-cost:#e11d48;--r-mrp:#059669;--r-date:#2563eb;--r-exp:#475569;--r-hsn:#0891b2;--r-amt:#c026d3;
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    box-shadow:var(--shadow);padding:20px 20px 16px;font-variant-numeric:tabular-nums;
+    transition:opacity .24s ease, transform .24s cubic-bezier(.2,.7,.3,1);will-change:opacity,transform;}
+  .mp-panel.is-swapping{opacity:0;transform:translateY(8px);}
+  .mp-panel .r-po{--rc:var(--r-po);} .mp-panel .r-loc{--rc:var(--r-loc);} .mp-panel .r-item{--rc:var(--r-item);}
+  .mp-panel .r-qty{--rc:var(--r-qty);} .mp-panel .r-cost{--rc:var(--r-cost);} .mp-panel .r-mrp{--rc:var(--r-mrp);}
+  .mp-panel .r-date{--rc:var(--r-date);} .mp-panel .r-exp{--rc:var(--r-exp);} .mp-panel .r-hsn{--rc:var(--r-hsn);}
+  .mp-panel .r-amt{--rc:var(--r-amt);}
+  /* hero */
+  .mp-panel .tpl-hero{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap;}
+  .mp-panel .tpl-id h1{margin:0;font-size:18px;font-weight:800;letter-spacing:-.02em;color:var(--text);
+    display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .mp-panel .tpl-ftype{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
+    color:var(--accent);background:var(--accent-soft);border-radius:20px;padding:3px 10px;}
+  .mp-panel .pill.live{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;
+    color:#0a7d47;background:#e6f4ea;border-radius:20px;padding:2px 8px;}
+  .mp-panel .tpl-sub{margin:6px 0 0;font-size:12px;color:var(--text-2);line-height:1.5;}
+  .mp-panel .tpl-sub .mono{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--text);}
+  .mp-panel .tpl-stat{display:flex;align-items:center;gap:10px;background:var(--surface-2);
+    border:1px solid var(--border);border-radius:12px;padding:9px 14px;}
+  .mp-panel .tpl-stat .big{font-size:20px;font-weight:800;color:var(--accent);line-height:1;}
+  .mp-panel .tpl-stat .lbl{font-size:10px;font-weight:600;color:var(--muted);text-transform:uppercase;
+    letter-spacing:.05em;margin-top:3px;}
+  .mp-panel .tpl-stat .bar{width:80px;height:6px;border-radius:6px;background:var(--border);overflow:hidden;margin-top:6px;}
+  .mp-panel .tpl-stat .bar i{display:block;height:100%;border-radius:6px;width:0;
+    background:linear-gradient(90deg,var(--accent),#7c3aed);animation:mpFill 1s cubic-bezier(.2,.8,.2,1) .2s forwards;}
+  @keyframes mpFill{to{width:var(--pct);}}
+  /* legend */
+  .mp-panel .tpl-legend{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:14px 0 2px;}
+  .mp-panel .tpl-legend .lead{font-size:11.5px;color:var(--text-2);margin-right:2px;}
+  .mp-panel .lg-chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;
+    color:var(--rc);background:color-mix(in srgb, var(--rc) 11%, transparent);
+    border:1px solid color-mix(in srgb, var(--rc) 32%, transparent);border-radius:20px;padding:3px 9px;}
+  .mp-panel .lg-chip .dot{width:7px;height:7px;border-radius:50%;background:var(--rc);}
+  .mp-panel .lg-dull{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;color:var(--muted);
+    border:1px dashed var(--border);border-radius:20px;padding:3px 9px;}
+  .mp-panel .lg-dull .dot{width:7px;height:7px;border-radius:50%;background:var(--border);}
+  /* table */
+  .mp-panel .tpl-tablewrap{margin-top:12px;border:1px solid var(--border);border-radius:12px;overflow:auto;
+    background:var(--surface);}
+  .mp-panel .tpl-tablewrap::-webkit-scrollbar{height:8px;}
+  .mp-panel .tpl-tablewrap::-webkit-scrollbar-thumb{background:#cbd1dc;border-radius:5px;}
+  .mp-panel table.tpl-table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:11.5px;}
+  .mp-panel .tpl-table th,.mp-panel .tpl-table td{padding:9px 12px;text-align:left;white-space:nowrap;
+    border-bottom:1px solid var(--border);border-right:1px solid color-mix(in srgb,var(--border) 60%, transparent);}
+  .mp-panel .tpl-table th:last-child,.mp-panel .tpl-table td:last-child{border-right:none;}
+  .mp-panel .tpl-table thead th{position:sticky;top:0;z-index:2;background:var(--surface-2);
+    opacity:0;transform:translateY(10px);animation:mpColIn .5s cubic-bezier(.2,.8,.2,1) forwards;
+    animation-delay:calc(var(--i,0) * 20ms);}
+  @keyframes mpColIn{to{opacity:1;transform:translateY(0);}}
+  .mp-panel .th-in{display:flex;flex-direction:column;gap:4px;}
+  .mp-panel .th-name{font-weight:700;}
+  .mp-panel .th-badge{align-self:flex-start;font-size:8.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;
+    color:#fff;background:var(--rc);border-radius:5px;padding:2px 6px;}
+  .mp-panel .tpl-table thead th.used{background:color-mix(in srgb, var(--rc) 9%, var(--surface-2));box-shadow:inset 0 -2.5px 0 var(--rc);}
+  .mp-panel .tpl-table thead th.used .th-name{color:var(--rc);}
+  .mp-panel .tpl-table td.used{background:color-mix(in srgb, var(--rc) 5%, transparent);color:var(--text);font-weight:600;
+    font-family:ui-monospace,Menlo,Consolas,monospace;}
+  .mp-panel .tpl-table th.dull .th-name{color:var(--muted);font-weight:600;}
+  .mp-panel .tpl-table td.dull{color:var(--muted);opacity:.62;transition:opacity .2s ease;}
+  .mp-panel .tpl-table tbody tr:hover td.dull{opacity:.9;}
+  .mp-panel .tpl-table tbody{opacity:0;animation:mpFadeUp .55s ease forwards .4s;}
+  @keyframes mpFadeUp{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:translateY(0);}}
+  .mp-panel .tpl-table tbody tr:hover td{background:color-mix(in srgb, var(--accent) 5%, transparent);}
+  .mp-panel .tpl-table tbody tr:hover td.used{background:color-mix(in srgb, var(--rc) 11%, transparent);}
+  .mp-panel .tpl-rowtag{color:var(--muted);font-weight:700;}
+  /* column hover trace (JS adds .col-hot) */
+  .mp-panel .tpl-table .col-hot{box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--rc, var(--accent)) 55%, transparent);}
+  .mp-panel .tpl-table th.col-hot{transform:translateY(-2px);}
+  /* profile: rule + exceptions (cards carry their own inline colours) */
+  .mp-panel .tpl-profile{margin-top:18px !important;}
+  .mp-panel .tpl-profile > div[style*="grid-template-columns"]{grid-template-columns:1fr !important;gap:14px !important;}
+  .mp-panel .tpl-profile .exg-wrap{position:relative;margin-top:16px;}
+  .mp-panel .exg-tag{position:absolute;top:-9px;left:12px;z-index:2;font-size:9px;font-weight:800;
+    letter-spacing:.6px;text-transform:uppercase;color:#fff;background:linear-gradient(90deg,#6366f1,#8b5cf6);
+    padding:3px 10px;border-radius:20px;box-shadow:0 5px 14px -4px #6366f1;}
+  .mp-panel .exg-scroll{overflow:auto;max-height:280px;border-radius:12px;}
+  .mp-panel .exg-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:12px;
+    background:#fff;border:1px solid #e5e7f0;border-radius:12px;overflow:hidden;}
+  .mp-panel .exg-tbl th{position:sticky;top:0;z-index:1;text-align:left;white-space:nowrap;padding:10px 14px;
+    font-weight:700;font-size:11px;letter-spacing:.3px;color:#fff;background:linear-gradient(180deg,#4338ca,#3730a3);}
+  .mp-panel .exg-tbl td{padding:10px 14px;white-space:nowrap;color:#1e293b;border-top:1px solid #eef0f7;
+    font-family:ui-monospace,'Cascadia Code',Consolas,monospace;}
+  .mp-panel .exg-row:hover td{background:#f5f6ff;}
+  .mp-panel .exg-row td:first-child{font-weight:700;font-family:inherit;}
+  .mp-panel .exg-row td:last-child{color:#065f46;font-weight:700;}
+  .mp-panel .rc-foot,.mp-panel .tpl-foot{color:var(--muted);font-size:11.5px;line-height:1.5;}
+  .mp-empty{color:var(--muted);font-size:13px;line-height:1.6;padding:8px 2px;}
+  @media (prefers-reduced-motion: reduce){
+    .mp-panel .tpl-table thead th,.mp-panel .tpl-table tbody,.mp-panel .tpl-stat .bar i{
+      animation:none !important;opacity:1 !important;transform:none !important;width:var(--pct) !important;}
+    .mp-panel{transition:none;}
+  }
+
   .up-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
     box-shadow:var(--shadow);padding:24px;margin-top:20px;}
   .up-grid{display:grid;grid-template-columns:1fr 1fr 110px;gap:16px;margin-bottom:18px;}
@@ -208,6 +330,11 @@
     }, 850);
   });
   var overlay = document.getElementById('proc-overlay');
+  // Portal the overlay to <body> so its position:fixed centres on the VIEWPORT,
+  // not within #MainContent (padding-left:252px for the sidebar + the page-in
+  // transform were pulling the card off-centre / low). Mirrors the shared
+  // body-level #b2b-load overlay pattern.
+  if (overlay && overlay.parentNode !== document.body) document.body.appendChild(overlay);
   var fill = document.getElementById('proc-fill'), pctEl = document.getElementById('proc-pct'),
       stageEl = document.getElementById('proc-stage'), timeEl = document.getElementById('proc-time');
   var STAGES = [
@@ -300,6 +427,60 @@
       } else {
         doFetch();
       }
+    });
+  });
+})();
+</script>
+
+<script>
+// Live marketplace profile panel — swaps to the selected MP's profile via AJAX
+// on the marketplace <select> change (no page reload, no extra click). Smooth
+// cross-fade + stale-response guard. Vanilla; reuses the shared _mp_profile
+// partial rendered by /b2b/mp-profile/<mp>/.
+(function () {
+  var sel = document.getElementById('id_marketplace');
+  var panel = document.getElementById('mp-panel');
+  if (!sel || !panel) return;
+  var urlTpl = panel.getAttribute('data-url-tpl') || '';
+  var reqId = 0;
+  var FADE = 200;   // keep in sync with .mp-panel transition duration
+
+  // Column-trace micro-interaction — delegated so it survives innerHTML swaps.
+  var hot = [];
+  function clearHot() { hot.forEach(function (el) { el.classList.remove('col-hot'); }); hot = []; }
+  panel.addEventListener('pointerover', function (e) {
+    var cell = e.target && e.target.closest ? e.target.closest('[data-col]') : null;
+    if (!cell || !panel.contains(cell)) return;
+    var col = cell.getAttribute('data-col');
+    if (hot.length && hot[0].getAttribute('data-col') === col) return;
+    clearHot();
+    hot = Array.prototype.slice.call(panel.querySelectorAll('[data-col="' + col + '"]'));
+    hot.forEach(function (el) { el.classList.add('col-hot'); });
+  });
+  panel.addEventListener('pointerleave', clearHot);
+
+  function delay(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+  sel.addEventListener('change', function () {
+    if (!urlTpl) return;
+    var mp = sel.value;
+    var myId = ++reqId;
+    var url = urlTpl.replace('__MP__', encodeURIComponent(mp));
+    clearHot();
+    panel.classList.add('is-swapping');          // fade the current profile out
+    var fetchP = fetch(url, {
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin'
+    }).then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); });
+    // Cross-fade: swap only once BOTH the fade-out and the response are ready.
+    Promise.all([fetchP, delay(FADE)]).then(function (res) {
+      if (myId !== reqId) return;                 // a newer selection superseded us
+      panel.innerHTML = res[0];
+      requestAnimationFrame(function () { panel.classList.remove('is-swapping'); });
+    }).catch(function () {
+      if (myId !== reqId) return;
+      panel.innerHTML = '<div class="mp-empty">Could not load this marketplace’s ' +
+        'profile — please try again.</div>';
+      panel.classList.remove('is-swapping');
     });
   });
 })();

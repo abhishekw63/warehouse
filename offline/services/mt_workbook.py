@@ -369,18 +369,32 @@ def _append_sku_sheet(path, lines):
     wb.save(path)
 
 
-def _fmt_tracker_date(v) -> str:
-    """Day-first ``dd-mm-YYYY`` (matches the web tracker), '' when blank."""
+def _tracker_date_val(v):
+    """Coerce a date-like value to a real ``datetime.date`` so the Tracker cell
+    is a GENUINE Excel date (groups by month in AutoFilter, sorts correctly, and
+    survives a paste-into-the-WH-master), or ``None`` when it isn't a date."""
     import datetime as _dt
     if not v:
-        return ''
-    if isinstance(v, (_dt.date, _dt.datetime)):
-        return v.strftime('%d-%m-%Y')
+        return None
+    if isinstance(v, _dt.datetime):
+        return v.date()
+    if isinstance(v, _dt.date):
+        return v
     s = str(v).strip()
-    try:
-        return _dt.date.fromisoformat(s[:10]).strftime('%d-%m-%Y')
-    except ValueError:
-        return s
+    for fmt in ('%d-%m-%Y', '%d.%m.%Y', '%d/%m/%Y', '%Y-%m-%d', '%d-%b-%Y'):
+        try:
+            return _dt.datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _fmt_tracker_date(v) -> str:
+    """Day-first ``dd-mm-YYYY`` string (fallback for un-coercible values)."""
+    d = _tracker_date_val(v)
+    if d is not None:
+        return d.strftime('%d-%m-%Y')
+    return '' if not v else str(v).strip()
 
 
 def _append_tracker_sheet(path, headers, marketplace_label):
@@ -401,14 +415,23 @@ def _append_tracker_sheet(path, headers, marketplace_label):
             'PO Aging For Exp', 'Order Value', 'Order Qty']
     ws.append(cols)
     for h in headers:
-        pod = _fmt_tracker_date(h.get('po_date'))
-        exd = _fmt_tracker_date(h.get('exp_date'))
+        pod_d = _tracker_date_val(h.get('po_date'))
+        exd_d = _tracker_date_val(h.get('exp_date'))
         q = int(h.get('qty') or 0)
         v = round(float(h.get('order_value') or 0), 2)
+        # Write REAL dates when coercible (so Excel groups them by month in the
+        # WH team's filter) — fall back to the plain string only if un-parseable.
         ws.append([h.get('segment') or 'Offline',
                    h.get('marketplace_label') or marketplace_label or '',
-                   str(h.get('po') or ''), h.get('location') or '', pod, exd,
+                   str(h.get('po') or ''), h.get('location') or '',
+                   pod_d if pod_d is not None else _fmt_tracker_date(h.get('po_date')),
+                   exd_d if exd_d is not None else _fmt_tracker_date(h.get('exp_date')),
                    '', v, q])
+        rr = ws.max_row
+        if pod_d is not None:
+            ws.cell(rr, 5).number_format = 'DD-MM-YYYY'
+        if exd_d is not None:
+            ws.cell(rr, 6).number_format = 'DD-MM-YYYY'
     navy = PatternFill('solid', fgColor='1A237E')
     hfont = Font(bold=True, color='FFFFFF')
     thin = Side(style='thin', color='E6E8EC')

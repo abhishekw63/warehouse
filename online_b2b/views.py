@@ -18,6 +18,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
+from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
@@ -63,13 +64,41 @@ OFFLINE_CHANNELS = [
 ]
 
 
+# Hub time-range selector — chip label per range (windowed KPIs). Default 30D.
+_RANGE_LABELS = {
+    'today': 'today', '7d': 'last 7 days', '30d': 'last 30 days',
+    'mtd': 'this month', 'all': 'all-time',
+}
+_RANGE_DEFAULT = '30d'
+
+
 class CentralHubView(LoginRequiredMixin, TemplateView):
-    """`/b2b/` — central hub: compact overall KPIs + Online B2B / Offline groups."""
+    """`/b2b/` — central hub: compact overall KPIs + Online B2B / Offline groups.
+
+    A global range switch (Today · 7D · 30D · MTD · All) scopes the VOLUME/VALUE
+    KPI cards + the two segment cards by ``run_ts`` (default 30D). Genuinely
+    cumulative metrics (Channels, Resolved, TAT) stay all-time. ``?range=`` picks
+    the window; ``?partial=1`` (or an XHR) returns ONLY the KPI block for the
+    no-refresh chip switch.
+    """
     template_name = 'online_b2b/central.html'
+
+    def _active_range(self):
+        rng = self.request.GET.get('range', _RANGE_DEFAULT)
+        return rng if rng in order_db.WINDOWS else _RANGE_DEFAULT
+
+    def get(self, request, *args, **kwargs):
+        context = self.get_context_data(**kwargs)
+        # AJAX chip switch — swap just the KPI block, no full-page chrome.
+        if request.GET.get('partial') or (
+                request.headers.get('x-requested-with') == 'XMLHttpRequest'):
+            return render(request, 'online_b2b/_hub_kpis.html', context)
+        return self.render_to_response(context)
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        data = order_db.overview(segment='')          # all channels
+        rng = self._active_range()
+        data = order_db.overview(segment='', window=rng)   # all channels, windowed
         ctx['ok'] = data.get('ok', False)
         ctx['error'] = data.get('error')
         ctx['backend'] = data.get('backend', '')
@@ -81,20 +110,28 @@ class CentralHubView(LoginRequiredMixin, TemplateView):
         # lists them) so the hub card stays compact.
         ctx['online_soon'] = [c['name'] for c in ONLINE_CHANNELS if c.get('tag') == 'soon']
         ctx['offline_soon'] = [c['name'] for c in OFFLINE_CHANNELS if c.get('tag') == 'soon']
-        ctx['online_kpis'] = order_db.segment_kpis('OnlineB2B')
-        ctx['offline_kpis'] = order_db.segment_kpis('Offline')
+        ctx['online_kpis'] = order_db.segment_kpis('OnlineB2B', window=rng)
+        ctx['offline_kpis'] = order_db.segment_kpis('Offline', window=rng)
         ctx['today'] = order_db.today_intake()
         ctx['recent'] = order_db.recent_orders(8)
         ctx['recent_runs'] = order_db.recent_runs(8)
-        from .services import tat_store
-        tat_total = tat_store.breach_count()          # all TAT breaches
-        total_pos = (data.get('kpis') or {}).get('pos') or 0
-        ctx['tat_total'] = tat_total
-        ctx['tat_rate'] = round(tat_total / total_pos * 100, 1) if total_pos else 0
         ctx['extra'] = order_db.hub_extra_kpis()
+        from .services import tat_store
+        tat_total = tat_store.breach_count()          # all TAT breaches (all-time)
+        all_pos = ctx['extra'].get('all_pos') or 0    # all-time denominator
+        ctx['tat_total'] = tat_total
+        ctx['tat_rate'] = round(tat_total / all_pos * 100, 1) if all_pos else 0
         # Item-master staleness — 15-day refresh reminder.
         from .services import item_master_loader as iml
         ctx['im_status'] = iml.last_updated()
+        # Range selector state for the chip switch + subtitle.
+        ctx['active_range'] = rng
+        ctx['range_label'] = _RANGE_LABELS.get(rng, 'last 30 days')
+        ctx['ranges'] = [
+            {'key': 'today', 'label': 'Today'}, {'key': '7d', 'label': '7D'},
+            {'key': '30d', 'label': '30D'}, {'key': 'mtd', 'label': 'MTD'},
+            {'key': 'all', 'label': 'All'},
+        ]
         return ctx
 
 
@@ -123,10 +160,14 @@ _BEHAVIORAL_EXC = {
                       '✅ OK (was MISMATCH ₹134.92)']]},
     ],
     'Blink': [
-        {'title': 'EPISENSE deal', 'detail': 'EPISENSE promo SKUs price off a deal MRP '
-         'at a special landing%, not the flat 70% — recorded as a price override so '
-         'the line is not flagged as a mismatch.',
-         'ex_head': ['Case', 'Master', 'Deal', 'Their CP'],
+        {'title': 'EPISENSE deal — unit-price override', 'detail': 'EPISENSE promo '
+         'SKUs carry a negotiated deal price, so the engine applies a UNIT-PRICE '
+         'override on those SKUs — the deal CP is written as the line’s Unit Price '
+         'instead of the flat 70% landing, so the line is accepted rather than '
+         'flagged as a mismatch. This is Blink’s only exception; MRP itself is not '
+         'overridden and the standard MRP × margin ÷ GST rule (see Pricing rule) '
+         'is unchanged.',
+         'ex_head': ['Case', 'Standard basis', 'EPISENSE deal basis', 'Unit Price used'],
          'ex_rows': [['EPISENSE promo', '₹1099 @ 70%', '₹899 @ 76%', '₹579.02 ✅']]},
     ],
     'Myntra': [
@@ -222,6 +263,13 @@ def _marketplace_exceptions(name: str) -> list:
         else:
             t = 'Exception'
             head, row = ['SKU', 'Note'], [note, '—']
+        # Blink's only real DB effect is the EPISENSE promo UNIT-PRICE override,
+        # already shown as the 'EPISENSE deal' behavioral card above — so don't
+        # also emit a redundant, mislabeled 'Override MRP' card for it. Scoped to
+        # Blink's Override-MRP rows ONLY; every other marketplace's overlay cards
+        # (Swiggy/Myntra deals, H&B, EAN remaps, Use Vendor CP, …) are untouched.
+        if low == 'blink' and t == 'Override MRP':
+            continue
         g = groups.setdefault(t, {'head': head, 'rows': []})
         g['rows'].append(row)
     for t, g in groups.items():
@@ -232,6 +280,24 @@ def _marketplace_exceptions(name: str) -> list:
                       'ex_label': f'All {n}',
                       'ex_head': g['head'], 'ex_rows': g['rows']})
     return cards
+
+
+def _mp_profile_context(name: str) -> dict:
+    """Shared per-marketplace PROFILE context — the columns-read/ignored map
+    (``tpl``) + the pricing ``rule`` + every ``exc_cards`` exception. The single
+    source both the full "See full template" page and the Process-PO upload panel
+    render, so they never drift. Read-only; ``tpl`` is ``None`` when no sample was
+    captured for that marketplace."""
+    tpl = engine_bridge.marketplace_template(name)
+    nm = name
+    if isinstance(tpl, dict):
+        nm = tpl.get('name', name) or name
+    try:
+        rule = next((r for r in engine_bridge.marketplace_rules()
+                     if str(r['name']).lower() == nm.lower()), None)
+    except Exception:  # noqa: BLE001
+        rule = None
+    return {'tpl': tpl, 'rule': rule, 'exc_cards': _marketplace_exceptions(nm)}
 
 
 def _group_exceptions(rows):
@@ -328,22 +394,30 @@ class MarketplaceTemplateView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         name = self.kwargs.get('slug', '')
-        tpl = engine_bridge.marketplace_template(name)
-        if tpl is None:
+        # Full per-marketplace PROFILE on this page: the columns map + the pricing
+        # RULE + every EXCEPTION we apply to THIS marketplace, built by the shared
+        # helper (the same one the upload panel uses) so the two never drift.
+        prof = _mp_profile_context(name)
+        if prof['tpl'] is None:
             raise Http404(f'No template captured for “{name}”.')
-        ctx['tpl'] = tpl
-        # Full per-marketplace PROFILE on this page: the pricing RULE + every
-        # EXCEPTION we apply to THIS marketplace, so each customer's page is the
-        # single elegant place with demand (columns) + rule + exceptions.
-        nm = tpl.get('name', name) if isinstance(tpl, dict) else getattr(tpl, 'name', name)
-        try:
-            ctx['rule'] = next(
-                (r for r in engine_bridge.marketplace_rules()
-                 if str(r['name']).lower() == nm.lower()), None)
-        except Exception:  # noqa: BLE001
-            ctx['rule'] = None
-        ctx['exc_cards'] = _marketplace_exceptions(nm)
+        ctx.update(prof)
         return ctx
+
+
+@login_required
+def b2b_mp_profile(request, mp):
+    """READ-ONLY: the shared marketplace-profile partial for ONE marketplace —
+    powers the Process-PO upload page's live panel (fetched on the marketplace
+    <select> change). Reuses the exact same context builder as the full template
+    page; renders nothing new. Never writes; never touches the engine run."""
+    prof = _mp_profile_context(mp)
+    if prof['tpl'] is None:
+        from django.utils.html import escape
+        return HttpResponse(
+            '<div class="mp-empty">No column template has been captured for '
+            f'<b>{escape(mp)}</b> yet. Its pricing rule and exceptions still apply '
+            'during processing.</div>')
+    return render(request, 'online_b2b/_mp_profile.html', prof)
 
 
 def _sku_filters(request):
@@ -795,6 +869,92 @@ def daily_email_send(request):
     return JsonResponse({'ok': ok, 'error': reason, 'count': len(rep.active)})
 
 
+# ── Consolidated Summary email (dedicated Email page: review → send) ──────
+def _summary_report(request):
+    """Build a :class:`SummaryEmailReport` from the request — the day + optional
+    subject come via the query string / POST; the note + edited To/Cc via
+    ``_email_extras`` (same contract the Issues/Daily emails use)."""
+    from .services.summary_email import SummaryEmailReport
+    note, to, cc = _email_extras(request)
+    src = request.POST if request.method == 'POST' else request.GET
+    # Cockpit defaults to the ONLINE tab (Online/Offline are separate tabs now);
+    # an explicit ?seg=offline / ?seg=both still overrides.
+    return SummaryEmailReport(day=src.get('day') or None,
+                              note=note, subject=src.get('subject', ''),
+                              to=to, cc=cc, seg_filter=(src.get('seg') or 'online'))
+
+
+@login_required
+def email_page(request):
+    """The dedicated **Email** page — lands on a composed CONSOLIDATED SUMMARY
+    (received board + per-MP details) for REVIEW: subject, recipients and the
+    summary are all shown/editable; nothing is sent until the operator clicks
+    Send (which posts to :func:`email_send`). Read-only compose."""
+    # Landing = a chooser (Online / Offline). We only build + show a segment's board
+    # once the operator picks one (?seg=online|offline). Keeps the entry light.
+    if not (request.GET.get('seg') or '').strip():
+        import datetime as _dt
+        return render(request, 'online_b2b/email.html', {
+            'chooser': True, 'day': (request.GET.get('day') or _dt.date.today().isoformat())})
+    rep = _summary_report(request)
+    r = rep.recipients()
+    return render(request, 'online_b2b/email.html', {
+        'd': rep.data, 'subject': rep.subject(),
+        'to': ', '.join(r['to']), 'cc': ', '.join(r['cc']),
+    })
+
+
+@method_decorator(login_required, name='dispatch')
+class CockpitPOSkusView(View):
+    """Lazy 2nd-level drill-down: the SKU rows for ONE po, fetched on click so the
+    cockpit board never renders thousands of SKU rows upfront (that froze the page).
+    GET ?po=&day=&pgid=[&mp=] → the ``_sku_rows.html`` partial. Read-only."""
+
+    def get(self, request):
+        from .services import summary_email as _se
+        po = (request.GET.get('po') or '').strip()
+        day = (request.GET.get('day') or '').strip() or None
+        mp = (request.GET.get('mp') or '').strip()
+        pgid = (request.GET.get('pgid') or '').strip()
+        skus = _se.po_skus(day=day, marketplace=mp, po=po) if po else []
+        return render(request, 'online_b2b/_cockpit_po_skus.html',
+                      {'skus': skus, 'pgid': pgid})
+
+
+@login_required
+def email_preview(request):
+    """Re-render the summary email for the current day/subject/note/recipients
+    (AJAX) — NO send. Returns the exact subject + HTML that would be mailed, so
+    the review pane stays live as the operator edits."""
+    rep = _summary_report(request)
+    p = rep.preview()
+    return JsonResponse({'ok': True, 'subject': p['subject'], 'html': p['html'],
+                         'to': p['to'], 'cc': p['cc'],
+                         'received': rep.data['grand']['received_count'],
+                         'total': rep.data['grand']['total_count']})
+
+
+@login_required
+@require_POST
+def email_send(request):
+    """Send the consolidated summary via the SAME shared send helper the
+    Issues/Daily emails use. Guards match those flows — refuse an empty/invalid
+    To rather than silently mailing the config default. Returns JSON."""
+    rep = _summary_report(request)
+    note, to, cc = _email_extras(request)
+    if to is not None and not rep._to:
+        return JsonResponse(
+            {'ok': False, 'error': 'No valid recipient in "To" — add at least '
+             'one valid stakeholder email before sending.'})
+    if not rep.recipients().get('to'):
+        return JsonResponse(
+            {'ok': False, 'error': 'No recipient configured — add a "To" address '
+             'before sending.'})
+    ok, reason = rep.send()
+    return JsonResponse({'ok': ok, 'error': reason,
+                         'received': rep.data['grand']['received_count']})
+
+
 @login_required
 @require_POST
 def daily_adhoc_add(request):
@@ -1177,8 +1337,15 @@ def upload(request):
         raise
     else:
         form = UploadForm()
+    # The marketplace <select> defaults to the first pilot option — server-render
+    # THAT marketplace's profile into the side panel so it shows with no flash
+    # (the panel then swaps live via AJAX on any change).
+    initial_mp = (engine_bridge.PILOT_MARKETPLACES[0]
+                  if engine_bridge.PILOT_MARKETPLACES else '')
     return render(request, 'online_b2b/upload.html',
                   {'form': form,
+                   'initial_mp': initial_mp,
+                   **_mp_profile_context(initial_mp),
                    'margin_defaults': json.dumps(engine_bridge.margin_defaults()),
                    # {marketplace: "what file(s) this MP needs"} — drives the
                    # dynamic per-marketplace upload hint (updates on select change).
@@ -1734,10 +1901,15 @@ def review_download_completed(request, token):
         messages.error(request, res.get('error', 'Completed workbook generation failed.'))
         return redirect('b2b_review', token=token)
     # Downloading the Completed workbook is a real workflow milestone → auto-tick
-    # the Daily Tasks "Workbook downloaded" step for this channel/today. Never
-    # blocks the download (the helper swallows its own errors).
+    # the Daily Tasks "Workbook downloaded" step for this channel. A parked
+    # ("Review Later") run credits its PARK day (draft_at) — the record,
+    # uploaded-web tick and un-hold are all back-dated there, so this step must
+    # land there too, not on the day the CP issue was finally resolved. Normal
+    # runs → today. Never blocks the download (the helper swallows its errors).
     from .services import daily_checklist as _dc
-    _dc.mark_workbook_downloaded(meta['marketplace'], user=request.user.get_username())
+    _wb_day = meta['draft_at'][:10] if (meta.get('draft') and meta.get('draft_at')) else None
+    _dc.mark_workbook_downloaded(meta['marketplace'],
+                                 user=request.user.get_username(), day=_wb_day)
     return FileResponse(open(res['path'], 'rb'), as_attachment=True,
                         filename=_lot_name(meta['marketplace'], res['path'], 'completed'))
 
@@ -2372,6 +2544,51 @@ def ship_to_add(request):
 
 
 @login_required
+def ship_to_export(request):
+    """Download the Ship-To mapping as Excel — FULL columns, honoring the current
+    party/search filter (so 'export what I'm viewing' just works). One 'Ship-To
+    Mapping' sheet: Party · Del Location · Cust No · Ship-to · Name · Address ·
+    Address 2 · Postcode · City · Source."""
+    import datetime as _dt
+    import io as _io
+    import openpyxl
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    from .services import mapping_store as ms
+    party = request.GET.get('party', '')
+    q = request.GET.get('q', '')
+    cols, rows = ms.export_rows(party, q)
+    heads = ['Party', 'Del Location', 'Cust No', 'Ship-to', 'Name', 'Address',
+             'Address 2', 'Postcode', 'City', 'Source']
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Ship-To Mapping'
+    ws.append(heads)
+    for r in rows:
+        ws.append([r.get(c, '') for c in cols])
+    navy = PatternFill('solid', fgColor='1A237E')
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = navy
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+    for i, w in enumerate([10, 34, 10, 14, 40, 44, 34, 11, 18, 9], 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = 'A2'
+    if ws.max_row > 1:
+        ws.auto_filter.ref = f"A1:{get_column_letter(len(heads))}{ws.max_row}"
+    buf = _io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    tag = (party or 'all').replace(' ', '') + (f"_{q}" if q else '')
+    fname = (f"ship_to_mapping_{tag}_"
+             f"{_dt.datetime.now():%d-%m-%Y_%H%M%S}.xlsx")
+    return FileResponse(
+        buf, as_attachment=True, filename=fname,
+        content_type='application/vnd.openxmlformats-officedocument.'
+                     'spreadsheetml.sheet')
+
+
+@login_required
 @require_POST
 def ship_to_edit(request, row_id):
     from .services import mapping_store as ms
@@ -2388,119 +2605,10 @@ def ship_to_delete(request, row_id):
     return JsonResponse(ms.delete_mapping(row_id))
 
 
-# ── Sales Validation (the ★ Sales Validator) ────────────────────────────────
-# Upload the two D365 Sales exports (Order Headers + Sales Lines) → reconcile
-# against the recorded run (DB) or a source .xlsb → 3-part result
-# (Summary / Headers Reco / Lines Reco) + a downloadable reconciliation Excel.
-_SV_UPLOADS = _MEDIA / 'b2b_sales_validation'
-
-
-def _sv_token_dir(token: str) -> Path:
-    base = _SV_UPLOADS.resolve()
-    d = (_SV_UPLOADS / token).resolve()
-    if d != base and base not in d.parents:
-        raise Http404()
-    return d
-
-
-class SalesValidationView(LoginRequiredMixin, TemplateView):
-    """`/b2b/sales-validation/` — upload form + recent-run picker. Renders the
-    last result if a ``?token=`` is supplied. ``?format=json`` → {ok,data}."""
-    template_name = 'online_b2b/sales_validation.html'
-
-    def get_context_data(self, **kwargs):
-        ctx = super().get_context_data(**kwargs)
-        from .services import sales_validation as sv
-        ctx['recent_runs'] = sv.recent_runs(limit=30)
-        token = self.request.GET.get('token', '')
-        result = None
-        if token:
-            d = _sv_token_dir(token)
-            rp = d / 'result.json'
-            if rp.exists():
-                result = json.loads(rp.read_text(encoding='utf-8'))
-        ctx['token'] = token
-        ctx['result'] = result
-        # trim the on-screen line list to non-OK rows (full set lives in Excel)
-        if result and result.get('ok'):
-            findings = result.get('line_findings', [])
-            ctx['line_bad'] = [f for f in findings if f['status'] != 'OK']
-        return ctx
-
-    def render_to_response(self, context, **kwargs):
-        if self.request.GET.get('format') == 'json':
-            return JsonResponse({'ok': True, 'data': {
-                'recent_runs': context.get('recent_runs', []),
-                'result': context.get('result'),
-            }})
-        return super().render_to_response(context, **kwargs)
-
-
-@login_required
-@require_POST
-def sales_validation_run(request):
-    """Accept the two D365 files, stash under a token, run validate(), persist
-    the JSON-safe result + Excel, and redirect to the result view."""
-    from .services import sales_validation as sv
-    hf = request.FILES.get('headers_file')
-    lf = request.FILES.get('lines_file')
-    if not hf or not lf:
-        messages.error(request, "Choose BOTH files — the Sales Order Headers "
-                                "export and the Sales Lines export.")
-        return redirect('b2b_sales_validation')
-    token = uuid.uuid4().hex[:12]
-    d = _SV_UPLOADS / token
-    d.mkdir(parents=True, exist_ok=True)
-    hp = d / ('headers' + Path(hf.name).suffix)
-    lp = d / ('lines' + Path(lf.name).suffix)
-    for f, dest in ((hf, hp), (lf, lp)):
-        with open(dest, 'wb') as out:
-            for chunk in f.chunks():
-                out.write(chunk)
-
-    # target: explicit run_id, else a source .xlsb path, else auto-match
-    run_id = request.POST.get('run_id', '').strip()
-    source_path = request.POST.get('source_path', '').strip()
-    party = request.POST.get('party', 'LS').strip() or 'LS'
-    kwargs = {'party': party, 'excel_out': str(d / 'reconciliation.xlsx')}
-    if run_id:
-        kwargs['run_id'] = int(run_id)
-    elif source_path:
-        kwargs['source_path'] = source_path
-    else:
-        cands = sv.match_run(str(hp))
-        if cands:
-            kwargs['run_id'] = cands[0]
-        else:
-            (d / 'result.json').write_text(json.dumps({
-                'ok': False,
-                'error': ("No recorded run matched these SOs, and no source "
-                          "file was given. Pick a run or provide a source "
-                          "file path."),
-            }), encoding='utf-8')
-            from django.urls import reverse
-            return redirect(f"{reverse('b2b_sales_validation')}?token={token}")
-
-    result = sv.validate(str(hp), str(lp), **kwargs)
-    (d / 'meta.json').write_text(json.dumps({
-        'headers_name': hf.name, 'lines_name': lf.name,
-        'target': kwargs.get('run_id') or kwargs.get('source_path'),
-    }), encoding='utf-8')
-    (d / 'result.json').write_text(
-        json.dumps(result, default=str), encoding='utf-8')
-    from django.urls import reverse
-    return redirect(f"{reverse('b2b_sales_validation')}?token={token}")
-
-
-@login_required
-def sales_validation_download(request, token):
-    """Serve the reconciliation Excel for a completed validation."""
-    d = _sv_token_dir(token)
-    xp = d / 'reconciliation.xlsx'
-    if not xp.exists():
-        raise Http404("Reconciliation file not found or expired.")
-    return FileResponse(open(xp, 'rb'), as_attachment=True,
-                        filename='sales_reconciliation.xlsx')
+# ── Sales Validation — REMOVED 2026-07-20 (superseded by Triangular Validation).
+#    Its service (services/sales_validation.py) + template were deleted; the
+#    3 URL routes + sidebar link are gone. Full Validation stays (Triangular
+#    depends on its service); only its sidebar link is hidden.
 
 
 # ── UI Lab (learning surface: htmx · Alpine · animation) ────────────────────

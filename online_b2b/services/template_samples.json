@@ -1,1166 +1,6270 @@
 {
- "Blink": {
-  "columns": [
-   "po_number",
-   "facility_name",
-   "manufacturer_name",
-   "entity_vendor_legal_name",
-   "vendor_name",
-   "order_date",
-   "appointment_date",
-   "expiry_date",
-   "po_state",
-   "item_id",
-   "name",
-   "uom_text",
-   "upc",
-   "units_ordered",
-   "remaining_quantity",
-   "landing_rate",
-   "cost_price",
-   "margin_percentage",
-   "cess_value",
-   "sgst_value",
-   "igst_value",
-   "cgst_value",
-   "tax_value",
-   "total_amount",
-   "mrp"
-  ],
-  "rows": [
-   {
-    "po_number": "51388610001402",
-    "facility_name": "Vijayawada - Feeder Warehouse",
-    "manufacturer_name": "Renee Cosmetics Pvt Ltd.",
-    "entity_vendor_legal_name": "\"BLINK COMMERCE PRIVATE LIMITED\"",
-    "vendor_name": "Renee Cosmetics Private Limited",
-    "order_date": "2026-06-01 08:45:17+00:00",
-    "appointment_date": "",
-    "expiry_date": "2026-06-16T18:29:59Z",
-    "po_state": "Unscheduled",
-    "item_id": "10160956",
-    "name": "RENEE Eau de Parfum (Madame)(Box)",
-    "uom_text": "20 ml",
-    "upc": "8906121647587",
-    "units_ordered": "5",
-    "remaining_quantity": "5",
-    "landing_rate": "279.3",
-    "cost_price": "236.69",
-    "margin_percentage": "30",
-    "cess_value": "0",
-    "sgst_value": "9",
-    "igst_value": "18",
-    "cgst_value": "9",
-    "tax_value": "18",
-    "total_amount": "1396.5",
-    "mrp": "399"
-   },
-   {
-    "po_number": "51388610001402",
-    "facility_name": "Vijayawada - Feeder Warehouse",
-    "manufacturer_name": "Renee Cosmetics Pvt Ltd.",
-    "entity_vendor_legal_name": "\"BLINK COMMERCE PRIVATE LIMITED\"",
-    "vendor_name": "Renee Cosmetics Private Limited",
-    "order_date": "2026-06-01 08:45:17+00:00",
-    "appointment_date": "",
-    "expiry_date": "2026-06-16T18:29:59Z",
-    "po_state": "Unscheduled",
-    "item_id": "10151541",
-    "name": "RENEE Eau de Parfum (Bloom)(Bottle)",
-    "uom_text": "50 ml",
-    "upc": "8906121642599",
-    "units_ordered": "5",
-    "remaining_quantity": "5",
-    "landing_rate": "419.3",
-    "cost_price": "355.34",
-    "margin_percentage": "30",
-    "cess_value": "0",
-    "sgst_value": "9",
-    "igst_value": "18",
-    "cgst_value": "9",
-    "tax_value": "18",
-    "total_amount": "2096.5",
-    "mrp": "599"
-   },
-   {
-    "po_number": "51388610001402",
-    "facility_name": "Vijayawada - Feeder Warehouse",
-    "manufacturer_name": "Renee Cosmetics Pvt Ltd.",
-    "entity_vendor_legal_name": "\"BLINK COMMERCE PRIVATE LIMITED\"",
-    "vendor_name": "Renee Cosmetics Private Limited",
-    "order_date": "2026-06-01 08:45:17+00:00",
-    "appointment_date": "",
-    "expiry_date": "2026-06-16T18:29:59Z",
-    "po_state": "Unscheduled",
-    "item_id": "10279651",
-    "name": "RENEE Pro HD 3-in-1 Compact (GrÃ¨s)(Box)",
-    "uom_text": "9 g",
-    "upc": "8904473101207",
-    "units_ordered": "12",
-    "remaining_quantity": "12",
-    "landing_rate": "455",
-    "cost_price": "385.59",
-    "margin_percentage": "30",
-    "cess_value": "0",
-    "sgst_value": "9",
-    "igst_value": "18",
-    "cgst_value": "9",
-    "tax_value": "18",
-    "total_amount": "5460",
-    "mrp": "650"
-   }
-  ],
-  "file_type": ".XLSX",
-  "sample_file": "Blinkit punch 01-05-2026 1.xlsx"
- },
- "BlinkMP": {
-  "columns": [
-   "date",
-   "ro_number",
-   "location",
-   "entity_name",
-   "Item Code",
-   "HSN Code",
-   "Product UPC",
-   "Product Description",
-   "Grammage",
-   "CGST %",
-   "SGST %",
-   "IGST %",
-   "Tax Amount",
-   "Landing Rate",
-   "Quantity",
-   "MRP",
-   "Total Amount"
-  ],
-  "rows": [
-   {
-    "date": "09-06-2026",
-    "ro_number": "1735810040666",
-    "location": "BCPL - Lucknow L4 Warehouse",
-    "entity_name": "BLINK COMMERCE PRIVATE LIMITED",
-    "Item Code": "10259923",
-    "HSN Code": "33049940",
-    "Product UPC": "8904473101689",
-    "Product Description": "RENEE Liquid Sindoor (Red)(Pack)",
-    "Grammage": "4.5 ml",
-    "CGST %": "0",
-    "SGST %": "0",
-    "IGST %": "0",
-    "Tax Amount": "0",
-    "Landing Rate": "111.75",
-    "Quantity": "89",
-    "MRP": "149",
-    "Total Amount": "9945.75"
-   },
-   {
-    "date": "09-06-2026",
-    "ro_number": "1735810040666",
-    "location": "BCPL - Lucknow L4 Warehouse",
-    "entity_name": "BLINK COMMERCE PRIVATE LIMITED",
-    "Item Code": "10260565",
-    "HSN Code": "33049940",
-    "Product UPC": "8904473101696",
-    "Product Description": "RENEE Liquid Sindoor (Maroon)(Pack)",
-    "Grammage": "4.5 ml",
-    "CGST %": "0",
-    "SGST %": "0",
-    "IGST %": "0",
-    "Tax Amount": "0",
-    "Landing Rate": "111.75",
-    "Quantity": "166",
-    "MRP": "149",
-    "Total Amount": "18550.5"
-   },
-   {
-    "date": "09-06-2026",
-    "ro_number": "1735810040666",
-    "location": "BCPL - Lucknow L4 Warehouse",
-    "entity_name": "BLINK COMMERCE PRIVATE LIMITED",
-    "Item Code": "10259593",
-    "HSN Code": "33041000",
-    "Product UPC": "8904473102471",
-    "Product Description": "RENEE Mini Dream Tinted Lip Balm (Moana Beac…",
-    "Grammage": "4.5 g",
-    "CGST %": "0",
-    "SGST %": "0",
-    "IGST %": "18",
-    "Tax Amount": "28.6",
-    "Landing Rate": "187.5",
-    "Quantity": "36",
-    "MRP": "250",
-    "Total Amount": "6750"
-   }
-  ],
-  "file_type": ".XLSX",
-  "sample_file": "Blinkit_RO_Output_20260609_103950.xlsx"
- },
- "Firstcry": {
-  "file_type": "PDF (parsed line items)",
-  "columns": [
-   "Sr",
-   "EAN",
-   "SKU",
-   "Product Description",
-   "HSN",
-   "Qty",
-   "Rate",
-   "MRP",
-   "Amount"
-  ],
-  "rows": [
-   {
-    "Sr": "1",
-    "EAN": "8904245707XXX",
-    "SKU": "RENEE-FAB-01",
-    "Product Description": "RENEE Fab 5-in-1 Lipstick",
-    "HSN": "33041000",
-    "Qty": "12",
-    "Rate": "205.00",
-    "MRP": "499.00",
-    "Amount": "2460.00"
-   }
-  ]
- },
- "Flipkart": {
-  "columns": [
-   "Date",
-   "PO",
-   "FSN Code",
-   "EAN",
-   "Item",
-   "Qty",
-   "COST PRICE",
-   "total_amount",
-   "description",
-   "Address",
-   "Ship TO"
-  ],
-  "rows": [
-   {
-    "Date": "10-06-2026",
-    "PO": "FBMWG08273976",
-    "FSN Code": "LSKH4EGJQZNG3H7Y",
-    "EAN": "8904473100651",
-    "Item": "",
-    "Qty": "22",
-    "COST PRICE": "191.73",
-    "total_amount": "4218.06",
-    "description": "Renee Everyday Matte Liquid Lipstick, Smudge…",
-    "Address": "Flipkart India Pvt. Ltd., Plot No 1958,1961,…",
-    "Ship TO": ""
-   },
-   {
-    "Date": "10-06-2026",
-    "PO": "FHGWN08274725",
-    "FSN Code": "LSKH4EGJQZNG3H7Y",
-    "EAN": "8904473100651",
-    "Item": "",
-    "Qty": "220",
-    "COST PRICE": "191.73",
-    "total_amount": "42180.60",
-    "description": "Renee Everyday Matte Liquid Lipstick, Smudge…",
-    "Address": "Flipkart India Pvt. Ltd., Sy No 328, 329, 33…",
-    "Ship TO": ""
-   },
-   {
-    "Date": "10-06-2026",
-    "PO": "FLGWN08275511",
-    "FSN Code": "LSKH4EGJQZNG3H7Y",
-    "EAN": "8904473100651",
-    "Item": "",
-    "Qty": "44",
-    "COST PRICE": "191.73",
-    "total_amount": "8436.12",
-    "description": "Renee Everyday Matte Liquid Lipstick, Smudge…",
-    "Address": "Flipkart India Pvt. Ltd., Khasra No. 315, Vi…",
-    "Ship TO": ""
-   }
-  ],
-  "file_type": ".XLSX",
-  "sample_file": "FL_DUMP_COMPILATION_10-06-2026_10-54-06.xlsx"
- },
- "Flipkart-TO": {
-  "columns": [
-   "Product Name",
-   "FSN",
-   "SKU Id",
-   "Brand",
-   "Size",
-   "Style Code",
-   "Color",
-   "Isbn",
-   "Model Id",
-   "Quantity Sent",
-   "Quantity Received",
-   "Inwarded to Store",
-   "QC Fail",
-   "QC In Progress",
-   "QC Passed",
-   "Cost Price",
-   "Length(In cms)",
-   "Breadth(In cms)",
-   "Height(In cms)",
-   "Weight(In kgs)"
-  ],
-  "rows": [
-   {
-    "Product Name": "Renee Black 8904473102877",
-    "FSN": "BHRH8UAZCGFWDXYZ",
-    "SKU Id": "8904473102877",
-    "Brand": "Renee",
-    "Size": "",
-    "Style Code": "",
-    "Color": "",
-    "Isbn": "",
-    "Model Id": "",
-    "Quantity Sent": "1",
-    "Quantity Received": "0",
-    "Inwarded to Store": "",
-    "QC Fail": "",
-    "QC In Progress": "",
-    "QC Passed": "",
-    "Cost Price": "59.60",
-    "Length(In cms)": "12.877038",
-    "Breadth(In cms)": "7.786116",
-    "Height(In cms)": "2.0962620000000003",
-    "Weight(In kgs)": "0.014"
-   },
-   {
-    "Product Name": "Renee Korean Glow Serum 15ml | Non Greasy, P…",
-    "FSN": "BSTGRT8S4DSXYXVJ",
-    "SKU Id": "8906121646139",
-    "Brand": "Renee",
-    "Size": "",
-    "Style Code": "",
-    "Color": "",
-    "Isbn": "",
-    "Model Id": "",
-    "Quantity Sent": "1",
-    "Quantity Received": "0",
-    "Inwarded to Store": "",
-    "QC Fail": "",
-    "QC In Progress": "",
-    "QC Passed": "",
-    "Cost Price": "220.00",
-    "Length(In cms)": "8.784336",
-    "Breadth(In cms)": "5.689854",
-    "Height(In cms)": "3.49377",
-    "Weight(In kgs)": "0.09"
-   },
-   {
-    "Product Name": "Renee Princess Moana Bath & Body Care Set, S…",
-    "FSN": "CBKH8U9XKCXBNDW4",
-    "SKU Id": "8904473102730",
-    "Brand": "Renee",
-    "Size": "",
-    "Style Code": "",
-    "Color": "",
-    "Isbn": "",
-    "Model Id": "",
-    "Quantity Sent": "1",
-    "Quantity Received": "0",
-    "Inwarded to Store": "",
-    "QC Fail": "",
-    "QC In Progress": "",
-    "QC Passed": "",
-    "Cost Price": "300.00",
-    "Length(In cms)": "26.652474",
-    "Breadth(In cms)": "17.269206",
-    "Height(In cms)": "4.292346",
-    "Weight(In kgs)": "0.434"
-   }
-  ],
-  "file_type": ".CSV",
-  "sample_file": "Consignment_Details_204535220_09-06-2026.csv"
- },
- "Meesho-TO": {
-  "columns": [
-   "skuCode",
-   "description",
-   "styleCode",
-   "size",
-   "color",
-   "sellingPricePerUnit",
-   "orderedQty",
-   "asnCreatedQty",
-   "packedQty",
-   "dispatchedQty",
-   "pendingQty"
-  ],
-  "rows": [
-   {
-    "skuCode": "57nb-498q8d-4n",
-    "description": "RENEE Glowscreen SPF 50 Sunscreen Cream - 50…",
-    "styleCode": "8906121644654",
-    "size": "Free Size",
-    "color": "",
-    "sellingPricePerUnit": "311",
-    "orderedQty": "13",
-    "asnCreatedQty": "0",
-    "packedQty": "0",
-    "dispatchedQty": "0",
-    "pendingQty": "13"
-   },
-   {
-    "skuCode": "57nb-6f7qql-4n",
-    "description": "RENEE Top Coat Nail Enamel, Quick Drying, Lo…",
-    "styleCode": "8906121648607",
-    "size": "Free Size",
-    "color": "White",
-    "sellingPricePerUnit": "148",
-    "orderedQty": "15",
-    "asnCreatedQty": "0",
-    "packedQty": "0",
-    "dispatchedQty": "0",
-    "pendingQty": "15"
-   },
-   {
-    "skuCode": "57nb-6pdd2b-4n",
-    "description": "RENEE Nail Paint Remover, 30 Ml",
-    "styleCode": "8906121649451",
-    "size": "Free Size",
-    "color": "Pink",
-    "sellingPricePerUnit": "98",
-    "orderedQty": "10",
-    "asnCreatedQty": "0",
-    "packedQty": "0",
-    "dispatchedQty": "0",
-    "pendingQty": "10"
-   }
-  ],
-  "file_type": ".CSV",
-  "sample_file": "order-line-items-62143.csv"
- },
- "Myntra": {
-  "columns": [
-   "PO",
-   "Location",
-   "Unnamed: 2",
-   "Unnamed: 3",
-   "SKU Id",
-   "Style Id",
-   "SKU Code",
-   "HSN Code",
-   "Brand",
-   "GTIN",
-   "Vendor Article Number",
-   "Vendor Article Name",
-   "Size",
-   "Colour",
-   "Mrp",
-   "Credit Period",
-   "Margin Type",
-   "Agreed Margin",
-   "Gross Margin",
-   "Quantity",
-   "FOB Amount",
-   "List price(FOB+Transport-Excise)",
-   "Landing Price",
-   "Estimated Delivery Date",
-   "Tax BCD",
-   "Tax BCD Amount",
-   "Buying Tax IGST",
-   "Buying Tax IGST Amount",
-   "Tax SWT",
-   "Tax SWT Amount",
-   "Selling Tax CGST",
-   "Selling Tax CGST Amount",
-   "Selling Tax IGST",
-   "Selling Tax IGST Amount",
-   "Selling Tax SGST",
-   "Selling Tax SGST Amount",
-   "Item no",
-   "MRP",
-   "70%(Landing Cost)",
-   "GST Code",
-   "Cost Price",
-   "Diffn"
-  ],
-  "rows": [
-   {
-    "PO": "MYNJ-RNEE120526-1",
-    "Location": "Myntra warehouse ( Mumbai )",
-    "Unnamed: 2": "20011",
-    "Unnamed: 3": "20011_3",
-    "SKU Id": "133383890",
-    "Style Id": "42000000",
-    "SKU Code": "RENEFRGF133383890",
-    "HSN Code": "33030010",
-    "Brand": "Renee",
-    "GTIN": "8904473106288",
-    "Vendor Article Number": "8904473106288",
-    "Vendor Article Name": "Renee Caramel Crush Hair Perfume - 5ml",
-    "Size": "5ml",
-    "Colour": "Caramel Crush",
-    "Mrp": "0",
-    "Credit Period": "",
-    "Margin Type": "gross",
-    "Agreed Margin": "99.99",
-    "Gross Margin": "99.99",
-    "Quantity": "5400",
-    "FOB Amount": "",
-    "List price(FOB+Transport-Excise)": "0",
-    "Landing Price": "0",
-    "Estimated Delivery Date": "2026-07-11 00:00:00",
-    "Tax BCD": "0",
-    "Tax BCD Amount": "0",
-    "Buying Tax IGST": "18",
-    "Buying Tax IGST Amount": "0",
-    "Tax SWT": "0",
-    "Tax SWT Amount": "0",
-    "Selling Tax CGST": "9",
-    "Selling Tax CGST Amount": "0",
-    "Selling Tax IGST": "0",
-    "Selling Tax IGST Amount": "0",
-    "Selling Tax SGST": "9",
-    "Selling Tax SGST Amount": "0",
-    "Item no": "201433",
-    "MRP": "",
-    "70%(Landing Cost)": "",
-    "GST Code": "",
-    "Cost Price": "",
-    "Diffn": ""
-   },
-   {
-    "PO": "MYNJ-RNEE120526-2",
-    "Location": "Gurgaon-Binola W/H",
-    "Unnamed: 2": "20011",
-    "Unnamed: 3": "20011_1",
-    "SKU Id": "133383890",
-    "Style Id": "42000000",
-    "SKU Code": "RENEFRGF133383890",
-    "HSN Code": "33030010",
-    "Brand": "Renee",
-    "GTIN": "8904473106288",
-    "Vendor Article Number": "8904473106288",
-    "Vendor Article Name": "Renee Caramel Crush Hair Perfume - 5ml",
-    "Size": "5ml",
-    "Colour": "Caramel Crush",
-    "Mrp": "0",
-    "Credit Period": "",
-    "Margin Type": "gross",
-    "Agreed Margin": "99.99",
-    "Gross Margin": "99.99",
-    "Quantity": "6652",
-    "FOB Amount": "",
-    "List price(FOB+Transport-Excise)": "0",
-    "Landing Price": "0",
-    "Estimated Delivery Date": "2026-07-11 00:00:00",
-    "Tax BCD": "0",
-    "Tax BCD Amount": "0",
-    "Buying Tax IGST": "18",
-    "Buying Tax IGST Amount": "0",
-    "Tax SWT": "0",
-    "Tax SWT Amount": "0",
-    "Selling Tax CGST": "9",
-    "Selling Tax CGST Amount": "0",
-    "Selling Tax IGST": "0",
-    "Selling Tax IGST Amount": "0",
-    "Selling Tax SGST": "9",
-    "Selling Tax SGST Amount": "0",
-    "Item no": "201433",
-    "MRP": "",
-    "70%(Landing Cost)": "",
-    "GST Code": "",
-    "Cost Price": "",
-    "Diffn": ""
-   },
-   {
-    "PO": "MYNJ-RNEE120526-3",
-    "Location": "Bilaspur Warehouse - Gurgaon",
-    "Unnamed: 2": "20011",
-    "Unnamed: 3": "20011_4",
-    "SKU Id": "133383890",
-    "Style Id": "42000000",
-    "SKU Code": "RENEFRGF133383890",
-    "HSN Code": "33030010",
-    "Brand": "Renee",
-    "GTIN": "8904473106288",
-    "Vendor Article Number": "8904473106288",
-    "Vendor Article Name": "Renee Caramel Crush Hair Perfume - 5ml",
-    "Size": "5ml",
-    "Colour": "Caramel Crush",
-    "Mrp": "0",
-    "Credit Period": "",
-    "Margin Type": "gross",
-    "Agreed Margin": "99.99",
-    "Gross Margin": "99.99",
-    "Quantity": "6248",
-    "FOB Amount": "",
-    "List price(FOB+Transport-Excise)": "0",
-    "Landing Price": "0",
-    "Estimated Delivery Date": "2026-07-11 00:00:00",
-    "Tax BCD": "0",
-    "Tax BCD Amount": "0",
-    "Buying Tax IGST": "18",
-    "Buying Tax IGST Amount": "0",
-    "Tax SWT": "0",
-    "Tax SWT Amount": "0",
-    "Selling Tax CGST": "9",
-    "Selling Tax CGST Amount": "0",
-    "Selling Tax IGST": "0",
-    "Selling Tax IGST Amount": "0",
-    "Selling Tax SGST": "9",
-    "Selling Tax SGST Amount": "0",
-    "Item no": "201433",
-    "MRP": "",
-    "70%(Landing Cost)": "",
-    "GST Code": "",
-    "Cost Price": "",
-    "Diffn": ""
-   }
-  ],
-  "file_type": ".XLSX",
-  "sample_file": "123456.xlsx"
- },
- "Reliance": {
-  "file_type": "PDF (parsed line items)",
-  "columns": [
-   "Sr",
-   "EAN",
-   "Article",
-   "Article Description",
-   "HSN",
-   "PO Qty",
-   "Basic Cost",
-   "MRP",
-   "Total"
-  ],
-  "rows": [
-   {
-    "Sr": "1",
-    "EAN": "8904245707XXX",
-    "Article": "100012345",
-    "Article Description": "RENEE Fab Lipstick",
-    "HSN": "33041000",
-    "PO Qty": "24",
-    "Basic Cost": "210.00",
-    "MRP": "499.00",
-    "Total": "5040.00"
-   },
-   {
-    "Sr": "2",
-    "EAN": "8904245708XXX",
-    "Article": "100012346",
-    "Article Description": "RENEE Kohl Eyeliner",
-    "HSN": "33042000",
-    "PO Qty": "36",
-    "Basic Cost": "120.00",
-    "MRP": "299.00",
-    "Total": "4320.00"
-   }
-  ]
- },
- "RK": {
-  "columns": [
-   "PO",
-   "Vendor code",
-   "Order date",
-   "Status",
-   "Product name",
-   "ASIN",
-   "External ID type",
-   "External ID",
-   "Model number",
-   "Merchant SKU",
-   "Catalog number",
-   "Availability",
-   "Requested quantity",
-   "Accepted quantity",
-   "ASN quantity",
-   "Received quantity",
-   "Cancelled quantity",
-   "Remaining quantity",
-   "Ship-to location",
-   "Window start",
-   "Window end",
-   "Case size",
-   "Cost",
-   "Currency",
-   "Total requested cost",
-   "Total accepted cost",
-   "Total received cost",
-   "Total cancelled cost",
-   "Expected date",
-   "Freight terms",
-   "Consolidation ID",
-   "Cancellation deadline"
-  ],
-  "rows": [
-   {
-    "PO": "3FGG25NN",
-    "Vendor code": "4F6RR",
-    "Order date": "2026-06-10 00:00:00",
-    "Status": "Confirmed",
-    "Product name": "RENEE Matte Lock Lipstick - Soul, Moisturizi…",
-    "ASIN": "B0D6WBGMGC",
-    "External ID type": "EAN",
-    "External ID": "8904473100422",
-    "Model number": "8904473100422",
-    "Merchant SKU": "",
-    "Catalog number": "",
-    "Availability": "AC - Accepted: In stock",
-    "Requested quantity": "36",
-    "Accepted quantity": "36",
-    "ASN quantity": "0",
-    "Received quantity": "0",
-    "Cancelled quantity": "0",
-    "Remaining quantity": "36",
-    "Ship-to location": "ISK3",
-    "Window start": "2026-06-10 00:00:00",
-    "Window end": "2026-06-22 00:00:00",
-    "Case size": "1",
-    "Cost": "177.37",
-    "Currency": "INR",
-    "Total requested cost": "6385.32",
-    "Total accepted cost": "6385.32",
-    "Total received cost": "0",
-    "Total cancelled cost": "0",
-    "Expected date": "2026-06-10 00:00:00",
-    "Freight terms": "Prepaid",
-    "Consolidation ID": "",
-    "Cancellation deadline": "2026-06-26 00:00:00"
-   },
-   {
-    "PO": "3FGG25NN",
-    "Vendor code": "4F6RR",
-    "Order date": "2026-06-10 00:00:00",
-    "Status": "Confirmed",
-    "Product name": "RENEE Aqua Bliss Eau De Parfum, Premium Long…",
-    "ASIN": "B0D29LDRPM",
-    "External ID type": "EAN",
-    "External ID": "8906121649604",
-    "Model number": "8906121649604",
-    "Merchant SKU": "",
-    "Catalog number": "",
-    "Availability": "AC - Accepted: In stock",
-    "Requested quantity": "24",
-    "Accepted quantity": "24",
-    "ASN quantity": "0",
-    "Received quantity": "0",
-    "Cancelled quantity": "0",
-    "Remaining quantity": "24",
-    "Ship-to location": "ISK3",
-    "Window start": "2026-06-10 00:00:00",
-    "Window end": "2026-06-22 00:00:00",
-    "Case size": "1",
-    "Cost": "207.63",
-    "Currency": "INR",
-    "Total requested cost": "4983.12",
-    "Total accepted cost": "4983.12",
-    "Total received cost": "0",
-    "Total cancelled cost": "0",
-    "Expected date": "2026-06-10 00:00:00",
-    "Freight terms": "Prepaid",
-    "Consolidation ID": "",
-    "Cancellation deadline": "2026-06-26 00:00:00"
-   },
-   {
-    "PO": "3FGG25NN",
-    "Vendor code": "4F6RR",
-    "Order date": "2026-06-10 00:00:00",
-    "Status": "Confirmed",
-    "Product name": "RENEE Everyday Primer, Blurs Fine Lines, Wri…",
-    "ASIN": "B0DDQ2WQ82",
-    "External ID type": "EAN",
-    "External ID": "8904473100972",
-    "Model number": "8904473100972",
-    "Merchant SKU": "",
-    "Catalog number": "",
-    "Availability": "AC - Accepted: In stock",
-    "Requested quantity": "12",
-    "Accepted quantity": "12",
-    "ASN quantity": "0",
-    "Received quantity": "0",
-    "Cancelled quantity": "0",
-    "Remaining quantity": "12",
-    "Ship-to location": "ISK3",
-    "Window start": "2026-06-10 00:00:00",
-    "Window end": "2026-06-22 00:00:00",
-    "Case size": "1",
-    "Cost": "147.71",
-    "Currency": "INR",
-    "Total requested cost": "1772.52",
-    "Total accepted cost": "1772.52",
-    "Total received cost": "0",
-    "Total cancelled cost": "0",
-    "Expected date": "2026-06-10 00:00:00",
-    "Freight terms": "Prepaid",
-    "Consolidation ID": "",
-    "Cancellation deadline": "2026-06-26 00:00:00"
-   }
-  ],
-  "file_type": ".XLS",
-  "sample_file": "POItemExport_2026-06-10.xls"
- },
- "Zepto": {
-  "columns": [
-   "PO No.",
-   "PO Date",
-   "Status",
-   "Vendor Code",
-   "Vendor Name",
-   "PO Amount",
-   "Del Location",
-   "Line No",
-   "SKU",
-   "SKU Code",
-   "SKU Desc",
-   "Brand",
-   "EAN",
-   "HSN",
-   "CGST %",
-   "SGST %",
-   "IGST %",
-   "CESS %",
-   "MRP/RSP",
-   "Qty",
-   "Unit Base Cost",
-   "Landing Cost",
-   "Total Amount",
-   "Created By",
-   "ASN Quantity",
-   "GRN Quantity",
-   "PO Expiry Date"
-  ],
-  "rows": [
-   {
-    "PO No.": "P4537713",
-    "PO Date": "2026-06-03 06:09:00",
-    "Status": "PENDING_ACKNOWLEDGEMENT",
-    "Vendor Code": "KK-21119",
-    "Vendor Name": "RENEE COSMETICS PRIVATE LIMITED",
-    "PO Amount": "82889.491518",
-    "Del Location": "CHN-DRY-MH2-THIRUVALLUR",
-    "Line No": "",
-    "SKU": "A7B1B1D5-ABC1-40D9-81FE-4C17EE45BEF3",
-    "SKU Code": "186113",
-    "SKU Desc": "RENEE Nail Paint Remover Wipes - 1 pc",
-    "Brand": "Renee",
-    "EAN": "8906121649703",
-    "HSN": "33049920",
-    "CGST %": "0",
-    "SGST %": "0",
-    "IGST %": "18",
-    "CESS %": "0",
-    "MRP/RSP": "99",
-    "Qty": "24",
-    "Unit Base Cost": "58.73",
-    "Landing Cost": "69.3",
-    "Total Amount": "1663.2",
-    "Created By": "SYSTEM",
-    "ASN Quantity": "0",
-    "GRN Quantity": "0",
-    "PO Expiry Date": "2026-06-24 23:59:00"
-   },
-   {
-    "PO No.": "P4537713",
-    "PO Date": "2026-06-03 06:09:00",
-    "Status": "PENDING_ACKNOWLEDGEMENT",
-    "Vendor Code": "KK-21119",
-    "Vendor Name": "RENEE COSMETICS PRIVATE LIMITED",
-    "PO Amount": "82889.491518",
-    "Del Location": "CHN-DRY-MH2-THIRUVALLUR",
-    "Line No": "",
-    "SKU": "8BB30673-2A60-40AD-90E5-0A363000A99D",
-    "SKU Code": "136779",
-    "SKU Desc": "Renee Madness Ph Stick Lipstick | Long-Lasti…",
-    "Brand": "Renee",
-    "EAN": "8906121641769",
-    "HSN": "33041000",
-    "CGST %": "0",
-    "SGST %": "0",
-    "IGST %": "18",
-    "CESS %": "0",
-    "MRP/RSP": "499",
-    "Qty": "48",
-    "Unit Base Cost": "296.02",
-    "Landing Cost": "349.3",
-    "Total Amount": "16766.4",
-    "Created By": "SYSTEM",
-    "ASN Quantity": "0",
-    "GRN Quantity": "0",
-    "PO Expiry Date": "2026-06-24 23:59:00"
-   },
-   {
-    "PO No.": "P4537713",
-    "PO Date": "2026-06-03 06:09:00",
-    "Status": "PENDING_ACKNOWLEDGEMENT",
-    "Vendor Code": "KK-21119",
-    "Vendor Name": "RENEE COSMETICS PRIVATE LIMITED",
-    "PO Amount": "82889.491518",
-    "Del Location": "CHN-DRY-MH2-THIRUVALLUR",
-    "Line No": "",
-    "SKU": "9076BCFA-B93D-4AB1-92F6-8D54E953CDAA",
-    "SKU Code": "155763",
-    "SKU Desc": "Renee Midnight Kajal Kohl Pencil - 1 pc (1.5…",
-    "Brand": "Renee",
-    "EAN": "8906121646979",
-    "HSN": "33042000",
-    "CGST %": "0",
-    "SGST %": "0",
-    "IGST %": "18",
-    "CESS %": "0",
-    "MRP/RSP": "450",
-    "Qty": "252",
-    "Unit Base Cost": "266.95",
-    "Landing Cost": "315",
-    "Total Amount": "79380",
-    "Created By": "SYSTEM",
-    "ASN Quantity": "0",
-    "GRN Quantity": "0",
-    "PO Expiry Date": "2026-06-24 23:59:00"
-   }
-  ],
-  "file_type": ".XLSX",
-  "sample_file": "zepto.xlsx"
- },
- "Dmart": {
-  "file_type": "PDF (parsed line items)",
-  "columns": [
-   "Sr No",
-   "EAN",
-   "Article No",
-   "HSN Code",
-   "Description",
-   "UOM",
-   "PO Qty",
-   "Basic Price",
-   "Landed Price",
-   "MRP",
-   "Total Value",
-   "GST Rate"
-  ],
-  "rows": [
-   {
-    "Sr No": "1",
-    "EAN": "8904245707XXX",
-    "Article No": "12345678",
-    "HSN Code": "33041000",
-    "Description": "RENEE Fab Lipstick",
-    "UOM": "PC",
-    "PO Qty": "48",
-    "Basic Price": "208.00",
-    "Landed Price": "245.44",
-    "MRP": "499.00",
-    "Total Value": "11781.12",
-    "GST Rate": "18%"
-   }
-  ]
- },
- "Bigbasket": {
-  "file_type": ".XLSX",
-  "sample_file": "38620819.xlsx (Big Basket)",
-  "columns": [
-   "S.No",
-   "HSN Code",
-   "SKU Code",
-   "Description",
-   "EAN/UPC Code",
-   "Case Quantity",
-   "Quantity",
-   "Basic Cost",
-   "SGST%",
-   "SGST",
-   "CGST%",
-   "CGST",
-   "IGST%",
-   "IGST",
-   "GST%",
-   "GST Amount",
-   "Cess%",
-   "Cess Value",
-   "State Cess%",
-   "State Cess",
-   "Additional Cess",
-   "Landing Cost",
-   "MRP",
-   "Total Value"
-  ],
-  "rows": [
-   {
-    "S.No": "1",
-    "HSN Code": "33049910",
-    "SKU Code": "40359694",
-    "Description": "Renee Everyday Face Bright Serum In Cream 50…",
-    "EAN/UPC Code": "8904473104017",
-    "Case Quantity": "98",
-    "Quantity": "196",
-    "Basic Cost": "135.85",
-    "SGST%": "0",
-    "SGST": "0",
-    "CGST%": "0",
-    "CGST": "0",
-    "IGST%": "18",
-    "IGST": "4792.2",
-    "GST%": "18",
-    "GST Amount": "4792.2",
-    "Cess%": "0",
-    "Cess Value": "0",
-    "State Cess%": "0",
-    "State Cess": "0",
-    "Additional Cess": "0",
-    "Landing Cost": "160.3",
-    "MRP": "229",
-    "Total Value": "31418.8"
-   },
-   {
-    "S.No": "",
-    "HSN Code": "",
-    "SKU Code": "",
-    "Description": "Total",
-    "EAN/UPC Code": "(count) 1",
-    "Case Quantity": "",
-    "Quantity": "",
-    "Basic Cost": "",
-    "SGST%": "",
-    "SGST": "",
-    "CGST%": "",
-    "CGST": "",
-    "IGST%": "",
-    "IGST": "",
-    "GST%": "",
-    "GST Amount": "",
-    "Cess%": "",
-    "Cess Value": "",
-    "State Cess%": "",
-    "State Cess": "",
-    "Additional Cess": "",
-    "Landing Cost": "",
-    "MRP": "",
-    "Total Value": ""
-   }
-  ]
- },
- "Swiggy": {
-  "columns": [
-   "PoNumber",
-   "Entity",
-   "FacilityId",
-   "FacilityName",
-   "City",
-   "PoCreatedAt",
-   "PoModifiedAt",
-   "Status",
-   "SupplierCode",
-   "VendorName",
-   "PoAmount",
-   "SkuCode",
-   "SkuDescription",
-   "CategoryId",
-   "OrderedQty",
-   "ReceivedQty",
-   "BalancedQty",
-   "Tax",
-   "PoLineValueWithoutTax",
-   "PoLineValueWithTax",
-   "Mrp",
-   "UnitBasedCost",
-   "ExpectedDeliveryDate",
-   "PoExpiryDate",
-   "OtbReferenceNumber",
-   "InternalExternalPo",
-   "PoAgeing",
-   "BrandName",
-   "ReferencePoNumber"
-  ],
-  "rows": [
-   {
-    "PoNumber": "JCNPO273127",
-    "Entity": "JUPITER KART PRIVATE LIMITED",
-    "FacilityId": "JCN",
-    "FacilityName": "CHN ECOM",
-    "City": "CHENNAI",
-    "PoCreatedAt": "02-07-2026 22:56",
-    "PoModifiedAt": "02-07-2026 22:56",
-    "Status": "CONFIRMED",
-    "SupplierCode": "88924929",
-    "VendorName": "Renee Cosmetics Private Limited",
-    "PoAmount": "86011.2",
-    "SkuCode": "105255",
-    "SkuDescription": "RENEE Kajal Pen with Sharpener - Hard Black Pack Of 2 0.7 g",
-    "CategoryId": "Makeup, Eye Makeup",
-    "OrderedQty": "18",
-    "ReceivedQty": "0",
-    "BalancedQty": "18",
-    "Tax": "656.79",
-    "PoLineValueWithoutTax": "3648.81",
-    "PoLineValueWithTax": "4305.6",
-    "Mrp": "299",
-    "UnitBasedCost": "202.71",
-    "ExpectedDeliveryDate": "19-07-2026",
-    "PoExpiryDate": "22-07-2026",
-    "OtbReferenceNumber": "2026_07_02_CHENNAI_CHN ECOM",
-    "InternalExternalPo": "external",
-    "PoAgeing": "0",
-    "BrandName": "RENEE",
-    "ReferencePoNumber": ""
-   },
-   {
-    "PoNumber": "JCNPO273127",
-    "Entity": "JUPITER KART PRIVATE LIMITED",
-    "FacilityId": "JCN",
-    "FacilityName": "CHN ECOM",
-    "City": "CHENNAI",
-    "PoCreatedAt": "02-07-2026 22:56",
-    "PoModifiedAt": "02-07-2026 22:56",
-    "Status": "CONFIRMED",
-    "SupplierCode": "88924929",
-    "VendorName": "Renee Cosmetics Private Limited",
-    "PoAmount": "86011.2",
-    "SkuCode": "462504",
-    "SkuDescription": "RENEE Cover-Up Hair Powder Brown – Covers Grey Roots & Bald Spots 4.0 g",
-    "CategoryId": "Beauty and Grooming, Hair Colour",
-    "OrderedQty": "16",
-    "ReceivedQty": "0",
-    "BalancedQty": "16",
-    "Tax": "1464.41",
-    "PoLineValueWithoutTax": "8135.59",
-    "PoLineValueWithTax": "9600",
-    "Mrp": "750",
-    "UnitBasedCost": "508.47",
-    "ExpectedDeliveryDate": "19-07-2026",
-    "PoExpiryDate": "22-07-2026",
-    "OtbReferenceNumber": "2026_07_02_CHENNAI_CHN ECOM",
-    "InternalExternalPo": "external",
-    "PoAgeing": "0",
-    "BrandName": "RENEE",
-    "ReferencePoNumber": ""
-   },
-   {
-    "PoNumber": "JCNPO273127",
-    "Entity": "JUPITER KART PRIVATE LIMITED",
-    "FacilityId": "JCN",
-    "FacilityName": "CHN ECOM",
-    "City": "CHENNAI",
-    "PoCreatedAt": "02-07-2026 22:56",
-    "PoModifiedAt": "02-07-2026 22:56",
-    "Status": "CONFIRMED",
-    "SupplierCode": "88924929",
-    "VendorName": "Renee Cosmetics Private Limited",
-    "PoAmount": "86011.2",
-    "SkuCode": "548751",
-    "SkuDescription": "RENEE Cover-Up Hair Powder Black – Covers Grey Roots & Bald Spots 4.0 g",
-    "CategoryId": "Beauty and Grooming, Hair Colour",
-    "OrderedQty": "40",
-    "ReceivedQty": "0",
-    "BalancedQty": "40",
-    "Tax": "3661.02",
-    "PoLineValueWithoutTax": "20338.98",
-    "PoLineValueWithTax": "24000",
-    "Mrp": "750",
-    "UnitBasedCost": "508.47",
-    "ExpectedDeliveryDate": "19-07-2026",
-    "PoExpiryDate": "22-07-2026",
-    "OtbReferenceNumber": "2026_07_02_CHENNAI_CHN ECOM",
-    "InternalExternalPo": "external",
-    "PoAgeing": "0",
-    "BrandName": "RENEE",
-    "ReferencePoNumber": ""
-   }
-  ],
-  "file_type": ".CSV",
-  "sample_file": "PO_1783057482871.csv"
- }
+  "Blink": {
+    "columns": [
+      "po_number",
+      "facility_name",
+      "manufacturer_name",
+      "entity_vendor_legal_name",
+      "vendor_name",
+      "order_date",
+      "appointment_date",
+      "expiry_date",
+      "po_state",
+      "item_id",
+      "name",
+      "uom_text",
+      "upc",
+      "units_ordered",
+      "remaining_quantity",
+      "landing_rate",
+      "cost_price",
+      "margin_percentage",
+      "cess_value",
+      "sgst_value",
+      "igst_value",
+      "cgst_value",
+      "tax_value",
+      "total_amount",
+      "mrp"
+    ],
+    "rows": [
+      {
+        "po_number": "51388610001402",
+        "facility_name": "Vijayawada - Feeder Warehouse",
+        "manufacturer_name": "Renee Cosmetics Pvt Ltd.",
+        "entity_vendor_legal_name": "\"BLINK COMMERCE PRIVATE LIMITED\"",
+        "vendor_name": "Renee Cosmetics Private Limited",
+        "order_date": "2026-06-01 08:45:17+00:00",
+        "appointment_date": "",
+        "expiry_date": "2026-06-16T18:29:59Z",
+        "po_state": "Unscheduled",
+        "item_id": "10160956",
+        "name": "RENEE Eau de Parfum (Madame)(Box)",
+        "uom_text": "20 ml",
+        "upc": "8906121647587",
+        "units_ordered": "5",
+        "remaining_quantity": "5",
+        "landing_rate": "279.3",
+        "cost_price": "236.69",
+        "margin_percentage": "30",
+        "cess_value": "0",
+        "sgst_value": "9",
+        "igst_value": "18",
+        "cgst_value": "9",
+        "tax_value": "18",
+        "total_amount": "1396.5",
+        "mrp": "399"
+      },
+      {
+        "po_number": "51388610001402",
+        "facility_name": "Vijayawada - Feeder Warehouse",
+        "manufacturer_name": "Renee Cosmetics Pvt Ltd.",
+        "entity_vendor_legal_name": "\"BLINK COMMERCE PRIVATE LIMITED\"",
+        "vendor_name": "Renee Cosmetics Private Limited",
+        "order_date": "2026-06-01 08:45:17+00:00",
+        "appointment_date": "",
+        "expiry_date": "2026-06-16T18:29:59Z",
+        "po_state": "Unscheduled",
+        "item_id": "10151541",
+        "name": "RENEE Eau de Parfum (Bloom)(Bottle)",
+        "uom_text": "50 ml",
+        "upc": "8906121642599",
+        "units_ordered": "5",
+        "remaining_quantity": "5",
+        "landing_rate": "419.3",
+        "cost_price": "355.34",
+        "margin_percentage": "30",
+        "cess_value": "0",
+        "sgst_value": "9",
+        "igst_value": "18",
+        "cgst_value": "9",
+        "tax_value": "18",
+        "total_amount": "2096.5",
+        "mrp": "599"
+      },
+      {
+        "po_number": "51388610001402",
+        "facility_name": "Vijayawada - Feeder Warehouse",
+        "manufacturer_name": "Renee Cosmetics Pvt Ltd.",
+        "entity_vendor_legal_name": "\"BLINK COMMERCE PRIVATE LIMITED\"",
+        "vendor_name": "Renee Cosmetics Private Limited",
+        "order_date": "2026-06-01 08:45:17+00:00",
+        "appointment_date": "",
+        "expiry_date": "2026-06-16T18:29:59Z",
+        "po_state": "Unscheduled",
+        "item_id": "10279651",
+        "name": "RENEE Pro HD 3-in-1 Compact (GrÃ¨s)(Box)",
+        "uom_text": "9 g",
+        "upc": "8904473101207",
+        "units_ordered": "12",
+        "remaining_quantity": "12",
+        "landing_rate": "455",
+        "cost_price": "385.59",
+        "margin_percentage": "30",
+        "cess_value": "0",
+        "sgst_value": "9",
+        "igst_value": "18",
+        "cgst_value": "9",
+        "tax_value": "18",
+        "total_amount": "5460",
+        "mrp": "650"
+      }
+    ],
+    "file_type": ".XLSX",
+    "sample_file": "Blinkit punch 01-05-2026 1.xlsx"
+  },
+  "BlinkMP": {
+    "file_type": "ORDER PDF (header) + .XLS (line items) — dual upload per R.O.",
+    "sample_file": "1736010076579_ORDER_XLS.xls (+ 1736010076579_ORDER_PDF.pdf)",
+    "header_title": "Blinkit Seller-Hub R.O. — PDF gives the header, XLS gives the line items",
+    "header_note": "Upload BOTH the ORDER_PDF (R.O. header / warehouse) and the ORDER_XLS (line items) per R.O.; engine reads UPC/Qty/Landing Rate from the XLS, warehouse from the PDF.",
+    "header_fields": [
+      {
+        "label": "R.O. Number",
+        "value": "1736010076579",
+        "used": true,
+        "role_class": "po"
+      },
+      {
+        "label": "Warehouse",
+        "value": "BCPL - Bengaluru B3 - Feeder Warehouse",
+        "used": true,
+        "role_class": "loc"
+      },
+      {
+        "label": "Date",
+        "value": "July 8, 2026, 1:11 p.m.",
+        "used": true,
+        "role_class": "date"
+      },
+      {
+        "label": "R.O. expiry date",
+        "value": "Aug. 7, 2026, 11:59 p.m.",
+        "used": true,
+        "role_class": "exp"
+      },
+      {
+        "label": "R.O. Type",
+        "value": "Seller Hub STO"
+      },
+      {
+        "label": "Seller",
+        "value": "RENEE COSMETICS PRIVATE LIMITED (Seller No. 376496)"
+      },
+      {
+        "label": "Delivered By",
+        "value": "RENEE COSMETICS PRIVATE LIMITED — Hoskote, Bengaluru 560067"
+      },
+      {
+        "label": "Delivered To",
+        "value": "BLINK COMMERCE PRIVATE LIMITED"
+      },
+      {
+        "label": "Buyer GST No.",
+        "value": "29AAFCG9846E1Z7"
+      },
+      {
+        "label": "Currency",
+        "value": "INR"
+      }
+    ],
+    "columns": [
+      "#",
+      "Item Code",
+      "HSN Code",
+      "Product UPC",
+      "Product Description",
+      "Grammage",
+      "CGST %",
+      "SGST %",
+      "IGST %",
+      "CESS %",
+      "Additional CES",
+      "Tax Amount",
+      "Landing Rate",
+      "Quantity",
+      "MRP",
+      "Total Amount"
+    ],
+    "rows": [
+      {
+        "#": "1",
+        "Item Code": "10260565",
+        "HSN Code": "33049940",
+        "Product UPC": "8904473101696",
+        "Product Description": "RENEE Liquid Sindoor (Maroon)(Pack)",
+        "Grammage": "4.5 ml",
+        "CGST %": "0",
+        "SGST %": "0",
+        "IGST %": "0",
+        "CESS %": "0",
+        "Additional CES": "0",
+        "Tax Amount": "0",
+        "Landing Rate": "111.75",
+        "Quantity": "20",
+        "MRP": "149",
+        "Total Amount": "2235"
+      },
+      {
+        "#": "2",
+        "Item Code": "10289732",
+        "HSN Code": "33049990",
+        "Product UPC": "8904473105472",
+        "Product Description": "RENEE Face Bright Sunscreen (SPF 50 PA+++)(Tube)",
+        "Grammage": "50 ml",
+        "CGST %": "9",
+        "SGST %": "9",
+        "IGST %": "0",
+        "CESS %": "0",
+        "Additional CES": "0",
+        "Tax Amount": "31.92",
+        "Landing Rate": "209.25",
+        "Quantity": "13",
+        "MRP": "279",
+        "Total Amount": "2720.25"
+      },
+      {
+        "#": "3",
+        "Item Code": "10290814",
+        "HSN Code": "33049990",
+        "Product UPC": "8904473105571",
+        "Product Description": "RENEE Lumi Glow Highlighting Primer + Serum(Bottle)",
+        "Grammage": "30 ml",
+        "CGST %": "9",
+        "SGST %": "9",
+        "IGST %": "0",
+        "CESS %": "0",
+        "Additional CES": "0",
+        "Tax Amount": "62.92",
+        "Landing Rate": "412.5",
+        "Quantity": "4",
+        "MRP": "550",
+        "Total Amount": "1650"
+      }
+    ],
+    "doc_layout": false,
+    "pdf_replica": {
+      "lines": [
+        "Recommended Quantity Order (R.O.)",
+        "Issued by Blinkit Seller Hub",
+        "BLINK COMMERCE PRIVATE LIMITED",
+        "PAN :AAFCG9846E",
+        "CIN : U74140HR2015FTC055568",
+        "BCPL - Lucknow L4 Warehouse",
+        "Blinkit SPOC Name: Aishwarya Laxmi",
+        "Blinkit SPOC Phone No: 9289090710",
+        "Seller",
+        ": RENEE COSMETICS PRIVATE LIMITED",
+        "PAN",
+        ": AAJCR8656B",
+        "Registered",
+        "Address",
+        ": OFFICE NO. 4, OM COMPLEX, C.G. ROAD, SWASTIK",
+        "SOCIETY, AHMEDABAD Ahmedabad 380009",
+        "Contact",
+        "Details",
+        ": Rahul Soni",
+        "91-9099635566",
+        "ecomm@reneecosmetics.in",
+        "R.O. Number",
+        ": 1735810054512",
+        "Date",
+        ": July 20, 2026, 12:40 p.m.",
+        "R.O. Type",
+        ": Seller Hub STO",
+        "Seller No.",
+        ": 376496",
+        "Currency",
+        ": INR",
+        "Shipping Spoc Details",
+        "Delivered",
+        "By",
+        ": RENEE COSMETICS PRIVATE LIMITED",
+        "Address",
+        ": Survey No. 63/1 & 64, ALNSR.57/87-88, Kasaba Hobli,",
+        "Hoskote Bengaluru 560067",
+        "SPOC Name : Rahul Soni",
+        "SPOC Phone : 9099635566",
+        "SPOC Email : ecomm@reneecosmetics.in",
+        "R.O. expiry",
+        "date",
+        ": Aug. 19, 2026, 11:59 p.m.",
+        "GST No.",
+        ": 29AAJCR8656B1Z0",
+        "Delivered",
+        "To"
+      ],
+      "lines_source": "from the ORDER_XLS file"
+    }
+  },
+  "Firstcry": {
+    "file_type": "PDF (one PO PDF per distributor)",
+    "columns": [
+      "Sr",
+      "EAN",
+      "SKU",
+      "Product Description",
+      "HSN",
+      "Qty",
+      "Rate",
+      "MRP",
+      "Amount"
+    ],
+    "rows": [
+      {
+        "Sr": "1",
+        "EAN": "8904245707XXX",
+        "SKU": "RENEE-FAB-01",
+        "Product Description": "RENEE Fab 5-in-1 Lipstick",
+        "HSN": "33041000",
+        "Qty": "12",
+        "Rate": "205.00",
+        "MRP": "499.00",
+        "Amount": "2460.00"
+      }
+    ],
+    "doc_layout": false,
+    "header_title": "FirstCry PO PDF — \"Delivered To\" distributor drives the ship-to",
+    "header_note": "Engine parses the PDF line table (FCID/EAN, Billed Qty, Base Cost, MRP, HSN); the \"Delivered To\" party maps to the ship-to.",
+    "pdf_replica": {
+      "lines": [
+        "OM ENTERPRISES",
+        "Vendor Name:",
+        "Renee Cosmetics Private Ltd",
+        "PONO: pin167260717mdx5a32",
+        "Address:",
+        "Office No. 4, Om Complex, C.G. Road, Swastik Society, Ahmedabad, Gujarat, 380009,",
+        "Ahmedabad, Gujarat, India - 380009",
+        "PO Date: 17-07-2026",
+        "Delivered By:",
+        "Renee Cosmetics Private Ltd",
+        "Payment Terms: 45",
+        "Address:",
+        "Renee Cosmetics Private Limited 1 to 14, HK ESTATE, Sarkhej ITI Road, Fatehwadi",
+        "Village, Nr. Hanuman Temple, Ahmedabad Gujarat 382210, Ahmedabad, Gujarat, India -",
+        "382210",
+        "PO Expiry Date:-",
+        "GST Number",
+        "F & O:",
+        "16-08-2026",
+        "24AAJCR8656B1ZA",
+        "0",
+        "Delivered To:",
+        "OM ENTERPRISES",
+        "GST Number 27ACSPW0146K1ZZ",
+        "Address:",
+        "Survey Number 27/1B, Munjoba Wasti, Dhanori, Pune, Pune, Maharashtra, India - 411015",
+        "Currency",
+        "BIS Complience",
+        "INR",
+        "No",
+        "Sr",
+        "No",
+        "FCID",
+        "HSN",
+        "Code",
+        "Manufact",
+        "urer",
+        "Style",
+        "Code",
+        "Image",
+        "Product Name",
+        "Product Description",
+        "Brand",
+        "Name",
+        "Color",
+        "MRP",
+        "Base",
+        "Cost"
+      ],
+      "lines_source": "from the PDF item table"
+    }
+  },
+  "Flipkart": {
+    "file_type": ".XLSX",
+    "sample_file": "purchase_order_FLS67DB8ED39.xlsx",
+    "header_title": "File header — the PO preamble above the line-item table",
+    "header_note": "Flipkart's new vendor-portal PO: one file per PO. PO No comes from the FILE NAME; Order/Expiry dates and the Shipped-To Address are read from this header block.",
+    "header_fields": [
+      {
+        "label": "Purchase Order No",
+        "value": "FLS67DB8ED39",
+        "used": true,
+        "role_class": "po"
+      },
+      {
+        "label": "Order Date",
+        "value": "20/07/2026",
+        "used": true,
+        "role_class": "date"
+      },
+      {
+        "label": "Expiry Date",
+        "value": "06/08/2026",
+        "used": true,
+        "role_class": "exp"
+      },
+      {
+        "label": "Shipped To Address",
+        "value": "Saidham warehousing Building DE, Opp Vaishnav Devi Mandir At Village Dohale Post Padgha Taluka Bhiwandi Dist Thane Bhiwandi Maharashtra 421101 India",
+        "used": true,
+        "role_class": "loc"
+      },
+      {
+        "label": "Nature Of Supply",
+        "value": "GOODS"
+      },
+      {
+        "label": "Nature of Transaction",
+        "value": "INTER_STATE"
+      },
+      {
+        "label": "Category",
+        "value": "Makeup"
+      },
+      {
+        "label": "Supplier Name",
+        "value": "Renee Cosmetics Private Limited"
+      },
+      {
+        "label": "Retailer Name",
+        "value": "FLIPKART INDIA PRIVATE LIMITED"
+      },
+      {
+        "label": "Billed From Address",
+        "value": "1 to 14, HK ESTATE, Sarkhej ITI Road, Vadia Mata Mandir Fatehwadi Village, Ahmedabad, Gujarat 382210 India"
+      },
+      {
+        "label": "Shipped From Address",
+        "value": "OFFICE NO. 4, OM COMPLEX, C.G. ROAD, SWASTIK SOCIETY, Ahmedabad Gujarat 380009 India"
+      },
+      {
+        "label": "Billed To Address",
+        "value": "Saidham warehousing Building DE, Opp Vaishnav Devi Mandir At Village Dohale Post Padgha Taluka Bhiwandi Dist Thane Bhiwandi Maharashtra 421101 India"
+      },
+      {
+        "label": "Bill To GSTIN",
+        "value": "27AABCF8078M1Z1"
+      },
+      {
+        "label": "Mode of Payment",
+        "value": "EFT"
+      },
+      {
+        "label": "Contract Ref ID",
+        "value": "FKI-OR-00538190"
+      },
+      {
+        "label": "Credit Term",
+        "value": "PAY BY 30 DAYS"
+      }
+    ],
+    "columns": [
+      "S. no.",
+      "HSN/SAC Code",
+      "Product ID",
+      "Quantity",
+      "Approved Units",
+      "UOM",
+      "Pending Quantity",
+      "Title",
+      "Ean",
+      "Brand",
+      "Color",
+      "Model Name",
+      "Model Id",
+      "RAM",
+      "Vertical",
+      "Required by Date",
+      "Supplier Unit Price",
+      "IGST Rate",
+      "IGST Amount(per unit)",
+      "SGST/UTGST Rate",
+      "SGST/UTGST Amount(per unit)",
+      "CGST Rate",
+      "CGST Amount(per unit)",
+      "CESS Rate",
+      "CESS Amount(per unit)",
+      "Supplier MRP",
+      "Taxable Value",
+      "Tax Amount",
+      "Total Amount"
+    ],
+    "rows": [
+      {
+        "S. no.": "1",
+        "HSN/SAC Code": "33042000",
+        "Product ID": "KJLGG6GBHGEUYAFF",
+        "Quantity": "432",
+        "Approved Units": "0",
+        "UOM": "pcs",
+        "Pending Quantity": "0",
+        "Title": "Renee Kajal Pen with Sharpener, Matte Finish, Smudge & Waterproof, Long Lasts Upto 24H 0.7 g",
+        "Ean": "8906121640526",
+        "Brand": "Renee",
+        "Color": "",
+        "Model Name": "",
+        "Model Id": "",
+        "RAM": "",
+        "Vertical": "Kajal",
+        "Required by Date": "",
+        "Supplier Unit Price": "230.23 (INR)",
+        "IGST Rate": "18.00 %",
+        "IGST Amount(per unit)": "35.12 (INR)",
+        "SGST/UTGST Rate": "",
+        "SGST/UTGST Amount(per unit)": "",
+        "CGST Rate": "",
+        "CGST Amount(per unit)": "",
+        "CESS Rate": "",
+        "CESS Amount(per unit)": "",
+        "Supplier MRP": "299.00 (INR)",
+        "Taxable Value": "84287.59 (INR)",
+        "Tax Amount": "15171.77 (INR)",
+        "Total Amount": "99459.36 (INR)"
+      },
+      {
+        "S. no.": "2",
+        "HSN/SAC Code": "33049990",
+        "Product ID": "CMPHGJ7HGY6ZJWHT",
+        "Quantity": "192",
+        "Approved Units": "0",
+        "UOM": "pcs",
+        "Pending Quantity": "0",
+        "Title": "Renee Lumi Glow Highlighting Compact, Medium Coverage, Dewy 3D Glow, Blurs Pores - 9g Compact -9 g",
+        "Ean": "8904473104154",
+        "Brand": "Renee",
+        "Color": "",
+        "Model Name": "",
+        "Model Id": "",
+        "RAM": "",
+        "Vertical": "Compact",
+        "Required by Date": "",
+        "Supplier Unit Price": "423.50 (INR)",
+        "IGST Rate": "18.00 %",
+        "IGST Amount(per unit)": "64.60 (INR)",
+        "SGST/UTGST Rate": "",
+        "SGST/UTGST Amount(per unit)": "",
+        "CGST Rate": "",
+        "CGST Amount(per unit)": "",
+        "CESS Rate": "",
+        "CESS Amount(per unit)": "",
+        "Supplier MRP": "550.00 (INR)",
+        "Taxable Value": "68908.48 (INR)",
+        "Tax Amount": "12403.53 (INR)",
+        "Total Amount": "81312.00 (INR)"
+      },
+      {
+        "S. no.": "31",
+        "HSN/SAC Code": "33049940",
+        "Product ID": "SINHERHTBG8ZAY8M",
+        "Quantity": "1152",
+        "Approved Units": "0",
+        "UOM": "pcs",
+        "Pending Quantity": "0",
+        "Title": "Renee_Sindoor, Matte Finish, Smudge-Proof, Long Lasting, Easy to Apply, 4.5Ml_S003_Sindoor_Red",
+        "Ean": "8904473101689",
+        "Brand": "Renee",
+        "Color": "Red",
+        "Model Name": "Sindoor, Matte Finish, Smudge-Proof, Long Lasting, Easy to Apply, 4.5Ml",
+        "Model Id": "",
+        "RAM": "",
+        "Vertical": "Sindoor",
+        "Required by Date": "",
+        "Supplier Unit Price": "114.73 (INR)",
+        "IGST Rate": "0.00 %",
+        "IGST Amount(per unit)": "0.00 (INR)",
+        "SGST/UTGST Rate": "",
+        "SGST/UTGST Amount(per unit)": "",
+        "CGST Rate": "",
+        "CGST Amount(per unit)": "",
+        "CESS Rate": "",
+        "CESS Amount(per unit)": "",
+        "Supplier MRP": "149.00 (INR)",
+        "Taxable Value": "132168.95 (INR)",
+        "Tax Amount": "0.00 (INR)",
+        "Total Amount": "132168.95 (INR)"
+      }
+    ],
+    "doc_layout": true,
+    "doc": {
+      "banner": "FLIPKART INDIA PRIVATE LIMITED",
+      "banner_sub": "Saidham warehousing Building DE, Opp Vaishnav Devi Mandir At Village Dohale Post Padgha Taluka Bhiwandi Dist Thane Bhiwandi Maharashtra 421101 India",
+      "po_no": "FLS67DB8ED39",
+      "band": [
+        {
+          "label": "Nature Of Supply",
+          "value": "GOODS"
+        },
+        {
+          "label": "Nature of Transaction",
+          "value": "INTER_STATE"
+        },
+        {
+          "label": "Expiry Date",
+          "value": "06/08/2026",
+          "read": true
+        },
+        {
+          "label": "ORDER DATE",
+          "value": "20/07/2026",
+          "read": true
+        },
+        {
+          "label": "CATEGORY",
+          "value": "Makeup"
+        }
+      ],
+      "supplier": {
+        "title": "SUPPLIER DETAILS",
+        "rows": [
+          {
+            "label": "SUPPLIER NAME",
+            "value": "Renee Cosmetics Private Limited"
+          },
+          {
+            "label": "Billed From Address",
+            "value": "1 to 14, HK ESTATE, Sarkhej ITI Road, Vadia Mata Mandir Fatehwadi Village, Ahmedabad, Gujarat 382210 India"
+          },
+          {
+            "label": "Shipped From Address",
+            "value": "OFFICE NO. 4, OM COMPLEX, C.G. ROAD, SWASTIK SOCIETY, Ahmedabad Gujarat 380009 India"
+          },
+          {
+            "label": "Bill From GSTIN",
+            "value": "24AAJCR8656B1ZA"
+          },
+          {
+            "label": "State Code",
+            "value": "IN-GJ"
+          },
+          {
+            "label": "POC NAME",
+            "value": "Rahul Gohel"
+          },
+          {
+            "label": "SUPPLIER CONTACT",
+            "value": "+91-9978619576"
+          },
+          {
+            "label": "EMAIL Id",
+            "value": "tanisha@reneecosmetics.in"
+          }
+        ]
+      },
+      "retailer": {
+        "title": "RETAILER DETAILS",
+        "rows": [
+          {
+            "label": "RETAILER NAME",
+            "value": "FLIPKART INDIA PRIVATE LIMITED"
+          },
+          {
+            "label": "Billed To Address",
+            "value": "Saidham warehousing Building DE, Opp Vaishnav Devi Mandir At Village Dohale Post Padgha Taluka Bhiwandi Dist Thane Bhiwandi Maharashtra 421101 India"
+          },
+          {
+            "label": "Shipped To Address",
+            "value": "Saidham warehousing Building DE, Opp Vaishnav Devi Mandir At Village Dohale Post Padgha Taluka Bhiwandi Dist Thane Bhiwandi Maharashtra 421101 India",
+            "read": true
+          },
+          {
+            "label": "Bill To GSTIN",
+            "value": "27AABCF8078M1Z1"
+          },
+          {
+            "label": "State Code",
+            "value": "IN-MH"
+          },
+          {
+            "label": "POC NAME",
+            "value": ""
+          }
+        ]
+      },
+      "payment": {
+        "title": "PAYMENT DETAILS",
+        "rows": [
+          {
+            "label": "MODE OF PAYMENT",
+            "value": "EFT"
+          },
+          {
+            "label": "CONTRACT REF ID",
+            "value": "FKI-OR-00538190"
+          },
+          {
+            "label": "CONTRACT VERSION",
+            "value": "17.0"
+          },
+          {
+            "label": "CREDIT TERM",
+            "value": "PAY BY 30 DAYS"
+          }
+        ]
+      }
+    }
+  },
+  "Flipkart-TO": {
+    "columns": [
+      "Product Name",
+      "FSN",
+      "SKU Id",
+      "Brand",
+      "Size",
+      "Style Code",
+      "Color",
+      "Isbn",
+      "Model Id",
+      "Quantity Sent",
+      "Quantity Received",
+      "Inwarded to Store",
+      "QC Fail",
+      "QC In Progress",
+      "QC Passed",
+      "Cost Price",
+      "Length(In cms)",
+      "Breadth(In cms)",
+      "Height(In cms)",
+      "Weight(In kgs)"
+    ],
+    "rows": [
+      {
+        "Product Name": "Renee Black 8904473102877",
+        "FSN": "BHRH8UAZCGFWDXYZ",
+        "SKU Id": "8904473102877",
+        "Brand": "Renee",
+        "Size": "",
+        "Style Code": "",
+        "Color": "",
+        "Isbn": "",
+        "Model Id": "",
+        "Quantity Sent": "1",
+        "Quantity Received": "0",
+        "Inwarded to Store": "",
+        "QC Fail": "",
+        "QC In Progress": "",
+        "QC Passed": "",
+        "Cost Price": "59.60",
+        "Length(In cms)": "12.877038",
+        "Breadth(In cms)": "7.786116",
+        "Height(In cms)": "2.0962620000000003",
+        "Weight(In kgs)": "0.014"
+      },
+      {
+        "Product Name": "Renee Korean Glow Serum 15ml | Non Greasy, P…",
+        "FSN": "BSTGRT8S4DSXYXVJ",
+        "SKU Id": "8906121646139",
+        "Brand": "Renee",
+        "Size": "",
+        "Style Code": "",
+        "Color": "",
+        "Isbn": "",
+        "Model Id": "",
+        "Quantity Sent": "1",
+        "Quantity Received": "0",
+        "Inwarded to Store": "",
+        "QC Fail": "",
+        "QC In Progress": "",
+        "QC Passed": "",
+        "Cost Price": "220.00",
+        "Length(In cms)": "8.784336",
+        "Breadth(In cms)": "5.689854",
+        "Height(In cms)": "3.49377",
+        "Weight(In kgs)": "0.09"
+      },
+      {
+        "Product Name": "Renee Princess Moana Bath & Body Care Set, S…",
+        "FSN": "CBKH8U9XKCXBNDW4",
+        "SKU Id": "8904473102730",
+        "Brand": "Renee",
+        "Size": "",
+        "Style Code": "",
+        "Color": "",
+        "Isbn": "",
+        "Model Id": "",
+        "Quantity Sent": "1",
+        "Quantity Received": "0",
+        "Inwarded to Store": "",
+        "QC Fail": "",
+        "QC In Progress": "",
+        "QC Passed": "",
+        "Cost Price": "300.00",
+        "Length(In cms)": "26.652474",
+        "Breadth(In cms)": "17.269206",
+        "Height(In cms)": "4.292346",
+        "Weight(In kgs)": "0.434"
+      }
+    ],
+    "file_type": ".CSV",
+    "sample_file": "Consignment_Details_204535220_09-06-2026.csv"
+  },
+  "Meesho-TO": {
+    "columns": [
+      "skuCode",
+      "description",
+      "styleCode",
+      "size",
+      "color",
+      "sellingPricePerUnit",
+      "orderedQty",
+      "asnCreatedQty",
+      "packedQty",
+      "dispatchedQty",
+      "pendingQty"
+    ],
+    "rows": [
+      {
+        "skuCode": "57nb-498q8d-4n",
+        "description": "RENEE Glowscreen SPF 50 Sunscreen Cream - 50…",
+        "styleCode": "8906121644654",
+        "size": "Free Size",
+        "color": "",
+        "sellingPricePerUnit": "311",
+        "orderedQty": "13",
+        "asnCreatedQty": "0",
+        "packedQty": "0",
+        "dispatchedQty": "0",
+        "pendingQty": "13"
+      },
+      {
+        "skuCode": "57nb-6f7qql-4n",
+        "description": "RENEE Top Coat Nail Enamel, Quick Drying, Lo…",
+        "styleCode": "8906121648607",
+        "size": "Free Size",
+        "color": "White",
+        "sellingPricePerUnit": "148",
+        "orderedQty": "15",
+        "asnCreatedQty": "0",
+        "packedQty": "0",
+        "dispatchedQty": "0",
+        "pendingQty": "15"
+      },
+      {
+        "skuCode": "57nb-6pdd2b-4n",
+        "description": "RENEE Nail Paint Remover, 30 Ml",
+        "styleCode": "8906121649451",
+        "size": "Free Size",
+        "color": "Pink",
+        "sellingPricePerUnit": "98",
+        "orderedQty": "10",
+        "asnCreatedQty": "0",
+        "packedQty": "0",
+        "dispatchedQty": "0",
+        "pendingQty": "10"
+      }
+    ],
+    "file_type": ".CSV",
+    "sample_file": "order-line-items-62143.csv"
+  },
+  "Myntra": {
+    "columns": [
+      "PO",
+      "Location",
+      "Unnamed: 2",
+      "Unnamed: 3",
+      "SKU Id",
+      "Style Id",
+      "SKU Code",
+      "HSN Code",
+      "Brand",
+      "GTIN",
+      "Vendor Article Number",
+      "Vendor Article Name",
+      "Size",
+      "Colour",
+      "Mrp",
+      "Credit Period",
+      "Margin Type",
+      "Agreed Margin",
+      "Gross Margin",
+      "Quantity",
+      "FOB Amount",
+      "List price(FOB+Transport-Excise)",
+      "Landing Price",
+      "Estimated Delivery Date",
+      "Tax BCD",
+      "Tax BCD Amount",
+      "Buying Tax IGST",
+      "Buying Tax IGST Amount",
+      "Tax SWT",
+      "Tax SWT Amount",
+      "Selling Tax CGST",
+      "Selling Tax CGST Amount",
+      "Selling Tax IGST",
+      "Selling Tax IGST Amount",
+      "Selling Tax SGST",
+      "Selling Tax SGST Amount",
+      "Item no",
+      "MRP",
+      "70%(Landing Cost)",
+      "GST Code",
+      "Cost Price",
+      "Diffn"
+    ],
+    "rows": [
+      {
+        "PO": "MYNJ-RNEE120526-1",
+        "Location": "Myntra warehouse ( Mumbai )",
+        "Unnamed: 2": "20011",
+        "Unnamed: 3": "20011_3",
+        "SKU Id": "133383890",
+        "Style Id": "42000000",
+        "SKU Code": "RENEFRGF133383890",
+        "HSN Code": "33030010",
+        "Brand": "Renee",
+        "GTIN": "8904473106288",
+        "Vendor Article Number": "8904473106288",
+        "Vendor Article Name": "Renee Caramel Crush Hair Perfume - 5ml",
+        "Size": "5ml",
+        "Colour": "Caramel Crush",
+        "Mrp": "0",
+        "Credit Period": "",
+        "Margin Type": "gross",
+        "Agreed Margin": "99.99",
+        "Gross Margin": "99.99",
+        "Quantity": "5400",
+        "FOB Amount": "",
+        "List price(FOB+Transport-Excise)": "0",
+        "Landing Price": "0",
+        "Estimated Delivery Date": "2026-07-11 00:00:00",
+        "Tax BCD": "0",
+        "Tax BCD Amount": "0",
+        "Buying Tax IGST": "18",
+        "Buying Tax IGST Amount": "0",
+        "Tax SWT": "0",
+        "Tax SWT Amount": "0",
+        "Selling Tax CGST": "9",
+        "Selling Tax CGST Amount": "0",
+        "Selling Tax IGST": "0",
+        "Selling Tax IGST Amount": "0",
+        "Selling Tax SGST": "9",
+        "Selling Tax SGST Amount": "0",
+        "Item no": "201433",
+        "MRP": "",
+        "70%(Landing Cost)": "",
+        "GST Code": "",
+        "Cost Price": "",
+        "Diffn": ""
+      },
+      {
+        "PO": "MYNJ-RNEE120526-2",
+        "Location": "Gurgaon-Binola W/H",
+        "Unnamed: 2": "20011",
+        "Unnamed: 3": "20011_1",
+        "SKU Id": "133383890",
+        "Style Id": "42000000",
+        "SKU Code": "RENEFRGF133383890",
+        "HSN Code": "33030010",
+        "Brand": "Renee",
+        "GTIN": "8904473106288",
+        "Vendor Article Number": "8904473106288",
+        "Vendor Article Name": "Renee Caramel Crush Hair Perfume - 5ml",
+        "Size": "5ml",
+        "Colour": "Caramel Crush",
+        "Mrp": "0",
+        "Credit Period": "",
+        "Margin Type": "gross",
+        "Agreed Margin": "99.99",
+        "Gross Margin": "99.99",
+        "Quantity": "6652",
+        "FOB Amount": "",
+        "List price(FOB+Transport-Excise)": "0",
+        "Landing Price": "0",
+        "Estimated Delivery Date": "2026-07-11 00:00:00",
+        "Tax BCD": "0",
+        "Tax BCD Amount": "0",
+        "Buying Tax IGST": "18",
+        "Buying Tax IGST Amount": "0",
+        "Tax SWT": "0",
+        "Tax SWT Amount": "0",
+        "Selling Tax CGST": "9",
+        "Selling Tax CGST Amount": "0",
+        "Selling Tax IGST": "0",
+        "Selling Tax IGST Amount": "0",
+        "Selling Tax SGST": "9",
+        "Selling Tax SGST Amount": "0",
+        "Item no": "201433",
+        "MRP": "",
+        "70%(Landing Cost)": "",
+        "GST Code": "",
+        "Cost Price": "",
+        "Diffn": ""
+      },
+      {
+        "PO": "MYNJ-RNEE120526-3",
+        "Location": "Bilaspur Warehouse - Gurgaon",
+        "Unnamed: 2": "20011",
+        "Unnamed: 3": "20011_4",
+        "SKU Id": "133383890",
+        "Style Id": "42000000",
+        "SKU Code": "RENEFRGF133383890",
+        "HSN Code": "33030010",
+        "Brand": "Renee",
+        "GTIN": "8904473106288",
+        "Vendor Article Number": "8904473106288",
+        "Vendor Article Name": "Renee Caramel Crush Hair Perfume - 5ml",
+        "Size": "5ml",
+        "Colour": "Caramel Crush",
+        "Mrp": "0",
+        "Credit Period": "",
+        "Margin Type": "gross",
+        "Agreed Margin": "99.99",
+        "Gross Margin": "99.99",
+        "Quantity": "6248",
+        "FOB Amount": "",
+        "List price(FOB+Transport-Excise)": "0",
+        "Landing Price": "0",
+        "Estimated Delivery Date": "2026-07-11 00:00:00",
+        "Tax BCD": "0",
+        "Tax BCD Amount": "0",
+        "Buying Tax IGST": "18",
+        "Buying Tax IGST Amount": "0",
+        "Tax SWT": "0",
+        "Tax SWT Amount": "0",
+        "Selling Tax CGST": "9",
+        "Selling Tax CGST Amount": "0",
+        "Selling Tax IGST": "0",
+        "Selling Tax IGST Amount": "0",
+        "Selling Tax SGST": "9",
+        "Selling Tax SGST Amount": "0",
+        "Item no": "201433",
+        "MRP": "",
+        "70%(Landing Cost)": "",
+        "GST Code": "",
+        "Cost Price": "",
+        "Diffn": ""
+      }
+    ],
+    "file_type": ".XLSX",
+    "sample_file": "123456.xlsx"
+  },
+  "Reliance": {
+    "file_type": "PDF (multi-file · one PO PDF each)",
+    "sample_file": "PO. INTM 5000484905 .PDF (Reliance Retail Limited)",
+    "header_title": "Reliance PO PDF — Site code drives the ship-to; delivery address confirms it",
+    "header_note": "The engine keys the ship-to on the Site code (S4ZD/SAE7/…) and cross-checks the delivery pincode. Line items (EAN · Qty · Base Cost · GST) are read from the table inside.",
+    "header_fields": [
+      {
+        "label": "Purchase Order Number",
+        "value": "5000484905",
+        "used": true,
+        "role_class": "po"
+      },
+      {
+        "label": "PO Date",
+        "value": "03.07.2026",
+        "used": true,
+        "role_class": "date"
+      },
+      {
+        "label": "Delivery Date",
+        "value": "02.09.2026",
+        "used": true,
+        "role_class": "exp"
+      },
+      {
+        "label": "Delivery Location",
+        "value": "RRL BPC MH Kukse Bhiwandi — Distribution Center, Gala 1 to 14, Survey No 78, Kukse, BHIWANDI, Maharashtra - 421302",
+        "used": true,
+        "role_class": "loc"
+      },
+      {
+        "label": "Vendor Code",
+        "value": "88050353"
+      },
+      {
+        "label": "Site",
+        "value": "S4ZD"
+      },
+      {
+        "label": "Buyer GSTN",
+        "value": "27AABCR1718E1ZP"
+      },
+      {
+        "label": "Total Order Value",
+        "value": "INR 189,045.87"
+      }
+    ],
+    "columns": [
+      "Sr No",
+      "Article No",
+      "EAN",
+      "HSN Code",
+      "Material Description",
+      "Qty",
+      "MRP",
+      "Base Cost",
+      "GST Rate",
+      "Total Base Value",
+      "Site"
+    ],
+    "rows": [
+      {
+        "Sr No": "1",
+        "Article No": "494740217",
+        "EAN": "8904473104154",
+        "HSN Code": "33049110",
+        "Material Description": "RC LUMIGLW HGHLGHTNGCMPCT SATIN BEIGE 9G",
+        "Qty": "1",
+        "MRP": "550.00",
+        "Base Cost": "353.31",
+        "GST Rate": "5.00",
+        "Total Base Value": "353.31",
+        "Site": "S4ZD"
+      },
+      {
+        "Sr No": "2",
+        "Article No": "494740216",
+        "EAN": "8904473104147",
+        "HSN Code": "33049110",
+        "Material Description": "RC LUMIGLW HGHLGHTNGCMPCT VLVTVANILLA 9G",
+        "Qty": "7",
+        "MRP": "550.00",
+        "Base Cost": "353.31",
+        "GST Rate": "5.00",
+        "Total Base Value": "2,473.17",
+        "Site": "S4ZD"
+      },
+      {
+        "Sr No": "3",
+        "Article No": "494739737",
+        "EAN": "8904473104123",
+        "HSN Code": "33049990",
+        "Material Description": "RENEEC EVERYDAY CC BBCREAM HOTCOFFEE 20G",
+        "Qty": "3",
+        "MRP": "249.00",
+        "Base Cost": "133.83",
+        "GST Rate": "18.00",
+        "Total Base Value": "401.48",
+        "Site": "S4ZD"
+      }
+    ],
+    "doc_layout": false,
+    "pdf_replica": {
+      "lines": [
+        "   Reliance Retail Limited",
+        "   Reliance Corporate Park,",
+        "   5, TTC industrial Area,,",
+        "   Thane Belapur Road, Ghansoli,",
+        "   Navi Mumbai- 400701   Maharashtra, INDIA",
+        "SELLER",
+        "PURCHASE ORDER",
+        "   Vendor Code : 88050353",
+        "   RENEE COSMETICS PRIVATE LIMITED",
+        "   ZED WAREHOUSE,",
+        "   Sanand Chowkdi, Plot No. 66,",
+        "   AHMEDABAD,    Gujarat",
+        "   Pin Code : 382210,   India",
+        "   E-Mail : ecomm@reneecosmetics.in",
+        "   Pan No. : AAJCR8656B",
+        "   Vendor Status :    01 - REGISTERED",
+        "   GSTN No: 24AAJCR8656B1ZA",
+        "   Attention :",
+        "   PO NO.:    5000487424  Site : S4ZD",
+        "   PO Date : 24.07.2026",
+        "RRL BPC MH Kukse Bhiwandi Vinc",
+        "   In accepting this PURCHASE ORDER, SELLER agrees to furnish the GOODS specified in full accordance with all conditions set",
+        "forth  herein and / or attachments hereto. All drawings,  designs, specifications and other data prepared by OWNER and  related",
+        "thereto arethe property of the OWNER and must  be returned to OWNER upon completionby SELLER of the  obligations under this",
+        "PURCHASE ORDER. Theinformation contained herein is not to be released or disclosed for any other use or purpose other than for",
+        "the execution of this PURCHASE ORDER. This formal PURCHASE ORDER constitutes the entire agreement and only  written",
+        "changes by way of an amendment to this PURCHASE ORDER  will be legally binding. It is important that SELLER  signs and returns",
+        "the PURCHASE ORDER copy within three (3) days of  receipt. No other form of acceptance will be accepted.  Failure to return the",
+        "acceptance does not diminish the responsibilities as set forth herein, but may result in a delay to any payments that may be due and",
+        "may be cause for  termination of this PURCHASE ORDER.",
+        "   Delivery Address : Distribution Center",
+        "   Ground Floor, Build No GA, and GA1",
+        "   Gala 1 to 14, Survey No78",
+        "   Sumeet Logistics and Industries, Kukse",
+        "   BHIWANDI, Maharashtra - 421302",
+        "   Tel :",
+        "   GSTN No : 27AABCR1718E1ZP",
+        "   EMAIL : Beauty_Dc_MA.BHIWANDI_S4ZD@zmail.ril.com",
+        "   TOTAL BASIC VALUE",
+        "   INR",
+        "100,590.45",
+        "   TOTAL IGST",
+        "   INR",
+        "17,152.45",
+        "   Total Order Value :",
+        "INR",
+        "117,742.90",
+        "   DELIVERY DATE :   23.09.2026"
+      ],
+      "lines_source": "from the PDF item table"
+    }
+  },
+  "RK": {
+    "columns": [
+      "PO",
+      "Vendor code",
+      "Order date",
+      "Status",
+      "Product name",
+      "ASIN",
+      "External ID type",
+      "External ID",
+      "Model number",
+      "Merchant SKU",
+      "Catalog number",
+      "Availability",
+      "Requested quantity",
+      "Accepted quantity",
+      "ASN quantity",
+      "Received quantity",
+      "Cancelled quantity",
+      "Remaining quantity",
+      "Ship-to location",
+      "Window start",
+      "Window end",
+      "Case size",
+      "Cost",
+      "Currency",
+      "Total requested cost",
+      "Total accepted cost",
+      "Total received cost",
+      "Total cancelled cost",
+      "Expected date",
+      "Freight terms",
+      "Consolidation ID",
+      "Cancellation deadline"
+    ],
+    "rows": [
+      {
+        "PO": "3FGG25NN",
+        "Vendor code": "4F6RR",
+        "Order date": "2026-06-10 00:00:00",
+        "Status": "Confirmed",
+        "Product name": "RENEE Matte Lock Lipstick - Soul, Moisturizi…",
+        "ASIN": "B0D6WBGMGC",
+        "External ID type": "EAN",
+        "External ID": "8904473100422",
+        "Model number": "8904473100422",
+        "Merchant SKU": "",
+        "Catalog number": "",
+        "Availability": "AC - Accepted: In stock",
+        "Requested quantity": "36",
+        "Accepted quantity": "36",
+        "ASN quantity": "0",
+        "Received quantity": "0",
+        "Cancelled quantity": "0",
+        "Remaining quantity": "36",
+        "Ship-to location": "ISK3",
+        "Window start": "2026-06-10 00:00:00",
+        "Window end": "2026-06-22 00:00:00",
+        "Case size": "1",
+        "Cost": "177.37",
+        "Currency": "INR",
+        "Total requested cost": "6385.32",
+        "Total accepted cost": "6385.32",
+        "Total received cost": "0",
+        "Total cancelled cost": "0",
+        "Expected date": "2026-06-10 00:00:00",
+        "Freight terms": "Prepaid",
+        "Consolidation ID": "",
+        "Cancellation deadline": "2026-06-26 00:00:00"
+      },
+      {
+        "PO": "3FGG25NN",
+        "Vendor code": "4F6RR",
+        "Order date": "2026-06-10 00:00:00",
+        "Status": "Confirmed",
+        "Product name": "RENEE Aqua Bliss Eau De Parfum, Premium Long…",
+        "ASIN": "B0D29LDRPM",
+        "External ID type": "EAN",
+        "External ID": "8906121649604",
+        "Model number": "8906121649604",
+        "Merchant SKU": "",
+        "Catalog number": "",
+        "Availability": "AC - Accepted: In stock",
+        "Requested quantity": "24",
+        "Accepted quantity": "24",
+        "ASN quantity": "0",
+        "Received quantity": "0",
+        "Cancelled quantity": "0",
+        "Remaining quantity": "24",
+        "Ship-to location": "ISK3",
+        "Window start": "2026-06-10 00:00:00",
+        "Window end": "2026-06-22 00:00:00",
+        "Case size": "1",
+        "Cost": "207.63",
+        "Currency": "INR",
+        "Total requested cost": "4983.12",
+        "Total accepted cost": "4983.12",
+        "Total received cost": "0",
+        "Total cancelled cost": "0",
+        "Expected date": "2026-06-10 00:00:00",
+        "Freight terms": "Prepaid",
+        "Consolidation ID": "",
+        "Cancellation deadline": "2026-06-26 00:00:00"
+      },
+      {
+        "PO": "3FGG25NN",
+        "Vendor code": "4F6RR",
+        "Order date": "2026-06-10 00:00:00",
+        "Status": "Confirmed",
+        "Product name": "RENEE Everyday Primer, Blurs Fine Lines, Wri…",
+        "ASIN": "B0DDQ2WQ82",
+        "External ID type": "EAN",
+        "External ID": "8904473100972",
+        "Model number": "8904473100972",
+        "Merchant SKU": "",
+        "Catalog number": "",
+        "Availability": "AC - Accepted: In stock",
+        "Requested quantity": "12",
+        "Accepted quantity": "12",
+        "ASN quantity": "0",
+        "Received quantity": "0",
+        "Cancelled quantity": "0",
+        "Remaining quantity": "12",
+        "Ship-to location": "ISK3",
+        "Window start": "2026-06-10 00:00:00",
+        "Window end": "2026-06-22 00:00:00",
+        "Case size": "1",
+        "Cost": "147.71",
+        "Currency": "INR",
+        "Total requested cost": "1772.52",
+        "Total accepted cost": "1772.52",
+        "Total received cost": "0",
+        "Total cancelled cost": "0",
+        "Expected date": "2026-06-10 00:00:00",
+        "Freight terms": "Prepaid",
+        "Consolidation ID": "",
+        "Cancellation deadline": "2026-06-26 00:00:00"
+      }
+    ],
+    "file_type": ".XLS",
+    "sample_file": "POItemExport_2026-06-10.xls"
+  },
+  "Zepto": {
+    "columns": [
+      "PO No.",
+      "PO Date",
+      "Status",
+      "Vendor Code",
+      "Vendor Name",
+      "PO Amount",
+      "Del Location",
+      "Line No",
+      "SKU",
+      "SKU Code",
+      "SKU Desc",
+      "Brand",
+      "EAN",
+      "HSN",
+      "CGST %",
+      "SGST %",
+      "IGST %",
+      "CESS %",
+      "MRP/RSP",
+      "Qty",
+      "Unit Base Cost",
+      "Landing Cost",
+      "Total Amount",
+      "Created By",
+      "ASN Quantity",
+      "GRN Quantity",
+      "PO Expiry Date"
+    ],
+    "rows": [
+      {
+        "PO No.": "P4537713",
+        "PO Date": "2026-06-03 06:09:00",
+        "Status": "PENDING_ACKNOWLEDGEMENT",
+        "Vendor Code": "KK-21119",
+        "Vendor Name": "RENEE COSMETICS PRIVATE LIMITED",
+        "PO Amount": "82889.491518",
+        "Del Location": "CHN-DRY-MH2-THIRUVALLUR",
+        "Line No": "",
+        "SKU": "A7B1B1D5-ABC1-40D9-81FE-4C17EE45BEF3",
+        "SKU Code": "186113",
+        "SKU Desc": "RENEE Nail Paint Remover Wipes - 1 pc",
+        "Brand": "Renee",
+        "EAN": "8906121649703",
+        "HSN": "33049920",
+        "CGST %": "0",
+        "SGST %": "0",
+        "IGST %": "18",
+        "CESS %": "0",
+        "MRP/RSP": "99",
+        "Qty": "24",
+        "Unit Base Cost": "58.73",
+        "Landing Cost": "69.3",
+        "Total Amount": "1663.2",
+        "Created By": "SYSTEM",
+        "ASN Quantity": "0",
+        "GRN Quantity": "0",
+        "PO Expiry Date": "2026-06-24 23:59:00"
+      },
+      {
+        "PO No.": "P4537713",
+        "PO Date": "2026-06-03 06:09:00",
+        "Status": "PENDING_ACKNOWLEDGEMENT",
+        "Vendor Code": "KK-21119",
+        "Vendor Name": "RENEE COSMETICS PRIVATE LIMITED",
+        "PO Amount": "82889.491518",
+        "Del Location": "CHN-DRY-MH2-THIRUVALLUR",
+        "Line No": "",
+        "SKU": "8BB30673-2A60-40AD-90E5-0A363000A99D",
+        "SKU Code": "136779",
+        "SKU Desc": "Renee Madness Ph Stick Lipstick | Long-Lasti…",
+        "Brand": "Renee",
+        "EAN": "8906121641769",
+        "HSN": "33041000",
+        "CGST %": "0",
+        "SGST %": "0",
+        "IGST %": "18",
+        "CESS %": "0",
+        "MRP/RSP": "499",
+        "Qty": "48",
+        "Unit Base Cost": "296.02",
+        "Landing Cost": "349.3",
+        "Total Amount": "16766.4",
+        "Created By": "SYSTEM",
+        "ASN Quantity": "0",
+        "GRN Quantity": "0",
+        "PO Expiry Date": "2026-06-24 23:59:00"
+      },
+      {
+        "PO No.": "P4537713",
+        "PO Date": "2026-06-03 06:09:00",
+        "Status": "PENDING_ACKNOWLEDGEMENT",
+        "Vendor Code": "KK-21119",
+        "Vendor Name": "RENEE COSMETICS PRIVATE LIMITED",
+        "PO Amount": "82889.491518",
+        "Del Location": "CHN-DRY-MH2-THIRUVALLUR",
+        "Line No": "",
+        "SKU": "9076BCFA-B93D-4AB1-92F6-8D54E953CDAA",
+        "SKU Code": "155763",
+        "SKU Desc": "Renee Midnight Kajal Kohl Pencil - 1 pc (1.5…",
+        "Brand": "Renee",
+        "EAN": "8906121646979",
+        "HSN": "33042000",
+        "CGST %": "0",
+        "SGST %": "0",
+        "IGST %": "18",
+        "CESS %": "0",
+        "MRP/RSP": "450",
+        "Qty": "252",
+        "Unit Base Cost": "266.95",
+        "Landing Cost": "315",
+        "Total Amount": "79380",
+        "Created By": "SYSTEM",
+        "ASN Quantity": "0",
+        "GRN Quantity": "0",
+        "PO Expiry Date": "2026-06-24 23:59:00"
+      }
+    ],
+    "file_type": ".XLSX",
+    "sample_file": "zepto.xlsx"
+  },
+  "Dmart": {
+    "name": "Dmart",
+    "file_type": ".XLSX (Avenue/Innovative Retail Concepts PO)",
+    "sample_file": "<PO#>.xlsx",
+    "columns": [
+      "S.No",
+      "HSN Code",
+      "SKU Code",
+      "Description",
+      "EAN/UPC Code",
+      "Case Quantity",
+      "Quantity",
+      "Basic Cost",
+      "SGST%",
+      "SGST",
+      "CGST%",
+      "CGST",
+      "IGST%",
+      "IGST",
+      "GST%",
+      "GST Amount",
+      "Cess%",
+      "Cess Value",
+      "State Cess%",
+      "State Cess",
+      "Additional Cess",
+      "Landing Cost",
+      "MRP",
+      "Total Value"
+    ],
+    "rows": [
+      {
+        "S.No": "1",
+        "HSN Code": "33049990",
+        "SKU Code": "40369873",
+        "Description": "Renee Pore Minimising Sunscreen SPF 70 - 2% Niacinamide, 2% Peptide Complex 50 ml",
+        "EAN/UPC Code": "8906121649284",
+        "Case Quantity": "12",
+        "Quantity": "36",
+        "Basic Cost": "192.8",
+        "SGST%": "0",
+        "SGST": "0",
+        "CGST%": "0",
+        "CGST": "0",
+        "IGST%": "18",
+        "IGST": "1249.2",
+        "GST%": "18",
+        "GST Amount": "1249.2",
+        "Cess%": "0",
+        "Cess Value": "0",
+        "State Cess%": "0",
+        "State Cess": "0",
+        "Additional Cess": "0",
+        "Landing Cost": "227.5",
+        "MRP": "325",
+        "Total Value": "8190"
+      },
+      {
+        "S.No": "2",
+        "HSN Code": "33049990",
+        "SKU Code": "40369874",
+        "Description": "Renee Everyday Face Bright Gentle Facewash 100 ml",
+        "EAN/UPC Code": "8904473104314",
+        "Case Quantity": "12",
+        "Quantity": "36",
+        "Basic Cost": "106.19",
+        "SGST%": "0",
+        "SGST": "0",
+        "CGST%": "0",
+        "CGST": "0",
+        "IGST%": "18",
+        "IGST": "687.96",
+        "GST%": "18",
+        "GST Amount": "687.96",
+        "Cess%": "0",
+        "Cess Value": "0",
+        "State Cess%": "0",
+        "State Cess": "0",
+        "Additional Cess": "0",
+        "Landing Cost": "125.3",
+        "MRP": "179",
+        "Total Value": "4510.8"
+      },
+      {
+        "S.No": "3",
+        "HSN Code": "33042000",
+        "SKU Code": "40369875",
+        "Description": "Renee Everyday 2X Instant Volumizing Mascara 15 ml",
+        "EAN/UPC Code": "8904473104291",
+        "Case Quantity": "12",
+        "Quantity": "36",
+        "Basic Cost": "147.71",
+        "SGST%": "0",
+        "SGST": "0",
+        "CGST%": "0",
+        "CGST": "0",
+        "IGST%": "18",
+        "IGST": "957.24",
+        "GST%": "18",
+        "GST Amount": "957.24",
+        "Cess%": "0",
+        "Cess Value": "0",
+        "State Cess%": "0",
+        "State Cess": "0",
+        "Additional Cess": "0",
+        "Landing Cost": "174.3",
+        "MRP": "249",
+        "Total Value": "6274.8"
+      }
+    ],
+    "header_fields": [
+      {
+        "label": "PO Number",
+        "value": "IRA40888772"
+      },
+      {
+        "label": "PO Date",
+        "value": "13/Jul/2026"
+      },
+      {
+        "label": "PO Expiry date",
+        "value": "28/Jul/2026"
+      },
+      {
+        "label": "Warehouse Address",
+        "value": "Hyderabad-FV-FMCG DC"
+      },
+      {
+        "label": "Delivery Address",
+        "value": "Hyderabad-FV-FMCG DC, Survey No 60/1, Gundlapochampally, Medchal, Telangana - 500043"
+      },
+      {
+        "label": "DC Address",
+        "value": "Innovative Retail Concepts Pvt Ltd, Behind Inbisco, Medchal, Malkajgiri Dist, Telangana - 500043"
+      },
+      {
+        "label": "Buyer GSTIN",
+        "value": "36AACCI2053A1Z8"
+      },
+      {
+        "label": "Supplier",
+        "value": "1712697 - RENEE Cosmetics Private Limited-Hyderabad"
+      },
+      {
+        "label": "Supplier GSTIN",
+        "value": "24AAJCR8656B1ZA"
+      }
+    ],
+    "header_title": "DMart PO (.XLSX) — Warehouse/DC drives the ship-to (avoid the Bhiwandi-default trap)",
+    "header_note": "DMart now sends an .XLSX per PO (Avenue/Innovative Retail Concepts). Header preamble carries the Warehouse/Delivery DC + GSTINs; line items (EAN/UPC, Quantity, Basic Cost, MRP, GST) sit below. Ship-to must follow the DC in the header, not a default.",
+    "doc_layout": false,
+    "raw_replica": {
+      "cols": 24,
+      "rows": [
+        [
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "Hyderabad DC Address",
+            "cs": 15,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "Innovative Retail Concepts Private Limited ,   SURVEY NO  60 1 , GUNDLAPOCHAMPALLY",
+            "cs": 15,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "BEHIND INBISCO,MEDCHAL, MALKAJGIRI DIST.",
+            "cs": 15,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "TELANGANA STATE -500043",
+            "cs": 15,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "Warehouse Address",
+            "cs": 5,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Delivery Address",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "Hyderabad-FV-FMCG DC",
+            "cs": 5,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Hyderabad-FV-FMCG DC",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "Innovative Retail Concepts Private Limited ,   SURVEY NO 60 1 , GUNDLAPOCHAMPALLY",
+            "cs": 5,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Innovative Retail Concepts Private Limited ,   SURVEY NO 60 1 , GUNDLAPOCHAMPALLY",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "BEHIND INBISCO,MEDCHAL, MALKAJGIRI DIST.",
+            "cs": 5,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "BEHIND INBISCO,MEDCHAL, MALKAJGIRI DIST.",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "TELANGANA STATE -500043",
+            "cs": 5,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "TELANGANA STATE -500043",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "GSTIN NO: 36AACCI2053A1Z8",
+            "cs": 5,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "GSTIN NO:GST: 36AACCI2053A1Z8",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Supplier",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "1712697 - RENEE Cosmetics Private Limited-Hyderabad",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "OFFICE NO. 4, OM COMPLEX, C.G. ROAD, SWASTIK SOCIETY, AHMEDABAD, Ahmedabad, Gujarat, 380009",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "GSTIN No: 24AAJCR8656B1ZA",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "PO Number:IRA40888772",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "PO Date:13/Jul/2026",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "PO Expiry date:28/Jul/2026",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "S.No",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "HSN Code",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "SKU Code",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Description",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "EAN/UPC Code",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Case Quantity",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Quantity",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Basic Cost",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "SGST%",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "SGST",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "CGST%",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "CGST",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "IGST%",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "IGST",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "GST%",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "GST Amount",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Cess%",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Cess Value",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "State Cess%",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "State Cess",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Additional Cess",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Landing Cost",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "MRP",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Total Value",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "1",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "33049990",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "40369873",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Renee Pore Minimising Sunscreen SPF 70 - 2% Niacinamide, 2% Peptide Complex 50 ml",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "8906121649284",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "12",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "36",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "192.8",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "18",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "1249.2",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "18",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "1249.2",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "227.5",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "325",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "8190",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "2",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "33049990",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "40369874",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Renee Everyday Face Bright Gentle Facewash 100 ml",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "8904473104314",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "12",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "36",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "106.19",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "18",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "687.96",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "18",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "687.96",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "125.3",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "179",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "4510.8",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "3",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "33042000",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "40369875",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Renee Everyday 2X Instant Volumizing Mascara 15 ml",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "8904473104291",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "12",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "36",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "147.71",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "18",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "957.24",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "18",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "957.24",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "174.3",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "249",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "6274.8",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "4",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "33041000",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "40369876",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Renee Everyday Lip Balm 4.5 g 02 Rose Petal",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "8904473101603",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "12",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "36",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "74.15",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "18",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "480.6",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "18",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "480.6",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "87.5",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "125",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "3150",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "5",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "33041000",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "40369877",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Renee Everyday Lip Balm 4.5 g 03 Plain Jane",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "8904473101610",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "12",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "36",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "74.15",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "18",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "480.6",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "18",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "480.6",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "87.5",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "125",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "3150",
+            "cs": 1,
+            "rs": 1
+          }
+        ]
+      ]
+    }
+  },
+  "Bigbasket": {
+    "file_type": ".XLSX",
+    "sample_file": "40365661.xlsx (Big Basket)",
+    "header_title": "BigBasket PO (.XLSX) — PO header preamble sits above the line-item table",
+    "header_note": "Single .XLSX per PO; the delivery/warehouse address + GSTINs are in the top rows, line items (EAN, Qty, Basic Cost, GST) below.",
+    "header_fields": [
+      {
+        "label": "PO Number",
+        "value": "IRA40365661",
+        "used": true,
+        "role_class": "po"
+      },
+      {
+        "label": "PO Date",
+        "value": "03/Jul/2026",
+        "used": true,
+        "role_class": "date"
+      },
+      {
+        "label": "PO Expiry date",
+        "value": "02/Aug/2026",
+        "used": true,
+        "role_class": "exp"
+      },
+      {
+        "label": "Delivery Address",
+        "value": "Hyderabad-FV-FMCG DC",
+        "used": true,
+        "role_class": "loc"
+      },
+      {
+        "label": "Warehouse Address",
+        "value": "Hyderabad-FV-FMCG DC"
+      },
+      {
+        "label": "DC Address",
+        "value": "Hyderabad DC Address — Innovative Retail Concepts Private Ltd, BEHIND INBISCO, MEDCHAL, MALKAJGIRI, TELANGANA STATE -500043"
+      },
+      {
+        "label": "Buyer GSTIN",
+        "value": "36AACCI2053A1Z8"
+      },
+      {
+        "label": "Supplier",
+        "value": "1712697 - RENEE Cosmetics Private Limited"
+      },
+      {
+        "label": "Supplier GSTIN",
+        "value": "24AAJCR8656B1ZA"
+      }
+    ],
+    "columns": [
+      "S.No",
+      "HSN Code",
+      "SKU Code",
+      "Description",
+      "EAN/UPC Code",
+      "Case Quantity",
+      "Quantity",
+      "Basic Cost",
+      "SGST%",
+      "SGST",
+      "CGST%",
+      "CGST",
+      "IGST%",
+      "IGST",
+      "GST%",
+      "GST Amount",
+      "Cess%",
+      "Cess Value",
+      "State Cess%",
+      "State Cess",
+      "Additional Cess",
+      "Landing Cost",
+      "MRP",
+      "Total Value"
+    ],
+    "rows": [
+      {
+        "S.No": "1",
+        "HSN Code": "33049910",
+        "SKU Code": "40359692",
+        "Description": "Renee Pink Therapy Collagen Night Wrapping Mask 50 ml",
+        "EAN/UPC Code": "8904473104024",
+        "Case Quantity": "98",
+        "Quantity": "98",
+        "Basic Cost": "355.34",
+        "SGST%": "0",
+        "SGST": "0",
+        "CGST%": "0",
+        "CGST": "0",
+        "IGST%": "18",
+        "IGST": "6268.08",
+        "GST%": "18",
+        "GST Amount": "6268.08",
+        "Cess%": "0",
+        "Cess Value": "0",
+        "State Cess%": "0",
+        "State Cess": "0",
+        "Additional Cess": "0",
+        "Landing Cost": "419.3",
+        "MRP": "599",
+        "Total Value": "41091.4"
+      },
+      {
+        "S.No": "",
+        "HSN Code": "",
+        "SKU Code": "",
+        "Description": "Total",
+        "EAN/UPC Code": "(count) 1",
+        "Case Quantity": "",
+        "Quantity": "",
+        "Basic Cost": "",
+        "SGST%": "",
+        "SGST": "",
+        "CGST%": "",
+        "CGST": "",
+        "IGST%": "",
+        "IGST": "",
+        "GST%": "",
+        "GST Amount": "",
+        "Cess%": "",
+        "Cess Value": "",
+        "State Cess%": "",
+        "State Cess": "",
+        "Additional Cess": "",
+        "Landing Cost": "",
+        "MRP": "",
+        "Total Value": ""
+      }
+    ],
+    "doc_layout": false,
+    "raw_replica": {
+      "cols": 24,
+      "rows": [
+        [
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "BLR-NLM-Address",
+            "cs": 15,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "Innovative Retail Concepts Pvt Ltd , SyNo12 1 2 4 SyNo14 1 Adakimaranhalli 1 1 1",
+            "cs": 15,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "Dasanpura Hobli , Makli Post North Taluk ,",
+            "cs": 15,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "Bengaluru - 562162",
+            "cs": 15,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "Warehouse Address",
+            "cs": 5,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Delivery Address",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "Bangalore-FMCG-DC",
+            "cs": 5,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Bangalore-FMCG-DC",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "Innovative Retail Concepts Pvt Ltd , SyNo12 1 2 4 SyNo14 1 Adakimaranhalli 1 1 1",
+            "cs": 5,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Innovative Retail Concepts Pvt Ltd , SyNo12 1 2 4 SyNo14 1 Adakimaranhalli 1 1 1",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "Dasanpura Hobli , Makli Post North Taluk",
+            "cs": 5,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Dasanpura Hobli , Makli Post North Taluk",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "Bengaluru - 562162",
+            "cs": 5,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Bengaluru - 562162",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "GSTIN NO: 29AACCI2053A1Z3",
+            "cs": 5,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "GSTIN NO:GST: 29AACCI2053A1Z3",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Supplier",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "67931 - RENEE Cosmetics Private Limited (South-RDC)",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "GSTIN No: 24AAJCR8656B1ZA",
+            "cs": 8,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "PO Number:IRA41263349",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "PO Date:20/Jul/2026",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "PO Expiry date:19/Aug/2026",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "S.No",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "HSN Code",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "SKU Code",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Description",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "EAN/UPC Code",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Case Quantity",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Quantity",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Basic Cost",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "SGST%",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "SGST",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "CGST%",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "CGST",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "IGST%",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "IGST",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "GST%",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "GST Amount",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Cess%",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Cess Value",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "State Cess%",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "State Cess",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Additional Cess",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Landing Cost",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "MRP",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Total Value",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "1",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "33041000",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "40256033",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Renee Madness PH Stick 3 g",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "8906121641769",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "3",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "33",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "296.02",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "18",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "1758.57",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "18",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "1758.57",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "349.31",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "499",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "11527.23",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "2",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "33041000",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "40256000",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Renee See Me Shine Lip Gloss - With Jojoba Oil, Shea Butter & Vitamin E 2.5 ml Its Bloody Red",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "8906121640861",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "3",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "12",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "207.63",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "18",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "448.44",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "18",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "448.44",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "245",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "350",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "2940",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "3",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "33042000",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "40359693",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Renee Midnight Kohl Pencil 1 pc Black",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "8906121646979",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "3",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "3",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "266.95",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "18",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "144.15",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "18",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "144.15",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "315",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "450",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "945",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "4",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "33049910",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "40359694",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Renee Everyday Face Bright Serum In Cream 50 ml",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "8904473104017",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "10",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "30",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "135.85",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "18",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "733.5",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "18",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "733.5",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "160.3",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "229",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "4809",
+            "cs": 1,
+            "rs": 1
+          }
+        ],
+        [
+          {
+            "v": "5",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "33030050",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "40282134",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "Renee Eau De Parfum Bloom 1 15 ml",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "8906121642582",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "3",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "9",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "207.63",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "18",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "336.33",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "18",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "336.33",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "0",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "245",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "350",
+            "cs": 1,
+            "rs": 1
+          },
+          {
+            "v": "2205",
+            "cs": 1,
+            "rs": 1
+          }
+        ]
+      ]
+    }
+  },
+  "Swiggy": {
+    "columns": [
+      "PoNumber",
+      "Entity",
+      "FacilityId",
+      "FacilityName",
+      "City",
+      "PoCreatedAt",
+      "PoModifiedAt",
+      "Status",
+      "SupplierCode",
+      "VendorName",
+      "PoAmount",
+      "SkuCode",
+      "SkuDescription",
+      "CategoryId",
+      "OrderedQty",
+      "ReceivedQty",
+      "BalancedQty",
+      "Tax",
+      "PoLineValueWithoutTax",
+      "PoLineValueWithTax",
+      "Mrp",
+      "UnitBasedCost",
+      "ExpectedDeliveryDate",
+      "PoExpiryDate",
+      "OtbReferenceNumber",
+      "InternalExternalPo",
+      "PoAgeing",
+      "BrandName",
+      "ReferencePoNumber"
+    ],
+    "rows": [
+      {
+        "PoNumber": "JCNPO273127",
+        "Entity": "JUPITER KART PRIVATE LIMITED",
+        "FacilityId": "JCN",
+        "FacilityName": "CHN ECOM",
+        "City": "CHENNAI",
+        "PoCreatedAt": "02-07-2026 22:56",
+        "PoModifiedAt": "02-07-2026 22:56",
+        "Status": "CONFIRMED",
+        "SupplierCode": "88924929",
+        "VendorName": "Renee Cosmetics Private Limited",
+        "PoAmount": "86011.2",
+        "SkuCode": "105255",
+        "SkuDescription": "RENEE Kajal Pen with Sharpener - Hard Black Pack Of 2 0.7 g",
+        "CategoryId": "Makeup, Eye Makeup",
+        "OrderedQty": "18",
+        "ReceivedQty": "0",
+        "BalancedQty": "18",
+        "Tax": "656.79",
+        "PoLineValueWithoutTax": "3648.81",
+        "PoLineValueWithTax": "4305.6",
+        "Mrp": "299",
+        "UnitBasedCost": "202.71",
+        "ExpectedDeliveryDate": "19-07-2026",
+        "PoExpiryDate": "22-07-2026",
+        "OtbReferenceNumber": "2026_07_02_CHENNAI_CHN ECOM",
+        "InternalExternalPo": "external",
+        "PoAgeing": "0",
+        "BrandName": "RENEE",
+        "ReferencePoNumber": ""
+      },
+      {
+        "PoNumber": "JCNPO273127",
+        "Entity": "JUPITER KART PRIVATE LIMITED",
+        "FacilityId": "JCN",
+        "FacilityName": "CHN ECOM",
+        "City": "CHENNAI",
+        "PoCreatedAt": "02-07-2026 22:56",
+        "PoModifiedAt": "02-07-2026 22:56",
+        "Status": "CONFIRMED",
+        "SupplierCode": "88924929",
+        "VendorName": "Renee Cosmetics Private Limited",
+        "PoAmount": "86011.2",
+        "SkuCode": "462504",
+        "SkuDescription": "RENEE Cover-Up Hair Powder Brown – Covers Grey Roots & Bald Spots 4.0 g",
+        "CategoryId": "Beauty and Grooming, Hair Colour",
+        "OrderedQty": "16",
+        "ReceivedQty": "0",
+        "BalancedQty": "16",
+        "Tax": "1464.41",
+        "PoLineValueWithoutTax": "8135.59",
+        "PoLineValueWithTax": "9600",
+        "Mrp": "750",
+        "UnitBasedCost": "508.47",
+        "ExpectedDeliveryDate": "19-07-2026",
+        "PoExpiryDate": "22-07-2026",
+        "OtbReferenceNumber": "2026_07_02_CHENNAI_CHN ECOM",
+        "InternalExternalPo": "external",
+        "PoAgeing": "0",
+        "BrandName": "RENEE",
+        "ReferencePoNumber": ""
+      },
+      {
+        "PoNumber": "JCNPO273127",
+        "Entity": "JUPITER KART PRIVATE LIMITED",
+        "FacilityId": "JCN",
+        "FacilityName": "CHN ECOM",
+        "City": "CHENNAI",
+        "PoCreatedAt": "02-07-2026 22:56",
+        "PoModifiedAt": "02-07-2026 22:56",
+        "Status": "CONFIRMED",
+        "SupplierCode": "88924929",
+        "VendorName": "Renee Cosmetics Private Limited",
+        "PoAmount": "86011.2",
+        "SkuCode": "548751",
+        "SkuDescription": "RENEE Cover-Up Hair Powder Black – Covers Grey Roots & Bald Spots 4.0 g",
+        "CategoryId": "Beauty and Grooming, Hair Colour",
+        "OrderedQty": "40",
+        "ReceivedQty": "0",
+        "BalancedQty": "40",
+        "Tax": "3661.02",
+        "PoLineValueWithoutTax": "20338.98",
+        "PoLineValueWithTax": "24000",
+        "Mrp": "750",
+        "UnitBasedCost": "508.47",
+        "ExpectedDeliveryDate": "19-07-2026",
+        "PoExpiryDate": "22-07-2026",
+        "OtbReferenceNumber": "2026_07_02_CHENNAI_CHN ECOM",
+        "InternalExternalPo": "external",
+        "PoAgeing": "0",
+        "BrandName": "RENEE",
+        "ReferencePoNumber": ""
+      }
+    ],
+    "file_type": ".CSV",
+    "sample_file": "PO_1783057482871.csv"
+  },
+  "Nykaa": {
+    "name": "Nykaa",
+    "file_type": ".CSV (all-PO export)",
+    "sample_file": "Purchase Orders_allPo_*.csv",
+    "columns": [
+      "PO Number",
+      "Vendor Code",
+      "Vendor Name",
+      "PO Release Date",
+      "Expected Delivery Date",
+      "Expiry Date",
+      "PO Amount",
+      "PO Line No",
+      "SKU Code",
+      "SKU Name",
+      "Vendor SKU Code",
+      "Unit Cost",
+      "MRP",
+      "PO Qty",
+      "Received Qty",
+      "Tax Amount",
+      "HSN Code",
+      "EAN Code",
+      "Delivery Location"
+    ],
+    "rows": [
+      {
+        "PO Number": "NRT360",
+        "Vendor Code": "RENEE",
+        "Vendor Name": "RENEE-Renee Cosmetics Pvt Ltd (Gujar",
+        "PO Release Date": "23-07-2026",
+        "Expected Delivery Date": "25-07-2026",
+        "Expiry Date": "18-09-2026",
+        "PO Amount": "264073.33",
+        "PO Line No": "1",
+        "SKU Code": "RENEE00000860",
+        "SKU Name": "Renee Cosmetics Nail Paint Remover Wipes (50N Wipes)",
+        "Vendor SKU Code": "",
+        "Unit Cost": "55.37",
+        "MRP": "99.00",
+        "PO Qty": "144.00",
+        "Received Qty": "",
+        "Tax Amount": "1435.19",
+        "HSN Code": "33049920",
+        "EAN Code": "8906121649703",
+        "Delivery Location": "Nykaa Rapid B2B Tauru"
+      },
+      {
+        "PO Number": "NRT360",
+        "Vendor Code": "RENEE",
+        "Vendor Name": "RENEE-Renee Cosmetics Pvt Ltd (Gujar",
+        "PO Release Date": "23-07-2026",
+        "Expected Delivery Date": "25-07-2026",
+        "Expiry Date": "18-09-2026",
+        "PO Amount": "264073.33",
+        "PO Line No": "2",
+        "SKU Code": "RENEE00001311",
+        "SKU Name": "Renee Cosmetics Yours Truly Strobe Cream Gold(30g)",
+        "Vendor SKU Code": "",
+        "Unit Cost": "223.16",
+        "MRP": "399.00",
+        "PO Qty": "34.00",
+        "Received Qty": "",
+        "Tax Amount": "1365.74",
+        "HSN Code": "33049990",
+        "EAN Code": "8904473106028",
+        "Delivery Location": "Nykaa Rapid B2B Tauru"
+      },
+      {
+        "PO Number": "NRT360",
+        "Vendor Code": "RENEE",
+        "Vendor Name": "RENEE-Renee Cosmetics Pvt Ltd (Gujar",
+        "PO Release Date": "23-07-2026",
+        "Expected Delivery Date": "25-07-2026",
+        "Expiry Date": "18-09-2026",
+        "PO Amount": "264073.33",
+        "PO Line No": "3",
+        "SKU Code": "RENEE00000897",
+        "SKU Name": "Renee Cosmetics Hot Lips Pink Lip Gloss (4.5ml)",
+        "Vendor SKU Code": "",
+        "Unit Cost": "139.82",
+        "MRP": "250.00",
+        "PO Qty": "48.00",
+        "Received Qty": "",
+        "Tax Amount": "1208.09",
+        "HSN Code": "33041000",
+        "EAN Code": "8906121649727",
+        "Delivery Location": "Nykaa Rapid B2B Tauru"
+      }
+    ],
+    "header_fields": [],
+    "header_title": "",
+    "header_note": "Nykaa exports every open PO in one CSV; the engine reads Delivery Location -> ship-to, EAN/SKU, PO Qty, Unit Cost, MRP, HSN."
+  },
+  "Purplle": {
+    "name": "Purplle",
+    "file_type": ".XLS (tab-separated)",
+    "sample_file": "EXECL_ATTACHED.XLS",
+    "columns": [
+      "PO Document Number",
+      "Item No",
+      "EAN Number",
+      "Sku",
+      "Material long text",
+      "MRP",
+      "Price",
+      "Qty",
+      "Plant",
+      "Address",
+      "Storage location",
+      "Purchasing Group",
+      "PO Date",
+      "Expiry Date"
+    ],
+    "rows": [
+      {
+        "PO Document Number": "4300111568",
+        "Item No": "00010",
+        "EAN Number": "000008906121649727'",
+        "Sku": "PPLB8906121649727",
+        "Material long text": "RENEE Hot Lips Pink Lip Gloss, Helps Archive Fuller & Supple Lips with High-Glossy Shine, Hydrates & Softens, Lightweight & Non Stic",
+        "MRP": "250.00",
+        "Price": "148.31",
+        "Qty": "2.000",
+        "Plant": "W501",
+        "Address": "Gala No. 7/8, Building No. C4,,421311,Thane",
+        "Storage location": "TGFC",
+        "Purchasing Group": "TPB",
+        "PO Date": "08/07/2026",
+        "Expiry Date": "07/08/2026"
+      },
+      {
+        "PO Document Number": "4300111568",
+        "Item No": "00020",
+        "EAN Number": "000008904473100804'",
+        "Sku": "PPLB8904473100804",
+        "Material long text": "RENEE Very Matte Lipstick Plum, Intense Color Pay Off, Full Coverage Long Lasting Weightless Velvety Formula, 1.6 gm",
+        "MRP": "199.00",
+        "Price": "118.05",
+        "Qty": "2.000",
+        "Plant": "W501",
+        "Address": "Gala No. 7/8, Building No. C4,,421311,Thane",
+        "Storage location": "TGFC",
+        "Purchasing Group": "TPB",
+        "PO Date": "08/07/2026",
+        "Expiry Date": "07/08/2026"
+      },
+      {
+        "PO Document Number": "4300111568",
+        "Item No": "00030",
+        "EAN Number": "000008906121646023'",
+        "Sku": "PPLB8906121646023",
+        "Material long text": "Renee Very Matte Pack of 4 Matte Lipsticks , Intense Color Pay Off, Full Coverage Long Lasting Weightless Velvety Formula, 1.6 gm ea",
+        "MRP": "599.00",
+        "Price": "355.34",
+        "Qty": "3.000",
+        "Plant": "W501",
+        "Address": "Gala No. 7/8, Building No. C4,,421311,Thane",
+        "Storage location": "TGFC",
+        "Purchasing Group": "TPB",
+        "PO Date": "08/07/2026",
+        "Expiry Date": "07/08/2026"
+      }
+    ],
+    "header_fields": [],
+    "header_title": "",
+    "header_note": "Purplle sends a tab-separated .XLS; engine reads Delivery/location -> ship-to, EAN, Qty, Cost, MRP."
+  }
 }

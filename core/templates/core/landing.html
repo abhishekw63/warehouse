@@ -1,159 +1,144 @@
 {% load static %}
-<!DOCTYPE HTML>
-<!--
-    Landing built on "Paradigm Shift" by HTML5 UP (html5up.net | @ajlkn),
-    free under the CCA 3.0 licence. Re-themed for RENÉE Order Management and
-    wired to Django auth. Attribution retained in the footer per the licence.
--->
-<html lang="en">
+<!doctype html>
+<html lang="en" data-theme="light">
 <head>
-    <title>RENÉE · Order Management</title>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
-    <link rel="stylesheet" href="{% static 'paradigm/assets/css/main.css' %}" />
-    <style>
-        /* light RENÉE re-theme on top of the template */
-        :root{ }
-        #wrapper > .intro:before{ background:linear-gradient(120deg,#1A237E 0%, #12163a 100%) !important; }
-        .rn-eyebrow{ letter-spacing:5px; font-size:13px; opacity:.8; text-transform:uppercase; }
-        .rn-stats{ display:flex; flex-wrap:wrap; gap:14px; }
-        .rn-stat{ flex:1 1 150px; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.14);
-            border-radius:10px; padding:16px 18px; }
-        .rn-stat b{ display:block; font-size:30px; line-height:1; }
-        .rn-stat span{ display:block; margin-top:8px; font-size:11px; letter-spacing:1px; text-transform:uppercase; opacity:.7; }
-        .rn-err{ background:rgba(183,38,30,.15); border:1px solid rgba(239,154,154,.5); color:#ffd5d2;
-            border-radius:8px; padding:10px 12px; margin-bottom:14px; font-size:14px; }
-        .rn-toasts{ position:fixed; top:18px; right:18px; z-index:9999; display:flex; flex-direction:column; gap:8px; }
-        .rn-toast{ font-family:'DM Sans',system-ui,sans-serif; font-size:14px; color:#fff; padding:11px 16px;
-            border-radius:8px; box-shadow:0 10px 24px -8px rgba(0,0,0,.4); animation:rn-in .25s ease; min-width:200px; }
-        .rn-toast.success{ background:#1b7a3d; } .rn-toast.error{ background:#b3261e; }
-        .rn-toast.info, .rn-toast{ background:#1A237E; }
-        @keyframes rn-in{ from{opacity:0; transform:translateY(-8px);} to{opacity:1; transform:none;} }
-    </style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sign in · RENÉE Order Management</title>
+  <link rel="icon" type="image/svg+xml" href="{% static 'core/favicon.svg' %}" />
+  <link rel="alternate icon" href="{% static 'core/favicon.ico' %}" />
+  <style>
+    /* Palette mirrors the app (online_b2b/b2b.css :root) so login → app feels like one product. */
+    :root{
+      --bg:#f6f7f9; --surface:#ffffff;
+      --border:#e9ebf0; --text:#1d2433; --text-2:#5b6478; --muted:#9aa1b2;
+      --accent:#4f46e5; --accent-2:#6366f1;
+      --radius-sm:10px; --err:#b3261e;
+    }
+    @media (prefers-color-scheme: dark){
+      :root:not([data-theme="light"]){
+        --bg:#0f1117; --surface:#171a22; --border:#272b36;
+        --text:#e7e9ee; --text-2:#a6adbb; --muted:#7b8291;
+        --accent:#6366f1; --accent-2:#818cf8;
+      }
+    }
+    :root[data-theme="dark"]{
+      --bg:#0f1117; --surface:#171a22; --border:#272b36;
+      --text:#e7e9ee; --text-2:#a6adbb; --muted:#7b8291;
+      --accent:#6366f1; --accent-2:#818cf8;
+    }
+    *{box-sizing:border-box;}
+    html,body{margin:0;height:100%;}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+      color:var(--text);background:var(--bg);-webkit-font-smoothing:antialiased;}
+    .rn-wrap{min-height:100vh;display:grid;grid-template-columns:1.05fr .95fr;}
+
+    /* Brand panel (left) — deliberately light on content. */
+    .rn-brand{position:relative;overflow:hidden;display:flex;flex-direction:column;justify-content:space-between;
+      padding:48px 56px;color:#fff;
+      background:linear-gradient(135deg,var(--accent) 0%,var(--accent-2) 55%,#4338ca 100%);}
+    .rn-brand::after{content:"";position:absolute;inset:0;opacity:.35;pointer-events:none;
+      background:radial-gradient(600px 300px at 82% 12%,rgba(255,255,255,.22),transparent 60%),
+                 radial-gradient(520px 320px at 8% 96%,rgba(255,255,255,.14),transparent 60%);}
+    .rn-brand > *{position:relative;z-index:1;}
+    .rn-logo{font-size:26px;font-weight:800;letter-spacing:.14em;}
+    .rn-logo span{opacity:.75;font-weight:600;letter-spacing:.02em;font-size:13px;display:block;margin-top:4px;}
+    .rn-lead h1{font-size:33px;line-height:1.15;font-weight:800;margin:0 0 12px;text-wrap:balance;letter-spacing:-.02em;}
+    .rn-lead p{font-size:15px;line-height:1.55;margin:0;color:rgba(255,255,255,.86);max-width:42ch;}
+    .rn-foot{font-size:12px;color:rgba(255,255,255,.7);}
+
+    /* Sign-in panel (right) */
+    .rn-panel{display:flex;align-items:center;justify-content:center;padding:40px 28px;}
+    .rn-card{width:100%;max-width:392px;}
+    .rn-card h2{font-size:23px;font-weight:800;margin:0 0 6px;letter-spacing:-.01em;}
+    .rn-card .sub{font-size:13.5px;color:var(--text-2);margin:0 0 26px;}
+    .rn-field{margin-bottom:15px;}
+    .rn-field label{display:block;font-size:12px;font-weight:700;color:var(--text-2);margin:0 0 6px;}
+    .rn-field input{width:100%;height:46px;padding:0 14px;font-size:14.5px;color:var(--text);
+      background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-sm);outline:none;
+      transition:border-color .15s, box-shadow .15s;}
+    .rn-field input::placeholder{color:var(--muted);}
+    .rn-field input:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent);}
+    .rn-btn{width:100%;height:47px;border:none;border-radius:var(--radius-sm);cursor:pointer;
+      background:var(--accent);color:#fff;font-size:14.5px;font-weight:700;font-family:inherit;
+      transition:filter .15s, transform .05s;margin-top:6px;}
+    .rn-btn:hover{filter:brightness(1.06);} .rn-btn:active{transform:translateY(1px);}
+    .rn-err{background:color-mix(in srgb,var(--err) 10%,var(--surface));border:1px solid color-mix(in srgb,var(--err) 32%,var(--border));
+      color:var(--err);font-size:13px;font-weight:600;padding:10px 13px;border-radius:var(--radius-sm);margin:0 0 18px;}
+    .rn-alt{margin-top:20px;font-size:13px;color:var(--text-2);text-align:center;}
+    .rn-alt a{color:var(--accent);font-weight:700;text-decoration:none;} .rn-alt a:hover{text-decoration:underline;}
+    .rn-signed{display:flex;flex-direction:column;gap:14px;}
+    .rn-signed .who{font-size:14px;color:var(--text-2);} .rn-signed .who b{color:var(--text);}
+    .rn-linkbtn{display:flex;align-items:center;justify-content:center;height:47px;border-radius:var(--radius-sm);
+      background:var(--accent);color:#fff;font-weight:700;font-size:14.5px;text-decoration:none;}
+    .rn-ghost{background:transparent;border:1px solid var(--border);color:var(--text-2);height:44px;border-radius:var(--radius-sm);
+      width:100%;font-family:inherit;font-size:13.5px;font-weight:600;cursor:pointer;}
+
+    @media (max-width:860px){
+      .rn-wrap{grid-template-columns:1fr;}
+      .rn-brand{padding:32px 28px;gap:18px;}
+      .rn-brand .rn-foot{display:none;}
+      .rn-lead h1{font-size:25px;}
+      .rn-panel{padding:32px 22px 48px;}
+    }
+  </style>
 </head>
-<body class="is-preload">
+<body>
+  <div class="rn-wrap">
+    {# ── Brand panel — minimal by design ── #}
+    <aside class="rn-brand">
+      <div class="rn-logo">RENÉE<span>Order Management</span></div>
+      <div class="rn-lead">
+        <h1>Every order, reconciled end&#8209;to&#8209;end.</h1>
+        <p>Upload marketplace POs, review and lock, and push clean orders to D365 — with a full audit trail from raw dump to ERP.</p>
+      </div>
+      <div class="rn-foot">© RENÉE Cosmetics · Internal order-management console</div>
+    </aside>
 
-    {% if messages %}
-    <div class="rn-toasts" id="rnToasts">
-        {% for m in messages %}<div class="rn-toast {{ m.tags }}">{{ m }}</div>{% endfor %}
-    </div>
-    <script>setTimeout(function(){var t=document.getElementById('rnToasts'); if(t) t.style.display='none';}, 4000);</script>
-    {% endif %}
-
-    <div id="wrapper">
-
-        <!-- Intro / hero -->
-        <section class="intro">
-            <header>
-                <p class="rn-eyebrow">RENÉE Cosmetics</p>
-                <h1>Order Management</h1>
-                <p>One desk for every marketplace — raw PO dump → validated Sales Order in D365 → live tracker, owned end-to-end.</p>
-                <ul class="actions">
-                    <li><a href="#signin" class="arrow scrolly"><span class="label">Sign in</span></a></li>
-                </ul>
-            </header>
-            <div class="content">
-                <span class="image fill" data-position="center"><img src="{% static 'paradigm/images/order-mgmt.svg' %}" alt="Order Management" /></span>
+    {# ── Sign-in panel — auth form preserved exactly (action=login · username · password · csrf) ── #}
+    <main class="rn-panel">
+      <div class="rn-card">
+        {% if user.is_authenticated %}
+          <h2>Welcome back</h2>
+          <p class="sub">You're already signed in.</p>
+          <div class="rn-signed">
+            <div class="who">Signed in as <b>{{ user.username }}</b>.</div>
+            <a href="{% url 'departments' %}" class="rn-linkbtn">Continue to app →</a>
+            <form action="{% url 'logout' %}" method="post">{% csrf_token %}
+              <button type="submit" class="rn-ghost">Log out</button>
+            </form>
+          </div>
+        {% else %}
+          <h2>Sign in</h2>
+          <p class="sub">Use your RENÉE account to continue.</p>
+          {% if form.username.errors or form.password.errors or form.non_field_errors %}
+            <div class="rn-err">Invalid username or password. Please try again.</div>
+          {% endif %}
+          <form action="{% url 'login' %}" method="post" novalidate>
+            {% csrf_token %}
+            <div class="rn-field">
+              <label for="username">Username</label>
+              <input type="text" name="username" id="username" placeholder="e.g. abhishek.wagh" autocomplete="username" autofocus required />
             </div>
-        </section>
-
-        <!-- What it does -->
-        <section id="about">
-            <header>
-                <h2>One source of truth, every channel</h2>
-            </header>
-            <div class="content">
-                <p><strong>From fragmented to a single accountable desk.</strong> Every marketplace PO — online &amp; offline — flows through one pipeline: parsed, price-validated against the master, and pushed to D365, with the live status visible to every stakeholder.</p>
-                <ul class="feature-icons">
-                    <li class="icon solid fa-store">12 live marketplaces</li>
-                    <li class="icon solid fa-bolt">GT-Mass automation · 85m → 15m</li>
-                    <li class="icon solid fa-check-circle">GST-aware price validation</li>
-                    <li class="icon solid fa-file-export">D365 Sales-Order export</li>
-                    <li class="icon solid fa-layer-group">Online + Offline · one desk</li>
-                    <li class="icon solid fa-chart-line">Live dashboards &amp; analytics</li>
-                </ul>
+            <div class="rn-field">
+              <label for="password">Password</label>
+              <input type="password" name="password" id="password" placeholder="••••••••" autocomplete="current-password" required />
             </div>
-        </section>
-
-        {% if stats.pos or stats.lines %}
-        <!-- Live numbers -->
-        <section>
-            <header><h2>Live in the system</h2></header>
-            <div class="content">
-                <div class="rn-stats">
-                    {% if stats.pos %}<div class="rn-stat"><b>{{ stats.pos }}</b><span>POs recorded</span></div>{% endif %}
-                    {% if stats.marketplaces %}<div class="rn-stat"><b>{{ stats.marketplaces }}</b><span>Marketplaces</span></div>{% endif %}
-                    {% if stats.lines %}<div class="rn-stat"><b>{{ stats.lines }}</b><span>Line items</span></div>{% endif %}
-                    {% if stats.value_disp %}<div class="rn-stat"><b>{{ stats.value_disp }}</b><span>Order value</span></div>{% endif %}
-                </div>
-            </div>
-        </section>
+            {% if next %}<input type="hidden" name="next" value="{{ next }}" />{% endif %}
+            <button type="submit" class="rn-btn">Sign in</button>
+          </form>
+          <div class="rn-alt">Need an account? <a href="{% url 'signup' %}">Create one</a></div>
         {% endif %}
+      </div>
+    </main>
+  </div>
 
-        <!-- Sign in -->
-        <section id="signin">
-            <header>
-                <h2>{% if user.is_authenticated %}Welcome back{% else %}Sign in{% endif %}</h2>
-            </header>
-            <div class="content">
-            {% if user.is_authenticated %}
-                <p>You're signed in as <strong>{{ user.username }}</strong>.</p>
-                <ul class="actions">
-                    <li><a href="{% url 'departments' %}" class="button primary large">Go to Departments</a></li>
-                    <li>
-                        <form action="{% url 'logout' %}" method="post" style="display:inline;">{% csrf_token %}
-                            <button type="submit" class="button large">Log out</button>
-                        </form>
-                    </li>
-                </ul>
-            {% else %}
-                <p><strong>Sign in to the order desk.</strong> Use your RENÉE warehouse credentials.</p>
-                {% if form.username.errors or form.password.errors or form.non_field_errors %}
-                    <div class="rn-err">Invalid username or password.</div>
-                {% endif %}
-                <form action="{% url 'login' %}" method="post">
-                    {% csrf_token %}
-                    <div class="fields">
-                        <div class="field half">
-                            <input type="text" name="username" id="username" placeholder="Username" required />
-                        </div>
-                        <div class="field half">
-                            <input type="password" name="password" id="password" placeholder="Password" required />
-                        </div>
-                    </div>
-                    <ul class="actions">
-                        <li><input type="submit" value="Sign In" class="button primary" /></li>
-                        <li><a href="{% url 'signup' %}" class="button">Create account</a></li>
-                    </ul>
-                </form>
-            {% endif %}
-            </div>
-            <footer>
-                <ul class="items">
-                    <li>
-                        <h3>Segments</h3>
-                        <span>Online B2B · Offline (MT / GT)</span>
-                    </li>
-                    <li>
-                        <h3>Pipeline</h3>
-                        <span>Dump → D365 → Live tracker</span>
-                    </li>
-                </ul>
-            </footer>
-        </section>
-
-        <!-- Copyright (HTML5 UP attribution retained per CCA licence) -->
-        <div class="copyright">&copy; RENÉE Cosmetics Private Limited. Design: <a href="https://html5up.net">HTML5 UP</a>.</div>
-
-    </div>
-
-    <!-- Scripts -->
-    <script src="{% static 'paradigm/assets/js/jquery.min.js' %}"></script>
-    <script src="{% static 'paradigm/assets/js/jquery.scrolly.min.js' %}"></script>
-    <script src="{% static 'paradigm/assets/js/browser.min.js' %}"></script>
-    <script src="{% static 'paradigm/assets/js/breakpoints.min.js' %}"></script>
-    <script src="{% static 'paradigm/assets/js/util.js' %}"></script>
-    <script src="{% static 'paradigm/assets/js/main.js' %}"></script>
-
+  <script>
+    // Match the app's saved light/dark preference (set by enhance.js in-app).
+    try {
+      var t = localStorage.getItem('b2b-theme');
+      if (t === 'dark' || t === 'light') document.documentElement.setAttribute('data-theme', t);
+    } catch (e) {}
+  </script>
 </body>
 </html>

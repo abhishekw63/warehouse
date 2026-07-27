@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import io
+import os
 from pathlib import Path
 
 import pandas as pd
@@ -171,6 +172,62 @@ def _price_index(paths) -> dict:
     return out
 
 
+# ── multi-sheet rescue: pick the FILLED tab when a blank template precedes it ──
+def _sheet_is_filled(ws) -> bool:
+    """True if a worksheet carries a real GT Mass PO — a 'PO Number' meta label
+    WITH a value AND a data header row ('BC Code'/'EAN' + 'Order Qty'). Distributor
+    files sometimes duplicate the template tab and fill the copy, leaving a blank
+    template tab first (e.g. the real PO on 'Sheet3')."""
+    po_has_value = header_seen = False
+    for r, row in enumerate(ws.iter_rows(values_only=True)):
+        if r > 45:
+            break
+        low = [str(c).strip().lower() if c is not None else '' for c in row]
+        if ('bc code' in low or 'ean' in low) and any('order qty' in c for c in low):
+            header_seen = True
+        for j, c in enumerate(low):
+            if c == 'po number':
+                for k in range(j + 1, min(j + 3, len(row))):
+                    v = row[k]
+                    if v is not None and str(v).strip().lower() not in ('', 'nan'):
+                        po_has_value = True
+    return po_has_value and header_seen
+
+
+def _normalize_gtm(path):
+    """If a LATER sheet holds the filled PO (the first sheet is a blank template),
+    write a temp .xlsx containing ONLY that sheet's values, so the frozen engine
+    (and our price reader) — both of which read the FIRST sheet — pick up the real
+    data. Returns ``(path_to_use, note_or_None)``. The original file is untouched;
+    single-sheet / already-correct files pass straight through unchanged.
+
+    The temp keeps the ORIGINAL basename (in a temp dir) so filename-derived SO,
+    the price index key, and PO dedup all stay identical."""
+    import openpyxl
+    try:
+        wb = openpyxl.load_workbook(path, data_only=True, read_only=True)
+    except Exception:  # noqa: BLE001
+        return path, None
+    names = wb.sheetnames
+    if len(names) <= 1 or _sheet_is_filled(wb[names[0]]):
+        return path, None                          # normal file — no change
+    target = next((nm for nm in names[1:] if _sheet_is_filled(wb[nm])), None)
+    if not target:
+        return path, None                          # nothing better — leave as-is
+    import tempfile
+    src = openpyxl.load_workbook(path, data_only=True)
+    ws = src[target]
+    out = openpyxl.Workbook()
+    dst = out.active
+    dst.title = ws.title
+    for row in ws.iter_rows(values_only=True):
+        dst.append(list(row))
+    tmp = os.path.join(tempfile.mkdtemp(prefix='gtm_norm_'), Path(path).name)
+    out.save(tmp)
+    return tmp, (f"{Path(path).name}: the first tab was a blank template — read the "
+                 f"filled PO from tab '{target}' instead.")
+
+
 # ── core: process + (optionally) record ──────────────────────────────────────
 class GTMassRecorder:
     def __init__(self, po_paths, warehouse: str | None = None):
@@ -178,14 +235,24 @@ class GTMassRecorder:
         self.warehouse = warehouse or DEFAULT_WAREHOUSE
         self.result = None
         self.prices = {}
+        self._sheet_notes = []
 
     def _process(self):
-        """Run the frozen dump engine over the files (no DB) + read prices."""
+        """Run the frozen dump engine over the files (no DB) + read prices. First
+        normalize any multi-tab file whose real PO sits behind a blank template
+        tab (frozen engine reads only the first sheet) — the original is untouched
+        and the temp keeps the same basename, so nothing downstream shifts."""
         if not self.po_paths:
             raise ValueError('No PO file uploaded.')
-        uploads = [_DiskUpload(p) for p in self.po_paths]
+        norm_paths, self._sheet_notes = [], []
+        for p in self.po_paths:
+            np_, note = _normalize_gtm(p)
+            norm_paths.append(np_)
+            if note:
+                self._sheet_notes.append(note)
+        uploads = [_DiskUpload(p) for p in norm_paths]
         self.result = _automation().process_files(uploads)
-        self.prices = _price_index(self.po_paths)
+        self.prices = _price_index(norm_paths)
         self._ean_fallback()
         return self.result
 
@@ -507,6 +574,8 @@ class GTMassRecorder:
     def _summary(self, orders: dict, recorded=None, phase='confirm') -> dict:
         res = self.result
         warnings = []
+        for note in (getattr(self, '_sheet_notes', None) or []):
+            warnings.append(note)                  # multi-tab rescue (never silent)
         for fname, w in (getattr(res, 'warned_files', None) or []):
             warnings.append(f"{fname}: {w}")
         for fname, r in (getattr(res, 'failed_files', None) or []):

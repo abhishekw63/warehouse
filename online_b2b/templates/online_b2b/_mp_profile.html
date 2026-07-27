@@ -1,0 +1,289 @@
+  <div class="tpl-hero">
+    <div class="tpl-id">
+      <h1>{{ tpl.name }}
+        {% if tpl.pilot %}<span class="pill live">live</span>{% endif %}
+        <span class="tpl-ftype">{{ tpl.file_type }}</span>
+      </h1>
+      <p class="tpl-sub">
+        The full file the engine receives — every column, with the ones it actually reads
+        <b>highlighted</b> and the rest <b>dulled</b>.
+        {% if tpl.sample_file %}<br>Sample: <span class="mono">{{ tpl.sample_file }}</span>{% endif %}
+      </p>
+    </div>
+    <div class="tpl-stat">
+      <div>
+        <div class="big">{{ tpl.used }}<span style="color:var(--muted);font-size:15px;font-weight:600;"> / {{ tpl.total }}</span></div>
+        <div class="lbl">columns read</div>
+        <div class="bar"><i style="--pct: {% widthratio tpl.used tpl.total 100 %}%;"></i></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tpl-legend">
+    <span class="lead">Read by the engine:</span>
+    {% for l in tpl.legend %}
+      <span class="lg-chip r-{{ l.role_class }}"><span class="dot"></span>{{ l.role }}</span>
+    {% endfor %}
+    <span class="lg-dull"><span class="dot"></span>Ignored — present in the file, not used</span>
+  </div>
+{% if tpl.raw_replica %}
+  {% comment %}EXACT DUMP REPLICA — renders THIS MP's real received file grid (merge-aware) verbatim, so the panel mirrors the actual dump layout (NOT a Flipkart copy). Per-MP; captured from a real sample into the fixture's "raw_replica".{% endcomment %}
+  <style>
+   .rr-wrap{margin-top:14px;border:1px solid var(--border);border-radius:12px;overflow:auto;background:var(--surface);}
+   table.rr{border-collapse:collapse;width:max-content;min-width:100%;font-size:11px;font-variant-numeric:tabular-nums;}
+   table.rr td{border:1px solid var(--border);padding:6px 9px;white-space:nowrap;color:var(--text);vertical-align:top;}
+   table.rr td:empty{background:var(--surface-2);}
+  </style>
+  <div class="tpl-sub" style="margin-top:12px;">Exact replica of the received dump — <span class="mono">{{ tpl.file_type }}</span>{% if tpl.header_note %}<br>{{ tpl.header_note }}{% endif %}</div>
+  <div class="rr-wrap">
+    <table class="rr">
+      {% for row in tpl.raw_replica.rows %}
+      <tr>{% for cell in row %}<td colspan="{{ cell.cs }}" rowspan="{{ cell.rs }}">{{ cell.v }}</td>{% endfor %}</tr>
+      {% endfor %}
+    </table>
+  </div>
+{% elif tpl.pdf_replica %}
+  {% comment %}EXACT PDF DUMP FACSIMILE — THIS MP's real PO-PDF page text, rendered as received (per-MP; not a Flipkart copy).{% endcomment %}
+  <style>
+   .pdfr{margin-top:14px;border:1px solid var(--border);border-radius:12px;background:var(--surface);overflow:auto;}
+   .pdfr pre{margin:0;padding:16px 18px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;
+     line-height:1.5;color:var(--text);white-space:pre-wrap;word-break:break-word;}
+  </style>
+  <div class="tpl-sub" style="margin-top:12px;">Exact replica of the received dump — <span class="mono">{{ tpl.file_type }}</span>{% if tpl.header_note %}<br>{{ tpl.header_note }}{% endif %}</div>
+  <div class="pdfr"><pre>{% for l in tpl.pdf_replica.lines %}{{ l }}
+{% endfor %}</pre></div>
+  {% if tpl.columns %}
+  <div class="tpl-legend" style="margin-top:14px;"><span class="lead">Line items ({% if tpl.pdf_replica.lines_source %}{{ tpl.pdf_replica.lines_source }}{% else %}item table from the file{% endif %}) — engine reads the highlighted columns:</span></div>
+  <div class="tpl-tablewrap">
+    <table class="tpl-table">
+      <thead><tr>{% for c in tpl.columns %}<th class="{% if c.used %}used r-{{ c.role_class }}{% else %}dull{% endif %}">{{ c.name }}{% if c.used %}<span class="th-badge">{{ c.role }}</span>{% endif %}</th>{% endfor %}</tr></thead>
+      <tbody>{% for row in tpl.grid %}<tr>{% for cell in row %}<td class="{% if cell.used %}used r-{{ cell.role_class }}{% else %}dull{% endif %}">{{ cell.value|default:"—" }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  {% endif %}
+{% elif tpl.doc_layout %}
+  {% comment %}EXACT DOCUMENT REPLICA (flag-gated by the fixture's "doc_layout": true; currently Flipkart). Renders the real purchase_order_FLS*.xlsx layout — merged banner + shipped-to line, PO no, the Nature/Expiry/Order/Category band, SUPPLIER | RETAILER blocks, PAYMENT grid, then the full line-item table. LIGHT highlight (subtle tint + hairline outline, no chips) on engine-read fields only. Flip "doc_layout" off to fall back to the generic header+table render in the {% templatetag openblock %} else {% templatetag closeblock %} branch below — that path is unchanged for every other MP.{% endcomment %}
+  <style>
+   .fk-doc{margin-top:14px;border:1px solid var(--border);border-radius:12px;overflow:hidden;
+     background:var(--surface);font-variant-numeric:tabular-nums;}
+   .fk-doc .fk-banner{padding:12px 14px;text-align:center;background:var(--surface-2);border-bottom:1px solid var(--border);}
+   .fk-doc .fk-banner b{font-size:15px;font-weight:800;letter-spacing:.02em;color:var(--text);}
+   .fk-doc .fk-banner .fk-sub{margin-top:3px;font-size:11px;line-height:1.45;color:var(--text-2);}
+   .fk-doc .fk-pono{padding:8px 14px;text-align:center;font-size:12.5px;font-weight:800;letter-spacing:.04em;
+     color:var(--text);border-bottom:1px solid var(--border);}
+   .fk-doc .fk-band{display:flex;flex-wrap:wrap;border-bottom:1px solid var(--border);}
+   .fk-doc .fk-band > div{flex:1 1 130px;min-width:120px;padding:7px 12px;
+     border-right:1px solid color-mix(in srgb,var(--border) 55%,transparent);}
+   .fk-doc .fk-band > div:last-child{border-right:none;}
+   .fk-doc .fk-lbl{font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);}
+   .fk-doc .fk-val{font-size:12px;color:var(--text);margin-top:2px;word-break:break-word;line-height:1.4;}
+   .fk-doc .fk-cols2{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--border);}
+   .fk-doc .fk-cols2 > div:first-child{border-right:1px solid var(--border);}
+   .fk-doc .fk-title{padding:6px 12px;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+     color:var(--text);background:var(--surface-2);border-bottom:1px solid var(--border);}
+   .fk-doc .fk-kv{padding:6px 12px;border-bottom:1px solid color-mix(in srgb,var(--border) 50%,transparent);}
+   .fk-doc .fk-kv:last-child{border-bottom:none;}
+   .fk-doc .fk-pay{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));border-bottom:1px solid var(--border);}
+   .fk-doc .fk-pay > div{padding:6px 12px;border-right:1px solid color-mix(in srgb,var(--border) 50%,transparent);}
+   .fk-doc .fk-sec{padding:6px 12px;font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+     color:var(--text);background:var(--surface-2);border-bottom:1px solid var(--border);}
+   .fk-doc .fk-tw{overflow:auto;}
+   .fk-doc table.fk-tbl{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%;font-size:11px;}
+   .fk-doc .fk-tbl th,.fk-doc .fk-tbl td{padding:7px 10px;text-align:left;white-space:nowrap;
+     border-bottom:1px solid var(--border);border-right:1px solid color-mix(in srgb,var(--border) 50%,transparent);}
+   .fk-doc .fk-tbl th:last-child,.fk-doc .fk-tbl td:last-child{border-right:none;}
+   .fk-doc .fk-tbl thead th{position:sticky;top:0;background:var(--surface-2);font-weight:700;color:var(--text-2);}
+   .fk-doc .fk-tbl td{color:var(--text-2);font-family:ui-monospace,Menlo,Consolas,monospace;}
+   .fk-doc .fk-read{background:color-mix(in srgb,var(--accent) 9%,transparent);
+     box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 30%,transparent);border-radius:5px;}
+   .fk-doc .fk-tbl th.fk-read,.fk-doc .fk-tbl td.fk-read{background:color-mix(in srgb,var(--accent) 8%,transparent);
+     box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--accent) 26%,transparent);color:var(--text);font-weight:600;}
+  </style>
+  <div class="fk-doc" aria-label="Flipkart PO document replica">
+    <div class="fk-banner">
+      <b>{{ tpl.doc.banner }}</b>
+      {% if tpl.doc.banner_sub %}<div class="fk-sub">{{ tpl.doc.banner_sub }}</div>{% endif %}
+    </div>
+    <div class="fk-pono">PURCHASE ORDER NO - {{ tpl.doc.po_no }}</div>
+    <div class="fk-band">
+      {% for b in tpl.doc.band %}
+      <div class="{% if b.read %}fk-read{% endif %}">
+        <div class="fk-lbl">{{ b.label }}</div>
+        <div class="fk-val">{{ b.value|default:"—" }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="fk-cols2">
+      <div>
+        <div class="fk-title">{{ tpl.doc.supplier.title|default:"SUPPLIER DETAILS" }}</div>
+        {% for r in tpl.doc.supplier.rows %}
+        <div class="fk-kv {% if r.read %}fk-read{% endif %}">
+          <div class="fk-lbl">{{ r.label }}</div>
+          <div class="fk-val">{{ r.value|default:"—" }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      <div>
+        <div class="fk-title">{{ tpl.doc.retailer.title|default:"RETAILER DETAILS" }}</div>
+        {% for r in tpl.doc.retailer.rows %}
+        <div class="fk-kv {% if r.read %}fk-read{% endif %}">
+          <div class="fk-lbl">{{ r.label }}</div>
+          <div class="fk-val">{{ r.value|default:"—" }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="fk-sec">{{ tpl.doc.payment.title|default:"PAYMENT DETAILS" }}</div>
+    <div class="fk-pay">
+      {% for r in tpl.doc.payment.rows %}
+      <div><div class="fk-lbl">{{ r.label }}</div><div class="fk-val">{{ r.value|default:"—" }}</div></div>
+      {% endfor %}
+    </div>
+    <div class="fk-sec">ORDER DETAILS · Product Details</div>
+    <div class="fk-tw">
+      <table class="fk-tbl">
+        <thead>
+          <tr>
+            <th>#</th>
+            {% for c in tpl.columns %}<th class="{% if c.used %}fk-read{% endif %}">{{ c.name }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in tpl.grid %}
+          <tr>
+            <td>{{ forloop.counter }}</td>
+            {% for cell in row %}<td class="{% if cell.used %}fk-read{% endif %}">{{ cell.value|default:"—" }}</td>{% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% else %}{% if tpl.header_fields %}
+  {% comment %}Optional file HEADER BLOCK — the PO/address preamble ABOVE the line-item table (e.g. Flipkart's new portal PO). Generic: any MP whose fixture carries header_fields gets it; the fields the engine reads are marked "read" in their role colour. Rendered only when present.{% endcomment %}
+  <div class="tpl-headblock" style="margin-top:14px;border:1px solid var(--border);
+       border-radius:12px;background:var(--surface-2);padding:13px 16px 15px;">
+    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+         flex-wrap:wrap;margin-bottom:11px;">
+      <span style="font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;
+            color:var(--muted);">{{ tpl.header_title|default:"File header — above the line-item table" }}</span>
+      {% if tpl.header_note %}<span style="font-size:11px;color:var(--text-2);line-height:1.4;">{{ tpl.header_note }}</span>{% endif %}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:9px 18px;">
+      {% for f in tpl.header_fields %}
+      <div class="{% if f.used %}r-{{ f.role_class|default:'po' }}{% endif %}"
+           style="display:flex;flex-direction:column;gap:3px;min-width:0;
+           {% if f.used %}background:color-mix(in srgb, var(--rc) 8%, transparent);
+           border:1px solid color-mix(in srgb, var(--rc) 26%, transparent);
+           border-radius:9px;padding:6px 9px;{% else %}padding:6px 9px 6px 0;{% endif %}">
+        <span style="font-size:9.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
+              color:{% if f.used %}var(--rc){% else %}var(--muted){% endif %};
+              display:flex;align-items:center;gap:6px;">
+          {{ f.label }}
+          {% if f.used %}<span style="font-size:8px;font-weight:800;text-transform:uppercase;
+                letter-spacing:.04em;color:#fff;background:var(--rc);border-radius:4px;padding:1px 5px;">read</span>{% endif %}
+        </span>
+        <span style="font-size:12.5px;line-height:1.4;word-break:break-word;
+              color:var(--text);{% if f.used %}font-weight:600;{% endif %}">{{ f.value|default:"—" }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}
+  <div class="tpl-tablewrap">
+    <table class="tpl-table">
+      <thead>
+        <tr>
+          <th class="dull" style="--i:0;"><div class="th-in"><span class="th-name">#</span></div></th>
+          {% for c in tpl.columns %}
+          <th data-col="{{ forloop.counter }}" style="--i:{{ forloop.counter }};"
+              class="{% if c.used %}used r-{{ c.role_class }}{% else %}dull{% endif %}">
+            <div class="th-in">
+              <span class="th-name">{{ c.name }}</span>
+              {% if c.used %}<span class="th-badge">{{ c.role }}</span>{% endif %}
+            </div>
+          </th>
+          {% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in tpl.grid %}
+        <tr>
+          <td class="dull"><span class="tpl-rowtag">{{ forloop.counter }}</span></td>
+          {% for cell in row %}
+          <td data-col="{{ forloop.counter }}"
+              class="{% if cell.used %}used r-{{ cell.role_class }}{% else %}dull{% endif %}">{{ cell.value|default:"—" }}</td>
+          {% endfor %}
+        </tr>
+        {% empty %}
+        <tr><td class="dull" colspan="{{ tpl.total }}">No sample rows captured.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>{% endif %}
+
+  {# ── Full profile: pricing rule + exceptions applied to THIS marketplace ── #}
+  <div class="tpl-profile" style="margin-top:26px;">
+    {% if rule %}
+    <div class="prof-rule" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;
+         padding:14px 16px;border:1px solid var(--border);border-radius:12px;background:#fafbff;">
+      <span style="font-weight:800;color:var(--text);margin-right:4px;">Pricing rule</span>
+      <span class="lg-chip" style="background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;">
+        Keep {{ rule.margin_label }}</span>
+      <span class="lg-chip" style="background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;">
+        {{ rule.basis }}</span>
+      {% if rule.compare_label %}<span class="lg-chip" style="background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;">
+        Compare: {{ rule.compare_label }}</span>{% endif %}
+      <span class="lg-chip" style="background:#f5f3ff;border:1px solid #ddd6fe;color:#5b21b6;">
+        Resolve by: {{ rule.item }}</span>
+    </div>
+    {% endif %}
+
+    <div style="margin:18px 0 10px;font-weight:800;font-size:16px;color:var(--text);">
+      Exceptions applied to {{ tpl.name }}
+      <span style="font-weight:600;color:var(--muted);font-size:13px;">— named cases the engine accepts, not errors</span>
+    </div>
+    {% if exc_cards %}
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(560px,1fr));gap:18px;">
+      {% for e in exc_cards %}
+      <div style="border:1px solid var(--border);border-left:5px solid
+           {% if e.kind == 'behavioral' %}#6366f1{% elif e.kind == 'deal' %}#f59e0b{% else %}#10b981{% endif %};
+           border-radius:14px;padding:20px 24px;background:#fff;box-shadow:0 2px 10px -6px rgba(30,41,59,.15);">
+        <div style="font-weight:800;font-size:16px;color:var(--text);margin-bottom:6px;">{{ e.title }}
+          <span style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);
+                letter-spacing:.4px;">· {{ e.kind }}</span></div>
+        <div style="font-size:13.5px;line-height:1.6;color:#444;max-width:70ch;">{{ e.detail }}</div>
+        {% if e.ex_head %}
+        <div class="exg-wrap">
+          <span class="exg-tag">{{ e.ex_label|default:'Example' }}</span>
+          <div class="exg-scroll">
+          <table class="exg-tbl">
+            <thead><tr>{% for h in e.ex_head %}<th style="--i:{{ forloop.counter0 }};">{{ h }}</th>{% endfor %}</tr></thead>
+            <tbody>
+              {% for row in e.ex_rows %}
+              <tr class="exg-row" style="--r:{{ forloop.counter0 }};">
+                {% for cell in row %}<td>{{ cell }}</td>{% endfor %}
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <p style="color:var(--muted);font-size:13px;">No special exceptions — the flat
+      {{ rule.margin_label|default:'marketplace' }} rule applies to every line.</p>
+    {% endif %}
+    <p class="tpl-foot" style="margin-top:12px;color:var(--muted);font-size:12px;">
+      Rule + exceptions are read live from the engine config / Master Exceptions
+      overlay, so this profile always reflects exactly what the engine does.</p>
+  </div>
+
+  <p class="rc-foot" style="margin-top:12px;">
+    Columns and sample rows are a frozen snapshot of a real file; the
+    <b>highlighting is computed live from the engine config</b>, so it always reflects
+    exactly what the parser reads. Hover a column to trace it down the rows.
+  </p>

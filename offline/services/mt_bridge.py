@@ -221,6 +221,39 @@ def _register_web_channels(eng) -> None:
             expected_landing_ratio=None,      # no price check (mapping-only)
         )
 
+    # Hamleys (HAM) — Reliance BRANDS Limited (GSTIN 27AADCR7395F1Z0), a SEPARATE
+    # entity from Reliance Retail (Centro RL 20043) / Smart Bazaar (RSB 20615).
+    # Input = the SAME 'PurchaseOrders*.xlsx' (sheet "Purchase Orders") + DC_CODE
+    # format as RSB/Metro, so it's a pure clone: store key = DC_CODE (TB2O/THK0/…)
+    # matched EXACT to the party='Hamleys' Del Location. Mapping-only — NO price
+    # check (MT rule). ⚠ sell_to below is a PLACEHOLDER — set it to the Hamleys /
+    # Reliance Brands D365 customer number (operator is adding the ship-to rows).
+    if 'RBL' not in eng.CHANNELS:
+        eng.CHANNELS['RBL'] = eng.ChannelConfig(
+            code='RBL',
+            display_name='Reliance Brands Limited (Hamleys)',   # D365 cust name + clarity
+            party='Hamleys',                  # ship_to_mapping party (Reliance Brands)
+            input_folder_name='Input_RBL',
+            output_folder_name='Output_RBL',
+            sell_to='20325',                  # Reliance Brands Limited (Hamleys)
+            csv_required_cols=['PURCH_ORDER_NUMBER', 'DC_CODE', 'EAN_NO',
+                               'TOTAL_QUANTITY'],
+            csv_po_col='PURCH_ORDER_NUMBER',
+            csv_store_col='DC_CODE',          # DC code → Del Location (exact)
+            csv_id_col='EAN_NO',
+            csv_qty_col='TOTAL_QUANTITY',
+            csv_mrp_col='MRP_PER_UNIT',
+            csv_cost_col='LANDING_COST_INCL_TAX_PER_UNIT',   # inc-GST (reference)
+            csv_value_col='COST_PRICE_INCL_TAX_PER_PO_OU',   # inc-GST line total
+            csv_date_col='PURCH_ORDER_DATE',
+            csv_expdate_col='EXPECTED_DATE',
+            lookup_via='EAN',
+            channel_master_sheet=None,
+            store_match='exact',
+            tester_unit_price=None,           # no testers
+            expected_landing_ratio=None,      # NO price check (mapping-only)
+        )
+
     # H&B (Health & Beauty) — cust 20010. Excel BINARY workbook ('Renee Rep PO
     # Excel *.xlsb', one 'Sheet1' with ALL POs); EAN lookup; store key = numeric
     # 'Site' code matched EXACT to the party='h&b' Del Location. Mapping-only
@@ -278,7 +311,7 @@ LULU_EXCEL_MODE = True
 # marketplace; these are its children (the operator picks one). Off Institutional
 # (INST) is a SEPARATE parent and is not listed here. SS is verified end-to-end;
 # the others share the same generic pipeline (test each before production use).
-WEB_CHANNELS = ['SS', 'HG', 'NT', 'BN', 'LL', 'RL', 'MET', 'LS', 'PPL', 'RSB', 'HB']
+WEB_CHANNELS = ['SS', 'HG', 'NT', 'BN', 'LL', 'RL', 'MET', 'LS', 'PPL', 'RSB', 'HB', 'RBL']
 
 # ── Per-channel input REQUIREMENTS ──────────────────────────────────────
 # Shown on the upload page (so the operator knows what each channel demands)
@@ -294,7 +327,9 @@ CHANNEL_REQUIREMENTS: dict = {
     'NT': {'required': 'Naturals PO PDF(s).', 'optional': '', 'if_absent': ''},
     'BN': {'required': 'Apollo tabular Excel (PO Number, DC Name, EAN Code, PO Qty).',
            'optional': '', 'if_absent': ''},
-    'LL': {'required': 'Lulu PO PDF(s).', 'optional': '', 'if_absent': ''},
+    'LL': {'required': 'Lulu PO Excel (.xlsx) — PO Number · EAN · Qty · Gross Price · '
+           'MRP · Delivery to. (PDF path is the reversible fallback.)',
+           'optional': '', 'if_absent': ''},
     'RL': {'required': 'Reliance tabular Excel (e.g. Renee.XLSX) — one row per PO line '
                        '(PO Number, Site, EAN No., PO Qty, Item Price).',
            'optional': 'PO PDF(s) — auto cross-checks delivery ADDRESS vs D365 + PO totals, '
@@ -329,6 +364,14 @@ CHANNEL_REQUIREMENTS: dict = {
                         '"Purchase Orders") — DC_CODE, PURCH_ORDER_NUMBER, EAN_NO, '
                         'TOTAL_QUANTITY, MRP + dates. DC_CODE (FR73/FRBS/6220/…) is the '
                         'ship-to lookup key (exact) — cust 20615, separate from Centro.',
+            'optional': 'PO PDF(s) — reference for the per-store delivery address cross-check.',
+            'if_absent': 'No price check — records the inc-GST value; the effective supply '
+            'margin (landing ex-GST ÷ MRP) is computed and noted. Unknown DC_CODE → flagged, '
+            'never silent.'},
+    'RBL': {'required': 'Hamleys (Reliance Brands) tabular Excel (PurchaseOrders*.xlsx, sheet '
+                        '"Purchase Orders") — DC_CODE, PURCH_ORDER_NUMBER, EAN_NO, '
+                        'TOTAL_QUANTITY, MRP + dates. DC_CODE (TB2O/THK0/…) is the ship-to '
+                        'lookup key (exact), party "Hamleys" — separate entity (Reliance Brands).',
             'optional': 'PO PDF(s) — reference for the per-store delivery address cross-check.',
             'if_absent': 'No price check — records the inc-GST value; the effective supply '
             'margin (landing ex-GST ÷ MRP) is computed and noted. Unknown DC_CODE → flagged, '
@@ -397,28 +440,53 @@ def _normalize_lulu_excel(src_path):
 
     import pandas as pd
     df = pd.read_excel(src_path)
-    df = df[df['PO Number'].notna()].copy()          # drop the total row
-    # Store = the delivery CITY (last comma token of 'Delivery to', e.g.
-    # 'Lulu Hypermarket,Hyderabad' → 'Hyderabad') — LL resolves ship-to via
-    # store_match='city_in_name' (the city must appear in the Del Location name),
-    # exactly like the PDF path fed the city.
+
+    # Lulu has shipped the Excel with slightly different headers across batches
+    # (e.g. 'PO Number' vs 'PO No', 'Total Quantity' vs 'Quantity', and newer
+    # exports drop 'Total Invoice Cost' + the date columns). Resolve each field by
+    # trying the known aliases so BOTH layouts parse — never a hard KeyError.
+    def _col(*names):
+        for n in names:
+            if n in df.columns:
+                return df[n]
+        return None
+
+    po = _col('PO Number', 'PO No', 'PO_Number')
+    if po is None:
+        raise KeyError("LULU Excel: no 'PO Number' / 'PO No' column found — "
+                       "is this the Lulu PO Excel?")
+    df = df[po.notna()].copy()          # drop the trailing total row
+    qty = pd.to_numeric(_col('Total Quantity', 'Quantity', 'Qty', 'Order Quantity'),
+                        errors='coerce')
+    gross = pd.to_numeric(_col('Gross Price', 'Unit Price'), errors='coerce')
+    tic = _col('Total Invoice Cost', 'Total Amount', 'Amount', 'Line Amount')
+    # Amount = the line total if the file carries it, else Gross Price × Qty.
+    amount = (pd.to_numeric(tic, errors='coerce') if tic is not None
+              else (gross * qty))
+    delto = _col('Delivery to', 'Delivery To', 'Store', 'Location')
     out = pd.DataFrame({
-        'PO No':       [_cid(v) for v in df['PO Number']],
-        'Store':       df['Delivery to'].astype(str).str.split(',').str[-1].str.strip(),
-        'EAN':         [_cid(v) for v in df['EAN']],
-        'Qty':         pd.to_numeric(df['Total Quantity'], errors='coerce'),
-        'MRP':         pd.to_numeric(df['MRP'], errors='coerce'),
-        'Gross Price': pd.to_numeric(df['Gross Price'], errors='coerce'),
-        'Amount':      pd.to_numeric(df['Total Invoice Cost'], errors='coerce'),
+        # Store = the delivery CITY (last comma token of 'Delivery to', e.g.
+        # 'Lulu Hypermarket, Kochi' → 'Kochi') — LL resolves ship-to via
+        # store_match='city_in_name'. If already a bare store/city, kept as-is.
+        'PO No':       [_cid(v) for v in _col('PO Number', 'PO No', 'PO_Number')],
+        'Store':       (delto.astype(str).str.split(',').str[-1].str.strip()
+                        if delto is not None else ''),
+        'EAN':         [_cid(v) for v in _col('EAN', 'EAN Code', 'Barcode')],
+        'Qty':         qty,
+        'MRP':         pd.to_numeric(_col('MRP', 'MRP Per Unit'), errors='coerce'),
+        'Gross Price': gross,
+        'Amount':      amount,
     })
     for col in ('PO Date', 'Delivery Date'):
-        out[col] = (pd.to_datetime(df[col], errors='coerce')
-                    .dt.strftime('%d-%m-%Y').fillna(''))
+        src = _col(col, col.replace(' ', ''))
+        out[col] = ((pd.to_datetime(src, errors='coerce').dt.strftime('%d-%m-%Y')
+                     .fillna('')) if src is not None else '')
     fd, path = tempfile.mkstemp(suffix='_lulu_norm.xlsx')
     os.close(fd)
     out.to_excel(path, index=False)
+    amt_src = 'Total Invoice Cost' if tic is not None else 'Gross Price × Qty'
     note = (f"Lulu read from EXCEL ({len(out)} line(s)) — PDF path OFF (reversible). "
-            f"Store = 'Delivery to' → exact ship-to match.")
+            f"Store = 'Delivery to' → exact ship-to match; Amount = {amt_src}.")
     return path, note
 
 
@@ -686,6 +754,52 @@ def _parse_reliance_pdf(path) -> dict:
         pin = m.group(1) if m else ''
     return {'po': str(po), 'site': str(site), 'po_date': pod,
             'value': val, 'pin': pin}
+
+
+def _parse_hb_pdf(path) -> dict:
+    """H&B (New U) PO PDF → PO number, delivery pincode, PO date — for the
+    address cross-check. H&B is DC-routed: every franchisee of a DC delivers to
+    the DC, so the PDF's DELIVERY ADDRESS block confirms the Site→DC ship-to.
+    Value is NOT parsed (H&B is mapping-only — MT rule, no price check)."""
+    import re
+
+    import pdfplumber
+    with pdfplumber.open(path) as p:
+        t = '\n'.join((pg.extract_text() or '') for pg in p.pages)
+
+    def _find(pat, flags=0):
+        m = re.search(pat, t, flags)
+        return m.group(1).strip() if m else ''
+    po = _find(r'P\.?\s*O\.?\s*Number\s+(\d+)')
+    pod = _find(r'\bDate\s+(\d{2}\.\d{2}\.\d{4})')
+    # Delivery pincode from the DELIVERY ADDRESS block (not the SITE ADDRESS at
+    # the top); fall back to the first 6-digit run if the block isn't isolable.
+    da = re.search(r'DELIVERY\s*ADDRESS(.*?)(?:Please\s+supply|$)', t, re.S | re.I)
+    blk = da.group(1)[:400] if da else t
+    m = re.search(r'-\s*[A-Za-z]{0,3}\s*(\d{6})\b', blk) or re.search(r'(\d{6})', blk)
+    return {'po': str(po), 'po_date': pod, 'pin': (m.group(1) if m else '')}
+
+
+def _parse_hamleys_pdf(path) -> dict:
+    """Hamleys (Reliance Brands) 'SELLER PURCHASE ORDER' PDF → PO number, Site
+    (DC_CODE), and the DELIVERY-address pincode, for the address cross-check.
+    The delivery block ends '<City>, <State> - <PIN>' and is distinct from the
+    vendor (Renée) 'Pin Code : 380054' block, so we scope to 'Delivery Address'."""
+    import re
+
+    import pdfplumber
+    with pdfplumber.open(path) as pdf:
+        t = '\n'.join((pg.extract_text() or '') for pg in pdf.pages)
+
+    def _find(pat, flags=0):
+        m = re.search(pat, t, flags)
+        return m.group(1).strip() if m else ''
+    po = _find(r'PO\s*NO\.?\s*:?\s*(\d+)')
+    site = _find(r'\bSite\s*:\s*(\w+)')
+    da = re.search(r'Delivery\s*Address\s*:(.*?)(?:Total\s*Order\s*Value|$)', t, re.S | re.I)
+    blk = da.group(1) if da else t
+    m = re.search(r'-\s*(\d{6})\b', blk) or re.search(r'(\d{6})', blk)
+    return {'po': str(po), 'site': str(site), 'pin': (m.group(1) if m else '')}
 
 
 def _parse_lifestyle_pdf(path) -> dict:
@@ -1004,6 +1118,16 @@ class MTProcessor:
         if channel.code == 'RL':
             self._reliance_crosscheck(batch)
 
+        # ── H&B: confirm each DC-franchisee PO's delivery address (PDF pincode
+        #    vs the mapped Site→DC ship-to). Runs even with no PDF (emits a note). ──
+        if channel.code == 'HB':
+            self._hb_crosscheck(batch)
+
+        # ── Hamleys (Reliance Brands): Excel is the data; if PO PDF(s) are also
+        #    uploaded, confirm each delivery pincode vs the mapped DC→ship-to. ──
+        if channel.code == 'RBL':
+            self._ham_crosscheck(batch)
+
         # ── Lifestyle: condense the noisy "one PO across many stores" spam and
         #    (if a PDF was uploaded, and the feature is ON) run the visible
         #    address cross-check. ──
@@ -1132,6 +1256,95 @@ class MTProcessor:
                 self._pdf_po_dates[str(pf.po_no)] = _dt.date(int(yy), int(mm), int(dd)).isoformat()
             except Exception:  # noqa: BLE001
                 pass
+
+    def _hb_crosscheck(self, batch) -> None:
+        """H&B address cross-check. H&B is DC-routed — many franchisee stores of a
+        DC deliver to ONE address (the DC), so the Site code maps to the DC
+        ship-to. This CONFIRMS that resolution per PO: each PO's PDF delivery
+        pincode vs the mapped Site→DC ship-to pincode. Never silent: a note per PO
+        OK, a warning per pincode drift; if no PDF, a note that we mapped on the
+        Excel Site codes alone. Also stashes the PDF PO date for backfill. H&B is
+        mapping-only → NO value check."""
+        if not self._pdf_paths:
+            self.notes.append(
+                "No PO PDF uploaded — H&B mapped on the Excel Site codes alone. "
+                "Upload the PO PDFs to CONFIRM each delivery address (H&B ships "
+                "every DC-franchisee to the one DC address).")
+            return
+        import datetime as _dt
+        pdfs: dict = {}
+        for p in self._pdf_paths:
+            try:
+                d = _parse_hb_pdf(p)
+                if d['po']:
+                    pdfs[d['po']] = d
+            except Exception as e:  # noqa: BLE001
+                self.notes.append(f"PDF {Path(p).name}: parse failed ({type(e).__name__}).")
+        self.notes.append(
+            f"PDF cross-check: {len(pdfs)} PO PDF(s) read — confirming each "
+            f"delivery address against the mapped Site→DC ship-to.")
+        for pf in batch.po_files:
+            d = pdfs.get(str(pf.po_no))
+            if not d:
+                self.notes.append(f"PO {pf.po_no}: no matching PDF — Excel-only for this PO.")
+                continue
+            pcode = str(getattr(pf.ship_to_entry, 'postcode', '') or '') if pf.ship_to_entry else ''
+            site = str(getattr(pf, 'store_name', '') or '')
+            if d['pin'] and pcode and d['pin'] != pcode:
+                batch.cross_findings = list(getattr(batch, 'cross_findings', [])) + [(
+                    'warn', f"PO {pf.po_no} (Site {site}): PDF delivery pincode "
+                    f"{d['pin']} ≠ mapped ship-to {pf.ship_to} pincode {pcode} — "
+                    f"WRONG ship-to? verify address.")]
+            else:
+                self.notes.append(
+                    f"PO {pf.po_no}: Site {site} → {pf.ship_to} "
+                    f"(pin {pcode or '?'}) ✓ delivery address matches PDF.")
+            # stash PO date (DD.MM.YYYY → iso) for backfill after confirm
+            try:
+                dd, mm, yy = d['po_date'].split('.')
+                self._pdf_po_dates[str(pf.po_no)] = _dt.date(int(yy), int(mm), int(dd)).isoformat()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _ham_crosscheck(self, batch) -> None:
+        """Hamleys address cross-check (Excel is the data; the PDF is the extra
+        proof). When PO PDF(s) are uploaded, confirm each PO's PDF delivery
+        pincode == the mapped DC→ship-to pincode: match → a ✓ 'address matches
+        PDF' note (double-sure); mismatch → a WARNING (a mis-mapped DC_CODE can't
+        slip through). No PDF → a note that we mapped on the Excel DC codes alone.
+        Mapping-only → no value check. Mirrors :meth:`_hb_crosscheck`."""
+        if not self._pdf_paths:
+            self.notes.append(
+                "No PO PDF uploaded — Hamleys mapped on the Excel DC_CODE(s) alone. "
+                "Upload the PO PDF(s) to also CONFIRM each delivery address.")
+            return
+        pdfs: dict = {}
+        for p in self._pdf_paths:
+            try:
+                d = _parse_hamleys_pdf(p)
+                if d['po']:
+                    pdfs[d['po']] = d
+            except Exception as e:  # noqa: BLE001
+                self.notes.append(f"PDF {Path(p).name}: parse failed ({type(e).__name__}).")
+        self.notes.append(
+            f"PDF cross-check: {len(pdfs)} PO PDF(s) read — confirming each "
+            f"delivery address against the mapped DC→ship-to.")
+        for pf in batch.po_files:
+            d = pdfs.get(str(pf.po_no))
+            if not d:
+                self.notes.append(f"PO {pf.po_no}: no matching PDF — Excel-only for this PO.")
+                continue
+            pcode = str(getattr(pf.ship_to_entry, 'postcode', '') or '') if pf.ship_to_entry else ''
+            site = str(getattr(pf, 'store_name', '') or '')
+            if d['pin'] and pcode and d['pin'] != pcode:
+                batch.cross_findings = list(getattr(batch, 'cross_findings', [])) + [(
+                    'warn', f"PO {pf.po_no} (Site {site}): PDF delivery pincode "
+                    f"{d['pin']} ≠ mapped ship-to {pf.ship_to} pincode {pcode} — "
+                    f"WRONG ship-to? verify address.")]
+            else:
+                self.notes.append(
+                    f"PO {pf.po_no}: Site {site} → {pf.ship_to} "
+                    f"(pin {pcode or '?'}) ✓ delivery address matches PDF — extra check passed.")
 
     def _lifestyle_crosscheck(self, batch, channel) -> None:
         """TASK B — Lifestyle only, and only when a PO PDF is uploaded. Parse each
@@ -1468,6 +1681,34 @@ class MTProcessor:
                 'price': price, 'keys': len(dump.eligible_keys)}
 
     # ── phase 2: confirm (assign + write + record to renee_orders) ──────
+    def preview_workbook(self):
+        """The SAME 8/9-sheet unified SO Workbook as the post-lock download, built
+        from the PREVIEW batch so it's downloadable DURING review (parity with
+        Online B2B). Assigns REAL-format SO numbers for the render (the SOExporter
+        needs them to write Headers/Lines), but SNAPSHOTs + RESTOREs the sequence
+        counter so **nothing is permanently burned** — the same SO numbers are
+        re-assigned for real at Confirm. No DB write. Returns the temp .xlsx path."""
+        import copy
+        import io as _io
+        import tempfile
+        from contextlib import redirect_stdout
+        eng, channel, batch = self._load()
+        warehouse_code = eng.WAREHOUSES.get(self.warehouse, 'PICK')
+        snap = copy.deepcopy(eng.load_seq_state())      # counter snapshot
+        try:
+            with redirect_stdout(_io.StringIO()):
+                eng.assign_so_numbers(batch, channel, generate_testers=False,
+                                      tester_dump=None)
+            fd, out = tempfile.mkstemp(suffix='_mt_review_sowb.xlsx')
+            os.close(fd)
+            from . import mt_workbook
+            written = mt_workbook.write_unified_workbook(
+                batch, channel, self.warehouse, warehouse_code,
+                channel.display_name, out, notes=getattr(self, 'notes', None))
+            return str(written) if written else out
+        finally:
+            eng.save_seq_state(snap)                     # RESTORE — counter untouched
+
     def confirm(self, exclude_keys=None) -> dict:
         """Assign SO numbers (burns the ``mt_select_seq.json`` counter ONCE),
         write the 6-sheet workbook, and record order headers into the shared

@@ -412,18 +412,22 @@ def set_hold_reason(day, channel: str, remark: str, user: str = '') -> dict:
     return {'ok': ok, 'remark': remark}
 
 
-def mark_workbook_downloaded(marketplace: str, user: str = '') -> dict:
+def mark_workbook_downloaded(marketplace: str, user: str = '', day=None) -> dict:
     """Auto-tick the **'Workbook downloaded'** step for the channel matching
-    ``marketplace``, for TODAY — called when the operator downloads the
-    *Completed* SO workbook (a real milestone). Idempotent (won't re-stamp an
-    already-checked cell) and never raises: a daily-task hiccup must never block
-    a file download. No-op if the marketplace maps to no daily-task channel."""
+    ``marketplace`` — called when the operator downloads the *Completed* SO
+    workbook (a real milestone). ``day`` defaults to TODAY; a parked
+    ("Review Later") run passes its **park day** so this step lands with the
+    rest of that run's back-dated signals (record, uploaded-web, un-hold) on the
+    day the work belongs to — not the day it was finally resolved.
+    Idempotent (won't re-stamp an already-checked cell) and never raises: a
+    daily-task hiccup must never block a file download. No-op if the marketplace
+    maps to no daily-task channel."""
     try:
         ensure_table()
         ch = reg.db_key_to_channel().get(str(marketplace))
         if not ch:
             return {'ok': False, 'error': f'No daily-task channel for {marketplace!r}.'}
-        day = _today()
+        day = _parse_day(day)   # default today; parked runs pass the park day
         if _stored(day).get((ch, 'workbook'), {}).get('checked'):
             return {'ok': True, 'already': True, 'channel': ch}
         res = toggle(day, ch, 'workbook', True, user or 'system')

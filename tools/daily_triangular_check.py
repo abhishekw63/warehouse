@@ -7,7 +7,11 @@ WHAT IT CHECKS (per the daily SOP):
   • Quantity               header total + per-SKU line qty (exact, unit-level)
   • Ship-to (address)      D365 Ship-to Code  vs  our dump's Ship-to Code
   • Pincode                D365 Ship-to Postcode  vs  ship_to_mapping (when we store it)
-  • Value (inc GST)        D365 Total Amount Incl. GST  vs  our order_value  (informational)
+  • Value (inc GST)        D365 Total Amount Incl. GST  vs  our INCLUDED (pushed) value
+                           — compared apples-to-apples on the post-exclusion lines
+                           (NOT the full PO), so dropped-line value is not a phantom Δ
+  • Dropped lines          2nd sheet: every unit NOT pushed (EXCLUDE / unresolved
+                           mismatch) PO-wise · line-wise · value-wise — 360° safety net
 
 WHY IT'S SAFE: read-only. Nothing is written to the business DB. It only reads
 the D365 export, our *_completed.xlsx dumps, and ship_to_mapping.
@@ -165,6 +169,74 @@ def pincodes():
     return out
 
 
+def _gm(c):
+    c = str(c or '').upper()
+    return (1.28 if '28' in c else 1.18 if '18' in c else 1.12 if '12' in c
+            else 1.05 if ('5' in c and '15' not in c and '25' not in c)
+            else 1.03 if '3' in c else 1.0 if '0' in c else 1.18)
+
+
+def _line_val(oland, up, gst, q):
+    """inc-GST value of a line: our_landing x qty (landing is already inc-GST),
+    else unit_price x qty x (1+GST)."""
+    if oland not in (None, 0, '0'):
+        return float(oland) * q
+    if up not in (None, ''):
+        return float(up) * q * _gm(gst)
+    return 0.0
+
+
+_AFF = {'MISMATCH', 'NOT_IN_MASTER'}
+
+
+def _dropped(status, action):
+    """A line is dropped from the D365 push if it's EXCLUDE-actioned, or an
+    unresolved MISMATCH/NOT_IN_MASTER (not INCLUDE/OVERRIDE-decided)."""
+    act = s(action).upper()
+    return act == 'EXCLUDE' or (s(status) in _AFF and act not in ('INCLUDE', 'OVERRIDE'))
+
+
+def db_lines_for_pos(pos):
+    """Every order_lines_full row for these POs, keeping only each PO's LATEST run
+    (re-run safe — a superseded earlier run must not double-count)."""
+    pos = sorted({s(p) for p in pos if s(p)})
+    if not pos:
+        return []
+    with _conn() as (cur, d):
+        fmt = ','.join(['%s'] * len(pos))
+        cur.execute(f"""SELECT run_id, marketplace, po, item_no, ean, description, qty,
+                               our_landing, unit_price, gst_code, status, action
+                        FROM order_lines_full WHERE po IN ({fmt})""", pos)
+        keys = [c[0] for c in cur.description]
+        rows = [dict(zip(keys, r)) for r in cur.fetchall()]
+    latest = {}
+    for r in rows:
+        po = s(r['po'])
+        if po not in latest or r['run_id'] > latest[po]:
+            latest[po] = r['run_id']
+    return [r for r in rows if r['run_id'] == latest[s(r['po'])]]
+
+
+def split_included_dropped(db_rows):
+    """Latest-run rows → (included inc-GST value per PO, list of dropped lines).
+    'included' is the honest apples-to-apples partner for D365's Total Amount
+    Incl. GST — it ties to what actually reached D365, not the full PO."""
+    inc = defaultdict(float)
+    dropped = []
+    for r in db_rows:
+        q = int(r['qty'] or 0)
+        v = _line_val(r['our_landing'], r['unit_price'], r['gst_code'], q)
+        if _dropped(r['status'], r['action']):
+            reason = ('EXCLUDE' if s(r['action']).upper() == 'EXCLUDE'
+                      else f"{s(r['status'])} (unresolved)")
+            dropped.append({'po': s(r['po']), 'mp': s(r['marketplace']), 'item': s(r['item_no']),
+                            'ean': s(r['ean']), 'desc': s(r['description']), 'qty': q,
+                            'val': v, 'reason': reason})
+        else:
+            inc[s(r['po'])] += v
+    return inc, dropped
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('folder')
@@ -182,6 +254,12 @@ def main():
     o_po, o_line, o_item = load_ours(a.folder)
     pin_of = pincodes()
 
+    # our INCLUDED (pushed-to-D365) value + the dropped lines, from the DB latest
+    # run per PO. Value MUST be compared included-vs-D365 (not full PO), else the
+    # dropped lines' value shows up as a phantom Δ.
+    db_rows = db_lines_for_pos(set(d_po) | set(o_po))
+    inc_val, dropped = split_included_dropped(db_rows)
+
     # ── per-PO: qty · ship-to · pincode · value ──
     recs = []
     for po in sorted(set(d_po) | set(o_po)):
@@ -198,19 +276,24 @@ def main():
         opin = pin_of.get((oo or {}).get('ship', ''), '') or pin_of.get((dd or {}).get('ship', ''), '')
         if dd and opin and dd['pin'] and opin != dd['pin']:
             flags.append(f"PIN {opin}vs{dd['pin']}")
+        # our value = INCLUDED (pushed) value from the DB; Summary full amount is a
+        # fallback only when the PO isn't in the DB.
+        ov = inc_val.get(po, (oo or {}).get('incl', 0.0))
         recs.append({'po': po, 'dq': (dd or {}).get('qty', 0), 'oq': (oo or {}).get('qty', 0),
-                     'dv': (dd or {}).get('incl', 0.0), 'ov': (oo or {}).get('incl', 0.0),
+                     'dv': (dd or {}).get('incl', 0.0), 'ov': ov,
                      'ocode': (oo or {}).get('ship', ''), 'dcode': (dd or {}).get('ship', ''),
                      'opin': opin, 'dpin': (dd or {}).get('pin', ''),
                      'status': 'OK' if not flags else ' · '.join(flags)})
     nok = sum(1 for r in recs if r['status'] == 'OK')
     print(f"\n=== PER-PO ===  D365={len(d_po)}  ours={len(o_po)}  OK={nok}  FLAGGED={len(recs)-nok}")
     print(f"Qty (final):  D365={sum(r['dq'] for r in recs):,}  ours={sum(r['oq'] for r in recs):,}")
-    print(f"Value(incGST):D365={sum(r['dv'] for r in recs):,.2f}  ours={sum(r['ov'] for r in recs):,.2f}  "
-          f"Δ={sum(r['dv']-r['ov'] for r in recs):,.2f}")
+    print(f"Value(incGST, INCLUDED):D365={sum(r['dv'] for r in recs):,.2f}  "
+          f"ours={sum(r['ov'] for r in recs):,.2f}  Δ={sum(r['dv']-r['ov'] for r in recs):,.2f}")
     for r in recs:
         if r['status'] != 'OK':
             print(f"  {r['po']:<16} {r['status']}")
+    dq = sum(r['qty'] for r in dropped); dv = sum(r['val'] for r in dropped)
+    print(f"\n=== DROPPED (not pushed) ===  lines={len(dropped)}  qty={dq:,}  value(incGST)={dv:,.2f}")
 
     # ── per-SKU: item-level aggregate (key-independent, unit-exact) ──
     if lines:
@@ -259,6 +342,29 @@ def main():
     for i, w in enumerate([16, 9, 9, 17, 15, 11, 13, 13, 9, 9, 30], 1):
         ws.column_dimensions[get_column_letter(i)].width = w
     ws.freeze_panes = 'A2'
+
+    # ── sheet 2: DROPPED / EXCLUDED lines — the 360° safety net ──
+    # Every unit we did NOT push (EXCLUDE or unresolved mismatch), PO-wise +
+    # line-wise + value-wise, so a drop is never invisible after the fact.
+    ws2 = wb.create_sheet('Dropped Lines')
+    AMBER = PatternFill('solid', fgColor='FFF3CD')
+    dcols = ['PO', 'Marketplace', 'Item No', 'EAN', 'Description', 'Dropped Qty',
+             'Value (inc GST)', 'Reason']
+    ws2.append(dcols)
+    for c in ws2[1]:
+        c.fill = NAVY; c.font = HF; c.alignment = Alignment('center', 'center', wrap_text=True); c.border = BD
+    for r in sorted(dropped, key=lambda x: (x['po'], x['item'], x['ean'])):
+        ws2.append([r['po'], r['mp'], r['item'], r['ean'], r['desc'], r['qty'],
+                    round(r['val'], 2), r['reason']])
+        for c in ws2[ws2.max_row]:
+            c.border = BD; c.fill = AMBER
+    ws2.append(['TOTAL', '', '', '', f"{len(dropped)} lines", dq, round(dv, 2), ''])
+    for c in ws2[ws2.max_row]:
+        c.font = Font(bold=True); c.border = BD
+    for i, w in enumerate([16, 12, 12, 16, 36, 12, 15, 22], 1):
+        ws2.column_dimensions[get_column_letter(i)].width = w
+    ws2.freeze_panes = 'A2'
+
     out = os.path.join(a.folder, f"Triangular_Reconciliation_{_dt.date.today():%d-%m-%Y}.xlsx")
     wb.save(out)
     print('\nSAVED:', out)

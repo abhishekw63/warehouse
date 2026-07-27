@@ -36,6 +36,16 @@
   .fmt-tpl:hover{ transform:translateY(-1px); box-shadow:0 4px 14px -6px var(--accent); gap:9px; }
   .fmt-tpl .arw{ transition:transform .18s ease; }
   .fmt-tpl:hover .arw{ transform:translateX(3px); }
+  /* Reliance identifier card — Site-code chips */
+  .sc-chip{ display:inline-block; font-family:ui-monospace,Menlo,Consolas,monospace; font-weight:800;
+    font-size:11.5px; letter-spacing:.02em; color:var(--text-2); background:var(--surface-2);
+    border:1px solid var(--border); border-radius:6px; padding:2px 8px; }
+  .sc-chip.on{ color:#0d6b34; background:#e6f6ec; border-color:#a8dcbc; }
+  :root[data-theme="dark"] .sc-chip.on{ color:#8fe3b0; background:rgba(45,140,90,.18); border-color:rgba(120,200,150,.4); }
+  .rel-tbl td{ vertical-align:middle; }
+  .rel-tbl tr.rel-on td{ background:var(--accent-soft); }
+  .rel-tbl .muted{ font-size:11px; }
+  .rc-no.rc-rel{ background:linear-gradient(135deg,#0a7d3c,#0d6b34); }
 </style>
 {% endblock %}
 
@@ -53,7 +63,6 @@
       <p class="src">How every marketplace is validated — margins, basis, exceptions, and the decisions you can take. Pulled live from the engine config, so it never drifts.</p>
     </div>
     <div class="head-actions">
-      <a href="{% url 'b2b_dashboard' %}" class="btn-ghost">← Hub</a>
       <a href="{% url 'b2b_upload' %}" class="btn-primary">＋ Process PO</a>
     </div>
   </div>
@@ -235,6 +244,57 @@
 
     </div>
     <p class="rc-foot">These live in the engine config (Reliance) or the central <span class="mono">Master Exceptions.xlsx</span> / <span class="mono">Swiggy Deal SKUs</span> overlay — edit one place and every marketplace's output reflects it.</p>
+  </div>
+
+  <!-- ── Reliance ship-to identification ── -->
+  <div class="rule-card reveal">
+    <div class="rc-head"><span class="rc-no rc-rel">R</span><h2>Reliance — how each PO is identified <span class="rc-sub">— the Site code is the key (like Blink M10 / P2 / A1)</span></h2></div>
+    <p class="rc-lead">"Reliance" is <b>five different customers</b> that all print <i>Reliance Retail Limited</i>. The one reliable identifier on every PO is its <b>Site code</b> (<span class="mono">Site : SAE7</span>) — the unique per-DC code. Its <b>namespace</b> tells you online vs offline <i>and</i> the exact customer, so a PO can never be silently punched to the wrong entity or DC.</p>
+
+    <div class="scroll">
+    <table class="grid rule-tbl rel-tbl">
+      <thead><tr><th>Site code</th><th>Entity</th><th class="r">Customer</th><th>Channel</th><th>Input file</th></tr></thead>
+      <tbody>
+        <tr class="rel-on">
+          <td><span class="sc-chip on">S###</span> <span class="muted">SAE7 · S4ZD · SA1A</span></td>
+          <td><b>Reliance</b></td><td class="r mono">20015</td>
+          <td><span class="pill live">ONLINE</span></td><td>PO PDF</td></tr>
+        <tr>
+          <td><span class="sc-chip">T8##</span> <span class="muted">T8VY · T8WL · T8WB</span></td>
+          <td>Reliance Retail</td><td class="r mono">20043</td>
+          <td><span class="basis-badge b-cp">offline</span></td><td>PurchaseOrders xlsx · <span class="mono">Site</span></td></tr>
+        <tr>
+          <td><span class="sc-chip">FR## · 6220</span></td>
+          <td>Reliance Smart Bazaar</td><td class="r mono">20615</td>
+          <td><span class="basis-badge b-cp">offline</span></td><td>PurchaseOrders xlsx · <span class="mono">DC_CODE</span></td></tr>
+        <tr>
+          <td><span class="sc-chip">TH## · TB##</span></td>
+          <td>Hamleys / RBL</td><td class="r mono">20325</td>
+          <td><span class="basis-badge b-cp">offline</span></td><td>PO PDF · <span class="muted">Reliance Brands</span></td></tr>
+        <tr>
+          <td><span class="sc-chip">BAP · HO</span></td>
+          <td>Reliance Trends</td><td class="r mono">20418</td>
+          <td><span class="basis-badge b-cp">offline</span></td><td>BAP xlsx</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="rc-foot"><b>Rule:</b> online = the Site code starts with <span class="mono">S</span>. Anything else (T8 / FR / TH / 6 / BAP) is <b>offline</b> and must not be uploaded into the online (20015) run.</p>
+
+    <div class="exc-grid">
+      <div class="exc-card e-gst">
+        <div class="exc-h">Guard · Wrong channel <span class="pill live">live</span></div>
+        <p>An <b>offline</b> Reliance PO uploaded into the online (20015) run is <b>blocked, not guessed</b> — its Site code is checked against the offline customers' codes (read live from the mapping). Stops e.g. <span class="mono">T8WL</span> (Retail Indore) being silently punched as online <span class="mono">20015_2</span>.</p>
+      </div>
+      <div class="exc-card e-over">
+        <div class="exc-h">Guard · Ambiguous DC <span class="pill live">live</span></div>
+        <p>Online resolves by <b>city</b> today, so two DCs in one city collide (<b>Gurgaon:</b> Centro <span class="mono">122001</span> vs Farukhnagar <span class="mono">122506</span>). A multi-DC city with an <b>unmapped pincode</b> is <b>blocked</b>, never defaulted. Pincode <span class="mono">122506 → Farukhnagar 20015_6</span> is mapped &amp; correct.</p>
+      </div>
+      <div class="exc-card e-remap">
+        <div class="exc-h">Open items</div>
+        <p><b>2 Nagpur</b> DCs (<span class="mono">20015_3 / _4</span>) share a city — capture their Site codes. <b><span class="mono">FR49</span></b> is shared by Retail (<span class="mono">20043_5</span>) &amp; Smart Bazaar (<span class="mono">20615_7</span>) — disambiguate.</p>
+      </div>
+    </div>
+    <p class="rc-foot">Full detail: the <i>Reliance Identifier Map &amp; Verification</i> workbook · enforced in <span class="mono">online_b2b/services/reliance_shipto.py</span>.</p>
   </div>
 
   <!-- ── 4. Your decisions on a mismatch ── -->

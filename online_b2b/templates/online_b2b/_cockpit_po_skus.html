@@ -1,0 +1,12 @@
+{% load b2b_extras %}{% comment %}Lazy 2nd-level drill (returned by CockpitPOSkusView) — the SKU rows for ONE po, injected under its PO row on click. data-child={{ pgid }} so the shared MP→PO→SKU collapse hides them with their parent.{% endcomment %}{% for x in skus %}
+<tr class="em-sku-child em-anim" data-child="{{ pgid }}">
+  <td class="em-sku-cell"><span class="em-sku-item">{{ x.item_no }}</span> {{ x.description|truncatechars:36 }}</td>
+  <td></td><td class="r"></td>
+  <td class="r em-leg"><div class="q">{{ x.raw_qty|indnum }}</div><div class="v">{{ x.raw_value|inr }}</div></td>
+  <td class="r em-leg em-incl"><div class="q">{{ x.uploaded_qty|indnum }} <span class="em-pct">({{ x.uploaded_qty_pct }}%)</span></div><div class="v">{{ x.uploaded_value|inr }} <span class="em-pct">({{ x.uploaded_value_pct }}%)</span></div></td>
+  {% if x.excluded_qty or x.excluded_value %}
+  <td class="r em-leg em-excl"><div class="q">{{ x.excluded_qty|indnum }} <span class="em-pct">({{ x.excluded_qty_pct }}%)</span></div><div class="v">{{ x.excluded_value|inr }} <span class="em-pct">({{ x.excluded_value_pct }}%)</span></div></td>
+  {% else %}<td class="r em-none">—</td>{% endif %}
+  <td class="r em-none">—</td>
+</tr>{% empty %}
+<tr class="em-sku-child em-anim" data-child="{{ pgid }}"><td colspan="7" class="em-none" style="padding:10px 16px;">No SKU lines for this PO.</td></tr>{% endfor %}

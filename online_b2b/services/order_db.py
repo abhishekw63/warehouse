@@ -123,6 +123,35 @@ def _cutoff(kind: str, days: int):
     return dt if kind == 'mysql' else dt.isoformat(sep=' ', timespec='seconds')
 
 
+# Hub time-range selector — windowed KPI scoping (read-only, additive).
+# Values map to a run_ts lower bound; 'all' means no filter (all-time).
+WINDOWS = ('today', '7d', '30d', 'mtd', 'all')
+
+
+def _window_frag(ph: str, kind: str, window: str):
+    """Return (sql_fragment, params) scoping ``run_ts`` to the given window.
+
+    today = midnight today · 7d / 30d = now − N days · mtd = 1st of this month ·
+    all / unknown = no filter (empty fragment). The fragment is an ``AND …``
+    clause meant to be appended after an existing ``WHERE`` (or ``WHERE 1=1``).
+    """
+    import datetime as _dt
+    now = _dt.datetime.now()
+    w = (window or 'all').lower()
+    if w == 'today':
+        dt = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    elif w == '7d':
+        dt = now - _dt.timedelta(days=7)
+    elif w == '30d':
+        dt = now - _dt.timedelta(days=30)
+    elif w == 'mtd':
+        dt = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    else:                                    # 'all' or anything unexpected
+        return '', []
+    bound = dt if kind == 'mysql' else dt.isoformat(sep=' ', timespec='seconds')
+    return f"AND run_ts >= {ph}", [bound]
+
+
 # Known segments for the dashboard switch.
 SEGMENTS = ['OnlineB2B', 'Offline']
 
@@ -263,12 +292,14 @@ def intake_hierarchy(days: int = 30, date: str = '') -> dict:
 def hub_extra_kpis() -> dict:
     """Extra hub KPIs in one round-trip: avg PO value, total line items, POs in the
     last 7 days, and resolved (actioned) issue lines. Read-only; never raises."""
-    out = {'avg_po_value': 0.0, 'order_lines': 0, 'week_pos': 0, 'resolved': 0}
+    out = {'avg_po_value': 0.0, 'order_lines': 0, 'week_pos': 0, 'resolved': 0,
+           'all_pos': 0}
     try:
         with _conn() as (cur, d):
             ot = d['orders']
             cur.execute(f"SELECT COUNT(DISTINCT po), COALESCE(SUM(order_value),0) FROM {ot}")
             pos, val = cur.fetchone()
+            out['all_pos'] = pos or 0          # all-time PO count (TAT denominator)
             out['avg_po_value'] = round(float(val or 0) / pos, 2) if pos else 0.0
             cur.execute(f"SELECT COUNT(DISTINCT po) FROM {ot} "
                         f"WHERE created_at >= (CURDATE() - INTERVAL 6 DAY)")
@@ -370,23 +401,177 @@ def today_intake() -> dict:
     return out
 
 
-def segment_kpis(segment: str) -> dict:
+def segment_kpis(segment: str, window: str = 'all') -> dict:
     """Lightweight POs / qty / value for one segment — for the hub group cards.
-    Read-only; never raises (returns zeros on any error)."""
+    ``window`` (Hub range selector) scopes by ``run_ts``; defaults to 'all' so
+    existing callers are unchanged. Read-only; never raises (zeros on error)."""
     out = {'pos': 0, 'qty': 0, 'value': 0.0}
     try:
         with _conn() as (cur, d):
-            ot, ph = d['orders'], d['ph']
+            ot, ph, kind = d['orders'], d['ph'], d['kind']
             seg, params = _seg(ph, segment)
+            wf, wp = _window_frag(ph, kind, window)
             cur.execute(
                 f"SELECT COUNT(DISTINCT po), COALESCE(SUM(qty),0), "
-                f"COALESCE(SUM(order_value),0) FROM {ot} WHERE {seg}", tuple(params))
+                f"COALESCE(SUM(order_value),0) FROM {ot} WHERE {seg} {wf}",
+                tuple(params + wp))
             r = cur.fetchone()
             out = {'pos': r[0] or 0, 'qty': int(r[1] or 0),
                    'value': float(r[2] or 0)}
     except Exception:  # noqa: BLE001
         pass
     return out
+
+
+def marketplace_daily_intake(segment='OnlineB2B', day=None) -> dict:
+    """Per-marketplace daily-intake rollup for the consolidated **Email summary**.
+
+    For ``day`` (default today, keyed on ``run_ts``) returns, grouped by
+    ``(marketplace, marketplace_label)``:
+
+    * ``today``          – ``pos`` / ``items`` / ``qty`` / ``value`` recorded that day
+    * ``last_received``  – the all-time most-recent ``run_ts`` (so a not-received
+                            marketplace can show when it *last* received)
+    * ``issues``         – that day's issue lines (MISMATCH / NOT_IN_MASTER),
+                            the "excluded / won't-cleanly-reach-D365" count —
+                            same definition as the dashboard ``issue_lines`` KPI
+
+    Pure read helper — three ``SELECT``s, no writes, no business logic; the caller
+    (``summary_email``) maps each group to a Daily-Tasks channel. Never raises."""
+    import datetime as _dt
+    iso = (day or _dt.date.today().isoformat())
+    out = {'day': iso, 'today': [], 'last_received': [], 'issues': [],
+           'value_legs': [], 'po_legs': [], 'sku_legs': []}
+    try:
+        with _conn() as (cur, d):
+            ot, ph = d['orders'], d['ph']
+            seg, sp = _seg(ph, segment)
+            # ── today's volume per marketplace (mirrors overview/by_marketplace,
+            #    scoped to the day on run_ts like the Daily auto-detect) ──
+            cur.execute(
+                f"SELECT marketplace, marketplace_label, COUNT(DISTINCT po), "
+                f"COALESCE(SUM(items),0), COALESCE(SUM(qty),0), "
+                f"COALESCE(SUM(order_value),0) FROM {ot} "
+                f"WHERE {seg} AND DATE(run_ts)={ph} "
+                f"GROUP BY marketplace, marketplace_label", tuple(sp + [iso]))
+            out['today'] = _rows(cur, ['marketplace', 'marketplace_label',
+                                       'pos', 'items', 'qty', 'value'])
+            # ── all-time last-received timestamp per marketplace ──
+            cur.execute(
+                f"SELECT marketplace, marketplace_label, MAX(run_ts) FROM {ot} "
+                f"WHERE {seg} GROUP BY marketplace, marketplace_label", tuple(sp))
+            out['last_received'] = _rows(cur, ['marketplace', 'marketplace_label',
+                                               'last_received'])
+            # ── today's issue lines per marketplace (excluded proxy) ──
+            try:
+                cur.execute(
+                    f"SELECT marketplace, COUNT(*) FROM order_lines_full "
+                    f"WHERE status IN ('MISMATCH','NOT_IN_MASTER') "
+                    f"AND DATE(run_ts)={ph} GROUP BY marketplace", (iso,))
+                out['issues'] = _rows(cur, ['marketplace', 'count'])
+            except Exception:  # noqa: BLE001 — issues are best-effort
+                out['issues'] = []
+            # ── today's VALUE legs per marketplace (inc-GST basis) — REUSE the
+            #    Triangular reconcile's line-value + dropped rules so the identity
+            #    raw = uploaded + excluded ties out exactly (one source of truth,
+            #    no re-derived pricing here). Uploaded = what cleanly reaches D365,
+            #    Excluded = dropped (MISMATCH/NOT_IN_MASTER unresolved or EXCLUDE) ─
+            try:
+                from .triangular_validation import _line_val, _is_dropped
+                cur.execute(
+                    f"SELECT marketplace, po, item_no, ean, description, qty, "
+                    f"our_landing, unit_price, gst_code, status, action "
+                    f"FROM order_lines_full WHERE DATE(run_ts)={ph}", (iso,))
+
+                def _blank_leg(mk, po=None, item=None, ean=None, desc=None):
+                    d = {'marketplace': mk, 'raw_value': 0.0, 'uploaded_value': 0.0,
+                         'excluded_value': 0.0, 'raw_qty': 0, 'uploaded_qty': 0,
+                         'excluded_qty': 0}
+                    if po is not None:
+                        d['po'] = po
+                    if item is not None:
+                        d['item_no'] = item
+                        d['ean'] = ean or ''
+                        d['description'] = desc or ''
+                    return d
+                legs = {}          # marketplace → aggregate
+                po_legs = {}       # (marketplace, po) → per-PO breakdown
+                sku_legs = {}      # (marketplace, po, item) → per-SKU breakdown
+                for (mk, po, item, ean, desc, qty, oland, up, gst,
+                     status, action) in cur.fetchall():
+                    mk = str(mk or ''); po = str(po or ''); item = str(item or '')
+                    g = legs.setdefault(mk, _blank_leg(mk))
+                    pg = po_legs.setdefault((mk, po), _blank_leg(mk, po))
+                    sg = sku_legs.setdefault((mk, po, item),
+                                             _blank_leg(mk, po, item, ean, desc))
+                    q = int(qty or 0)
+                    v = _line_val(oland, up, gst, q)
+                    dropped = _is_dropped(status, action)
+                    for tgt in (g, pg, sg):
+                        tgt['raw_value'] += v
+                        tgt['raw_qty'] += q
+                        if dropped:
+                            tgt['excluded_value'] += v
+                            tgt['excluded_qty'] += q
+                        else:
+                            tgt['uploaded_value'] += v
+                            tgt['uploaded_qty'] += q
+                out['value_legs'] = list(legs.values())
+                out['po_legs'] = list(po_legs.values())
+                out['sku_legs'] = list(sku_legs.values())
+            except Exception:  # noqa: BLE001 — value legs are best-effort
+                out['value_legs'] = []
+                out['po_legs'] = []
+                out['sku_legs'] = []
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def po_sku_detail(day, marketplace, po) -> dict:
+    """LAZY per-PO SKU legs — one focused query for a single (marketplace, po) on
+    ``day`` (Online *and* Offline alike). Returns ``{'skus': {item_no: leg}}`` with
+    the same raw/uploaded/excluded shape as :func:`marketplace_daily_intake`, so the
+    cockpit's on-click SKU expand renders identically — but instantly (no fill-rate
+    / whole-board build). Read-only; never raises."""
+    import datetime as _dt
+    iso = (day or _dt.date.today().isoformat())
+    skus: dict = {}
+    if not po:
+        return {'skus': skus}
+    try:
+        from .triangular_validation import _line_val, _is_dropped
+        with _conn() as (cur, d):
+            ph = d['ph']
+            where = f"po={ph} AND DATE(run_ts)={ph}"
+            params = [str(po), iso]
+            if marketplace:                       # optional narrow (PO no. is unique enough alone)
+                where += f" AND marketplace={ph}"
+                params.append(str(marketplace))
+            cur.execute(
+                "SELECT item_no, ean, description, qty, our_landing, unit_price, "
+                f"gst_code, status, action FROM order_lines_full WHERE {where}",
+                tuple(params))
+            for (item, ean, desc, qty, oland, up, gst, status, action) in cur.fetchall():
+                item = str(item or '')
+                sg = skus.setdefault(item, {
+                    'item_no': item, 'ean': str(ean or ''),
+                    'description': str(desc or ''),
+                    'raw_qty': 0, 'uploaded_qty': 0, 'excluded_qty': 0,
+                    'raw_value': 0.0, 'uploaded_value': 0.0, 'excluded_value': 0.0})
+                q = int(qty or 0)
+                v = _line_val(oland, up, gst, q)
+                sg['raw_value'] += v
+                sg['raw_qty'] += q
+                if _is_dropped(status, action):
+                    sg['excluded_value'] += v
+                    sg['excluded_qty'] += q
+                else:
+                    sg['uploaded_value'] += v
+                    sg['uploaded_qty'] += q
+    except Exception:  # noqa: BLE001 — lazy fetch is best-effort
+        pass
+    return {'skus': skus}
 
 
 def _parse_date(v):
@@ -547,20 +732,22 @@ def dashboard(segment='', marketplace='', days=0, q='', warehouse='', order_type
     return out
 
 
-def overview(segment=SEGMENT) -> dict:
+def overview(segment=SEGMENT, window='all') -> dict:
     """Lean landing-page data: KPIs + 30-day trend + marketplace mix/summary
     (no order rows — the full list lives on the Orders page). ``segment`` scopes
-    everything ('OnlineB2B' default, 'Offline', or 'all')."""
+    everything ('OnlineB2B' default, 'Offline', or 'all'). ``window`` (Hub range
+    selector: today | 7d | 30d | mtd | all) scopes the VOLUME/VALUE KPIs by
+    ``run_ts``; defaults to 'all' so existing callers are unchanged."""
     out: dict = {
         'ok': False, 'backend': backend_label(), 'kpis': {},
         'by_marketplace': [], 'charts': {}, 'issue_count': 0, 'trends': {},
-        'segments': SEGMENTS, 'segment': segment,
+        'segments': SEGMENTS, 'segment': segment, 'window': window,
     }
     try:
         with _conn() as (cur, d):
             ot, ph = d['orders'], d['ph']
             seg, sp = _seg(ph, segment)
-            out['kpis'] = _kpis(cur, d, segment)
+            out['kpis'] = _kpis(cur, d, segment, window)
             out['issue_count'] = out['kpis'].get('issue_lines', 0)
             out['trends'] = _trends(cur, d, 30, segment)
 
@@ -613,15 +800,22 @@ def orders_page(sort='date', direction='desc', offset=0, limit=PAGE_SIZE,
     return out
 
 
-def _kpis(cur, d, segment=SEGMENT) -> dict:
+def _kpis(cur, d, segment=SEGMENT, window='all') -> dict:
     ot, ph, kind = d['orders'], d['ph'], d['kind']
     seg, sp = _seg(ph, segment)
+    wf, wp = _window_frag(ph, kind, window)   # '' + [] for 'all' → all-time
 
+    # Windowed VOLUME/VALUE: Total POs · line count · Qty · Order Value.
     cur.execute(
         f"SELECT COUNT(DISTINCT po), COUNT(*), COALESCE(SUM(qty),0), "
-        f"COALESCE(SUM(order_value),0), COUNT(DISTINCT marketplace_label) "
-        f"FROM {ot} WHERE {seg}", tuple(sp))
-    n_pos, n_lines, tot_qty, tot_val, n_mp = cur.fetchone()
+        f"COALESCE(SUM(order_value),0) "
+        f"FROM {ot} WHERE {seg} {wf}", tuple(sp + wp))
+    n_pos, n_lines, tot_qty, tot_val = cur.fetchone()
+
+    # Channels breadth stays ALL-TIME (cumulative, not a windowed volume).
+    cur.execute(f"SELECT COUNT(DISTINCT marketplace_label) FROM {ot} "
+                f"WHERE {seg}", tuple(sp))
+    n_mp = cur.fetchone()[0]
 
     cur.execute(f"SELECT COUNT(DISTINCT po) FROM {ot} WHERE {seg} "
                 f"AND run_ts >= {ph}", tuple(sp + [_cutoff(kind, RECENT_DAYS)]))
@@ -643,14 +837,17 @@ def _kpis(cur, d, segment=SEGMENT) -> dict:
         except Exception:
             expiring = 0
 
-    # Affected lines + POs needing attention — derived from the SINGLE lines
-    # table (status != OK), no separate issue-lines table.
-    # Only UNRESOLVED (no action set) lines count as needs-attention / issues.
-    n_issue = needs_attention = 0
+    # Windowed line items + affected lines / POs needing attention — derived from
+    # the SINGLE lines table (order_lines_full). Only UNRESOLVED (no action set)
+    # lines count as needs-attention / issues. Scoped to the same run_ts window.
+    n_issue = needs_attention = order_lines = 0
     try:
-        cur.execute("SELECT COUNT(*), COUNT(DISTINCT po) FROM order_lines_full "
-                    "WHERE status IN ('MISMATCH','NOT_IN_MASTER') "
-                    "AND (action IS NULL OR action = '')")
+        cur.execute(f"SELECT COUNT(*) FROM order_lines_full WHERE 1=1 {wf}",
+                    tuple(wp))
+        order_lines = cur.fetchone()[0] or 0
+        cur.execute(f"SELECT COUNT(*), COUNT(DISTINCT po) FROM order_lines_full "
+                    f"WHERE status IN ('MISMATCH','NOT_IN_MASTER') "
+                    f"AND (action IS NULL OR action = '') {wf}", tuple(wp))
         n_issue, needs_attention = cur.fetchone()
     except Exception:
         pass
@@ -660,7 +857,8 @@ def _kpis(cur, d, segment=SEGMENT) -> dict:
         'value': float(tot_val or 0.0), 'marketplaces': n_mp,
         'updated_2d': updated_2d, 'last_updated': last_updated,
         'expiring_soon': expiring, 'needs_attention': needs_attention,
-        'issue_lines': n_issue,
+        'issue_lines': n_issue, 'order_lines': order_lines,
+        'avg_po_value': round(float(tot_val or 0.0) / n_pos, 2) if n_pos else 0.0,
     }
     k.update(_deltas(cur, d, segment))
     return k

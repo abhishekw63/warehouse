@@ -9,6 +9,29 @@
   /* uniform alignment across BOTH recent tables — every header + cell centered
      (overrides the default .r right-align so columns look balanced full-width). */
   .hub-recent th, .hub-recent td{ text-align:center !important; }
+
+  /* ── Hub time-range switch (windowed KPIs) ── */
+  .hub-range{display:inline-flex;gap:2px;margin:2px 0 16px;padding:3px;border-radius:11px;
+    background:var(--surface-2,#f1f5f9);border:1px solid var(--border,#e5e7eb);}
+  .hr-chip{appearance:none;border:0;background:transparent;cursor:pointer;
+    font:600 12.5px/1 inherit;font-family:inherit;color:var(--muted,#64748b);
+    padding:7px 13px;border-radius:8px;letter-spacing:.01em;
+    transition:background .15s,color .15s,box-shadow .15s;}
+  .hr-chip:hover{color:var(--text,#0f172a);}
+  .hr-chip.on{background:var(--surface,#fff);color:var(--accent,#4f46e5);
+    box-shadow:0 1px 3px -1px rgba(15,23,42,.28);}
+  .hr-chip:focus-visible{outline:2px solid var(--accent,#4f46e5);outline-offset:2px;}
+  .hub-range-note{color:var(--muted,#64748b);font-weight:500;}
+  .hub-range-note b{color:var(--text,#0f172a);font-weight:700;font-variant-numeric:tabular-nums;}
+  /* Cross-fade while a range swap is in flight (reuses the global transition feel). */
+  #hubWindowed{transition:opacity .18s ease;}
+  #hubWindowed.is-swapping{opacity:.35;pointer-events:none;}
+  /* Tiny tag marking the tiles that intentionally stay all-time. */
+  .hk-tag{display:inline-block;margin-left:5px;padding:1px 6px;border-radius:6px;
+    font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+    color:var(--muted,#64748b);background:color-mix(in srgb,var(--muted,#64748b) 14%,transparent);
+    vertical-align:middle;}
+  .hub-kpis .n{font-variant-numeric:tabular-nums;}
 </style>
 {% endblock %}
 
@@ -22,7 +45,8 @@
   <div class="b2b-head">
     <div>
       <h1>Order Management <span>· Hub</span></h1>
-      <p class="src">{{ backend }}{% if kpis.last_updated %} · last order {{ kpis.last_updated }}{% endif %}</p>
+      <p class="src">{{ backend }}{% if kpis.last_updated %} · last order {{ kpis.last_updated }}{% endif %}
+        <span class="hub-range-note"> · <b id="hubRangeLabel">{{ range_label }}</b></span></p>
     </div>
     <div class="head-actions">
       <a href="{% url 'b2b_analytics' %}" class="btn-primary">📊 Analytics</a>
@@ -32,6 +56,17 @@
       <a href="{% url 'b2b_issues' %}" class="btn-ghost">Issues</a>
     </div>
   </div>
+
+  {% if ok %}
+  <!-- global time-range switch — scopes the windowed KPI cards (no page reload) -->
+  <div class="hub-range" id="hubRange" role="tablist" aria-label="KPI time range">
+    {% for r in ranges %}
+    <button type="button" class="hr-chip{% if r.key == active_range %} on{% endif %}"
+            role="tab" aria-selected="{% if r.key == active_range %}true{% else %}false{% endif %}"
+            data-range="{{ r.key }}">{{ r.label }}</button>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   {% if im_status.due %}
   <a href="{% url 'b2b_item_master' %}" class="im-reminder">
@@ -54,57 +89,9 @@
     <div class="banner err">Order DB unavailable{% if error %} — {{ error }}{% endif %}.</div>
   {% else %}
 
-  <!-- overall KPI strip — 4×3, equally allocated (trend deltas vs prior period) -->
-  <div class="hub-kpis reveal">
-    <div class="hk"><div class="n">{{ kpis.pos|default:0 }}</div><div class="l">Total POs
-      {% if kpis.pos_delta is not None %}<span class="delta {% if kpis.pos_delta >= 0 %}up{% else %}down{% endif %}">{% if kpis.pos_delta >= 0 %}▲{% else %}▼{% endif %}{{ kpis.pos_delta }}%</span>{% endif %}</div></div>
-    <div class="hk"><div class="n">{{ kpis.qty|compact }}</div><div class="l">Total Qty</div></div>
-    <div class="hk"><div class="n">{{ kpis.value|inr_short }}</div><div class="l">Order Value
-      {% if kpis.value_delta is not None %}<span class="delta {% if kpis.value_delta >= 0 %}up{% else %}down{% endif %}">{% if kpis.value_delta >= 0 %}▲{% else %}▼{% endif %}{{ kpis.value_delta }}%</span>{% endif %}</div></div>
-    <div class="hk"><div class="n">{{ extra.avg_po_value|inr_short }}</div><div class="l">Avg PO Value</div></div>
-
-    <div class="hk"><div class="n">{{ kpis.marketplaces|default:0 }}</div><div class="l">Channels</div></div>
-    <div class="hk today" tabindex="0">
-      <div class="n">{{ today.pos }}</div>
-      <div class="l">Received Today <span class="sub">· {{ today.value|inr_short }}</span></div>
-      <div class="hk-pop">
-        <div class="pop-h">Today's intake · by segment</div>
-        {% for s in today.by_segment %}
-          <div class="pop-r"><span class="pop-seg {% if s.segment == 'Offline' %}off{% else %}on{% endif %}">{{ s.segment }}</span>
-            <span class="pop-v">{{ s.pos }} POs · {{ s.value|inr_short }}</span></div>
-        {% empty %}<div class="pop-r muted">No orders received yet today.</div>{% endfor %}
-      </div>
-    </div>
-    <div class="hk"><div class="n">{{ extra.week_pos }}</div><div class="l">Received · 7d</div></div>
-    <a class="hk" href="{% url 'b2b_lines' %}"><div class="n">{{ extra.order_lines|compact }}</div><div class="l">Line Items</div></a>
-
-    <div class="hk"><div class="n">{{ kpis.expiring_soon|default:0 }}</div><div class="l">Expiring ≤7d</div></div>
-    <a class="hk warn" href="{% url 'b2b_issues' %}"><div class="n">{{ kpis.needs_attention|default:0 }}</div><div class="l">Needs attention</div></a>
-    <a class="hk warn" href="{% url 'b2b_issues' %}"><div class="n">{{ issue_count }}</div><div class="l">Issue Lines</div></a>
-    <a class="hk warn" href="{% url 'b2b_tat' %}" title="TAT breaches ({{ tat_total }}) ÷ total POs ({{ kpis.pos }}) = {{ tat_rate }}% uploaded later than 1 working day"><div class="n">{{ tat_total|default:0 }}/{{ kpis.pos|default:0 }}</div><div class="l">TAT breaches · {{ tat_rate }}%</div></a>
-    <a class="hk good" href="{% url 'b2b_issues' %}?resolution=resolved"><div class="n">{{ extra.resolved }}</div><div class="l">Resolved</div></a>
-  </div>
-
-  <!-- two group cards: Online B2B / Offline -->
-  <div class="hub-groups reveal">
-    <a class="group-card gc-online" href="{% url 'b2b_online' %}">
-      <div class="gc-head"><h2>Online B2B</h2><span class="gc-go">Open →</span></div>
-      <p class="gc-sub">Marketplace POs → SO / D365 · validation &amp; issues</p>
-      <div class="gc-stat"><b>{{ online_kpis.pos }}</b> POs · <b>{{ online_kpis.value|inr_short }}</b> · {{ online_kpis.qty|compact }} qty</div>
-      <div class="gc-chips">
-        {% for c in online_channels %}{% if c.tag != 'soon' %}<span class="chip live">{{ c.name }}</span>{% endif %}{% endfor %}
-        {% if online_soon %}<span class="chip soon" title="Coming soon — {{ online_soon|join:' · ' }}">+{{ online_soon|length }} coming soon</span>{% endif %}
-      </div>
-    </a>
-    <a class="group-card gc-offline" href="{% url 'b2b_offline' %}">
-      <div class="gc-head"><h2>Offline</h2><span class="gc-go">Open →</span></div>
-      <p class="gc-sub">MT / GT channels → SO generation · recorded to the same DB</p>
-      <div class="gc-stat"><b>{{ offline_kpis.pos }}</b> POs · <b>{{ offline_kpis.value|inr_short }}</b> · {{ offline_kpis.qty|compact }} qty</div>
-      <div class="gc-chips">
-        {% for c in offline_channels %}{% if c.tag != 'soon' %}<span class="chip live">{{ c.name }}</span>{% endif %}{% endfor %}
-        {% if offline_soon %}<span class="chip soon" title="Coming soon — {{ offline_soon|join:' · ' }}">+{{ offline_soon|length }} coming soon</span>{% endif %}
-      </div>
-    </a>
+  <!-- windowed KPI block (KPI strip + segment cards) — swapped by the range switch -->
+  <div id="hubWindowed">
+    {% include 'online_b2b/_hub_kpis.html' %}
   </div>
 
   <!-- recent uploads (run/batch level) — when it was last uploaded + what & how much -->
@@ -150,4 +137,54 @@
 
   {% endif %}
 </div>
+
+<script>
+// Hub range switch — fetch the windowed KPI block and swap it in, no page reload.
+// Vanilla, no libraries. Request-id guard drops stale responses; history.replaceState
+// keeps the range on refresh; subtitle + active chip update in lockstep.
+(function () {
+  var bar = document.getElementById('hubRange');
+  var slot = document.getElementById('hubWindowed');
+  if (!bar || !slot) return;
+  var LABELS = {today:'today','7d':'last 7 days','30d':'last 30 days',mtd:'this month',all:'all-time'};
+  var reqId = 0;
+
+  function setActive(range) {
+    bar.querySelectorAll('.hr-chip').forEach(function (c) {
+      var on = c.getAttribute('data-range') === range;
+      c.classList.toggle('on', on);
+      c.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    var lab = document.getElementById('hubRangeLabel');
+    if (lab) lab.textContent = LABELS[range] || range;
+  }
+
+  function load(range) {
+    var mine = ++reqId;
+    slot.classList.add('is-swapping');
+    fetch('?range=' + encodeURIComponent(range) + '&partial=1',
+          {credentials:'same-origin', headers:{'X-Requested-With':'XMLHttpRequest'}})
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then(function (html) {
+        if (mine !== reqId) return;                 // a newer click won — ignore
+        slot.innerHTML = html;
+        slot.classList.remove('is-swapping');
+        setActive(range);
+        var u = new URL(window.location.href);
+        u.searchParams.set('range', range);
+        u.searchParams.delete('partial');
+        history.replaceState(null, '', u);
+      })
+      .catch(function () {
+        if (mine === reqId) slot.classList.remove('is-swapping');
+      });
+  }
+
+  bar.addEventListener('click', function (ev) {
+    var chip = ev.target.closest('.hr-chip');
+    if (!chip || chip.classList.contains('on')) return;
+    load(chip.getAttribute('data-range'));
+  });
+})();
+</script>
 {% endblock %}

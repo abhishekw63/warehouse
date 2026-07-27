@@ -143,3 +143,38 @@ body.enh-dense .enh-table td{padding-top:6px !important;padding-bottom:6px !impo
   .enh-toast,.enh-cmdk,.enh-cmdk-panel,.enh-skel{animation:none !important;}
   :root.enh-theming, :root.enh-theming *{transition:none !important;}
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Global smoothness layer — page / tab / action transitions.
+   One place for every B2B page (frontend-enhance-layer): extend here, never
+   per-page. Full-page nav uses the View Transitions API (Chrome/Edge) for a
+   soft cross-page cross-fade; a content fade-in covers everything else.
+   ───────────────────────────────────────────────────────────────────────── */
+@view-transition { navigation: auto; }
+
+@keyframes enhPageIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+#MainContent { animation: enhPageIn .30s cubic-bezier(.2,.7,.3,1) both; }
+
+/* Smooth interactive feedback on the common controls (colour/border/shadow —
+   no layout-shifting transforms, so it never fights an existing hover rule). */
+a, button, input, select, textarea,
+.btn-primary, .btn-ghost, .btn-discard, .btn-clear,
+.sn, .tv-tab, .tab, .card, .im-kpi, .im-card, .ck, .tvk-row,
+.tbl tbody tr, table.tv tbody tr, .grid tbody tr {
+  transition: background-color .16s ease, color .16s ease, border-color .16s ease,
+              box-shadow .18s ease, opacity .16s ease;
+}
+/* Subtle lift on the interactive cards / sidebar (transform kept tiny + only
+   here, so it's consistent and reversible). */
+.card, .im-kpi, .sn, .tv-tab, .btn-primary, .btn-ghost {
+  transition: background-color .16s ease, color .16s ease, border-color .16s ease,
+              box-shadow .18s ease, transform .14s cubic-bezier(.2,.7,.3,1);
+}
+.sn:hover { transform: translateX(2px); }
+.btn-primary:active, .btn-ghost:active { transform: translateY(1px); }
+
+@media (prefers-reduced-motion: reduce){
+  @view-transition { navigation: none; }
+  #MainContent { animation: none; }
+  a, button, input, select, textarea, .sn, .tv-tab, .card, .im-kpi, .btn-primary, .btn-ghost { transition: none !important; }
+}

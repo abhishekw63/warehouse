@@ -283,6 +283,65 @@ def _role_map(cfg: dict) -> dict:
     return out
 
 
+# ── Raw-header role fallback for parser-translated channels ──────────────
+# Some marketplaces feed the engine through a bespoke ``file_parser`` that
+# TRANSLATES the raw vendor file's headers into the flat column names the
+# config consumes (e.g. Flipkart's portal 'Supplier Unit Price' → the config's
+# 'COST PRICE'). The template preview shows the REAL raw headers, so to keep
+# the highlighting honest we must resolve those raw headers to the SAME roles.
+# The parser itself owns that raw→field map in a module-level ``_LABELS`` dict;
+# we READ it (never modify the frozen parser) and bridge each canonical parser
+# field to a role label/class via ``_ROLE_KEYS`` (the single source of truth).
+# This is a FALLBACK ONLY — a fixture column that already matches a config
+# name (Blink, Zepto, …) is resolved by ``_role_map`` first and never reaches
+# here, so those profiles stay byte-identical.
+#
+# canonical parser field (a ``_LABELS`` value) → the ``_ROLE_KEYS`` config key
+# that defines its role. Fields with no reviewer-facing role (e.g.
+# 'description') are omitted → their column stays dulled.
+_PARSER_FIELD_ROLE_KEY = {
+    'ean': 'ean_col', 'qty': 'qty_col', 'cost': 'fob_col',
+    'mrp': 'mrp_col', 'total_amount': 'amount_col', 'amount': 'amount_col',
+    'po': 'po_col', 'loc': 'loc_col', 'address': 'loc_col',
+    'fsn': 'item_col', 'item': 'item_col', 'sku': 'sku_col',
+    'hsn': 'hsn_col',
+}
+_ROLE_BY_CFG_KEY = {k: (role, cls) for k, role, cls in _ROLE_KEYS}
+
+
+def _norm_header(s) -> str:
+    """Whitespace-free, lower-cased header — mirrors the Flipkart parser's own
+    ``_norm`` so raw portal headers line up with its ``_LABELS`` keys."""
+    return re.sub(r'\s+', '', str(s if s is not None else '')).lower()
+
+
+def _parser_label_roles(cfg: dict) -> dict:
+    """``{normalized raw header → (role label, role class)}`` for a marketplace
+    whose ``file_parser`` module exposes a ``_LABELS`` raw→field map. A
+    read-only reflection of the frozen parser; returns ``{}`` for MPs without
+    such a parser (so the fallback is a genuine no-op for them → unchanged)."""
+    key = cfg.get('file_parser') or cfg.get('pdf_parser')
+    if not key:
+        return {}
+    try:
+        import sys
+        from online_po_processor.engine.marketplace_engine import PDF_PARSERS
+        fn = PDF_PARSERS.get(key)
+        mod = sys.modules.get(getattr(fn, '__module__', '') or '')
+        labels = getattr(mod, '_LABELS', None)
+        if not isinstance(labels, dict):
+            return {}
+    except Exception:  # noqa: BLE001 — never break the profile on reflection
+        return {}
+    out: dict = {}
+    for raw_norm, field in labels.items():
+        ck = _PARSER_FIELD_ROLE_KEY.get(str(field).strip().lower())
+        role = _ROLE_BY_CFG_KEY.get(ck) if ck else None
+        if role:
+            out[str(raw_norm).strip().lower()] = role
+    return out
+
+
 def marketplace_templates() -> dict[str, dict]:
     """Per-marketplace **full file template** for the Rules “See full template”
     page: every column of a real sample file plus a few sample rows, each column
@@ -302,10 +361,17 @@ def marketplace_templates() -> dict[str, dict]:
     except Exception:  # noqa: BLE001
         cfgs = {}
     for name, s in samples.items():
-        roles = _role_map(cfgs.get(name, {}))
+        cfg = cfgs.get(name, {})
+        roles = _role_map(cfg)
+        # Fallback for parser-translated channels (Flipkart): resolve the raw
+        # portal headers via the parser's own _LABELS. Empty for every other
+        # MP, so their columns are computed exactly as before (byte-identical).
+        label_roles = _parser_label_roles(cfg)
         cols = []
         for col in s.get('columns', []):
             role, cls = roles.get(str(col).strip().lower(), ('', ''))
+            if not role and label_roles:
+                role, cls = label_roles.get(_norm_header(col), ('', ''))
             cols.append({'name': col, 'role': role, 'role_class': cls,
                          'used': bool(role)})
         # Pre-align sample rows to the column order as cell dicts, so the template
@@ -330,6 +396,29 @@ def marketplace_templates() -> dict[str, dict]:
             'used': sum(1 for c in cols if c['used']),
             'total': len(cols),
             'pilot': name in PILOT_MARKETPLACES,
+            # Optional header block for files that carry a PO/address preamble
+            # ABOVE the line-item table (e.g. Flipkart's new portal PO). A list
+            # of ``{label, value, used?, role_class?}`` rendered as a labelled
+            # key/value band. MPs whose fixture omits it get ``[]`` → the panel
+            # renders no header block (unchanged).
+            'header_fields': s.get('header_fields', []),
+            'header_title': s.get('header_title', ''),
+            'header_note': s.get('header_note', ''),
+            # Optional EXACT-DOCUMENT-REPLICA mode (currently Flipkart): when the
+            # fixture sets ``doc_layout: true`` the profile renders the real PO
+            # document (banner / supplier|retailer blocks / payment / line
+            # table) from the structured ``doc`` object instead of the generic
+            # header+table. Absent/false for every other MP → generic render
+            # (byte-identical). Reverting = drop the flag; nothing else changes.
+            'doc_layout': bool(s.get('doc_layout')),
+            'doc': s.get('doc', {}),
+            # EXACT DUMP REPLICA — the file's real cell grid (merge-aware),
+            # captured per-MP from a sample; renders verbatim so the panel
+            # mirrors the actual received dump (NOT a Flipkart-shaped copy).
+            'raw_replica': s.get('raw_replica'),
+            # PDF dump facsimile — the real page-1 text lines of THIS MP's PO
+            # PDF, rendered as-received (per-MP; not a Flipkart copy).
+            'pdf_replica': s.get('pdf_replica'),
         }
     return out
 
@@ -402,6 +491,19 @@ class Processor:
 
     def post_process(self, result, env) -> None:
         """Hook after a successful engine run (e.g. Flipkart tracker)."""
+        # Honor the marketplace config's ``override_unit_price`` in the WEB flow.
+        # Since v2.1.3 that flag is only a GUI-checkbox hint; the runtime decision
+        # lives on ``result.override_unit_price`` (set from the desktop checkbox),
+        # which the headless web path never sets. Without this, BlinkMP — which
+        # shares BCPL's 70% vendor record but runs at 75% — posts a BLANK Unit
+        # Price and D365 back-fills the wrong 70% cost. Setting the flag makes the
+        # D365 exporter stamp our computed 75% CP (MRP × margin% ÷ GST) into col H.
+        # Only BlinkMP has the config flag True, so no other channel is affected.
+        try:
+            if self.config.get('override_unit_price'):
+                result.override_unit_price = True
+        except Exception:  # noqa: BLE001 — never block the run on this
+            pass
 
     def _accept_deal_exceptions(self, result) -> None:
         """A **deal SKU is the REVISED agreed price** — so accept it as an applied
@@ -1198,19 +1300,33 @@ class Processor:
         wb.save(path)
 
     @staticmethod
-    def _fmt_tracker_date(v) -> str:
-        """Day-first ``dd-mm-YYYY`` (matches the web tracker), '' when blank.
-        Accepts a date/datetime or an ISO/other string."""
+    def _tracker_date_val(v):
+        """Coerce a date-like value to a real ``datetime.date`` so the Tracker
+        cell is a GENUINE Excel date — it then groups by month in the WH team's
+        AutoFilter (not listed as flat text), sorts right, and survives a paste
+        into the org master. ``None`` when the value isn't a date."""
         import datetime as _dt
         if not v:
-            return ''
-        if isinstance(v, (_dt.date, _dt.datetime)):
-            return v.strftime('%d-%m-%Y')
+            return None
+        if isinstance(v, _dt.datetime):
+            return v.date()
+        if isinstance(v, _dt.date):
+            return v
         s = str(v).strip()
-        try:
-            return _dt.date.fromisoformat(s[:10]).strftime('%d-%m-%Y')
-        except ValueError:
-            return s
+        for fmt in ('%d-%m-%Y', '%d.%m.%Y', '%d/%m/%Y', '%Y-%m-%d', '%d-%b-%Y'):
+            try:
+                return _dt.datetime.strptime(s, fmt).date()
+            except ValueError:
+                continue
+        return None
+
+    @classmethod
+    def _fmt_tracker_date(cls, v) -> str:
+        """Day-first ``dd-mm-YYYY`` string (fallback for un-coercible values)."""
+        d = cls._tracker_date_val(v)
+        if d is not None:
+            return d.strftime('%d-%m-%Y')
+        return '' if not v else str(v).strip()
 
     def _append_tracker_sheet(self, path):
         """Append a per-PO **Tracker** sheet to the SO workbook (all marketplaces):
@@ -1247,14 +1363,24 @@ class Processor:
         for h in headers:
             po = str(h.get('po') or '')
             d = dts.get(po) or {}
-            pod = self._fmt_tracker_date(d.get('po_date') or h.get('po_date'))
-            exd = self._fmt_tracker_date(d.get('exp_date') or h.get('exp_date'))
+            pod_d = self._tracker_date_val(d.get('po_date') or h.get('po_date'))
+            exd_d = self._tracker_date_val(d.get('exp_date') or h.get('exp_date'))
             q = int(h.get('qty') or 0)
             v = round(float(h.get('order_value') or 0), 2)
+            # Write REAL Excel dates when coercible (so the WH master's filter
+            # groups them by month) — fall back to a plain string only if the
+            # value can't be parsed as a date.
             ws.append([h.get('segment') or 'OnlineB2B',
                        h.get('marketplace_label') or h.get('marketplace') or '',
-                       po, short.get(po) or h.get('location') or '', pod, exd,
+                       po, short.get(po) or h.get('location') or '',
+                       pod_d if pod_d is not None else self._fmt_tracker_date(d.get('po_date') or h.get('po_date')),
+                       exd_d if exd_d is not None else self._fmt_tracker_date(d.get('exp_date') or h.get('exp_date')),
                        '', v, q])        # PO Aging For Exp = filled manually
+            rr = ws.max_row
+            if pod_d is not None:
+                ws.cell(rr, 5).number_format = 'DD-MM-YYYY'
+            if exd_d is not None:
+                ws.cell(rr, 6).number_format = 'DD-MM-YYYY'
         # ── formatting ──
         navy = PatternFill('solid', fgColor='1A237E')
         hfont = Font(bold=True, color='FFFFFF')
@@ -1512,6 +1638,18 @@ class FlipkartProcessor(Processor):
             if uploaded:
                 rows = [r for r in rows
                         if str(r.get('PO', '')).strip().upper() in uploaded]
+            # Our-layer promotion: lift any Origin-Warehouse the operator has
+            # promoted (e.g. a new FC that the frozen map still reads as
+            # 'FK (review)') to its confirmed label. Frozen engine untouched.
+            try:
+                from .flipkart_wh_override import apply as _apply_wh_ov
+                _changed = _apply_wh_ov(rows)
+                if _changed:
+                    self.warnings.append(
+                        f"Flipkart: {_changed} PO(s) re-labelled from the "
+                        f"promoted warehouse-override map.")
+            except Exception:  # noqa: BLE001 — label refinement never blocks
+                pass
             result.flipkart_tracker_rows = rows
             if uploaded and before != len(rows):
                 self.warnings.append(
@@ -2439,6 +2577,18 @@ class RelianceProcessor(Processor):
 
     def _run(self, skip_dedup=False):
         from . import reliance_shipto
+        # Guard (block-on-ambiguous): a PO in a multi-DC city whose delivery
+        # pincode is not a known DC would fall back to a city-only guess and
+        # could ship to the WRONG DC. Block the run (nothing recorded, no PO
+        # routed to a default) rather than guess. Single-DC cities and every
+        # mapped pincode pass untouched. Mirrors DmartProcessor. [[never-skip-silently]]
+        bad = {po: reason for po, (ok, reason)
+               in reliance_shipto.confirm_paths(self.po_paths).items() if not ok}
+        if bad:
+            details = "\n• ".join(f"PO {po}: {r}" for po, r in bad.items())
+            return {'ok': False, 'error':
+                    "Reliance ship-to could not be confirmed — nothing was recorded "
+                    "(no PO was routed to a default DC):\n• " + details}
         try:
             import online_po_processor.engine.reliance_pdf_parser as _rp
         except Exception:  # noqa: BLE001 — no parser → base flow, no override

@@ -22,7 +22,6 @@
       <p class="src">{{ d.backend }}{% if d.kpis.last_updated %} · last order {{ d.kpis.last_updated }}{% endif %}</p>
     </div>
     <div class="head-actions">
-      <a href="{% url 'b2b_dashboard' %}" class="btn-ghost">← Hub</a>
       <a href="{% url 'b2b_lines' %}" class="btn-ghost">Line Items →</a>
       <a href="{% url 'b2b_orders' %}?segment={% if branch.kind == 'offline' %}Offline{% else %}OnlineB2B{% endif %}" class="btn-ghost">View {{ branch.label }} orders →</a>
       {% if branch.kind == 'offline' %}

@@ -1,0 +1,60 @@
+{% load b2b_extras %}
+{% comment %}
+Hub windowed KPI block — the VOLUME/VALUE tiles + the two segment cards.
+Included by central.html and returned on its own for the AJAX range switch
+(?partial=1). Windowed by run_ts via the range selector (kpis.* / *_kpis are
+already scoped). Cumulative tiles carry an "all-time" tag so they don't read
+inconsistently beside the windowed ones.
+{% endcomment %}
+<!-- overall KPI strip — 4×3, equally allocated (trend deltas vs prior period) -->
+<div class="hub-kpis reveal">
+  <div class="hk"><div class="n">{{ kpis.pos|default:0 }}</div><div class="l">Total POs
+    {% if kpis.pos_delta is not None %}<span class="delta {% if kpis.pos_delta >= 0 %}up{% else %}down{% endif %}">{% if kpis.pos_delta >= 0 %}▲{% else %}▼{% endif %}{{ kpis.pos_delta }}%</span>{% endif %}</div></div>
+  <div class="hk"><div class="n">{{ kpis.qty|compact }}</div><div class="l">Total Qty</div></div>
+  <div class="hk"><div class="n">{{ kpis.value|inr_short }}</div><div class="l">Order Value
+    {% if kpis.value_delta is not None %}<span class="delta {% if kpis.value_delta >= 0 %}up{% else %}down{% endif %}">{% if kpis.value_delta >= 0 %}▲{% else %}▼{% endif %}{{ kpis.value_delta }}%</span>{% endif %}</div></div>
+  <div class="hk"><div class="n">{{ kpis.avg_po_value|inr_short }}</div><div class="l">Avg PO Value</div></div>
+
+  <div class="hk"><div class="n">{{ kpis.marketplaces|default:0 }}</div><div class="l">Channels <span class="hk-tag">all-time</span></div></div>
+  <div class="hk today" tabindex="0">
+    <div class="n">{{ today.pos }}</div>
+    <div class="l">Received Today <span class="sub">· {{ today.value|inr_short }}</span></div>
+    <div class="hk-pop">
+      <div class="pop-h">Today's intake · by segment</div>
+      {% for s in today.by_segment %}
+        <div class="pop-r"><span class="pop-seg {% if s.segment == 'Offline' %}off{% else %}on{% endif %}">{{ s.segment }}</span>
+          <span class="pop-v">{{ s.pos }} POs · {{ s.value|inr_short }}</span></div>
+      {% empty %}<div class="pop-r muted">No orders received yet today.</div>{% endfor %}
+    </div>
+  </div>
+  <div class="hk"><div class="n">{{ extra.week_pos }}</div><div class="l">Received · 7d</div></div>
+  <a class="hk" href="{% url 'b2b_lines' %}"><div class="n">{{ kpis.order_lines|compact }}</div><div class="l">Line Items</div></a>
+
+  <div class="hk"><div class="n">{{ kpis.expiring_soon|default:0 }}</div><div class="l">Expiring ≤7d</div></div>
+  <a class="hk warn" href="{% url 'b2b_issues' %}"><div class="n">{{ kpis.needs_attention|default:0 }}</div><div class="l">Needs attention</div></a>
+  <a class="hk warn" href="{% url 'b2b_issues' %}"><div class="n">{{ issue_count }}</div><div class="l">Issue Lines</div></a>
+  <a class="hk warn" href="{% url 'b2b_tat' %}" title="TAT breaches ({{ tat_total }}) ÷ all-time POs ({{ extra.all_pos }}) = {{ tat_rate }}% uploaded later than 1 working day"><div class="n">{{ tat_total|default:0 }}/{{ extra.all_pos|default:0 }}</div><div class="l">TAT breaches · {{ tat_rate }}% <span class="hk-tag">all-time</span></div></a>
+  <a class="hk good" href="{% url 'b2b_issues' %}?resolution=resolved"><div class="n">{{ extra.resolved }}</div><div class="l">Resolved <span class="hk-tag">all-time</span></div></a>
+</div>
+
+<!-- two group cards: Online B2B / Offline -->
+<div class="hub-groups reveal">
+  <a class="group-card gc-online" href="{% url 'b2b_online' %}">
+    <div class="gc-head"><h2>Online B2B</h2><span class="gc-go">Open →</span></div>
+    <p class="gc-sub">Marketplace POs → SO / D365 · validation &amp; issues</p>
+    <div class="gc-stat"><b>{{ online_kpis.pos }}</b> POs · <b>{{ online_kpis.value|inr_short }}</b> · {{ online_kpis.qty|compact }} qty</div>
+    <div class="gc-chips">
+      {% for c in online_channels %}{% if c.tag != 'soon' %}<span class="chip live">{{ c.name }}</span>{% endif %}{% endfor %}
+      {% if online_soon %}<span class="chip soon" title="Coming soon — {{ online_soon|join:' · ' }}">+{{ online_soon|length }} coming soon</span>{% endif %}
+    </div>
+  </a>
+  <a class="group-card gc-offline" href="{% url 'b2b_offline' %}">
+    <div class="gc-head"><h2>Offline</h2><span class="gc-go">Open →</span></div>
+    <p class="gc-sub">MT / GT channels → SO generation · recorded to the same DB</p>
+    <div class="gc-stat"><b>{{ offline_kpis.pos }}</b> POs · <b>{{ offline_kpis.value|inr_short }}</b> · {{ offline_kpis.qty|compact }} qty</div>
+    <div class="gc-chips">
+      {% for c in offline_channels %}{% if c.tag != 'soon' %}<span class="chip live">{{ c.name }}</span>{% endif %}{% endfor %}
+      {% if offline_soon %}<span class="chip soon" title="Coming soon — {{ offline_soon|join:' · ' }}">+{{ offline_soon|length }} coming soon</span>{% endif %}
+    </div>
+  </a>
+</div>

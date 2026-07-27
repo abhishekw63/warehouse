@@ -228,7 +228,16 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # unaffected (DATA_UPLOAD_MAX_MEMORY_SIZE stays default).
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 100000
 
+# The Triangular Validation page lets the operator drop a WHOLE folder (e.g. the
+# entire day's Package-Data folder, sub-folders and all) — easily > Django's
+# default 100-file cap → TooManyFilesSent. Trusted internal LAN tool; raise it
+# generously (still bounded as a DoS backstop). Upload size guards unaffected.
+DATA_UPLOAD_MAX_NUMBER_FILES = 5000
+
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'departments'
+# Central logout target (standard: keep auth redirects declared here, not hardcoded
+# in the view). CustomLogoutView still works; this makes the config the source of truth.
+LOGOUT_REDIRECT_URL = 'home'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

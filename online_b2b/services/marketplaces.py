@@ -88,6 +88,9 @@ CHANNELS: list[Channel] = [
     Channel('mt_manash', 'Manash', 'Offline', '', True, parent='mt_select', db_label='Manash (Purplle offline)'),
     # Reliance Smart Bazaar = Reliance hypermarket (cust 20615), separate from Centro.
     Channel('mt_rsb', 'Reliance Smart Bazaar', 'Offline', '', True, parent='mt_select', db_label='Reliance Smart Bazaar'),
+    # Hamleys = Reliance BRANDS Limited (cust 20325), a separate entity from
+    # Centro/Smart Bazaar; same PurchaseOrders*.xlsx / DC_CODE format as RSB.
+    Channel('mt_rbl', 'Reliance Brands Limited (Hamleys)', 'Offline', '', True, parent='mt_select', db_label='Reliance Brands Limited (Hamleys)'),
     Channel('off_inst', 'OFF-INSTITUTIONAL', 'Offline', '', False),
     # EKA — own top-level offline channel (peer of GT Mass / MT / OFF-INST).
     # Relocated from the desktop app: its store registry now lives in the DB

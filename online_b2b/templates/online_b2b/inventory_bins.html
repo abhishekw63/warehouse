@@ -1,0 +1,133 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static %}
+{% load b2b_extras %}
+{% block title %}Inventory · Bins{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'b2b_dashboard' %}">Online B2B</a>
+    <a href="{% url 'b2b_inventory' %}"> / Inventory</a> <span>/ Manage bins</span>
+{% endblock %}
+
+{% block content %}
+<div class="iv-wrap">
+  <div class="b2b-head">
+    <div>
+      <h1>Bin classification</h1>
+      <p class="src">Which bins count as sellable stock. <b>Include</b> wins over <b>exclude</b>;
+        a bin matching neither is <b>new</b> and held out until you add a rule. This is the
+        tracked, editable list — every counted / excluded bin is auditable below.
+        <a href="{% url 'b2b_inventory' %}">← Back to Inventory</a></p>
+    </div>
+  </div>
+
+  {% if messages %}<div class="iv-msgs">{% for m in messages %}
+    <div class="iv-msg {{ m.tags }}">{{ m }}</div>{% endfor %}</div>{% endif %}
+
+  <div class="ivb-grid">
+    {# ── Rules ── #}
+    <div class="iv-card">
+      <div class="iv-cardhead"><h2>Rules</h2><span class="iv-sub">{{ rules|length }} rules</span></div>
+      <form method="post" action="{% url 'b2b_inventory_rule_add' %}" class="ivb-add">
+        {% csrf_token %}
+        <input type="text" name="pattern" placeholder="Pattern e.g. ON- or QC" required>
+        <select name="match_type">
+          <option value="prefix">starts with</option>
+          <option value="segment">first word =</option>
+          <option value="exact">exactly</option>
+        </select>
+        <select name="decision">
+          <option value="include">Include</option>
+          <option value="exclude">Exclude</option>
+        </select>
+        <button type="submit" class="btn-primary">Add</button>
+      </form>
+      <div class="iv-tablewrap">
+        <table class="iv-table">
+          <thead><tr><th>Pattern</th><th>Match</th><th>Decision</th><th></th></tr></thead>
+          <tbody>
+            {% for r in rules %}
+            <tr>
+              <td class="mono">{{ r.pattern }}</td>
+              <td>{{ r.match_type }}</td>
+              <td>{% if r.decision == 'include' %}<span class="pill good">Include</span>{% else %}<span class="pill bad">Exclude</span>{% endif %}</td>
+              <td class="r">
+                <form method="post" action="{% url 'b2b_inventory_rule_delete' r.id %}" onsubmit="return confirm('Remove this rule?')" style="display:inline;">
+                  {% csrf_token %}<button type="submit" class="ivb-del" title="Remove">✕</button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    {# ── Bin audit for current snapshot ── #}
+    <div class="iv-card">
+      <div class="iv-cardhead">
+        <h2>Bin audit</h2>
+        <form method="get" style="margin:0;">
+          <select name="wh" onchange="this.form.submit()">
+            {% for w in warehouses %}{% if w.code in snaps %}
+            <option value="{{ w.code }}"{% if target_wh == w.code %} selected{% endif %}>{{ w.short }}</option>
+            {% endif %}{% endfor %}
+          </select>
+        </form>
+      </div>
+      <div class="ivb-sum">
+        <span class="s inc">✓ {{ summary.include.0 }} bins · {{ summary.include.1|indnum }} units</span>
+        <span class="s exc">{{ summary.exclude.0 }} excluded · {{ summary.exclude.1|indnum }}</span>
+        <span class="s new">⚠ {{ summary.new.0 }} new · {{ summary.new.1|indnum }}</span>
+      </div>
+      <div class="iv-tablewrap">
+        <table class="iv-table">
+          <thead><tr><th>Bin</th><th>Zone</th><th>Decision</th><th class="r">Lines</th><th class="r">Qty</th></tr></thead>
+          <tbody>
+            {% for b in audit %}
+            <tr class="{% if b.decision == 'new' %}aff{% endif %}">
+              <td class="mono">{{ b.bin_code|default:"—" }}</td>
+              <td>{{ b.zone_code }}</td>
+              <td>{% if b.decision == 'include' %}<span class="pill good">Include</span>{% elif b.decision == 'exclude' %}<span class="mut">Exclude</span>{% else %}<span class="pill bad">New ⚠</span>{% endif %}</td>
+              <td class="r">{{ b.lines|indnum }}</td>
+              <td class="r">{{ b.qty|indnum }}</td>
+            </tr>
+            {% empty %}<tr><td colspan="5" class="iv-none">No snapshot — upload Bin Contents first.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .iv-wrap{max-width:1240px;margin:22px auto 64px;padding:0 20px;color:var(--text);}
+  .iv-msgs{margin:14px 0;} .iv-msg{padding:10px 14px;border-radius:10px;font-size:13px;margin-bottom:8px;border:1px solid var(--border);background:var(--surface);}
+  .iv-msg.success{background:#e7f6ef;color:#0a7d5a;} .iv-msg.error{background:#fdecea;color:#b3261e;}
+  .ivb-grid{display:grid;grid-template-columns:1fr 1.3fr;gap:16px;margin-top:6px;}
+  @media (max-width:1000px){.ivb-grid{grid-template-columns:1fr;}}
+  .iv-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);overflow:hidden;}
+  .iv-cardhead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 18px 10px;}
+  .iv-cardhead h2{margin:0;font-size:15px;font-weight:800;color:var(--text);}
+  .iv-sub{font-size:12px;color:var(--muted);}
+  .ivb-add{display:flex;gap:8px;padding:0 18px 12px;flex-wrap:wrap;}
+  .ivb-add input,.ivb-add select{padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2);color:var(--text);font-size:13px;}
+  .ivb-add input{flex:1;min-width:120px;}
+  .ivb-sum{display:flex;gap:12px;padding:0 18px 10px;font-size:12px;flex-wrap:wrap;}
+  .ivb-sum .s.inc{color:#0f9d6b;font-weight:700;} .ivb-sum .s.exc{color:var(--muted);} .ivb-sum .s.new{color:#b45309;font-weight:700;}
+  .iv-tablewrap{overflow:auto;max-height:560px;}
+  .iv-table{border-collapse:separate;border-spacing:0;width:100%;font-size:12.5px;font-variant-numeric:tabular-nums;}
+  .iv-table th,.iv-table td{padding:9px 14px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);}
+  .iv-table th{font-size:10px;font-weight:800;text-transform:uppercase;color:var(--muted);background:var(--surface-2);position:sticky;top:0;}
+  .iv-table th.r,.iv-table td.r{text-align:right;}
+  .iv-table td.mono{font-family:Consolas,monospace;font-size:11.5px;}
+  .iv-table tr.aff td{background:color-mix(in srgb,#f59e0b 8%,transparent);}
+  .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-weight:700;font-size:11px;}
+  .pill.good{color:#0f9d6b;background:#e7f6ef;} .pill.bad{color:#b45309;background:#fff1e0;}
+  .mut{color:var(--muted);}
+  .ivb-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;}
+  .ivb-del:hover{color:var(--red,#b3261e);}
+  .iv-none{text-align:center;color:var(--muted);padding:16px;}
+</style>
+{% endblock %}

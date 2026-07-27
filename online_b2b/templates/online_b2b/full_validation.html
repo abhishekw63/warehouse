@@ -7,6 +7,8 @@ Self-contained; remove with the module + service + urls + sidebar link.
 {% block title %}Full Validation — D365 reconciliation{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
 <style>
+  /* #MainContent is a row-flex; force this page's content to stack full-width */
+  .b2b-app #MainContent{flex-direction:column;align-items:stretch;}
   .fv-up{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
     padding:20px 22px;margin-bottom:20px;box-shadow:var(--shadow);}
   .fv-up h2{font-size:15px;margin:0 0 4px;} .fv-up p{color:var(--text-2);font-size:13px;margin:0 0 14px;}

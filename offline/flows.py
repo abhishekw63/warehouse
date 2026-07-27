@@ -11,17 +11,31 @@ from online_b2b.services.po_flow import FlowSpec
 from . import services  # noqa: F401 — ensure package import order
 from .services import mt_bridge
 from .services.gt_mass_flow import GTMassProcessor
-from .services.mt_flow import MTFlowProcessor
+from .services.mt_flow import MTFlowProcessor, RelianceTrendsFlowProcessor
 
 
 def _mt_channels() -> tuple:
     """MT child channels ``((code, display), …)`` for the upload picker. Falls
-    back to a static list if the frozen automation can't be imported."""
+    back to a static list if the frozen automation can't be imported. Reliance
+    Trends ('RT') is appended: it's a Reliance entity that belongs in the MT
+    picker, but its BAP SAP-export file routes to its own bridge (see
+    :func:`_mt_processor`)."""
     try:
-        return tuple(mt_bridge.channel_choices())
+        base = tuple(mt_bridge.channel_choices())
     except Exception:  # noqa: BLE001
-        return (('SS', 'Shoppers Stop'), ('HG', 'Health & Glow'),
+        base = (('SS', 'Shoppers Stop'), ('HG', 'Health & Glow'),
                 ('NT', 'Naturals'), ('BN', 'Nature Basket'), ('LL', 'Lifestyle'))
+    if not any(code == 'RT' for code, _ in base):
+        base = base + (('RT', 'Reliance Trends'),)
+    return base
+
+
+def _mt_processor(meta: dict):
+    """Dispatch the MT flow to the right processor by channel: Reliance Trends
+    ('RT') → BAP bridge; every other MT child → the frozen MT engine."""
+    if (meta.get('marketplace') or '') == 'RT':
+        return RelianceTrendsFlowProcessor(meta)
+    return MTFlowProcessor(meta)
 
 
 def _mt_warehouses() -> tuple:
@@ -51,6 +65,7 @@ GT_MASS_SPEC = FlowSpec(
         'confirm': 'gtm_flow_confirm', 'decision': 'gtm_flow_decision',
         'discard': 'gtm_flow_discard', 'download': 'gtm_flow_download',
         'export': 'gtm_flow_export',
+        'save_later': 'gtm_flow_save_later', 'drafts': 'gtm_flow_drafts',
         'back': 'offline_dashboard', 'dashboard': 'offline_dashboard',
     },
 )
@@ -62,13 +77,14 @@ MT_SPEC = FlowSpec(
     segment='Offline',
     base_template='online_b2b/base_b2b.html',
     upload_dirname='mt_flow',
-    processor=MTFlowProcessor,
+    processor=_mt_processor,
     # Channel (SS / HG / NT…) chosen at upload via the 'marketplace' capability;
-    # warehouse picker on; Exclude decisions per line. NO 'download' cap — the SO
-    # workbook must NOT be generated before confirm (assigning SO numbers burns
-    # the shared sequence counter), so the Download link appears only AFTER
-    # recording (via ``has_download``).
-    caps=frozenset({'marketplace', 'warehouse', 'exclude'}),
+    # warehouse picker on; Exclude decisions per line. 'download' cap ON — the full
+    # 8/9-sheet SO Workbook is downloadable DURING review via
+    # MTFlowProcessor.workbook() → preview_workbook(), which builds it from the
+    # preview batch WITHOUT burning the SO-sequence counter (SO No. blank until
+    # Confirm). Post-lock, the confirmed workbook (with SO#) is served instead.
+    caps=frozenset({'marketplace', 'warehouse', 'exclude', 'download'}),
     marketplaces=_mt_channels(),
     warehouses=_mt_warehouses(),
     intro=('Pick the MT channel → upload PO file(s) → review → record to the '
@@ -89,6 +105,7 @@ MT_SPEC = FlowSpec(
         'confirm': 'mt_flow_confirm', 'decision': 'mt_flow_decision',
         'discard': 'mt_flow_discard', 'download': 'mt_flow_download',
         'export': 'mt_flow_export',
+        'save_later': 'mt_flow_save_later', 'drafts': 'mt_flow_drafts',
         'back': 'offline_dashboard', 'dashboard': 'offline_dashboard',
     },
 )

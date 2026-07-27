@@ -29,6 +29,10 @@
   .cpg-anyway{background:#fff;color:#b42318;border-color:#f2b8b0;}
   .cpg-anyway:hover{background:#fdf2f1;}
   .cpg-btn small{display:block;font-weight:500;font-size:12px;opacity:.85;margin-top:2px;}
+  /* Prominent "Continue working" — closes the popup; the download keeps running natively. */
+  .ld-continue{display:block;width:100%;margin-top:14px;padding:11px 14px;border-radius:10px;
+    background:#0a9d6e;color:#fff;border:1px solid #0a9d6e;font-weight:700;font-size:13.5px;cursor:pointer;}
+  .ld-continue:hover{filter:brightness(1.06);}
 </style>{% endblock %}
 
 {% block breadcrumb %}
@@ -137,7 +141,7 @@
     <div class="cb-actions">
       {# Auto-switch by lock state: (Review)=every line, unchanged · (Completed)=accepted-only, Excludes dropped, Overrides repriced. #}
       {% if locked %}
-        <a href="{% url 'b2b_review_download_completed' token=token %}" id="dlWorkbook" class="btn-ghost" data-download-modal="Building the Completed SO Workbook — accepted lines only" title="Completed — accepted lines pushed to D365 (Excludes dropped, Overrides repriced)">⬇ Download SO Workbook (Completed)</a>
+        <a href="{% url 'b2b_review_download_completed' token=token %}" id="dlWorkbook" class="btn-ghost" data-download-bg="SO Workbook is downloading in the background — check your browser Downloads. You can keep working." title="Completed — accepted lines pushed to D365 (Excludes dropped, Overrides repriced)">⬇ Download SO Workbook (Completed)</a>
       {% elif has_preview %}
         <a href="{% url 'b2b_review_download' token=token %}" id="dlWorkbook" class="btn-ghost" data-download-modal="Building the SO Workbook" title="Review — every line, exactly as previewed (unchanged)">⬇ Download SO Workbook (Review)</a>
       {% endif %}
@@ -731,7 +735,7 @@
         // pointed at the Review/full workbook; it must NOT persist after an
         // in-place lock (that bug served the full file post-lock).
         var completedDl = '<a href="' + COMPLETED_DL_URL + '" id="dlWorkbook" class="btn-ghost" ' +
-          'data-download-modal="Building the Completed SO Workbook — accepted lines only" title="Completed — accepted lines pushed to ' +
+          'data-download-bg="SO Workbook is downloading in the background — check your browser Downloads. You can keep working." title="Completed — accepted lines pushed to ' +
           'D365 (Excludes dropped, Overrides repriced)">⬇ Download SO Workbook (Completed)</a>';
         act.innerHTML = completedDl +
           ' <a href="' + j.run_url + '" class="btn-ghost">View run →</a>' +
@@ -747,51 +751,47 @@
   var UPLOAD_URL = "{% url 'b2b_upload' %}";
   var COMPLETED_DL_URL = "{% url 'b2b_review_download_completed' token=token %}";
 
-  // Fetch a workbook as a blob (so we see the real build time), save it, toast.
-  // Used for the auto-download after lock — toast feedback, not the big overlay,
-  // so it doesn't stack on top of the "Locked & recorded" modal.
+  // Kick off the Completed SO Workbook via a browser-NATIVE download (hidden
+  // <a download> handed to the browser's own download manager) instead of a
+  // page-owned blob fetch. The old blob fetch was cancelled the instant the user
+  // closed the popup or navigated away; a native download keeps running in the
+  // browser independently — so the operator can immediately move to other pages.
   function autoDownload(url, label) {
-    if (window.B2B && B2B.toast) B2B.toast((label || 'Preparing the download') + '…',
+    if (window.B2B && B2B.bgDownload) B2B.bgDownload(url);
+    else {   // ultra-safe fallback if the shared helper isn't present
+      var t = document.createElement('a');
+      t.href = url; t.setAttribute('download', ''); t.style.display = 'none';
+      document.body.appendChild(t); t.click();
+      setTimeout(function () { t.remove(); }, 2000);
+    }
+    if (window.B2B && B2B.toast) B2B.toast(
+      'SO Workbook is downloading in the background — check your browser Downloads. You can keep working.',
       { type: 'info', title: 'SO Workbook', timeout: 9000 });
-    return fetch(url, { credentials: 'same-origin' }).then(function (r) {
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      var cd = r.headers.get('Content-Disposition') || '';
-      var m = /filename\*?=(?:UTF-8'')?["']?([^"';]+)/i.exec(cd);
-      var name = m ? decodeURIComponent(m[1]) : 'SO_Workbook.xlsx';
-      return r.blob().then(function (b) { return { b: b, name: name }; });
-    }).then(function (o) {
-      var u = URL.createObjectURL(o.b), t = document.createElement('a');
-      t.href = u; t.download = o.name; document.body.appendChild(t); t.click(); t.remove();
-      setTimeout(function () { URL.revokeObjectURL(u); }, 4000);
-      if (window.B2B && B2B.toast) B2B.toast('SO Workbook downloaded — ' + o.name,
-        { type: 'success', title: 'Ready' });
-    }).catch(function (e) {
-      if (window.B2B && B2B.toast) B2B.toast('Auto-download failed — ' + e.message +
-        '. Use the “Download SO Workbook” button.', { type: 'error', title: 'SO Workbook', timeout: 8000 });
-    });
   }
 
   function flourish(j) {
     var f = document.createElement('div');
     f.className = 'lock-done';
+    // Big downloads use data-download-bg → browser-native (survive popup close + navigation).
     var d365 = j.has_d365
-      ? '<a class="ld-btn ld-d365" href="' + j.run_url + 'd365/">⬇ Download D365 dump</a>' : '';
+      ? '<a class="ld-btn ld-d365" href="' + j.run_url + 'd365/" ' +
+        'data-download-bg="D365 dump is downloading in the background — check your browser Downloads. You can keep working.">⬇ Download D365 dump</a>' : '';
     f.innerHTML = '<div class="ld-card"><div class="lo-lock locked-glow"><span class="lo-shackle"></span>' +
       '<span class="lo-body"><i class="lo-key"></i></span></div>' +
       '<div class="ld-title">Locked &amp; recorded ✓</div>' +
       '<div class="ld-sub">Run #' + j.run_id + ' · ' + j.pos + ' PO(s) · ' + j.lines + ' line(s) pushed to the DB' +
-        '<br><span class="ld-auto" style="display:inline-block;margin-top:6px;font-weight:700;color:#6366f1;">⬇ SO Workbook downloading automatically…</span></div>' +
+        '<br><span class="ld-auto" style="display:inline-block;margin-top:6px;font-weight:700;color:#6366f1;">⬇ SO Workbook downloading in the background — you can keep working</span></div>' +
       '<div class="ld-actions">' + d365 +
-        '<a class="ld-btn" href="' + COMPLETED_DL_URL + '" data-download-modal="Building the Completed SO Workbook — accepted lines only">⬇ SO Workbook</a>' +
+        '<a class="ld-btn" href="' + COMPLETED_DL_URL + '" ' +
+          'data-download-bg="SO Workbook is downloading in the background — check your browser Downloads. You can keep working.">⬇ SO Workbook</a>' +
         '<a class="ld-btn" href="' + j.run_url + '">View run →</a>' +
-        '<a class="ld-btn ld-hub" href="' + HUB_URL + '">⌂ Back to Hub</a>' +
         '<a class="ld-btn ld-ghost" href="' + UPLOAD_URL + '">＋ New upload</a>' +
       '</div>' +
+      '<button type="button" class="ld-btn ld-continue">✓ Continue working</button>' +
       '<button type="button" class="ld-close">stay on this page ✕</button></div>';
-    // Kick off the Completed SO Workbook download automatically once locked.
-    autoDownload(COMPLETED_DL_URL, 'Building the Completed SO Workbook').then(function () {
-      var a = f.querySelector('.ld-auto'); if (a) { a.textContent = '✓ SO Workbook downloaded'; a.style.color = '#10b981'; }
-    });
+    // Kick off the Completed SO Workbook download automatically once locked —
+    // NATIVE (see autoDownload), so it keeps going after the popup is closed.
+    autoDownload(COMPLETED_DL_URL, 'Building the Completed SO Workbook');
     var burst = document.createElement('div');
     burst.className = 'ld-confetti';
     var cols = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7'];
@@ -809,9 +809,17 @@
     requestAnimationFrame(function () { f.classList.add('show'); });
     // Confetti fades, but the modal STAYS until the user picks a next step.
     setTimeout(function () { if (burst.parentNode) burst.parentNode.removeChild(burst); }, 2600);
-    f.querySelector('.ld-close').addEventListener('click', function () {
+    // Both "Continue working" (primary) and "stay on this page ✕" dismiss the
+    // popup immediately. The download is browser-native, so it keeps running.
+    function closeFlourish() {
       f.classList.remove('show');
       setTimeout(function () { if (f.parentNode) f.parentNode.removeChild(f); }, 300);
+      if (window.B2B && B2B.toast) B2B.toast(
+        'You can keep working — the SO Workbook download continues in your browser. Check your Downloads.',
+        { type: 'info', title: 'Downloading in background', timeout: 6000 });
+    }
+    f.querySelectorAll('.ld-close, .ld-continue').forEach(function (btn) {
+      btn.addEventListener('click', closeFlourish);
     });
   }
 

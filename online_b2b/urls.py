@@ -2,6 +2,8 @@ from django.urls import path
 
 from . import views
 from . import full_validation_views as _fullval  # STANDALONE feature (removable)
+from . import views_triangular as _tri  # STANDALONE feature (removable)
+from . import inventory_views as _inv  # STANDALONE feature (removable)
 
 urlpatterns = [
     path('', views.CentralHubView.as_view(), name='b2b_dashboard'),
@@ -11,6 +13,25 @@ urlpatterns = [
     path('full-validation/run/', _fullval.full_validation_run, name='b2b_full_validation_run'),
     path('full-validation/<str:token>/download/', _fullval.full_validation_download,
          name='b2b_full_validation_download'),
+    # ── Triangular Validation (standalone; delete these 3 lines + the module/
+    #    template/service/nav link to remove the whole feature) ─────────────────
+    path('triangular/', _tri.triangular, name='b2b_triangular'),
+    path('triangular/run/', _tri.triangular_run, name='b2b_triangular_run'),
+    path('triangular/<str:token>/download/', _tri.triangular_download,
+         name='b2b_triangular_download'),
+    # ── Inventory — Fill-Rate cockpit (standalone; delete these lines + the
+    #    module/service/templates/sidebar link to remove the whole feature) ────
+    path('inventory/', _inv.inventory, name='b2b_inventory'),
+    path('inventory/upload/', _inv.inventory_upload, name='b2b_inventory_upload'),
+    path('inventory/bins/', _inv.inventory_bins, name='b2b_inventory_bins'),
+    path('inventory/rule/add/', _inv.inventory_rule_add, name='b2b_inventory_rule_add'),
+    path('inventory/rule/<int:rule_id>/delete/', _inv.inventory_rule_delete,
+         name='b2b_inventory_rule_delete'),
+    path('inventory/<str:token>/', _inv.inventory_preview, name='b2b_inventory_preview'),
+    path('inventory/<str:token>/confirm/', _inv.inventory_confirm,
+         name='b2b_inventory_confirm'),
+    path('inventory/<str:token>/discard/', _inv.inventory_discard,
+         name='b2b_inventory_discard'),
     path('online/', views.dashboard, name='b2b_online'),
     path('offline/', views.OfflineBranchView.as_view(), name='b2b_offline'),
     path('analytics/', views.AnalyticsView.as_view(), name='b2b_analytics'),
@@ -23,6 +44,8 @@ urlpatterns = [
     path('exceptions/<int:row_id>/delete/', views.exception_delete, name='b2b_exception_delete'),
     path('rules/template/<str:slug>/', views.MarketplaceTemplateView.as_view(),
          name='b2b_template'),
+    # READ-ONLY partial for the Process-PO upload page's live marketplace panel.
+    path('mp-profile/<str:mp>/', views.b2b_mp_profile, name='b2b_mp_profile'),
     path('orders/', views.orders, name='b2b_orders'),
     path('orders/more/', views.orders_more, name='b2b_orders_more'),
     path('lines/', views.lines, name='b2b_lines'),
@@ -35,6 +58,13 @@ urlpatterns = [
     path('daily/adhoc/add/', views.daily_adhoc_add, name='b2b_daily_adhoc_add'),
     path('daily/adhoc/toggle/', views.daily_adhoc_toggle, name='b2b_daily_adhoc_toggle'),
     path('daily/adhoc/delete/', views.daily_adhoc_delete, name='b2b_daily_adhoc_delete'),
+    # Fulfilment Cockpit — order-wise fill rate & billing (summary email is one action here).
+    # (URL renamed email/ -> cockpit/; internal view names kept so existing {% url %} refs work.)
+    path('cockpit/', views.email_page, name='b2b_email'),
+    path('cockpit/po-skus/', views.CockpitPOSkusView.as_view(), name='b2b_cockpit_po_skus'),
+    path('cockpit/preview/', views.email_preview, name='b2b_email_preview'),
+    path('cockpit/send/', views.email_send, name='b2b_email_send'),
+    path('email/', views.email_page),   # legacy redirect target — old bookmarks still land here
     path('ui-lab/', views.ui_lab, name='b2b_ui_lab'),
     path('ui-lab/search/', views.ui_lab_search, name='b2b_ui_lab_search'),
     path('issues/', views.issues, name='b2b_issues'),
@@ -81,6 +111,7 @@ urlpatterns = [
     path('item-master/<str:token>/discard/', views.item_master_discard, name='b2b_item_master_discard'),
     path('ship-to/', views.ShipToView.as_view(), name='b2b_ship_to'),
     path('ship-to/search/', views.ship_to_search, name='b2b_ship_to_search'),
+    path('ship-to/export/', views.ship_to_export, name='b2b_ship_to_export'),
     path('ship-to/add/', views.ship_to_add, name='b2b_ship_to_add'),
     path('ship-to/seed/', views.ship_to_seed, name='b2b_ship_to_seed'),
     path('ship-to/upload/', views.ship_to_upload, name='b2b_ship_to_upload'),
@@ -89,12 +120,7 @@ urlpatterns = [
     path('ship-to/<str:token>/', views.ship_to_preview, name='b2b_ship_to_preview'),
     path('ship-to/<str:token>/confirm/', views.ship_to_confirm, name='b2b_ship_to_confirm'),
     path('ship-to/<str:token>/discard/', views.ship_to_discard, name='b2b_ship_to_discard'),
-    path('sales-validation/', views.SalesValidationView.as_view(),
-         name='b2b_sales_validation'),
-    path('sales-validation/run/', views.sales_validation_run,
-         name='b2b_sales_validation_run'),
-    path('sales-validation/<str:token>/download/',
-         views.sales_validation_download, name='b2b_sales_validation_download'),
+    # Sales Validation removed 2026-07-20 (superseded by Triangular Validation).
     path('run/<int:run_id>/', views.run_detail, name='b2b_run_detail'),
     path('run/<int:run_id>/download/', views.download, name='b2b_download'),
     path('run/<int:run_id>/d365/', views.download_d365, name='b2b_download_d365'),

@@ -18,6 +18,12 @@
     <a href="{% url u_upload %}" class="back">← New upload</a>
   </div>
 
+  {% if is_draft %}
+    <div class="banner" style="margin-top:16px;background:#fff7ed;border:1px solid #fdba74;color:#9a3412;">
+      🕒 <b>Parked draft</b>{% if draft_note %} — “{{ draft_note }}”{% endif %}. Re-checked live against the current masters — apply any fix, then Confirm &amp; Record{% if u_drafts %} · <a href="{% url u_drafts %}" style="color:#9a3412;text-decoration:underline;">all drafts</a>{% endif %}.
+    </div>
+  {% endif %}
+
   {% if not r.ok and not r.headers %}
     <div class="banner err" style="margin-top:16px;">{{ r.error|default:'Could not process the upload.' }}</div>
   {% endif %}
@@ -53,6 +59,7 @@
   {% endif %}
 
   <form id="discard-form" method="post" action="{% url u_discard token %}">{% csrf_token %}</form>
+  {% if u_save_later and not locked %}<form id="savelater-form" method="post" action="{% url u_save_later token %}">{% csrf_token %}</form>{% endif %}
   <form id="confirm-form" method="post" action="{% url u_confirm token %}">{% csrf_token %}
   <div class="confirm-bar{% if locked %} locked{% endif %}" id="confirmBar">
     <div class="cb-text">
@@ -66,11 +73,16 @@
     <div class="cb-actions">
       {% if slots.actions %}{% include slots.actions %}{% endif %}
       {% if u_export %}<a href="{% url u_export token %}" class="btn-ghost">⬇ Export review (Excel)</a>{% endif %}
-      {% if has_download or caps.download %}<a href="{% url u_download token %}" class="btn-ghost">⬇ Download SO Workbook</a>{% endif %}
+      {% comment %}Same nomenclature as Online B2B — auto-switch by lock state:
+         (Review)=every line, exactly as previewed · (Completed)=recorded run
+         (accepted lines; Excludes dropped). Label-only; the download route is
+         unchanged (po_flow.download_path already serves review vs confirmed).{% endcomment %}
+      {% if has_download or caps.download %}<a href="{% url u_download token %}" class="btn-ghost" title="{% if locked %}Completed — the recorded run (accepted lines; Excludes dropped){% else %}Review — every line, exactly as previewed{% endif %}">⬇ Download SO Workbook {% if locked %}(Completed){% else %}(Review){% endif %}</a>{% endif %}
       {% if locked %}
         {% if run_id %}<a href="{% url 'b2b_run_detail' run_id=run_id %}" class="btn-ghost">View run →</a>{% endif %}
       {% else %}
         <button class="btn-discard" type="submit" form="discard-form" formnovalidate>Discard</button>
+        {% if u_save_later %}<button class="btn-ghost" id="saveLaterBtn" type="button" title="Park this run — kept intact, not recorded. Reopen from Drafts to re-validate &amp; finalize.">🕒 Save for Review Later</button>{% endif %}
         {% if r.headers %}<button class="btn-primary" id="lockBtn" type="button">🔒 Confirm &amp; Record</button>{% endif %}
       {% endif %}
     </div>
@@ -397,6 +409,27 @@
           finishProgress();
           setTimeout(function () { window.location = j.review_url || window.location.href; }, 650);
         }).catch(function () { failProgress('Network error — nothing recorded.'); });
+    });
+  }
+
+  // 🕒 Save for Review Later — park the run (kept intact, NOT recorded) with an
+  // optional note, then go to the Drafts list.
+  var slBtn = document.getElementById('saveLaterBtn'),
+      slForm = document.getElementById('savelater-form');
+  if (slBtn && slForm && window.fetch) {
+    slBtn.addEventListener('click', function () {
+      if (slBtn.disabled) return;
+      var note = window.prompt('Save for Review Later — optional note (e.g. why it\'s parked):', '');
+      if (note === null) return;   // Cancel → do nothing
+      slBtn.disabled = true; slBtn.textContent = '🕒 Saving…';
+      var fd = new FormData(slForm); fd.append('note', note);
+      fetch(slForm.action, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: fd, credentials: 'same-origin' })
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          if (!j.ok) { slBtn.disabled = false; slBtn.textContent = '🕒 Save for Review Later'; alert(j.error || 'Could not save.'); return; }
+          window.location = j.redirect;
+        }).catch(function () { slBtn.disabled = false; slBtn.textContent = '🕒 Save for Review Later'; alert('Network error.'); });
     });
   }
 })();

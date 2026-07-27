@@ -15,7 +15,7 @@
       <h1>Ship-To Mapping <span>· DB</span></h1>
       <p class="src">Delivery location → ERP <b>Cust No</b> + <b>Ship-to code</b>, per marketplace party. The engine reads this DB mapping directly · the bundled Excel is retired.</p>
     </div>
-    <div class="head-actions"><a href="{% url 'b2b_dashboard' %}" class="btn-ghost">← Hub</a></div>
+    <div class="head-actions"></div>
   </div>
 
   {% if messages %}{% for m in messages %}<div class="banner {% if m.tags == 'error' %}err{% else %}ok{% endif %}">{{ m }}</div>{% endfor %}{% endif %}
@@ -66,6 +66,7 @@
           <input type="text" id="stmq" value="{{ overview.q }}" placeholder="Search location / cust no / ship-to / city…" autocomplete="off">
           <span class="ims-spin" id="stmspin" hidden></span>
         </div>
+        <a href="{% url 'b2b_ship_to_export' %}" class="btn-ghost" id="stm-export" title="Download the mappings as Excel — respects the current party + search filter">⬇ Export</a>
         <button type="button" class="btn-primary" id="stm-addbtn">＋ Add mapping</button>
       </div>
     </div>
@@ -118,12 +119,23 @@
   var spin = document.getElementById('stmspin');
   var searchUrl = "{% url 'b2b_ship_to_search' %}";
   var addUrl = "{% url 'b2b_ship_to_add' %}";
+  var exportBase = "{% url 'b2b_ship_to_export' %}";
+  var exportLink = document.getElementById('stm-export');
   var FIELDS = ['party', 'del_location', 'cust_no', 'ship_to', 'city', 'postcode'];
+
+  function syncExport() {
+    var p = new URLSearchParams();
+    if (partySel.value) p.set('party', partySel.value);
+    if (input.value.trim()) p.set('q', input.value.trim());
+    var qs = p.toString();
+    if (exportLink) exportLink.href = exportBase + (qs ? '?' + qs : '');
+  }
 
   function reload() {
     var p = new URLSearchParams();
     if (partySel.value) p.set('party', partySel.value);
     if (input.value.trim()) p.set('q', input.value.trim());
+    syncExport();
     if (spin) spin.hidden = false;
     fetch(searchUrl + '?' + p.toString(), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
       .then(function (r) { return r.text(); })
@@ -132,6 +144,7 @@
   var t = null;
   input.addEventListener('input', function () { clearTimeout(t); t = setTimeout(reload, 180); });
   partySel.addEventListener('change', reload);
+  syncExport();   // reflect any pre-set party/search on first load
 
   // add panel
   var addBtn = document.getElementById('stm-addbtn'), panel = document.getElementById('stm-addpanel');

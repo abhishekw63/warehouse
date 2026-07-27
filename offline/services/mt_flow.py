@@ -130,6 +130,22 @@ class MTFlowProcessor:
                 lines.append(row)
                 if not resolved:
                     affected.append(row)
+        # H&B is DC-routed: many franchisee stores of one DC share a single
+        # delivery address (the DC), so the Site code is the ship-to key and the
+        # PO PDF exists to VERIFY that address per PO — spell this out for the
+        # operator so the shared ship-to never looks like a mistake.
+        notes = list(getattr(self._mt, 'notes', []) or [])
+        if self.channel_code == 'HB':
+            notes.insert(0, (
+                "H&B is DC-routed — several franchisee stores of a DC are "
+                "delivered to ONE address (the DC itself), so the file's Site "
+                "code (e.g. D009 = Sahibabad DC → 20040_73) is the ship-to key "
+                "and many franchisees (Sri Ganga Nagar, Arera Colony…) correctly "
+                "roll up to the SAME ship-to. The PO PDF is uploaded alongside "
+                "the .xlsb only to CONFIRM that delivery address: each PO's PDF "
+                "delivery pincode is cross-checked against the mapped ship-to, so "
+                "a wrong address is caught (never trusted blindly). A never-seen "
+                "Site code still flags UNMAPPED. Always include the PO PDFs."))
         ok = bool(headers) if phase == 'preview' else True
         if skipped:
             warnings.insert(0, f"{len(skipped)} PO(s) already uploaded "
@@ -144,8 +160,9 @@ class MTFlowProcessor:
                         'skipped': len(skipped)},
             'headers': headers, 'lines': lines, 'affected': affected,
             'file_issues': file_issues, 'skipped': skipped, 'warnings': warnings,
-            # Never-silent info: what this channel demands + PDF cross-check result.
-            'notes': list(getattr(self._mt, 'notes', []) or []),
+            # Never-silent info: what this channel demands + PDF cross-check result
+            # (+ the H&B DC-routing explainer prepended above, HB only).
+            'notes': notes,
             'requirements': mt_bridge.channel_requirements(self.channel_code),
             # Channel-agnostic "additional verification" (online_b2b.services.
             # verification). Present only when a channel produced it (LS is the
@@ -158,6 +175,13 @@ class MTFlowProcessor:
                        else ('No resolvable POs in the uploaded file(s).'
                              if phase == 'preview' else None))),
         }
+
+    # ── 'download' cap: full 8/9-sheet SO Workbook during REVIEW (pre-lock) ──
+    def workbook(self):
+        """Build the unified 8/9-sheet SO Workbook (same as the post-lock download
+        and Online B2B) from the preview batch, so it's downloadable DURING review.
+        No SO numbers burned, no DB write — SO No. is blank until Confirm."""
+        return self._mt.preview_workbook()
 
     # ── flow protocol ────────────────────────────────────────────────────
     def preview(self) -> dict:
@@ -205,4 +229,126 @@ class MTFlowProcessor:
             'error': (None if run_id else
                       (res.get('error') or res.get('recorded_reason')
                        or 'Workbook written but nothing recorded to the DB.')),
+        }
+
+
+class RelianceTrendsFlowProcessor:
+    """MT-flow processor for **Reliance Trends** (BAP Excel). Same flow protocol as
+    :class:`MTFlowProcessor` (preview / workbook / confirm) so it slots into the MT
+    upload page's channel dropdown — but routes to the standalone
+    :mod:`offline.services.reliance_trends_bridge` because the BAP SAP-export format
+    is NOT one the frozen MT engine parses. cust 20418; BAP → Bhiwandi 20418_2;
+    Unit Price left blank (D365 auto-prices)."""
+
+    def __init__(self, meta: dict):
+        self.channel_code = 'RT'
+        self.paths = list(meta.get('files', []))
+        self.warehouse = meta.get('warehouse') or 'AHD'
+        self._path = self.paths[0] if self.paths else None
+        self._parsed = None
+
+    def _parse(self):
+        if self._parsed is None:
+            from .reliance_trends_bridge import parse
+            self._parsed = parse(self._path) if self._path else {
+                'ok': False, 'error': 'No file uploaded.', 'pos': {}}
+        return self._parsed
+
+    def _recorded_pos(self):
+        from .reliance_trends_bridge import MARKETPLACE
+        try:
+            from online_b2b.services.order_db import _conn
+            with _conn() as (cur, d):
+                ph = d['ph']
+                cur.execute(f"SELECT DISTINCT po FROM order_headers WHERE "
+                            f"marketplace={ph}", (MARKETPLACE,))
+                return {str(r[0]) for r in cur.fetchall()}
+        except Exception:  # noqa: BLE001
+            return set()
+
+    def preview(self) -> dict:
+        from .reliance_trends_bridge import MARKETPLACE
+        p = self._parse()
+        if not p.get('ok'):
+            return {'ok': False, 'error': p.get('error'), 'summary': {},
+                    'headers': [], 'lines': [], 'affected': [], 'file_issues': [],
+                    'skipped': [], 'warnings': []}
+        recorded = self._recorded_pos()
+        headers, lines, affected, skipped = [], [], [], []
+        npos = tq = 0
+        tv = 0.0
+        for po, pd in p['pos'].items():
+            loc = f"{pd['city']} ({pd['ship_to']})"
+            if po in recorded:
+                skipped.append({'po': po, 'location': loc, 'qty': pd['qty'],
+                                'order_value': pd['value'],
+                                'marketplace_label': MARKETPLACE})
+                continue
+            npos += 1
+            tq += pd['qty']
+            tv += pd['value']
+            headers.append({'po': po, 'location': loc, 'order_type': 'SO',
+                            'items': len(pd['lines']), 'qty': pd['qty'],
+                            'order_value': pd['value'], 'raw_location': pd['city'],
+                            'ship_to': pd['ship_to'], 'mapped': bool(pd['ship_to'])})
+            for ln in pd['lines']:
+                resolved = bool(ln['item_no'])
+                row = {'po': po, 'item_no': ln['item_no'], 'ean': ln['ean'],
+                       'description': ln['description'], 'qty': ln['qty'],
+                       'unit_price': None, 'our_mrp': None,
+                       'status': 'OK' if resolved else 'NOT_IN_MASTER',
+                       'exception_label': '',
+                       'key': line_key(po, ln['item_no'], ln['ean'])}
+                lines.append(row)
+                if not resolved:
+                    affected.append(row)
+        warnings = list(p.get('warnings', []))
+        if skipped:
+            warnings.insert(0, f"{len(skipped)} PO(s) already recorded — skipped: "
+                            f"{', '.join(s['po'] for s in skipped[:10])}.")
+        return {
+            'ok': bool(headers),
+            'summary': {'pos': npos, 'lines': len(lines), 'qty': tq,
+                        'value': round(tv, 2), 'affected': len(affected),
+                        'skipped': len(skipped)},
+            'headers': headers, 'lines': lines, 'affected': affected,
+            'file_issues': [], 'skipped': skipped, 'warnings': warnings,
+            'notes': ['Reliance Trends (cust 20418) — BAP replenishment PO → '
+                      'Bhiwandi (ship-to 20418_2). Value inc-GST; Unit Price left '
+                      'blank in the SO (D365 auto-prices).'],
+            'requirements': {'required': 'Reliance Trends BAP Excel (Purchasing '
+                             'document, EAN, PO Qty, Net Value / Total CP).'},
+            'verification': None, 'output_path': None,
+            'error': (None if headers else
+                      ('All PO(s) already recorded.' if skipped
+                       else 'No POs found in the uploaded file.')),
+        }
+
+    def workbook(self):
+        if not self._path:
+            return None
+        from .reliance_trends_bridge import build_workbook
+        out, _err = build_workbook(self._path, warehouse=self.warehouse)
+        return str(out) if out else None
+
+    def confirm(self, actions: dict | None = None) -> dict:
+        if not self._path:
+            return {'ok': False, 'error': 'No file uploaded.', 'run_id': None,
+                    'pos': 0, 'lines': 0}
+        from .reliance_trends_bridge import record, build_workbook
+        res = record(self._path, warehouse=self.warehouse,
+                     source_file=os.path.basename(self._path))
+        out, _err = build_workbook(self._path, warehouse=self.warehouse,
+                                   so_map=res.get('so_map'))
+        recorded_ok = bool(res.get('ok') and (res.get('recorded') or out))
+        return {
+            'ok': recorded_ok,
+            'run_id': res.get('run_id'),
+            'pos': res.get('recorded_pos') or 0,
+            'lines': res.get('lines') or 0,
+            'output_path': str(out) if out else None,
+            'output_name': os.path.basename(str(out)) if out else None,
+            'warnings': ([] if res.get('recorded') else
+                         [res.get('reason')] if res.get('reason') else []),
+            'error': (res.get('error') if not res.get('ok') else None),
         }

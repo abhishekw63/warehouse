@@ -90,6 +90,10 @@ _MARKETPLACE_DISPLAY = {
     'Flipkart-TO': 'Flipkart Branch',
     'Meesho-TO':   'Meesho-SB',
     'Bigbasket':   'Big Basket',
+    # BlinkMP's engine identity is its party_name 'Blink RO' (BCPL's internal
+    # name, used for the mapping lookup) — show the operator-facing 'BlinkMP' on
+    # the Tracker instead of the raw internal name. Display-only.
+    'Blink RO':    'BlinkMP',
 }
 
 # v2.3.1: we currently sync only the PO details, so State Name and PO

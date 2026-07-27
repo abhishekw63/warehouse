@@ -1,0 +1,241 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static %}
+{% load b2b_extras %}
+{% block title %}Inventory · Fill Rate{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_dashboard' %}"> / Online B2B</a> <span>/ Inventory</span>
+{% endblock %}
+
+{% block content %}
+<div class="iv-wrap">
+
+  <div class="b2b-head">
+    <div>
+      <h1>Inventory · Fill Rate</h1>
+      <p class="src">Upload a D365 <b>Bin Contents</b> export per warehouse — a timestamped stock
+        snapshot. We count only sellable bins (<code>ON-</code>/<code>OFF-</code>/<code>PS2-</code>),
+        exclude virtual bins, and flag any new bin. Then see <b>fill-rate</b>, <b>OOS</b> and
+        <b>tentative billing</b> against your orders — PO-wise &amp; MP-wise.
+        <a href="{% url 'b2b_inventory_bins' %}">Manage bins →</a></p>
+    </div>
+    <form method="post" action="{% url 'b2b_inventory_upload' %}" enctype="multipart/form-data"
+          class="iv-upload" data-loading="Reading bin contents…">
+      {% csrf_token %}
+      <label class="iv-file">
+        <input type="file" name="bin_file" accept=".xlsx,.xls" required onchange="this.form.requestSubmit()">
+        <span>⬆ Upload Bin Contents</span>
+      </label>
+    </form>
+  </div>
+
+  {% if messages %}<div class="iv-msgs">{% for m in messages %}
+    <div class="iv-msg {{ m.tags }}">{{ m }}</div>{% endfor %}</div>{% endif %}
+
+  {# ── Stock by warehouse (current snapshots) ── #}
+  <div class="iv-whrow">
+    {% for c in snap_cards %}
+    <div class="iv-whcard{% if not c.snap %} empty{% endif %}">
+      <div class="iv-whhead">
+        <span class="iv-whtag">{{ c.wh.short }}</span>
+        <span class="iv-whname">{{ c.wh.name }}</span>
+      </div>
+      {% if c.snap %}
+      <div class="iv-whqty">{{ c.snap.included_qty|indnum }}<span class="u">sellable units</span></div>
+      <div class="iv-whmeta">
+        <span><b>{{ c.snap.item_count|indnum }}</b> SKUs</span>
+        <span class="iv-asof">as per {{ c.snap.captured_at|date:"d M, H:i" }}</span>
+      </div>
+      <div class="iv-whbins">
+        <span class="ok">✓ {{ c.snap.included_lines|indnum }} incl</span>
+        <span class="mut">{{ c.snap.excluded_lines|indnum }} excl</span>
+        {% if c.snap.new_lines %}<span class="new">⚠ {{ c.snap.new_lines }} new-bin</span>{% endif %}
+      </div>
+      {% else %}
+      <div class="iv-whempty">No snapshot yet — upload this warehouse’s Bin Contents.</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% for c in extras %}
+  <div class="iv-extra">Also holds a snapshot for unlisted location <b>{{ c.warehouse }}</b>
+    ({{ c.item_count|indnum }} SKUs, as per {{ c.captured_at }}).</div>
+  {% endfor %}
+
+  {# ── New-bin alerts ── #}
+  {% if alerts %}
+  <div class="iv-alert">
+    <div class="iv-alert-h">⚠ New / unclassified bins need a decision</div>
+    {% for a in alerts %}
+    <div class="iv-alert-row">
+      <b>{{ a.name }}</b>: {{ a.count }} new bin(s) holding {{ a.qty|indnum }} units —
+      not counted until you classify them on <a href="{% url 'b2b_inventory_bins' %}?wh={{ a.warehouse|urlencode }}">Manage bins</a>.
+      <span class="iv-alert-bins">{% for b in a.bins|slice:":6" %}<code>{{ b.bin_code }}</code>{% endfor %}{% if a.count > 6 %} +{{ a.count|add:"-6" }} more{% endif %}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if not has_any_stock %}
+  <div class="iv-empty">
+    <div class="iv-empty-ic">📦</div>
+    <h2>No stock uploaded yet</h2>
+    <p>Upload a D365 <b>Bin Contents</b> export (one per warehouse) to see fill-rate and tentative billing.</p>
+  </div>
+  {% else %}
+
+  {# ── Fill-rate scope filter (AJAX — no page reload) ── #}
+  <form method="get" class="iv-filter" id="ivFilter" onsubmit="return false;">
+    <div class="iv-fld"><label>Warehouse</label>
+      <select name="wh" onchange="ivRefresh()">
+        <option value="">All warehouses (combined)</option>
+        {% for w in warehouses %}<option value="{{ w.code }}"{% if sel_wh == w.code %} selected{% endif %}>{{ w.short }} · {{ w.name }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="iv-fld"><label>Segment</label>
+      <select name="seg" onchange="ivRefresh()">
+        <option value="">Online + Offline</option>
+        <option value="online"{% if sel_seg == 'online' %} selected{% endif %}>Online B2B</option>
+        <option value="offline"{% if sel_seg == 'offline' %} selected{% endif %}>Offline</option>
+      </select>
+    </div>
+    <div class="iv-fld"><label>Marketplace</label>
+      <select name="mp" onchange="ivRefresh()">
+        <option value="">All marketplaces</option>
+        {% for m in mp_options %}<option value="{{ m }}"{% if sel_mp == m %} selected{% endif %}>{{ m }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="iv-fld"><label>Orders from</label><input type="date" name="from" value="{{ date_from }}" onchange="ivRefresh()"></div>
+    <div class="iv-fld"><label>to</label><input type="date" name="to" value="{{ date_to }}" onchange="ivRefresh()"></div>
+    <div class="iv-stockas" id="ivStockAs">{% if fr.stock_as_of %}Stock as per <b>{{ fr.stock_as_of }}</b>{% endif %}</div>
+  </form>
+
+  <div id="iv-fillzone">
+    {% include 'online_b2b/_inventory_fill.html' %}
+  </div>
+
+  {% endif %}{# has_any_stock #}
+</div>
+
+<style>
+  .iv-wrap{max-width:1240px;margin:22px auto 64px;padding:0 20px;color:var(--text);}
+  .iv-wrap .b2b-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap;}
+  .iv-wrap code{background:var(--surface-2);padding:1px 5px;border-radius:5px;font-size:12px;}
+  .iv-upload{flex:0 0 auto;}
+  .iv-file{position:relative;display:inline-flex;align-items:center;cursor:pointer;}
+  .iv-file input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;}
+  .iv-file span{padding:10px 18px;border-radius:10px;background:var(--accent);color:#fff;font-weight:700;font-size:14px;box-shadow:var(--shadow);}
+  .iv-msgs{margin:14px 0;}
+  .iv-msg{padding:10px 14px;border-radius:10px;font-size:13px;margin-bottom:8px;border:1px solid var(--border);background:var(--surface);}
+  .iv-msg.success{background:#e7f6ef;color:#0a7d5a;border-color:#b6e3ce;}
+  .iv-msg.error{background:#fdecea;color:#b3261e;border-color:#f5c6c2;}
+  .iv-msg.warning{background:#fff7ed;color:#9a3412;border-color:#fed7aa;}
+  /* WH cards */
+  .iv-whrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:16px;}
+  .iv-whcard{background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:16px 18px;transition:transform .14s,box-shadow .14s;}
+  .iv-whcard:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg);}
+  .iv-whcard.empty{opacity:.72;border-style:dashed;}
+  .iv-whhead{display:flex;align-items:center;gap:9px;margin-bottom:10px;}
+  .iv-whtag{font-size:11px;font-weight:800;letter-spacing:.03em;color:#fff;background:var(--accent);padding:2px 9px;border-radius:20px;}
+  .iv-whname{font-size:12.5px;font-weight:700;color:var(--muted);}
+  .iv-whqty{font-size:28px;font-weight:800;line-height:1;color:var(--text);font-variant-numeric:tabular-nums;}
+  .iv-whqty .u{font-size:11px;font-weight:600;color:var(--muted);margin-left:7px;text-transform:uppercase;letter-spacing:.04em;}
+  .iv-whmeta{display:flex;justify-content:space-between;gap:8px;margin-top:8px;font-size:12px;color:var(--muted);}
+  .iv-asof{font-style:italic;}
+  .iv-whbins{display:flex;gap:10px;margin-top:9px;font-size:11.5px;flex-wrap:wrap;}
+  .iv-whbins .ok{color:#0f9d6b;font-weight:700;}
+  .iv-whbins .mut{color:var(--muted);}
+  .iv-whbins .new{color:#b45309;font-weight:700;}
+  .iv-whempty{font-size:12px;color:var(--muted);padding:8px 0;}
+  .iv-extra{margin-top:10px;font-size:12px;color:var(--muted);}
+  /* alerts */
+  .iv-alert{margin-top:16px;border:1px solid #fed7aa;background:#fff7ed;border-radius:14px;padding:14px 16px;}
+  .iv-alert-h{font-size:13px;font-weight:800;color:#9a3412;margin-bottom:6px;}
+  .iv-alert-row{font-size:12.5px;color:#7c3a17;margin-top:5px;}
+  .iv-alert-row a{color:#9a3412;font-weight:700;}
+  .iv-alert-bins{display:block;margin-top:3px;}
+  .iv-alert-bins code{background:#ffedd5;color:#9a3412;margin-right:5px;}
+  /* empty */
+  .iv-empty{text-align:center;padding:60px 20px;color:var(--muted);}
+  .iv-empty-ic{font-size:44px;}
+  .iv-empty h2{margin:10px 0 4px;color:var(--text);}
+  /* filter */
+  .iv-filter{display:flex;gap:14px;align-items:flex-end;flex-wrap:wrap;margin:22px 0 6px;padding:14px 16px;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);}
+  .iv-fld{display:flex;flex-direction:column;gap:5px;}
+  .iv-fld label{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);}
+  .iv-fld select,.iv-fld input{padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2);color:var(--text);font-size:13px;}
+  .iv-stockas{margin-left:auto;align-self:center;font-size:12px;color:var(--muted);}
+  .iv-note{margin:12px 0;padding:10px 14px;border-radius:10px;background:var(--surface-2);color:var(--muted);font-size:13px;}
+  /* KPIs */
+  .iv-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin:14px 0;}
+  .iv-kpi{background:var(--surface);border:1px solid var(--border);border-top:3px solid var(--border);border-radius:14px;box-shadow:var(--shadow);padding:14px 16px;display:flex;flex-direction:column;gap:5px;transition:transform .14s,box-shadow .14s;}
+  .iv-kpi:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg);}
+  .iv-kpi .k-lbl{font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);}
+  .iv-kpi .k-val{font-size:26px;font-weight:800;line-height:1;color:var(--text);font-variant-numeric:tabular-nums;}
+  .iv-kpi .k-u{font-size:15px;font-weight:700;color:var(--muted);}
+  .iv-kpi .k-note{font-size:11px;color:var(--muted);}
+  .iv-kpi.k-fill{border-top-color:#6366f1;} .iv-kpi.k-fill .k-val{color:#4f46e5;}
+  .iv-kpi.k-oos{border-top-color:#f59e0b;} .iv-kpi.k-oos .k-val{color:#b45309;}
+  .iv-kpi.k-bill{border-top-color:#00b894;} .iv-kpi.k-bill .k-val{color:#0f9d6b;}
+  .iv-kpi.k-clean{border-top-color:#3949AB;}
+  /* grid + tables */
+  .iv-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;margin-top:4px;}
+  @media (max-width:1000px){.iv-grid{grid-template-columns:1fr;}}
+  .iv-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);overflow:hidden;margin-top:16px;}
+  .iv-cardhead{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:15px 18px 10px;}
+  .iv-cardhead h2{margin:0;font-size:15px;font-weight:800;color:var(--text);}
+  .iv-sub{font-size:12px;color:var(--muted);}
+  .iv-tablewrap{overflow-x:auto;max-height:520px;overflow-y:auto;}
+  .iv-table{border-collapse:separate;border-spacing:0;width:100%;font-size:12.5px;font-variant-numeric:tabular-nums;}
+  .iv-table th,.iv-table td{padding:9px 14px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);}
+  .iv-table th{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);background:var(--surface-2);position:sticky;top:0;z-index:1;}
+  .iv-table th.r,.iv-table td.r{text-align:right;}
+  .iv-table td.mono{font-family:Consolas,ui-monospace,monospace;font-size:11.5px;}
+  .iv-table tbody tr:hover td{background:var(--accent-soft);}
+  .iv-table tr.aff td{background:color-mix(in srgb,#f59e0b 6%,transparent);}
+  .iv-table td.oos{color:#b45309;font-weight:700;}
+  .iv-none{text-align:center;color:var(--muted);padding:16px;}
+  .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-weight:700;font-size:11px;white-space:nowrap;}
+  .pill.good{color:#0f9d6b;background:#e7f6ef;}
+  .pill.bad{color:#b45309;background:#fff1e0;}
+  .fillbadge{display:inline-block;min-width:44px;text-align:center;padding:2px 7px;border-radius:6px;font-weight:700;font-size:11.5px;color:var(--text);
+    background:linear-gradient(90deg,color-mix(in srgb,#10b981 40%,transparent) var(--f),var(--surface-2) var(--f));}
+  #iv-fillzone{transition:opacity .15s ease;}
+  #iv-fillzone.loading{opacity:.45;pointer-events:none;}
+</style>
+
+<script>
+(function () {
+  var form = document.getElementById('ivFilter');
+  var zone = document.getElementById('iv-fillzone');
+  if (!form || !zone) return;
+  var seq = 0;
+  window.ivRefresh = function () {
+    var params = new URLSearchParams(new FormData(form));
+    params.set('partial', '1');
+    var url = '{% url "b2b_inventory" %}?' + params.toString();
+    // reflect the filters in the address bar (no reload), so refresh/share keeps scope
+    var pretty = new URLSearchParams(new FormData(form));
+    history.replaceState(null, '', '{% url "b2b_inventory" %}?' + pretty.toString());
+    var mine = ++seq;
+    zone.classList.add('loading');
+    fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' })
+      .then(function (r) { return r.text().then(function (t) { return { t: t, r: r }; }); })
+      .then(function (o) {
+        if (mine !== seq) return;                 // a newer request superseded this
+        zone.innerHTML = o.t;
+        zone.classList.remove('loading');
+        var as = o.r.headers.get('X-Stock-As-Of');
+        var el = document.getElementById('ivStockAs');
+        if (el) el.innerHTML = as ? 'Stock as per <b>' + as + '</b>' : '';
+      })
+      .catch(function () {
+        zone.classList.remove('loading');
+        if (window.B2B && B2B.toast) B2B.toast('Could not refresh — please retry.', { type: 'error' });
+      });
+  };
+})();
+</script>
+{% endblock %}

@@ -372,6 +372,31 @@ instead of a single number that lies for rule-based marketplaces.
 
 ## 10. Changelog (append one line per development)
 
+- **2026-07-22** — **Reliance Trends channel** (NEW, offline): records the BAP Excel
+  PO (cust 20418) to renee_orders like GT Mass — `offline/services/
+  reliance_trends_bridge.py` (parse+record, PO dedup, inc-GST value, EAN→item, real
+  dates), `/offline/reliance-trends/` upload→preview→confirm page. Ship-to Bhiwandi
+  20418_2 (S0HZ shared w/ Bangalore — noted). Flows into Offline segment + inventory.
+- **2026-07-22** — **Summary Email v2**: split into **Online + Offline segment boards**
+  with a master Online/Offline/Both filter; **tentative billing** lit up from the
+  Inventory fill-rate (was held); excluded-lines + SKU-summary scoped to the selected
+  segment (no cross-segment leak).
+- **2026-07-22** — **Inventory warehouse attribution**: order WH (AHD/BLR/codes) →
+  inventory Location (PICK/DS_BL_OFF1/NORTH WH-0) normalizer + marketplace overrides
+  (BlinkMP→DS_BL_OFF1); fill-rate demand split by WH + segment; AJAX no-reload filters.
+- **2026-07-22** — **Inventory · Fill-Rate cockpit** (web, standalone/removable):
+  upload a D365 *Bin Contents* export per warehouse (PICK/DS_BL_OFF1/NORTH WH-0) →
+  timestamped stock snapshot; bins classified by editable rules (INCLUDE ON-/OFF-/PS2-,
+  exclude virtuals, new bins flagged & held out); dashboard shows stock-by-WH +
+  fill-rate / OOS / **tentative billing PO-wise & MP-wise** + clean-vs-affected POs vs
+  recorded orders. Value basis reuses Triangular `_line_val` (inc-GST). New
+  `online_b2b/services/inventory_store.py` + `inventory_fill.py` + `inventory_views.py`
+  + 3 templates + 4 tables (`inventory_snapshot/stock/bin_audit/bin_rule`). Frozen
+  engine untouched.
+- **2026-07-22** — **Summary Email** (web): dedicated review-first consolidated daily
+  email — received board (all MPs + last-received), value breakdown (raw = uploaded +
+  excluded, inc-GST via Triangular `_line_val`), embedded excluded lines + SKU summary,
+  Indian digit grouping; tentative-billing card held pending Inventory.
 - **2026-07-18** — **Daily D365 triangular reconciliation** (`tools/daily_triangular_check.py`,
   read-only): point at a day's folder (D365 Sales Orders + Sales Lines + our `*_completed.xlsx`)
   → PO count · header + per-SKU line qty (unit-exact) · ship-to/address · pincode · Total

@@ -9,8 +9,7 @@ extend THIS instead of core/base.html and keep filling title/breadcrumb/content.
 
 {% block body_end %}
 {% load static %}
-{# Global UI enhancement skeleton (dark mode · toasts · ⌘K palette · table
-   upgrades) — one layer for every B2B page; see static/online_b2b/enhance.* #}
+{% comment %}Global UI enhancement skeleton (dark mode · toasts · ⌘K palette · table upgrades) — one layer for every B2B page; see static/online_b2b/enhance.*{% endcomment %}
 <link rel="stylesheet" href="{% static 'online_b2b/enhance.css' %}">
 <script defer src="{% static 'online_b2b/enhance.js' %}"></script>
 
@@ -150,6 +149,38 @@ extend THIS instead of core/base.html and keep filling title/breadcrumb/content.
       })
       .then(function () { delete a.dataset.dlBusy; a.classList.remove('is-loading'); });
   });
+  // Big post-lock downloads (SO Workbook / D365 dump) opt in via
+  // data-download-bg="toast message": trigger a browser-NATIVE download instead
+  // of the blob-fetch above. The blob-fetch is owned by THIS page's JS, so the
+  // browser cancels it the moment you navigate away or the popup closes. A hidden
+  // <a download> hands the same-origin request to the browser's OWN download
+  // manager, which keeps fetching + saving independently of the page — so closing
+  // the popup or moving to another page does NOT cancel the download.
+  function bgDownload(url, filename) {
+    if (!url || url === '#') return;
+    var a = document.createElement('a');
+    a.href = url;
+    a.setAttribute('download', filename || '');   // server Content-Disposition still names the file
+    a.rel = 'noopener';
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { if (a.parentNode) a.parentNode.removeChild(a); }, 2000);
+  }
+  window.B2B = window.B2B || {};
+  window.B2B.bgDownload = bgDownload;
+  document.addEventListener('click', function (ev) {
+    var a = ev.target.closest('[data-download-bg]');
+    if (!a) return;
+    ev.preventDefault();
+    var url = a.getAttribute('href') || a.dataset.href;
+    if (!url || url === '#') return;
+    bgDownload(url, a.getAttribute('data-download-name') || '');
+    var msg = a.getAttribute('data-download-bg') ||
+      'Downloading in the background — check your browser Downloads. You can keep working.';
+    if (window.B2B && B2B.toast) B2B.toast(msg, { type: 'info', title: 'Downloading', timeout: 7000 });
+  });
+
   // Never leave the overlay stuck when returning via the back/forward cache.
   window.addEventListener('pageshow', function (e) { if (e.persisted) hide(); });
 })();

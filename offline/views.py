@@ -398,6 +398,83 @@ class GTMDownloadView(LoginRequiredMixin, View):
                             filename=os.path.basename(path))
 
 
+# ── Reliance Trends (BAP Excel) recorder — upload → preview → confirm ─────────
+#   Records to renee_orders like GT Mass; frozen engine untouched. NEW channel
+#   (cust 20418); BAP replen PO ships to Bhiwandi 20418_2 (S0HZ ambiguity noted).
+class RelianceTrendsView(LoginRequiredMixin, TemplateView):
+    template_name = 'offline/reliance_trends.html'
+
+
+class RTPreviewView(LoginRequiredMixin, View):
+    """Phase 1: save the uploaded BAP file under a token, run a NO-WRITE preview."""
+
+    def post(self, request, *args, **kwargs):
+        f = request.FILES.get('file')
+        if not f:
+            return JsonResponse({'ok': False, 'error': 'No file selected'}, status=400)
+        token = uuid.uuid4().hex[:12]
+        up_dir = Path(settings.MEDIA_ROOT) / 'reliance_trends_uploads' / token
+        up_dir.mkdir(parents=True, exist_ok=True)
+        dest = up_dir / Path(f.name).name
+        with open(dest, 'wb') as out:
+            for chunk in f.chunks():
+                out.write(chunk)
+        (up_dir / 'meta.json').write_text(
+            json.dumps({'file': str(dest), 'name': f.name}), encoding='utf-8')
+        from .services import reliance_trends_bridge as rt
+        parsed = rt.parse(str(dest))
+        if not parsed['ok']:
+            return JsonResponse({'ok': False, 'error': parsed['error']}, status=400)
+        pos = [{'po': p['po'], 'ship_to': p['ship_to'], 'city': p['city'],
+                'lines': len(p['lines']), 'qty': p['qty'], 'value': p['value'],
+                'unresolved': p['unresolved']}
+               for p in parsed['pos'].values()]
+        return JsonResponse({'ok': True, 'token': token, 'pos': pos,
+                             'totals': parsed['totals'],
+                             'warnings': parsed['warnings'][:20]}, status=200)
+
+
+class RTConfirmView(LoginRequiredMixin, View):
+    """Phase 2: record runs + order_headers + order_lines into renee_orders (dedup)."""
+
+    def post(self, request, *args, **kwargs):
+        token = request.POST.get('token', '')
+        up_dir = Path(settings.MEDIA_ROOT) / 'reliance_trends_uploads' / token
+        meta_p = up_dir / 'meta.json'
+        if not token or not meta_p.exists():
+            return JsonResponse(
+                {'ok': False, 'error': 'Upload expired — please re-upload.'},
+                status=400)
+        meta = json.loads(meta_p.read_text(encoding='utf-8'))
+        wh = request.POST.get('warehouse', 'AHD')
+        from .services import reliance_trends_bridge as rt
+        res = rt.record(meta['file'], warehouse=wh, source_file=meta['name'])
+        # Build the downloadable D365 SO workbook (unified 8-sheet) with the SAME
+        # SO numbers record() just assigned, even when the POs were already recorded
+        # (so a re-download is always available).
+        if res.get('ok'):
+            out, err = rt.build_workbook(meta['file'], warehouse=wh,
+                                         so_map=res.get('so_map'))
+            if out:
+                request.session[f'rt_out_{token}'] = str(out)
+                res['download_url'] = reverse('rt_download', args=[token])
+                res['output_name'] = os.path.basename(str(out))
+            elif err:
+                res['workbook_error'] = err
+        return JsonResponse(res, status=200 if res.get('ok') else 400)
+
+
+class RTDownloadView(LoginRequiredMixin, View):
+    """GET: serve the generated Reliance Trends D365 SO workbook for a token."""
+
+    def get(self, request, token, *args, **kwargs):
+        path = request.session.get(f'rt_out_{token}')
+        if not path or not os.path.exists(path):
+            raise Http404('Generated workbook not found or expired.')
+        return FileResponse(open(path, 'rb'), as_attachment=True,
+                            filename=os.path.basename(path))
+
+
 # ── Shared PO-flow scaffold (upload → review → confirm → lock) ───────────────
 # Generic, spec-driven CBVs: all logic lives in online_b2b.services.po_flow.
 # A new offline channel = a processor adapter + a FlowSpec + a 6-line block of
@@ -432,6 +509,10 @@ def _flow_upload_ctx(spec):
         'channel_reqs': _channel_reqs(spec),
         'u_upload': spec.urls['upload'], 'u_back': spec.urls['back'],
         'u_dashboard': spec.urls['dashboard'],
+        # 'Review Later' Drafts list (only if the spec wired it) + a live count.
+        'u_drafts': spec.urls.get('drafts'),
+        'n_drafts': (len(po_flow.collect_drafts(spec))
+                     if spec.urls.get('drafts') else 0),
     }
 
 
@@ -479,6 +560,11 @@ class _FlowReviewView(LoginRequiredMixin, View):
         meta = po_flow.load_meta(self.spec, token)
         if meta is None:
             raise Http404('Upload not found or expired.')
+        # Reopen-from-Drafts (?revalidate=1): drop the cached preview so the run
+        # is re-validated live against the CURRENT masters (picks up any fix made
+        # while it was parked). No-op once locked.
+        if request.GET.get('revalidate') and not meta.get('locked'):
+            po_flow.invalidate(self.spec, token)
         return render(request, 'po_flow/review.html',
                       po_flow.review_context(self.spec, token, meta))
 
@@ -536,7 +622,11 @@ class _FlowDownloadView(LoginRequiredMixin, View):
         p = po_flow.download_path(self.spec, token)
         if not p:
             raise Http404('No workbook available.')
-        return FileResponse(open(p, 'rb'), as_attachment=True, filename=p.name)
+        # Uniform, self-describing name on par with Online B2B (Mp_Npo_ts_kind) —
+        # never the raw tmpXXXX temp name.
+        meta = po_flow.load_meta(self.spec, token) or {}
+        return FileResponse(open(p, 'rb'), as_attachment=True,
+                            filename=po_flow.download_name(self.spec, meta, p))
 
 
 class _FlowExportView(LoginRequiredMixin, View):
@@ -552,6 +642,47 @@ class _FlowExportView(LoginRequiredMixin, View):
         if not p:
             raise Http404('Could not build the review export.')
         return FileResponse(open(p, 'rb'), as_attachment=True, filename=p.name)
+
+
+class _FlowSaveLaterView(LoginRequiredMixin, View):
+    """Park the WHOLE run as a 'Review Later' draft (kept intact, NOT recorded).
+    AJAX → ``{ok, redirect}``; native submit → redirect to Drafts."""
+    spec = None
+
+    def post(self, request, token):
+        spec = self.spec
+        ok = po_flow.save_draft(spec, token, request.POST.get('note', ''))
+        drafts_url = reverse(spec.urls['drafts'])
+        if not ok:
+            if _is_ajax(request):
+                return JsonResponse(
+                    {'ok': False,
+                     'error': 'Already recorded or expired — nothing to defer.'},
+                    status=400)
+            return redirect(reverse(spec.urls['review'], args=[token]))
+        if _is_ajax(request):
+            return JsonResponse({'ok': True, 'redirect': drafts_url})
+        return redirect(drafts_url)
+
+
+class _FlowDraftsView(LoginRequiredMixin, View):
+    """List all parked 'Review Later' runs for this flow — reopen (→ re-validate)
+    or discard from here."""
+    spec = None
+
+    def get(self, request):
+        spec = self.spec
+        return render(request, 'po_flow/drafts.html', {
+            'spec': spec,
+            'title': spec.title,
+            'segment': spec.segment,
+            'base_template': spec.base_template,
+            'drafts': po_flow.collect_drafts(spec),
+            'u_review': spec.urls['review'],
+            'u_discard': spec.urls['discard'],
+            'u_upload': spec.urls['upload'],
+            'u_dashboard': spec.urls['dashboard'],
+        })
 
 
 # ── GT Mass (unchanged behaviour — now on the generic base) ──────────────
@@ -583,6 +714,14 @@ class GTMFlowExportView(_FlowExportView):
     spec = GT_MASS_SPEC
 
 
+class GTMFlowSaveLaterView(_FlowSaveLaterView):
+    spec = GT_MASS_SPEC
+
+
+class GTMFlowDraftsView(_FlowDraftsView):
+    spec = GT_MASS_SPEC
+
+
 # ── Modern Trade (MT) — on par with the online marketplaces ──────────────
 class MTFlowUploadView(_FlowUploadView):
     spec = MT_SPEC
@@ -609,4 +748,12 @@ class MTFlowDownloadView(_FlowDownloadView):
 
 
 class MTFlowExportView(_FlowExportView):
+    spec = MT_SPEC
+
+
+class MTFlowSaveLaterView(_FlowSaveLaterView):
+    spec = MT_SPEC
+
+
+class MTFlowDraftsView(_FlowDraftsView):
     spec = MT_SPEC

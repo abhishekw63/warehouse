@@ -1,6 +1,8 @@
-{% extends 'core/base.html' %}
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static %}
 
 {% block title %}Offline Dashboard - RENEE Warehouse{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
 
 {% block breadcrumb %}
     <a href="{% url 'departments' %}">Departments</a>

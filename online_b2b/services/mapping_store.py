@@ -349,6 +349,31 @@ def list_mappings(party: str = '', q: str = '', limit: int = 200) -> dict:
                 'parties': []}
 
 
+def export_rows(party: str = '', q: str = '') -> tuple[list[str], list[dict]]:
+    """ALL mapping rows with FULL columns for the Excel export, honoring the same
+    party/search filter as the on-screen list (no limit). Read-only. Returns
+    ``(columns, rows)``."""
+    party = (party or '').strip()
+    q = (q or '').strip()
+    cols = ['party', 'del_location', 'cust_no', 'ship_to', 'name', 'address',
+            'address2', 'postcode', 'city', 'source']
+    with _conn() as (cur, d):
+        ph = d['ph']
+        where, args = [], []
+        if party:
+            where.append(f"party={ph}"); args.append(party)
+        if q:
+            like = f"%{q}%"
+            where.append(f"(del_location LIKE {ph} OR ship_to LIKE {ph} OR "
+                         f"cust_no LIKE {ph} OR city LIKE {ph} OR name LIKE {ph})")
+            args += [like, like, like, like, like]
+        wsql = ('WHERE ' + ' AND '.join(where)) if where else ''
+        cur.execute(f"SELECT {', '.join(cols)} FROM {_MAP_TABLE} {wsql} "
+                    f"ORDER BY party, del_location", args)
+        rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+    return cols, rows
+
+
 # ── DB-backed loader (drop-in for the engine's MappingLoader) ────────────────
 
 class DBMappingLoader(MappingLoader):

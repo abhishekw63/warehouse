@@ -15,7 +15,10 @@
       <h1>{{ title }} · Process PO</h1>
       <p class="src">{{ intro }}</p>
     </div>
-    <a href="{% url u_back %}" class="back">← Back</a>
+    <div style="display:flex;gap:10px;align-items:center;">
+      {% if u_drafts %}<a href="{% url u_drafts %}" class="back">🕒 Drafts{% if n_drafts %} ({{ n_drafts }}){% endif %}</a>{% endif %}
+      <a href="{% url u_back %}" class="back">← Back</a>
+    </div>
   </div>
 
   <form method="post" enctype="multipart/form-data" class="up-card" id="up-form"
@@ -160,6 +163,9 @@
       main.textContent = '✓ ' + name; btn.disabled = false; btn.textContent = 'Process'; }, 850);
   });
   var overlay = document.getElementById('proc-overlay');
+  // Portal to <body> so position:fixed centres on the VIEWPORT, not within
+  // #MainContent (sidebar padding + page-in transform pull it off-centre).
+  if (overlay && overlay.parentNode !== document.body) document.body.appendChild(overlay);
   var fill = document.getElementById('proc-fill'), pctEl = document.getElementById('proc-pct'),
       stageEl = document.getElementById('proc-stage'), timeEl = document.getElementById('proc-time');
   var STAGES = [{p:0,t:'Loading master…'},{p:42,t:'Reading & processing PO file…'},

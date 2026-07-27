@@ -1,0 +1,60 @@
+{% extends base_template %}
+{% load static b2b_extras %}
+{% block title %}{{ title }} — Drafts{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url u_dashboard %}"> / {{ segment }}</a> <span>/ {{ title }} · Drafts</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap">
+  <div class="b2b-head">
+    <div>
+      <h1>Drafts <span>· {{ title }}</span></h1>
+      <p class="src">Runs parked with <b>Save for Review Later</b> — kept intact, not recorded.
+        Reopen to re-validate against the current masters, then Confirm &amp; Record.</p>
+    </div>
+    <a href="{% url u_upload %}" class="back">← New upload</a>
+  </div>
+
+  {% if drafts %}
+  <div class="tbl-wrap" style="margin-top:16px;">
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>Parked</th><th>Channel</th><th>Warehouse</th>
+          <th class="num">POs</th><th class="num">Files</th><th>Note</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in drafts %}
+        <tr>
+          <td>{{ d.draft_at|default:'—' }}</td>
+          <td>{{ d.marketplace|default:'—' }}</td>
+          <td>{{ d.warehouse|default:'—' }}</td>
+          <td class="num">{{ d.pos }}</td>
+          <td class="num">{{ d.files }}</td>
+          <td>{% if d.note %}{{ d.note }}{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td style="white-space:nowrap;text-align:right;">
+            <a href="{% url u_review d.token %}?revalidate=1" class="btn-primary" style="padding:5px 12px;">Reopen →</a>
+            <form method="post" action="{% url u_discard d.token %}" style="display:inline;"
+                  onsubmit="return confirm('Discard this draft permanently? The uploaded file(s) and preview are deleted.');">
+              {% csrf_token %}
+              <button class="btn-discard" type="submit" style="padding:5px 12px;">Discard</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="banner" style="margin-top:16px;">
+    No drafts. Park a run from its Review page with <b>🕒 Save for Review Later</b> when a line
+    can’t be decided yet (e.g. a master needs correcting first).
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

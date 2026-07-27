@@ -1,0 +1,422 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static %}
+{% load b2b_extras %}
+{% comment %}
+STANDALONE Triangular Validation page — D365 ⟷ dump ⟷ system (3-way).
+Self-contained; remove with the module + service + urls + nav link.
+{% endcomment %}
+{% block title %}Triangular Validation — D365 · dump · system{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<style>
+  /* #MainContent is a row-flex; force this page's content to stack full-width */
+  .b2b-app #MainContent{flex-direction:column;align-items:stretch;}
+  .tv-up{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:20px 22px;margin-bottom:20px;box-shadow:var(--shadow);}
+  .tv-up h2{font-size:15px;margin:0 0 4px;} .tv-up p{color:var(--text-2);font-size:13px;margin:0 0 14px;}
+  /* upload drop-zones */
+  .tv-upgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:6px 0 16px;}
+  @media(max-width:720px){.tv-upgrid{grid-template-columns:1fr;}}
+  .tv-drop{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;gap:4px;
+    padding:22px 18px;border:2px dashed var(--border);border-radius:14px;background:var(--surface-2);
+    cursor:pointer;transition:border-color .18s,background .18s,box-shadow .18s;}
+  .tv-drop:hover{border-color:var(--accent);box-shadow:0 4px 16px rgba(79,70,229,.08);}
+  .tv-drop.has{border-color:#0f9d6b;border-style:solid;background:#eafaf1;}
+  .tv-drop.drag{border-color:var(--accent);border-style:solid;background:color-mix(in srgb,var(--accent) 8%,var(--surface-2));}
+  /* fully hide the native input (incl. its 'No file chosen' text) — the label is the UI */
+  .tv-drop input[type=file]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:0;color:transparent;}
+  .tv-drop-ic{width:42px;height:42px;border-radius:12px;display:grid;place-items:center;font-size:20px;
+    background:var(--surface);border:1px solid var(--border);}
+  .tv-drop.has .tv-drop-ic{background:#0f9d6b;color:#fff;border-color:#0f9d6b;}
+  .tv-drop-t{font-size:13.5px;font-weight:800;color:var(--text-1);}
+  .tv-drop-s{font-size:11.5px;color:var(--text-2);line-height:1.3;}
+  .tv-drop-n{font-size:11.5px;font-weight:800;color:#0f9d6b;min-height:14px;}
+  .tv-runbar{display:flex;justify-content:flex-end;align-items:center;gap:12px;flex-wrap:wrap;}
+  .tv-runbar .hint{font-size:12px;color:var(--text-2);margin-right:auto;display:flex;align-items:center;gap:6px;}
+  .tv-runbar .rd{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:2px 8px;border-radius:20px;background:#eafaf1;color:#0f6b4a;}
+  .tv-tabs{display:flex;gap:6px;margin:18px 0 12px;flex-wrap:wrap;}
+  .tv-tab{padding:8px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface);
+    cursor:pointer;font-size:13px;font-weight:600;color:var(--text-2);font-family:inherit;}
+  .tv-tab.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .tv-pane{display:none;} .tv-pane.on{display:block;}
+  table.tv{width:100%;border-collapse:collapse;font-size:12.5px;}
+  table.tv th{position:sticky;top:0;z-index:1;background:var(--surface-2);text-align:right;padding:9px 14px;
+    border-bottom:2px solid var(--border);white-space:nowrap;font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-2);font-weight:800;}
+  table.tv th:first-child{text-align:left;}
+  table.tv td{padding:8px 14px;border-bottom:1px solid var(--border-2);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  table.tv td:first-child{text-align:left;font-weight:600;white-space:normal;}
+  table.tv td.r{text-align:right;font-variant-numeric:tabular-nums;}
+  table.tv td.l,table.tv th.l{text-align:left;}
+  table.tv td.c,table.tv th.c{text-align:center;}
+  table.tv tbody tr:nth-child(even){background:color-mix(in srgb,var(--surface-2) 45%,transparent);}
+  table.tv tbody tr:hover{background:color-mix(in srgb,var(--accent) 5%,transparent);}
+  table.tv tr.total td{font-weight:800;border-top:2px solid var(--border);background:var(--surface-2);}
+  table.tv tr.total:hover{background:var(--surface-2);}
+  .st{font-weight:800;font-size:10.5px;padding:2px 8px;border-radius:20px;}
+  .st.ok{background:#e7f6ef;color:#0f9d6b;} .st.bad{background:#fdecec;color:#dc2626;}
+  .dz{color:#0f9d6b;font-weight:800;} .dnz{color:#b45309;font-weight:800;}
+  .tv-scroll{max-height:60vh;overflow:auto;border:1px solid var(--border);border-radius:10px;}
+  .tv-note{background:#fdf1e3;border:1px solid #f4d9b0;color:#7a4d10;border-radius:10px;padding:10px 14px;font-size:12.5px;margin:0 0 12px;}
+  details.tv-detect{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);margin:0 0 16px;box-shadow:var(--shadow);overflow:hidden;}
+  details.tv-detect > summary{list-style:none;cursor:pointer;padding:12px 16px;font-size:12.5px;display:flex;align-items:center;gap:9px;user-select:none;}
+  details.tv-detect > summary::-webkit-details-marker{display:none;}
+  details.tv-detect > summary::before{content:'▸';color:var(--text-2);transition:transform .15s;font-size:11px;}
+  details.tv-detect[open] > summary::before{transform:rotate(90deg);}
+  .tv-exp{margin-left:auto;font-weight:700;color:var(--accent);font-size:11px;}
+  .tv-detect-body{padding:2px 16px 12px;max-height:280px;overflow:auto;}
+  .tv-detect .row{display:flex;align-items:center;gap:10px;padding:5px 0;font-size:12.5px;border-bottom:1px solid var(--border-2);}
+  .role{font-weight:800;font-size:10px;padding:2px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.03em;min-width:66px;text-align:center;}
+  .role.headers{background:#e8eefc;color:#2748c4;} .role.lines{background:#eafaf1;color:#0f9d6b;}
+  .role.dump{background:#fdf1e3;color:#b45309;} .role.source{background:#f1eef9;color:#6d4bb8;}
+  .role.raw{background:#eef7ff;color:#1d6fb8;} .role.unknown{background:#fdecec;color:#dc2626;}
+  .mpchip{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--surface-2);color:var(--text-2);border:1px solid var(--border);}
+  /* ── review hero ── */
+  .tv-hero{display:flex;align-items:center;gap:18px;border-radius:16px;padding:18px 22px;margin:0 0 16px;
+    border:1px solid var(--border);box-shadow:var(--shadow);position:relative;overflow:hidden;}
+  .tv-hero.ok{background:linear-gradient(120deg,#eafaf1,#f4fbf7);border-color:#bfe6d3;}
+  .tv-hero.bad{background:linear-gradient(120deg,#fdf0ec,#fdf5f0);border-color:#f4c6b0;}
+  .tv-hero .badge{width:52px;height:52px;border-radius:14px;display:grid;place-items:center;font-size:26px;flex:none;color:#fff;}
+  .tv-hero.ok .badge{background:#0f9d6b;} .tv-hero.bad .badge{background:#dc7a3c;}
+  .tv-hero h2{margin:0;font-size:19px;line-height:1.2;} .tv-hero .hl{color:var(--text-2);font-size:13px;margin-top:3px;font-variant-numeric:tabular-nums;}
+  .tv-hero .act{margin-left:auto;display:flex;gap:10px;align-items:center;}
+  /* ── reconciliation ribbon ── */
+  .tv-flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin:0 0 16px;}
+  .tv-stage{flex:1;min-width:120px;background:var(--surface);border:1px solid var(--border);padding:12px 16px;position:relative;}
+  .tv-stage:first-child{border-radius:12px 0 0 12px;} .tv-stage:last-child{border-radius:0 12px 12px 0;}
+  .tv-stage + .tv-stage{border-left:none;}
+  .tv-stage .lab{font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-2);font-weight:700;}
+  .tv-stage .val{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:2px;}
+  .tv-stage .op{position:absolute;right:-11px;top:50%;transform:translateY(-50%);z-index:2;width:22px;height:22px;border-radius:50%;
+    background:var(--surface);border:1px solid var(--border);display:grid;place-items:center;font-weight:800;font-size:13px;color:var(--text-2);}
+  .tv-stage.raw .val{color:var(--text-1);} .tv-stage.ded .val{color:#b45309;} .tv-stage.inc .val{color:#0f9d6b;} .tv-stage.d365 .val{color:#2748c4;}
+  .tv-stage.d365{background:linear-gradient(120deg,#eef3ff,var(--surface));}
+  /* ── checks grid ── */
+  .tv-cg{display:grid;grid-template-columns:repeat(auto-fill,minmax(232px,1fr));gap:10px;margin:0 0 18px;}
+  .ck{display:flex;gap:11px;align-items:flex-start;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:11px 13px;border-left:3px solid var(--border);}
+  .ck.ok{border-left-color:#0f9d6b;} .ck.bad{border-left-color:#dc2626;background:#fdfafa;}
+  .ck .ico{width:20px;height:20px;border-radius:50%;flex:none;display:grid;place-items:center;color:#fff;font-size:12px;font-weight:800;margin-top:1px;}
+  .ck.ok .ico{background:#0f9d6b;} .ck.bad .ico{background:#dc2626;}
+  .ck .t{font-size:12.5px;font-weight:700;line-height:1.25;} .ck .s{font-size:11px;color:var(--text-2);margin-top:1px;}
+  .ck .d{font-size:11px;color:var(--text-2);margin-top:3px;font-variant-numeric:tabular-nums;}
+  /* ── Validation checks — ONE collapsible card (replaces the grid of cards) ── */
+  details.tv-checks{border-radius:14px;margin:0 0 18px;overflow:hidden;border:1px solid var(--border);background:var(--surface);box-shadow:var(--shadow);}
+  details.tv-checks.ok{border-color:#bfe6d3;} details.tv-checks.bad{border-color:#f2c9bb;}
+  details.tv-checks > summary{list-style:none;cursor:pointer;user-select:none;display:flex;align-items:center;gap:14px;padding:14px 18px;}
+  details.tv-checks > summary::-webkit-details-marker{display:none;}
+  .tvk-badge{flex:none;min-width:44px;height:40px;padding:0 12px;border-radius:11px;display:grid;place-items:center;font-weight:800;font-size:18px;color:#fff;font-variant-numeric:tabular-nums;}
+  details.tv-checks.ok .tvk-badge{background:#0f9d6b;} details.tv-checks.bad .tvk-badge{background:#dc2626;}
+  .tvk-hd .tvk-t{font-size:15.5px;font-weight:800;line-height:1.15;letter-spacing:-.01em;}
+  .tvk-hd .tvk-s{font-size:12px;color:var(--text-2);margin-top:2px;}
+  .tvk-pills{display:flex;flex-wrap:wrap;gap:5px;margin-left:4px;max-width:44%;}
+  .tvk-pill{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:20px;background:#fdecec;color:#c0392b;border:1px solid #f3c9c9;white-space:nowrap;}
+  .tvk-exp{margin-left:auto;font-size:11px;font-weight:800;color:var(--accent);display:flex;align-items:center;gap:6px;text-transform:uppercase;letter-spacing:.03em;}
+  .tvk-exp::after{content:'▾';transition:transform .18s;font-size:12px;}
+  details.tv-checks[open] .tvk-exp::after{transform:rotate(180deg);}
+  .tvk-body{padding:6px 12px 12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:2px;border-top:1px solid var(--border-2);}
+  .tvk-row{display:flex;align-items:flex-start;gap:11px;padding:11px 12px;border-radius:10px;}
+  .tvk-row:hover{background:color-mix(in srgb,var(--accent) 5%,transparent);}
+  .tvk-row.bad{background:color-mix(in srgb,#dc2626 4%,transparent);}
+  .tvk-ico{flex:none;width:22px;height:22px;border-radius:7px;display:grid;place-items:center;font-size:12px;font-weight:800;color:#fff;margin-top:1px;}
+  .tvk-row.ok .tvk-ico{background:#0f9d6b;} .tvk-row.bad .tvk-ico{background:#dc2626;}
+  .tvk-main{display:flex;flex-direction:column;min-width:130px;}
+  .tvk-lbl{font-size:13px;font-weight:700;line-height:1.2;} .tvk-sub{font-size:11px;color:var(--text-2);margin-top:2px;}
+  .tvk-det{margin-left:auto;text-align:right;font-size:12px;color:var(--text-1);font-variant-numeric:tabular-nums;align-self:center;padding-left:8px;}
+  .tvk-row.bad .tvk-det{color:#c0392b;font-weight:700;}
+</style>{% endblock %}
+
+{% block breadcrumb %}<a href="{% url 'b2b_dashboard' %}">Hub</a> <span>/</span> <b>Triangular Validation</b>{% endblock %}
+
+{% block content %}
+<div class="b2b-head">
+  <h1>Triangular Validation <span>· D365 · dump · system</span></h1>
+  <p class="sub">Upload the D365 <b>Sales Orders</b> (headers) + <b>Sales Lines</b>, and the raw
+     <b>dump(s)</b> (one per marketplace). Reconciles all three legs — qty triangle, the full value
+     accounting (<b>full = deducted + included</b>, Δ vs D365), and a file audit.</p>
+</div>
+
+<form class="tv-up" id="tvForm" method="post" action="{% url 'b2b_triangular_run' %}" enctype="multipart/form-data"
+      data-loading="Running the triangular check"
+      data-loading-steps="Bifurcating &amp; checking the files|Reading the D365 headers &amp; lines|Reading the raw dump(s)|Pulling the system (DB) leg by PO|Mapping &amp; reconciling qty · value · address|Building the 360° workbook">
+  {% csrf_token %}
+  <h2>Reconcile D365 ⟷ dump ⟷ system</h2>
+  <p>Drop <b>everything at once</b> — or point us at a <b>whole folder</b>. We auto-detect which file
+     is which (by name + content); the DB (system) leg is pulled automatically by PO.</p>
+  <div class="tv-upgrid">
+    <label class="tv-drop" id="tvDrop1">
+      <span class="tv-drop-ic">📄</span>
+      <span class="tv-drop-t">Upload files</span>
+      <span class="tv-drop-s">D365 Headers + Sales Lines + dump(s) — any order</span>
+      <span class="tv-drop-n" id="tvN1"></span>
+      <input type="file" name="all_files" id="tvFiles" accept=".xlsx,.xls,.csv" multiple>
+    </label>
+    <label class="tv-drop" id="tvDrop2">
+      <span class="tv-drop-ic">📁</span>
+      <span class="tv-drop-t">…or a whole folder</span>
+      <span class="tv-drop-s">everything inside (e.g. the entire <span class="mono">20.07.2026</span>), recursively</span>
+      <span class="tv-drop-n" id="tvN2"></span>
+      <input type="file" name="all_folder" id="tvFolder" webkitdirectory directory multiple>
+    </label>
+  </div>
+  <div class="tv-runbar">
+    <span class="hint"><span class="rd">Read-only</span> nothing is recorded — GET + validate only.</span>
+    <button type="submit" class="btn-primary" id="tvRun">Run triangular →</button>
+  </div>
+</form>
+
+{% if result and not result.ok %}
+  <div class="tv-up" style="border-color:#dc2626;background:#fdecec;color:#7a1c1c;">⚠ {{ result.error }}</div>
+{% elif result.ok %}{% with s=data.summary vt=data.value_legs|last v=data.verdict %}
+  {# ── HERO VERDICT — the one line that connects every dot ── #}
+  <div class="tv-hero {% if v.all_clean %}ok{% else %}bad{% endif %}">
+    <div class="badge">{% if v.all_clean %}✓{% else %}!{% endif %}</div>
+    <div>
+      <h2>{% if v.all_clean %}Fully reconciled — nothing lost between the raw order and D365{% else %}{{ v.n_fail }} of {{ v.n_checks }} checks need review{% endif %}</h2>
+      <div class="hl">{{ v.headline }}{% if v.all_clean %} · value tie Δ {{ v.value_delta|inr }}{% endif %}</div>
+    </div>
+    <div class="act"><a href="{% url 'b2b_triangular_download' token=token %}" class="btn-primary">⬇ Download 360° Excel</a></div>
+  </div>
+
+  {# ── RECONCILIATION RIBBON — Raw ▸ Deducted ▸ Included ▸ D365 ── #}
+  <div class="tv-flow">
+    <div class="tv-stage raw"><div class="lab">Raw order</div><div class="val">{{ v.raw }}</div><span class="op">−</span></div>
+    <div class="tv-stage ded"><div class="lab">Deducted (logged drops)</div><div class="val">{{ v.deducted }}</div><span class="op">=</span></div>
+    <div class="tv-stage inc"><div class="lab">Included (pushed)</div><div class="val">{{ v.included }}</div><span class="op">≟</span></div>
+    <div class="tv-stage d365"><div class="lab">D365 received</div><div class="val">{{ v.d365 }}</div></div>
+  </div>
+
+  {# ── VALIDATION CHECKS — ONE collapsible card (minimise / maximise) ── #}
+  <details class="tv-checks {% if v.all_clean %}ok{% else %}bad{% endif %}"{% if not v.all_clean %} open{% endif %}>
+    <summary>
+      <span class="tvk-badge">{% if v.all_clean %}✓{% else %}{{ v.n_fail }}{% endif %}</span>
+      <div class="tvk-hd">
+        <div class="tvk-t">Validation checks</div>
+        <div class="tvk-s">{% if v.all_clean %}All {{ data.checks|length }} checks passed — fully reconciled{% else %}{{ v.n_fail }} of {{ data.checks|length }} need review{% endif %}</div>
+      </div>
+      {% if not v.all_clean %}<span class="tvk-pills">{% for c in data.checks %}{% if not c.ok %}<span class="tvk-pill">{{ c.label }}</span>{% endif %}{% endfor %}</span>{% endif %}
+      <span class="tvk-exp">details</span>
+    </summary>
+    <div class="tvk-body">
+      {% for c in data.checks %}
+      <div class="tvk-row {% if c.ok %}ok{% else %}bad{% endif %}">
+        <span class="tvk-ico">{% if c.ok %}✓{% else %}✕{% endif %}</span>
+        <div class="tvk-main"><span class="tvk-lbl">{{ c.label }}</span><span class="tvk-sub">{{ c.sub }}</span></div>
+        <div class="tvk-det">{{ c.detail }}</div>
+      </div>{% endfor %}
+    </div>
+  </details>
+
+  {# ── FILES DETECTED — collapsed by default so the tables stay on top ── #}
+  {% if data.files_detected %}
+  <details class="tv-detect">
+    <summary><b>Files detected</b> · {{ data.files_detected|length }} used{% if data.n_ignored %} · {{ data.n_ignored }} ignored{% endif %}<span class="tv-exp">view breakdown</span></summary>
+    <div class="tv-detect-body">
+    {% for f in data.files_detected %}
+    <div class="row"><span class="role {{ f.role }}">{{ f.role }}</span>
+      {% if f.marketplace %}<span class="mpchip">{{ f.marketplace }}</span>{% endif %}
+      <span class="mono" title="{{ f.name }}">{{ f.name }}</span></div>{% endfor %}
+    {% if data.n_ignored %}<div class="row" style="border-bottom:none;color:var(--text-2);">
+      <span class="role unknown">ignored</span><span>{{ data.n_ignored }} other file(s) not part of the check — skipped.</span></div>{% endif %}
+    </div>
+  </details>
+  {% for c in data.audit.mp_conflicts %}<div class="tv-note">⚠ Marketplace name/content mismatch — {{ c }}</div>{% endfor %}
+  {% endif %}
+
+  {% if data.audit.missing_dump %}
+  <div class="tv-note">⚠ <b>{{ data.audit.missing_dump|length }} PO(s) in D365 have no dump uploaded</b> —
+    a dump file may be missing. See the <b>File Audit</b> tab.</div>{% endif %}
+  {% if data.audit.not_pushed %}
+  <div class="tv-note">⚠ <b>{{ data.audit.not_pushed|length }} PO(s) in a dump are not in D365</b> —
+    recorded but not pushed. See the <b>File Audit</b> tab.</div>{% endif %}
+  {% if data.other_segments %}<div class="tv-note" style="background:#eef4ff;border-color:#c7dbff;color:#1a3a6b;">ℹ <b>Scoped to online B2B</b> (D365 <span class="mono">Gen. Bus. Posting Group = ON-B2B</span>). Ignored other segments riding in the same file:
+    {% for o in data.other_segments %}<b>{{ o.group }}</b> ({{ o.pos }} PO · {{ o.qty|indnum }} qty){% if not forloop.last %} · {% endif %}{% endfor %} — these reconcile in their own channels.</div>{% endif %}
+  {% if data.superseded %}<div class="tv-note">ℹ Multiple D365 exports found — using the <b>newest</b>; ignored {{ data.superseded|length }} older file(s):
+    {% for s in data.superseded %}<span class="mono">{{ s.name }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}.</div>{% endif %}
+  {% for iss in data.dump_issues %}<div class="tv-note">ℹ {{ iss }}</div>{% endfor %}
+
+  <div class="tv-tabs">
+    <button class="tv-tab on" data-tvtab="qty">Raw → D365 (Qty)</button>
+    <button class="tv-tab" data-tvtab="val">Value Legs</button>
+    <button class="tv-tab" data-tvtab="tri">PO · Qty + Value <span class="tcount">{{ tri_bad|length }} flagged</span></button>
+    <button class="tv-tab" data-tvtab="sku">SKU · D365 vs Dump <span class="tcount">{{ data.sku_check.mismatches }}</span></button>
+    <button class="tv-tab" data-tvtab="audit">File Audit <span class="tcount">{{ data.audit.files|length }}</span></button>
+    <button class="tv-tab" data-tvtab="drop">Dropped Lines <span class="tcount">{{ data.dropped|length }}</span></button>
+  </div>
+
+  {# Raw → D365 (Qty) — the raw-order accounting #}
+  <div class="tv-pane on" data-tvpane="qty">
+    <p style="color:var(--text-2);font-size:12.5px;margin:0 0 8px;">The <b>untouched raw order</b> (dump
+      <span class="mono">Total Qty</span>) accounted end-to-end: <b>Raw = Deducted + Included</b>, and
+      <b>Included = D365</b>. Every unit either reached D365 or is a logged drop — nothing silently lost.</p>
+    <div class="tv-scroll"><table class="tv">
+    <thead><tr><th>Marketplace</th><th class="r">RAW (full order)</th><th class="r">Deducted</th><th class="r">Included (pushed)</th><th class="r">D365</th><th class="r">Δ (D365−Incl)</th><th class="c">Raw = Ded+Incl</th></tr></thead>
+    <tbody>{% for q in data.qty_legs %}<tr {% if q.mp == 'TOTAL' %}class="total"{% endif %}>
+      <td><b>{{ q.mp }}</b></td><td class="r">{{ q.raw|indnum }}</td><td class="r">{{ q.deducted|indnum }}</td>
+      <td class="r">{{ q.included|indnum }}</td><td class="r">{{ q.d365|indnum }}</td>
+      <td class="r"><span class="{% if q.delta == 0 %}dz{% else %}dnz{% endif %}">{{ q.delta|indnum }}</span></td>
+      <td class="c">{% if q.raw_ties %}<span class="st ok">✓</span>{% else %}<span class="st bad">✗</span>{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+    <p style="color:var(--text-2);font-size:12px;margin:8px 2px 0;">
+      Verbatim <b>Raw Data</b> sheet independently confirmed the raw total for
+      <b>{{ data.raw_status.confirmed_files|length }}</b> of {{ data.audit.files|length }} dump(s){% if data.raw_status.confirmed_files %}
+      ({% for f in data.raw_status.confirmed_files %}{{ f.name|truncatechars:20 }} → “{{ f.col }}”{% if not forloop.last %}, {% endif %}{% endfor %}){% endif %}.
+      {% if data.raw_status.unconfirmed %}The rest use the engine’s Summary raw (their raw sheet carries extra POs — not a discrepancy).{% endif %}</p>
+  </div>
+
+  {# Value Legs #}
+  <div class="tv-pane" data-tvpane="val"><div class="tv-scroll"><table class="tv">
+    <thead><tr><th>Marketplace</th><th class="r">Full (inc GST)</th><th class="r">Deducted</th><th class="r">Included (pushed)</th><th class="r">D365 (Total Amt inc GST)</th><th class="r">Δ (D365 − Incl)</th></tr></thead>
+    <tbody>{% for v in data.value_legs %}<tr {% if v.mp == 'TOTAL' %}class="total"{% endif %}>
+      <td><b>{{ v.mp }}</b></td><td class="r">{{ v.full|inr }}</td><td class="r">{{ v.deducted|inr }}</td>
+      <td class="r">{{ v.included|inr }}</td><td class="r">{{ v.d365|inr }}</td>
+      <td class="r"><span class="{% if v.delta|floatformat:0 == '0' %}dz{% else %}dnz{% endif %}">{{ v.delta|inr }}</span></td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  <p style="color:var(--text-2);font-size:12px;margin:8px 2px 0;">Value = <b>Total Amount inc GST</b>. Identity: <b>Full = Deducted + Included</b>; the only number that should move is <b>Δ</b> (D365 vs Included) — near ₹0 when clean.</p></div>
+
+  {# Qty Triangle #}
+  <div class="tv-pane" data-tvpane="tri">
+    <p style="color:var(--text-2);font-size:12.5px;margin:0 0 8px;">Per PO — D365 <b>qty</b> (vs system &amp; dump) <b>and value</b> (D365 Total Amount inc GST vs our included value). Value tolerance ₹2 / 0.5%.</p>
+    <div class="tv-scroll"><table class="tv">
+    <thead><tr><th>MP</th><th>PO</th><th class="r">D365 Qty</th><th class="r">System</th><th class="r">Dump</th><th class="r">D365 Value</th><th class="r">Our Value</th><th class="r">Δ Value</th><th class="c">Agree</th><th class="l">Note</th></tr></thead>
+    <tbody>{% for t in data.triangle %}<tr>
+      <td>{{ t.mp }}</td><td class="mono">{{ t.po }}</td><td class="r">{{ t.d365_qty|indnum }}</td>
+      <td class="r">{{ t.system_final|indnum }}</td><td class="r">{{ t.dump_final|default_if_none:'—' }}</td>
+      <td class="r">{{ t.d365_val|inr }}</td><td class="r">{{ t.our_val|inr }}</td>
+      <td class="r"><span class="{% if t.val_ok %}dz{% else %}dnz{% endif %}">{{ t.val_delta|inr }}</span></td>
+      <td class="c">{% if t.agree %}<span class="st ok">✓</span>{% else %}<span class="st bad">✗</span>{% endif %}</td>
+      <td class="l" style="font-size:11.5px;color:var(--text-2);">{{ t.note }}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div></div>
+
+  {# SKU · D365 vs Dump (line-level foolproof edge) #}
+  <div class="tv-pane" data-tvpane="sku">
+    <p style="color:var(--text-2);font-size:12.5px;margin:0 0 8px;">Per <b>(PO, SKU)</b> D365 vs the raw dump —
+      the line-level edge behind the PO totals. <b>{{ data.sku_check.keys }}</b> keys checked.</p>
+    {% if data.sku_check.rows %}<div class="tv-scroll"><table class="tv">
+    <thead><tr><th>MP</th><th>PO</th><th>Item</th><th class="r">D365 Qty</th><th class="r">Dump Qty</th><th class="r">Δ</th></tr></thead>
+    <tbody>{% for r in data.sku_check.rows %}<tr>
+      <td>{{ r.mp }}</td><td class="mono">{{ r.po }}</td><td class="mono">{{ r.item }}</td>
+      <td class="r">{{ r.d365_qty }}</td><td class="r">{{ r.dump_qty }}</td>
+      <td class="r"><span class="dnz">{{ r.delta }}</span></td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+    {% else %}<div class="tv-note" style="background:#e7f6ef;border-color:#bfe6d3;color:#0f6b4a;">
+      ✓ Every (PO, SKU) line matches between D365 and the raw dump — nothing slipped between the order and D365.</div>{% endif %}
+  </div>
+
+  {# File Audit #}
+  <div class="tv-pane" data-tvpane="audit"><div class="tv-scroll"><table class="tv">
+    <thead><tr><th>File</th><th>Marketplace(s)</th><th class="r">#PO</th><th>POs</th><th>Note</th></tr></thead>
+    <tbody>{% for fe in data.audit.files %}<tr>
+      <td class="mono" title="{{ fe.name }}">{{ fe.name|truncatechars:38 }}</td>
+      <td>{{ fe.marketplaces|join:', ' }}</td><td class="r">{{ fe.po_count }}</td>
+      <td class="mono" style="font-size:11px;color:var(--text-2);">{{ fe.pos|join:', '|truncatechars:70 }}</td>
+      <td>{% if fe.skipped %}<span class="st bad">{{ fe.reason }}</span>{% else %}<span class="st ok">read</span>{% endif %}</td>
+    </tr>{% endfor %}</tbody>
+  </table></div>
+  <div style="display:flex;gap:24px;margin-top:10px;font-size:12.5px;">
+    <span>D365 POs: <b>{{ data.audit.d365_pos }}</b></span>
+    <span>Dump POs: <b>{{ data.audit.dump_pos }}</b></span>
+    <span class="{% if data.audit.missing_dump %}dnz{% else %}dz{% endif %}">Missing dump: {{ data.audit.missing_dump|length }}</span>
+    <span class="{% if data.audit.not_pushed %}dnz{% else %}dz{% endif %}">Not pushed: {{ data.audit.not_pushed|length }}</span>
+  </div></div>
+
+  {# Dropped Lines #}
+  <div class="tv-pane" data-tvpane="drop"><div class="tv-scroll"><table class="tv">
+    <thead><tr><th>PO</th><th>MP</th><th>Item</th><th>EAN</th><th>Description</th><th class="r">Qty</th><th class="r">Value (inc GST)</th><th>Reason</th></tr></thead>
+    <tbody>{% for r in data.dropped %}<tr>
+      <td class="mono">{{ r.po }}</td><td>{{ r.mp }}</td><td class="mono">{{ r.item }}</td><td class="mono">{{ r.ean }}</td>
+      <td title="{{ r.desc }}">{{ r.desc|truncatechars:34 }}</td><td class="r">{{ r.qty }}</td>
+      <td class="r">{{ r.val }}</td><td style="font-size:11.5px;color:var(--text-2);">{{ r.reason }}</td>
+    </tr>{% empty %}<tr><td colspan="8" class="muted" style="text-align:center;padding:20px;">Nothing dropped — every unit pushed.</td></tr>{% endfor %}</tbody>
+  </table></div></div>
+{% endwith %}{% endif %}
+
+<script>
+  document.querySelectorAll('.tv-tab').forEach(function(t){
+    t.addEventListener('click',function(){
+      document.querySelectorAll('.tv-tab').forEach(function(x){x.classList.remove('on');});
+      document.querySelectorAll('.tv-pane').forEach(function(x){x.classList.remove('on');});
+      t.classList.add('on');
+      var p=document.querySelector('.tv-pane[data-tvpane="'+t.getAttribute('data-tvtab')+'"]');
+      if(p)p.classList.add('on');
+    });
+  });
+  // drop-zone: reflect the picked-file count + green 'has' state, and support
+  // real drag-and-drop of files onto either zone
+  (function(){
+    [['tvFiles','tvN1','tvDrop1'],['tvFolder','tvN2','tvDrop2']].forEach(function(t){
+      var inp=document.getElementById(t[0]), n=document.getElementById(t[1]), box=document.getElementById(t[2]);
+      if(!inp || !box) return;
+      function refresh(){
+        var c=inp.files ? inp.files.length : 0;
+        n.textContent = c ? ('✓ '+c+' file'+(c>1?'s':'')+' selected') : '';
+        box.classList.toggle('has', c>0);
+      }
+      inp.addEventListener('change', refresh);
+      ['dragenter','dragover'].forEach(function(ev){
+        box.addEventListener(ev,function(e){e.preventDefault();e.stopPropagation();box.classList.add('drag');});});
+      ['dragleave','dragend','drop'].forEach(function(ev){
+        box.addEventListener(ev,function(e){e.preventDefault();e.stopPropagation();box.classList.remove('drag');});});
+      box.addEventListener('drop',function(e){
+        if(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length){
+          inp.files=e.dataTransfer.files; refresh();
+        }
+      });
+    });
+  })();
+  // guard: don't fire the shared loading overlay on an empty submit (capture-phase
+  // so it runs before base_b2b's data-loading handler)
+  (function(){
+    var form=document.getElementById('tvForm'); if(!form) return;
+    // A whole-folder pick uploads EVERY file recursively — incl. the big .zip /
+    // .pdf files (100s of MB) that crash the dev server. The triangular only
+    // needs the Excel/CSV files (D365 Sales Orders + Sales Lines + dump), so
+    // strip everything else from BOTH inputs BEFORE the POST goes out.
+    var KEEP=/\.(xlsx|xls|xlsm|csv)$/i;
+    function filterInput(el){
+      if(!el || !el.files || !el.files.length || typeof DataTransfer==='undefined') return 0;
+      var dt=new DataTransfer(), dropped=0;
+      for(var i=0;i<el.files.length;i++){
+        if(KEEP.test(el.files[i].name)) dt.items.add(el.files[i]); else dropped++;
+      }
+      try{ el.files=dt.files; }catch(_){}
+      return dropped;
+    }
+    // Reading a file that's OPEN in Excel throws (Windows locks it) — that's what
+    // silently killed the upload before (ERR_FAILED, no server log). Try to read a
+    // few bytes of each file first; if any fails, name it and stop with a clear popup.
+    function readable(f){
+      return f.slice(0, 16).arrayBuffer().then(function(){ return null; },
+                                               function(){ return f.name; });
+    }
+    form.addEventListener('submit', function(e){
+      var dropped=filterInput(document.getElementById('tvFolder'))+filterInput(document.getElementById('tvFiles'));
+      var files=[];
+      ['tvFolder','tvFiles'].forEach(function(id){
+        var el=document.getElementById(id);
+        if(el&&el.files){ for(var i=0;i<el.files.length;i++) files.push(el.files[i]); }
+      });
+      // We control submission ourselves (need an async readability check first).
+      e.preventDefault(); e.stopPropagation();
+      if(!files.length){
+        alert('No Excel/CSV files found. Pick the D365 Sales Orders + Sales Lines + dump (.xlsx), or a folder that contains them.'); return; }
+      if(dropped){ try{ console.log('Triangular: skipped '+dropped+' non-Excel file(s) (zip/pdf/etc.).'); }catch(_){} }
+      var btn=document.getElementById('tvRun'), lbl=btn?btn.textContent:'';
+      if(btn){ btn.disabled=true; btn.textContent='Checking files…'; }
+      Promise.all(files.map(readable)).then(function(res){
+        var open=res.filter(Boolean);
+        if(open.length){
+          if(btn){ btn.disabled=false; btn.textContent=lbl||'Run triangular →'; }
+          alert('⚠ These file(s) are OPEN in Excel (locked), so they can’t be uploaded:\n\n• '
+                + open.join('\n• ')
+                + '\n\nClose them in Excel, then click Run again.');
+          return;
+        }
+        if(btn) btn.textContent='Uploading…';
+        form.submit();   // native submit — bypasses this handler, sends the files
+      });
+    }, true);
+  })();
+</script>
+{% endblock %}

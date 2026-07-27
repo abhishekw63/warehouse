@@ -182,6 +182,10 @@ def _invalidate(spec: FlowSpec, token: str) -> None:
             pass
 
 
+# Public alias — reopen-from-Drafts re-validates a parked run against fresh masters.
+invalidate = _invalidate
+
+
 def set_decision(spec: FlowSpec, token: str, key: str, action: str,
                  override_cp: str = '', remark: str = '') -> int:
     """Persist one per-line decision onto ``meta.json``. Returns total decided."""
@@ -300,6 +304,60 @@ def _mapping_report(headers):
     return rows, n_unmapped, has_mapping
 
 
+def save_draft(spec: FlowSpec, token: str, note: str = '') -> bool:
+    """Park the WHOLE run as a 'Review Later' draft — kept intact (raw file(s) +
+    cached preview + any per-line decisions), NOT locked/recorded. Use when a
+    line can't be decided yet (e.g. a CP/master needs correcting first). The
+    operator later reopens it from Drafts, re-validates (picks up the fix) and
+    confirms — never re-uploaded. Mirrors Online B2B's ``meta['draft']`` scheme
+    (no separate table). Returns False if already locked/missing."""
+    import datetime as _dt
+    meta = load_meta(spec, token)
+    if not meta or meta.get('locked'):
+        return False
+    meta['draft'] = True
+    meta['draft_at'] = _dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    meta['draft_note'] = str(note or '')[:300]
+    _write_meta(spec, token, meta)
+    return True
+
+
+def collect_drafts(spec: FlowSpec) -> list[dict]:
+    """All parked 'Review Later' runs for this flow as API-ready dicts (token,
+    marketplace, warehouse, when, note, PO count, file count). Read-only — the
+    fat data layer behind the Drafts list. Sorted newest-first."""
+    rows: list[dict] = []
+    base = _root(spec)
+    if not base.exists():
+        return rows
+    for d in base.iterdir():
+        if not d.is_dir():
+            continue
+        meta = load_meta(spec, d.name)
+        if not meta or not meta.get('draft') or meta.get('locked'):
+            continue
+        npos = 0
+        cache = d / 'preview.json'
+        if cache.exists():
+            try:
+                cached = json.loads(cache.read_text(encoding='utf-8'))
+                res = cached.get('payload', cached)
+                npos = len(res.get('headers') or [])
+            except Exception:  # noqa: BLE001
+                pass
+        rows.append({
+            'token': d.name,
+            'marketplace': meta.get('marketplace', ''),
+            'warehouse': meta.get('warehouse', ''),
+            'draft_at': meta.get('draft_at', ''),
+            'note': meta.get('draft_note', ''),
+            'pos': npos,
+            'files': len(meta.get('files') or []),
+        })
+    rows.sort(key=lambda r: r['draft_at'], reverse=True)
+    return rows
+
+
 def review_context(spec: FlowSpec, token: str, meta: dict) -> dict:
     """Build the full template context for the shared ``review.html``."""
     payload = preview(spec, token, meta)
@@ -337,6 +395,10 @@ def review_context(spec: FlowSpec, token: str, meta: dict) -> dict:
         'r': payload,
         's': payload.get('summary', {}),
         'locked': bool(meta.get('locked')),
+        # 'Review Later' — this run was parked as a draft. Shows a banner + lets
+        # the reopen flow re-validate (pick up any master fix) before confirm.
+        'is_draft': bool(meta.get('draft')) and not meta.get('locked'),
+        'draft_note': meta.get('draft_note', ''),
         'run_id': meta.get('run_id'),
         'has_download': bool(meta.get('output_path')),
         'warehouses': spec.warehouses,
@@ -350,6 +412,10 @@ def review_context(spec: FlowSpec, token: str, meta: dict) -> dict:
         # wired an 'export' URL. Available pre- AND post-lock (it's just the
         # on-screen review data, for eyeballing in Excel before you commit).
         'u_export': spec.urls.get('export'),
+        # Optional 'Save for Review Later' + Drafts list — only when the spec
+        # wired them (MT / GT Mass). Absent → the button/link simply don't render.
+        'u_save_later': spec.urls.get('save_later'),
+        'u_drafts': spec.urls.get('drafts'),
     }
 
 
@@ -383,6 +449,40 @@ def download_path(spec: FlowSpec, token: str) -> Path | None:
         except Exception:  # noqa: BLE001
             return None
     return None
+
+
+def _count_pos(path) -> int:
+    """POs in a workbook = data rows of its 'Headers (SO)' / 'Headers (TO)'
+    sheet(s), one row per document. Best-effort — never blocks a download."""
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(path, read_only=True)
+        n = 0
+        for sh in ('Headers (SO)', 'Headers (TO)'):
+            if sh in wb.sheetnames:
+                n += sum(1 for r in wb[sh].iter_rows(min_row=2, values_only=True)
+                         if r and r[0] not in (None, ''))
+        wb.close()
+        return n
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def download_name(spec: FlowSpec, meta: dict, path) -> str:
+    """Uniform, self-describing download filename — SAME scheme as Online B2B's
+    ``_lot_name``: ``{Mp}_{N}po_{dd-mm-YYYY_HHMMSS}_{review|completed}.xlsx`` so
+    the lot size + run timestamp are obvious and Review never clashes with
+    Completed. ``Mp`` = the channel code (MT, e.g. RBL/HG) or the flow key (GT
+    Mass). Replaces the raw ``tmpXXXX_…`` temp name on the review download."""
+    import re
+    import time
+    p = Path(path)
+    kind = 'completed' if meta.get('locked') else 'review'
+    m = re.search(r'(\d{2}-\d{2}-\d{4}_\d{6})', p.name)
+    ts = (m.group(1) if m else
+          time.strftime('%d-%m-%Y_%H%M%S', time.localtime(p.stat().st_mtime)))
+    mp = str(meta.get('marketplace') or spec.key or 'SO').replace(' ', '')
+    return f"{mp}_{_count_pos(p)}po_{ts}_{kind}.xlsx"
 
 
 def export_review_xlsx(spec: FlowSpec, token: str, meta: dict) -> Path | None:

@@ -21,7 +21,6 @@
       <p class="src">Orders received per day (by recorded date) · last {{ days }} days</p>
     </div>
     <div class="head-actions">
-      <a href="{% url 'b2b_dashboard' %}" class="btn-ghost">← Hub</a>
       <form method="get" class="date-filter" id="dateForm">
         <input type="hidden" name="days" value="{{ days }}">
         <label>Any date</label>
