@@ -35,6 +35,24 @@
   {% if messages %}<div class="iv-msgs">{% for m in messages %}
     <div class="iv-msg {{ m.tags }}">{{ m }}</div>{% endfor %}</div>{% endif %}
 
+  {# ── Staleness nudge — stock deducts as orders ship, refresh every 6h ── #}
+  {% if stale_cards %}
+  <div class="iv-stale" role="status">
+    <span class="iv-stale-ic">⏱</span>
+    <div class="iv-stale-body">
+      <b>Stock may be out of date.</b>
+      {% for c in stale_cards %}{{ c.wh.short }} last updated <b>{{ c.age_hours }}h ago</b>{% if not forloop.last %} · {% endif %}{% endfor %}.
+      Quantities keep deducting as orders ship — re-upload <b>Bin Contents</b> to refresh
+      (recommended every <b>{{ stale_hours }}h</b>).
+    </div>
+    <label class="iv-file iv-stale-btn">
+      <input type="file" form="ivStaleForm" name="bin_file" accept=".xlsx,.xls" required onchange="this.form.requestSubmit()">
+      <span>⬆ Refresh now</span>
+    </label>
+  </div>
+  <form id="ivStaleForm" method="post" action="{% url 'b2b_inventory_upload' %}" enctype="multipart/form-data" hidden>{% csrf_token %}</form>
+  {% endif %}
+
   {# ── Stock by warehouse (current snapshots) ── #}
   <div class="iv-whrow">
     {% for c in snap_cards %}
@@ -47,7 +65,7 @@
       <div class="iv-whqty">{{ c.snap.included_qty|indnum }}<span class="u">sellable units</span></div>
       <div class="iv-whmeta">
         <span><b>{{ c.snap.item_count|indnum }}</b> SKUs</span>
-        <span class="iv-asof">as per {{ c.snap.captured_at|date:"d M, H:i" }}</span>
+        <span class="iv-asof{% if c.stale %} stale{% endif %}" title="Snapshot timestamp">{% if c.stale %}⏱ {% endif %}{{ c.snap.captured_at|date:"d M, H:i" }}{% if c.age_hours is not None %} · {{ c.age_hours }}h ago{% endif %}</span>
       </div>
       <div class="iv-whbins">
         <span class="ok">✓ {{ c.snap.included_lines|indnum }} incl</span>
@@ -140,10 +158,14 @@
 
   {# ── Available stock per warehouse (AHD / BLR / North) — pure stock, no orders ── #}
   <div class="iv-stockhead">
-    <h2>Available stock <span class="iv-stockn">{{ item_count|indnum }} SKU{{ item_count|pluralize }}</span></h2>
-    <form method="get" class="iv-search">
-      <input type="text" name="q" value="{{ q }}" placeholder="Search item / EAN / description…" autocomplete="off">
-      {% if q %}<a class="iv-clear" href="{% url 'b2b_inventory' %}">✕ clear</a>{% endif %}
+    <div class="iv-stocktitle">
+      <h2>Available stock</h2>
+      <div class="iv-stockmeta"><b>{{ item_count|indnum }}</b> SKU{{ item_count|pluralize }} · <b>{{ total_units|indnum }}</b> units on hand</div>
+    </div>
+    <form class="iv-search" onsubmit="return false;" autocomplete="off">
+      <span class="iv-searchic" aria-hidden="true">⌕</span>
+      <input id="ivq" type="text" name="q" value="{{ q }}" placeholder="Search item / EAN / description…" autocomplete="off">
+      <a class="iv-clear" href="#" title="Clear search"{% if not q %} hidden{% endif %}>✕</a>
     </form>
   </div>
   <div class="iv-stockwrap">
@@ -159,8 +181,11 @@
           <td class="mono">{{ r.item_no }}</td>
           <td class="iv-desc" title="{{ r.description }}">{{ r.description|default:"—" }}</td>
           <td class="mono iv-ean">{{ r.ean|default:"—" }}</td>
-          {% for qn in r.qtys %}<td class="r{% if not qn %} iv-zero{% endif %}">{{ qn|indnum }}</td>{% endfor %}
-          <td class="r iv-tot">{{ r.total|indnum }}</td>
+          {% for qn in r.qtys %}<td class="r iv-q{% if qn %} iv-has{% else %} iv-zero{% endif %}">{{ qn|indnum }}</td>{% endfor %}
+          <td class="r iv-tot">
+            <span class="iv-totn">{{ r.total|indnum }}</span>
+            <span class="iv-bar"><i style="width:{% widthratio r.total max_total 100 %}%"></i></span>
+          </td>
         </tr>
         {% empty %}
         <tr><td colspan="{{ warehouses|length|add:4 }}" class="iv-none">No items match{% if q %} “{{ q }}”{% endif %}.</td></tr>
@@ -285,24 +310,104 @@
   .pill.good{color:#0f9d6b;background:#e7f6ef;}
   .pill.bad{color:#b45309;background:#fff1e0;}
   /* Available-stock table (pure stock view) */
-  .iv-stockhead{display:flex;align-items:baseline;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:24px 0 10px;}
-  .iv-stockhead h2{margin:0;font-size:16px;font-weight:800;color:var(--text);}
-  .iv-stockn{font-size:12px;font-weight:600;color:var(--muted);margin-left:8px;}
-  .iv-search{display:flex;align-items:center;gap:10px;}
-  .iv-search input{padding:8px 12px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--text);font-size:13px;min-width:260px;}
-  .iv-clear{font-size:12px;color:var(--muted);text-decoration:none;}
+  .iv-stockhead{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:26px 0 12px;}
+  .iv-stocktitle h2{margin:0;font-size:17px;font-weight:800;color:var(--text);letter-spacing:-.01em;}
+  .iv-stockmeta{margin-top:3px;font-size:12.5px;color:var(--muted);}
+  .iv-stockmeta b{color:var(--text);font-variant-numeric:tabular-nums;}
+  .iv-search{position:relative;display:flex;align-items:center;}
+  .iv-searchic{position:absolute;left:12px;font-size:15px;color:var(--muted);pointer-events:none;line-height:1;}
+  .iv-search input{padding:9px 30px 9px 32px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font-size:13px;min-width:280px;transition:border-color .14s,box-shadow .14s;}
+  .iv-search input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 15%,transparent);}
+  .iv-clear{position:absolute;right:11px;font-size:12px;color:var(--muted);text-decoration:none;line-height:1;}
   .iv-clear:hover{color:var(--red,#b3261e);}
-  .iv-stockwrap{border:1px solid var(--border);border-radius:14px;overflow:auto;background:var(--surface);box-shadow:var(--shadow);max-height:70vh;}
+  .iv-stockwrap{border:1px solid var(--border);border-radius:14px;overflow:auto;background:var(--surface);box-shadow:var(--shadow);max-height:72vh;}
   .iv-stock{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;font-variant-numeric:tabular-nums;}
-  .iv-stock th,.iv-stock td{padding:9px 14px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);}
-  .iv-stock th{font-size:10.5px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);background:var(--surface-2);position:sticky;top:0;z-index:2;}
+  .iv-stock th,.iv-stock td{padding:10px 14px;text-align:left;white-space:nowrap;border-bottom:1px solid color-mix(in srgb,var(--border) 65%,transparent);}
+  .iv-stock th{font-size:10.5px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);background:var(--surface-2);position:sticky;top:0;z-index:2;box-shadow:inset 0 -1px 0 var(--border);}
   .iv-stock th small{display:block;font-weight:600;font-size:9px;color:var(--muted);text-transform:none;letter-spacing:0;}
   .iv-stock th.r,.iv-stock td.r{text-align:right;}
+  .iv-stock tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--surface-2) 45%,transparent);}
   .iv-stock tbody tr:hover td{background:var(--accent-soft,#eef0fe);}
-  .iv-stock td.mono{font-family:Consolas,monospace;font-size:12px;}
-  .iv-stock td.iv-desc{white-space:normal;max-width:360px;color:var(--text);}
+  .iv-stock td.mono{font-family:Consolas,ui-monospace,monospace;font-size:12px;color:var(--text-2,var(--text));}
+  .iv-stock td.iv-desc{white-space:normal;max-width:380px;color:var(--text);}
   .iv-stock td.iv-ean{color:var(--muted);}
-  .iv-stock td.iv-tot{font-weight:800;color:var(--text);}
-  .iv-stock td.iv-zero{color:var(--muted);opacity:.55;}
+  .iv-stock td.iv-q{font-weight:700;}
+  .iv-stock td.iv-has{color:#0f9d6b;}
+  .iv-stock td.iv-zero{color:var(--muted);opacity:.5;font-weight:400;}
+  .iv-stock td.iv-tot{min-width:120px;}
+  .iv-totn{display:block;font-weight:800;color:var(--text);}
+  .iv-bar{display:block;height:4px;margin-top:4px;border-radius:3px;background:color-mix(in srgb,var(--border) 60%,transparent);overflow:hidden;}
+  .iv-bar>i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 55%,#0f9d6b),var(--accent));transition:width .3s ease;}
+  /* WH-card polish: accent rail + lift */
+  .iv-whcard{position:relative;}
+  .iv-whcard:not(.empty)::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:3px;border-radius:3px;background:linear-gradient(180deg,var(--accent),color-mix(in srgb,var(--accent) 40%,#0f9d6b));}
+  .iv-whcard:not(.empty){padding-left:20px;}
+  .iv-asof.stale{color:#b45309;font-weight:700;font-style:normal;}
+  /* staleness banner */
+  .iv-stale{display:flex;align-items:center;gap:14px;margin:16px 0 4px;padding:13px 16px;border:1px solid #fed7aa;
+    background:linear-gradient(90deg,#fff7ed,color-mix(in srgb,#fff7ed 60%,var(--surface)));border-radius:14px;box-shadow:var(--shadow);}
+  :root[data-theme="dark"] .iv-stale{background:color-mix(in srgb,#7c2d12 22%,var(--surface));border-color:#7c2d12;}
+  .iv-stale-ic{font-size:22px;line-height:1;flex:0 0 auto;}
+  .iv-stale-body{flex:1;font-size:13px;line-height:1.5;color:#7c3a17;}
+  :root[data-theme="dark"] .iv-stale-body{color:#fdba74;}
+  .iv-stale-body b{color:#9a3412;} :root[data-theme="dark"] .iv-stale-body b{color:#fed7aa;}
+  .iv-stale-btn{flex:0 0 auto;}
+  .iv-stale-btn span{padding:8px 14px;border-radius:9px;background:#b45309;color:#fff;font-weight:700;font-size:13px;white-space:nowrap;}
+  .iv-stale-btn:hover span{background:#9a3412;}
+  .iv-nomatch td{padding:22px 16px;}
+  .iv-stock tbody tr[hidden]{display:none;}
 </style>
+
+<script>
+(function () {
+  var input = document.getElementById('ivq');
+  var table = document.querySelector('.iv-stock');
+  if (!input || !table || !table.tBodies[0]) return;
+  var tb = table.tBodies[0];
+  var rows = [].slice.call(tb.rows);
+  var meta = document.querySelector('.iv-stockmeta');
+  var metaHTML = meta ? meta.innerHTML : '';
+  var clearBtn = document.querySelector('.iv-clear');
+  var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Precompute each row's searchable text (item + description + EAN only).
+  rows.forEach(function (r) {
+    var c = r.cells;
+    r._s = ((c[0] ? c[0].textContent : '') + ' ' + (c[1] ? c[1].textContent : '') +
+            ' ' + (c[2] ? c[2].textContent : '')).toLowerCase();
+  });
+  var noRow = null;
+  function apply() {
+    var q = input.value.trim().toLowerCase(), shown = 0;
+    for (var i = 0; i < rows.length; i++) {
+      var m = !q || rows[i]._s.indexOf(q) !== -1;
+      rows[i].hidden = !m; if (m) shown++;
+    }
+    if (meta) meta.innerHTML = q
+      ? '<b>' + shown.toLocaleString('en-IN') + '</b> of <b>' + rows.length.toLocaleString('en-IN') + '</b> SKUs match'
+      : metaHTML;
+    if (clearBtn) clearBtn.hidden = !q;
+    if (q && shown === 0) {
+      if (!noRow) {
+        noRow = tb.insertRow(); noRow.className = 'iv-nomatch';
+        var td = noRow.insertCell(); td.className = 'iv-none';
+        td.colSpan = rows[0] ? rows[0].cells.length : 6;
+      }
+      noRow.hidden = false;
+      noRow.cells[0].textContent = 'No items match “' + input.value.trim() + '”.';
+    } else if (noRow) { noRow.hidden = true; }
+  }
+  var t;
+  function run() {
+    if (reduce) { apply(); return; }
+    tb.style.transition = 'opacity .13s ease';
+    tb.style.opacity = '0.3';
+    window.setTimeout(function () { apply(); tb.style.opacity = '1'; }, 110);
+  }
+  input.addEventListener('input', function () { clearTimeout(t); t = window.setTimeout(run, 120); });
+  if (clearBtn) clearBtn.addEventListener('click', function (e) {
+    e.preventDefault(); input.value = ''; input.focus(); run();
+  });
+  if (input.value.trim()) apply();   // honour an initial ?q= without a reload
+})();
+</script>
 {% endblock %}

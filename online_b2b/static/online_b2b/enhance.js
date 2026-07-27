@@ -208,7 +208,16 @@
       else r = x.localeCompare(y, undefined, { numeric: true });
       return dir === "descending" ? -r : r;
     });
-    rows.forEach(function (row) { tb.appendChild(row); });
+    // Smooth reorder — brief fade while the DOM re-sequences (no page reload,
+    // no reflow jank). Honours reduced-motion. Reorder is instant either way.
+    var reduce = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) { rows.forEach(function (row) { tb.appendChild(row); }); return; }
+    tb.style.transition = "opacity .14s ease";
+    tb.style.opacity = "0.25";
+    window.setTimeout(function () {
+      rows.forEach(function (row) { tb.appendChild(row); });
+      tb.style.opacity = "1";
+    }, 130);
   }
   B2B.enhanceTables = function (root) {
     (root || d).querySelectorAll("table").forEach(function (table) {

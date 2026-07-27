@@ -14,6 +14,7 @@ recorded orders. All additive; the frozen engine is untouched.
 """
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import uuid
 from pathlib import Path
@@ -28,6 +29,29 @@ from django.views.decorators.http import require_POST
 from .services import inventory_store as store
 
 _INV_UPLOADS = Path(settings.MEDIA_ROOT) / 'b2b_inventory'
+
+# Stock deducts as orders ship, so a snapshot goes stale — re-upload Bin Contents
+# on this cadence. Cards past this age show a "refresh" nudge + a top banner.
+STALE_HOURS = 6
+
+
+def _snap_age_hours(captured_at):
+    """Hours since a snapshot's captured_at (datetime or 'YYYY-MM-DD HH:MM:SS').
+    None if unparseable."""
+    if not captured_at:
+        return None
+    cap = captured_at if isinstance(captured_at, _dt.datetime) else None
+    if cap is None:
+        s = str(captured_at)[:19]
+        for fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M'):
+            try:
+                cap = _dt.datetime.strptime(s, fmt)
+                break
+            except ValueError:
+                continue
+    if cap is None:
+        return None
+    return max(0.0, (_dt.datetime.now() - cap).total_seconds() / 3600.0)
 
 
 # ── dashboard ───────────────────────────────────────────────────────────────
@@ -52,7 +76,14 @@ def inventory(request):
             card['considered'] = [b for b in audit if b['decision'] == 'include']
             card['excluded'] = [b for b in audit if b['decision'] == 'exclude']
             card['new'] = [b for b in audit if b['decision'] == 'new']
+            age = _snap_age_hours(s.get('captured_at'))
+            card['age_hours'] = round(age, 1) if age is not None else None
+            card['stale'] = age is not None and age >= STALE_HOURS
         snap_cards.append(card)
+    # staleness banner: any current snapshot older than the refresh cadence
+    stale = [c for c in snap_cards if c.get('stale')]
+    max_age = max((c['age_hours'] for c in snap_cards
+                   if c.get('age_hours') is not None), default=None)
     extras = [c for k, c in snaps.items() if k not in store.WH_BY_CODE]
 
     # new-bin alerts across current snapshots (needs classification)
@@ -66,24 +97,25 @@ def inventory(request):
 
     # per-item available stock across the warehouses (AHD / BLR / North), one row
     # per SKU with a qty column per warehouse + total. Optional text filter.
+    # Render ALL rows; the search box filters them client-side (no page reload),
+    # so ``q`` is only the input's initial value (JS applies it on load).
     wh_codes = [w['code'] for w in store.WAREHOUSES]
     items = store.stock_by_item()
-    if q:
-        ql = q.lower()
-        items = [it for it in items
-                 if ql in it['item_no'].lower() or ql in it['description'].lower()
-                 or ql in it['ean'].lower()]
     stock_rows = [{
         'item_no': it['item_no'], 'ean': it['ean'],
         'description': it['description'], 'uom': it['uom'],
         'qtys': [round(it['wh'].get(c, 0.0)) for c in wh_codes],
         'total': round(it['total']),
     } for it in items]
+    max_total = max((r['total'] for r in stock_rows), default=0) or 1
+    total_units = sum(r['total'] for r in stock_rows)
 
     return render(request, 'online_b2b/inventory.html', {
         'snap_cards': snap_cards, 'extras': extras, 'alerts': alerts,
         'warehouses': store.WAREHOUSES, 'has_any_stock': bool(snaps),
         'stock_rows': stock_rows, 'q': q, 'item_count': len(stock_rows),
+        'max_total': max_total, 'total_units': total_units,
+        'stale_cards': stale, 'stale_hours': STALE_HOURS, 'max_age': max_age,
     })
 
 
