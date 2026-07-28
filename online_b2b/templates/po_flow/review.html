@@ -101,7 +101,7 @@
     <button class="tab" data-tab="sku">SKU <span class="tcount">{{ r.sku_rows|length }}</span></button>
     {% if has_mapping %}<button class="tab" data-tab="mapping" style="{% if n_unmapped %}color:#b91c1c;{% endif %}">Mapping <span class="tcount" style="{% if n_unmapped %}background:#fde7e7;color:#b91c1c;{% endif %}">{{ r.mapping_report|length }}</span></button>{% endif %}
     {% if r.affected or r.file_issues %}<button class="tab" data-tab="affected">Affected <span class="tcount">{{ s.affected|default:0 }}</span></button>{% endif %}
-    <button class="tab" data-tab="skipped">Already uploaded <span class="tcount">{{ r.skipped|length }}</span></button>
+    <button class="tab" data-tab="skipped"{% if s.revised %} style="color:#b45309;"{% endif %}>Already uploaded <span class="tcount"{% if s.revised %} style="background:#fff1e0;color:#b45309;"{% endif %}>{{ r.skipped|length }}{% if s.revised %} · {{ s.revised }}⚠{% endif %}</span></button>
     {% if slots.tabs %}{% include slots.tabs %}{% endif %}
   </div>
 
@@ -264,13 +264,23 @@
 
   <!-- Skipped -->
   <div class="tabpane" data-pane="skipped" style="display:none;">
+    <p class="aff-hint">This PO number is <b>already recorded</b>, so it's skipped —
+      <b>qty never doubles</b>. <span class="po-rev">⚠ Revised</span> = same PO number but the
+      <b>SKU count / total qty changed</b> (a re-send); the recorded values are kept — delete the
+      old run &amp; re-record if you want the new version.</p>
     <table class="grid">
-      <thead><tr><th>PO</th><th>Location</th><th class="r">Qty</th><th class="r">Value</th></tr></thead>
+      <thead><tr><th>PO</th><th>Location</th><th>Type</th><th class="r">Recorded<br><small>SKU · Qty</small></th><th class="r">Incoming<br><small>SKU · Qty</small></th><th class="r">Value</th></tr></thead>
       <tbody>
         {% for sk in r.skipped %}
-        <tr><td class="mono">{{ sk.po }}</td><td class="loc" title="{{ sk.location }}">{{ sk.location|default:'—' }}</td>
-          <td class="r">{{ sk.qty }}</td><td class="r">{{ sk.order_value|inr_short }}</td></tr>
-        {% empty %}<tr><td colspan="4" class="muted">Nothing skipped — all POs are new.</td></tr>{% endfor %}
+        <tr class="{% if sk.dup_kind == 'revised' %}rrev{% endif %}">
+          <td class="mono">{{ sk.po }}</td>
+          <td class="loc" title="{{ sk.location }}">{{ sk.location|default:'—' }}</td>
+          <td>{% if sk.dup_kind == 'revised' %}<span class="po-rev">⚠ Revised</span>{% elif sk.dup_kind == 'identical' %}<span class="po-dup">Identical</span>{% else %}<span class="muted">dup</span>{% endif %}</td>
+          <td class="r">{% if sk.recorded_sku != None %}{{ sk.recorded_sku }} · {{ sk.recorded_qty }}{% else %}<span class="muted">—</span>{% endif %}</td>
+          <td class="r">{% if sk.incoming_sku != None %}{{ sk.incoming_sku }} · {{ sk.incoming_qty }}{% else %}{{ sk.qty }}{% endif %}</td>
+          <td class="r">{{ sk.order_value|inr_short }}</td>
+        </tr>
+        {% empty %}<tr><td colspan="6" class="muted">Nothing skipped — all POs are new.</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>
@@ -296,6 +306,9 @@
   tr.rexcl{opacity:.5;} .exc{font-size:11px;font-weight:700;color:#7a4a06;background:#fff3e0;border-radius:5px;padding:1px 7px;}
   .aff-exc{margin:0 0 16px;border:1px solid #ffd9a0;border-left:4px solid #f59e0b;border-radius:11px;background:#fff8ed;padding:12px 14px;}
   .aff-exc-h{font-size:13px;color:#7a4a06;margin-bottom:9px;line-height:1.5;}
+  .po-rev{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:800;background:#fff1e0;color:#b45309;white-space:nowrap;}
+  .po-dup{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:700;background:#eef1f5;color:#64748b;white-space:nowrap;}
+  tr.rrev td{background:color-mix(in srgb,#f59e0b 8%,transparent);}
 </style>
 
 <div id="lockOverlay" class="lock-overlay" aria-hidden="true">

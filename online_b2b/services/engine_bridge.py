@@ -1034,23 +1034,33 @@ class Processor:
         return path
 
     def _append_excluded_to_summary(self, path, lines) -> None:
-        """Augment the SO Workbook 'Summary' sheet (per-PO) with two columns:
-        **Excluded/Dropped Qty** and **Final Qty (to D365)**. Excluded = lines the
-        operator EXCLUDEd, plus still-affected lines (MISMATCH / NOT_IN_MASTER not
-        resolved to Include/Override) — i.e. qty that won't cleanly reach the D365
-        dump. Lets the operator see, right in the downloaded workbook, exactly what
-        dropped from each PO (then check it in Validation). Frozen exporter +
-        every existing sheet/column stay untouched — we only APPEND columns."""
+        """Augment the SO Workbook 'Summary' sheet (per-PO) with three columns:
+        **Included Qty**, **Excluded/Dropped Qty** and **Final Qty (to D365)**.
+        * Excluded = lines the operator EXCLUDEd, plus still-affected lines
+          (MISMATCH / NOT_IN_MASTER not resolved) — qty that WON'T reach D365.
+        * Included = flagged lines the operator chose to INCLUDE / OVERRIDE — KEPT
+          in the order (part of Final Qty), shown separately so an inclusion never
+          looks like a drop.  Final Qty = Total − Excluded (unchanged).
+        Lets the operator see, right in the downloaded workbook, exactly what was
+        included-by-decision vs dropped (then check it in Validation). Frozen
+        exporter + every existing sheet/column stay untouched — we only APPEND."""
         import openpyxl
         from openpyxl.styles import Alignment, Font, PatternFill
         excl: dict = {}
+        incl: dict = {}   # NEW — flagged (MISMATCH / NOT_IN_MASTER) lines the
+                          # operator chose to INCLUDE / OVERRIDE: KEPT in the order,
+                          # never dropped. Shown so "we included this" reads clearly
+                          # instead of the qty silently sitting inside Final Qty.
         for l in lines:
             act = (l.get('decision') or {}).get('action') or ''
-            dropped = act == 'EXCLUDE' or (l.get('status') in _ISSUE_STATUSES
+            st = l.get('status')
+            dropped = act == 'EXCLUDE' or (st in _ISSUE_STATUSES
                                            and act not in ('INCLUDE', 'OVERRIDE'))
+            po = str(l.get('po') or '')
             if dropped:
-                po = str(l.get('po') or '')
                 excl[po] = excl.get(po, 0) + int(l.get('qty') or 0)
+            elif st in _ISSUE_STATUSES and act in ('INCLUDE', 'OVERRIDE'):
+                incl[po] = incl.get(po, 0) + int(l.get('qty') or 0)
         wb = openpyxl.load_workbook(path)
         if 'Summary' not in wb.sheetnames:
             return
@@ -1060,20 +1070,26 @@ class Processor:
             return
         c_po = hdr.index('PO') + 1
         c_qty = hdr.index('Total Qty') + 1 if 'Total Qty' in hdr else None
-        c_exc, c_fin, c_stat = ws.max_column + 1, ws.max_column + 2, ws.max_column + 3
+        _base = ws.max_column
+        c_inc, c_exc, c_fin, c_stat = _base + 1, _base + 2, _base + 3, _base + 4
+        ws.cell(1, c_inc, 'Included Qty')
         ws.cell(1, c_exc, 'Excluded/Dropped Qty')
         ws.cell(1, c_fin, 'Final Qty (to D365)')
         # CLEAN = nothing dropped, 100% of the PO goes to D365 as-is; AFFECTED =
         # some qty was excluded. Lets the operator scan the Summary for clean POs.
         ws.cell(1, c_stat, 'Status')
-        for cc in (c_exc, c_fin, c_stat):
+        for cc in (c_inc, c_exc, c_fin, c_stat):
             h = ws.cell(1, cc)
             h.font = Font(bold=True, color='FFFFFF')
             h.fill = PatternFill('solid', fgColor='B45309')
             h.alignment = Alignment(horizontal='center', wrap_text=True)
+        # Included Qty is KEPT qty (a decision, not a problem) → green header.
+        ws.cell(1, c_inc).fill = PatternFill('solid', fgColor='15803D')
         green = PatternFill('solid', fgColor='E7F6EC')
         red = PatternFill('solid', fgColor='FDE7E7')
         total_e = sum(excl.values())
+        total_i = sum(incl.values())
+        green_i = PatternFill('solid', fgColor='EAF7EE')
         n_clean = n_aff = 0
         for r in range(2, ws.max_row + 1):
             po = str(ws.cell(r, c_po).value or '')
@@ -1083,6 +1099,7 @@ class Processor:
             except (ValueError, TypeError):
                 continue                       # metadata/footer row → leave blank
             if po.upper().startswith('TOTAL'):
+                ws.cell(r, c_inc, total_i).font = Font(bold=True)
                 ws.cell(r, c_exc, total_e)
                 ws.cell(r, c_fin, totf - total_e)
                 sc = ws.cell(r, c_stat, f'{n_clean} CLEAN · {n_aff} AFFECTED')
@@ -1090,6 +1107,11 @@ class Processor:
                 continue
             if not po:
                 continue
+            i = incl.get(po, 0)
+            ic = ws.cell(r, c_inc, i)
+            if i:
+                ic.font = Font(bold=True, color='0A7D33')
+                ic.fill = green_i
             e = excl.get(po, 0)
             ws.cell(r, c_exc, e)
             ws.cell(r, c_fin, totf - e)
@@ -1102,6 +1124,7 @@ class Processor:
                 n_clean += 1
             else:
                 n_aff += 1
+        ws.column_dimensions[openpyxl.utils.get_column_letter(c_inc)].width = 15
         ws.column_dimensions[openpyxl.utils.get_column_letter(c_exc)].width = 18
         ws.column_dimensions[openpyxl.utils.get_column_letter(c_fin)].width = 18
         ws.column_dimensions[openpyxl.utils.get_column_letter(c_stat)].width = 20
@@ -1555,8 +1578,32 @@ class Processor:
         """``{po: 'short location'}`` to re-stamp onto ``order_headers.location``
         after recording — for marketplaces that must feed the engine the RAW
         address but want a friendly short name on the tracker. Base = none;
-        Myntra overrides."""
+        Myntra / Purplle override."""
         return {}
+
+    def _mapped_city_by_po(self) -> dict:
+        """``{po: mapped city}`` from ``ship_to_mapping`` (this marketplace's rows)
+        — for channels that feed the engine the RAW full ship-to address (kept as
+        the del_location key) but want the friendly CITY on the tracker (e.g.
+        Purplle's single DC → 'Mumbai'). Matches each PO's raw location to a mapped
+        del_location that carries a city. Read-only; ``{}`` on any error."""
+        try:
+            from .order_db import _conn
+            with _conn() as (cur, d):
+                ph = d['ph']
+                cur.execute(f"SELECT del_location, city FROM ship_to_mapping "
+                            f"WHERE party={ph} AND city<>''", (self.marketplace,))
+                city_by_loc = {str(l).strip().lower(): str(c).strip()
+                               for l, c in cur.fetchall()}
+        except Exception:  # noqa: BLE001
+            return {}
+        out = {}
+        for h in self._headers():
+            po = str(h.get('po') or '')
+            c = city_by_loc.get(str(h.get('location') or '').strip().lower())
+            if po and c:
+                out[po] = c
+        return out
 
 
 # ── Flipkart ────────────────────────────────────────────────────────────
@@ -2676,11 +2723,22 @@ class ZeptoProcessor(Processor):
                 f"Never silent.")
 
 
+class PurplleProcessor(Processor):
+    """Purplle: a single DC. The engine reads the RAW full ship-to address (kept as
+    the ship_to_mapping del_location key), but the tracker shows the friendly mapped
+    CITY ('Mumbai') instead of the whole address. Same idea as MyntraProcessor —
+    resolution is unchanged, only the tracker's Location display is friendlier."""
+
+    def _source_location_by_po(self) -> dict:
+        return self._mapped_city_by_po()
+
+
 _PROCESSORS = {'Flipkart': FlipkartProcessor, 'Flipkart-TO': FlipkartTOProcessor,
                'Meesho-TO': MeeshoTOProcessor, 'Dmart': DmartProcessor,
                'Firstcry': FirstcryProcessor, 'Myntra': MyntraProcessor,
                'Swiggy': SwiggyProcessor, 'BlinkMP': BlinkMPProcessor,
-               'Reliance': RelianceProcessor, 'Zepto': ZeptoProcessor}
+               'Reliance': RelianceProcessor, 'Zepto': ZeptoProcessor,
+               'Purplle': PurplleProcessor}
 
 
 def processor_for(marketplace, po_paths, warehouse=None, margin_pct=None,

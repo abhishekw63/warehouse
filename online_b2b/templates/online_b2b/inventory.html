@@ -56,13 +56,13 @@
   {# ── Stock by warehouse (current snapshots) ── #}
   <div class="iv-whrow">
     {% for c in snap_cards %}
-    <div class="iv-whcard{% if not c.snap %} empty{% endif %}">
+    <div class="iv-whcard iv-enter{% if not c.snap %} empty{% endif %}" style="--i:{{ forloop.counter0 }}">
       <div class="iv-whhead">
         <span class="iv-whtag">{{ c.wh.short }}</span>
         <span class="iv-whname">{{ c.wh.name }}</span>
       </div>
       {% if c.snap %}
-      <div class="iv-whqty">{{ c.snap.included_qty|indnum }}<span class="u">sellable units</span></div>
+      <div class="iv-whqty"><span class="iv-num" data-to="{{ c.snap.included_qty|floatformat:0 }}">{{ c.snap.included_qty|indnum }}</span><span class="u">sellable units</span></div>
       <div class="iv-whmeta">
         <span><b>{{ c.snap.item_count|indnum }}</b> SKUs</span>
         <span class="iv-asof{% if c.stale %} stale{% endif %}" title="Snapshot timestamp">{% if c.stale %}⏱ {% endif %}{{ c.snap.captured_at|date:"d M, H:i" }}{% if c.age_hours is not None %} · {{ c.age_hours }}h ago{% endif %}</span>
@@ -157,6 +157,7 @@
   {% else %}
 
   {# ── Available stock per warehouse (AHD / BLR / North) — pure stock, no orders ── #}
+  <div class="iv-stocksec">
   <div class="iv-stockhead">
     <div class="iv-stocktitle">
       <h2>Available stock</h2>
@@ -177,14 +178,14 @@
       </tr></thead>
       <tbody>
         {% for r in stock_rows %}
-        <tr>
+        <tr style="--r:{{ forloop.counter0 }}">
           <td class="mono">{{ r.item_no }}</td>
           <td class="iv-desc" title="{{ r.description }}">{{ r.description|default:"—" }}</td>
           <td class="mono iv-ean">{{ r.ean|default:"—" }}</td>
           {% for qn in r.qtys %}<td class="r iv-q{% if qn %} iv-has{% else %} iv-zero{% endif %}">{{ qn|indnum }}</td>{% endfor %}
           <td class="r iv-tot">
             <span class="iv-totn">{{ r.total|indnum }}</span>
-            <span class="iv-bar"><i style="width:{% widthratio r.total max_total 100 %}%"></i></span>
+            <span class="iv-bar"><i style="--w:{% widthratio r.total max_total 100 %}%"></i></span>
           </td>
         </tr>
         {% empty %}
@@ -192,6 +193,7 @@
         {% endfor %}
       </tbody>
     </table>
+  </div>
   </div>
 
   {% endif %}{# has_any_stock #}
@@ -210,23 +212,40 @@
   .iv-msg.success{background:#e7f6ef;color:#0a7d5a;border-color:#b6e3ce;}
   .iv-msg.error{background:#fdecea;color:#b3261e;border-color:#f5c6c2;}
   .iv-msg.warning{background:#fff7ed;color:#9a3412;border-color:#fed7aa;}
-  /* WH cards */
-  .iv-whrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:16px;}
-  .iv-whcard{background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:16px 18px;transition:transform .14s,box-shadow .14s;}
-  .iv-whcard:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg);}
-  .iv-whcard.empty{opacity:.72;border-style:dashed;}
-  .iv-whhead{display:flex;align-items:center;gap:9px;margin-bottom:10px;}
-  .iv-whtag{font-size:11px;font-weight:800;letter-spacing:.03em;color:#fff;background:var(--accent);padding:2px 9px;border-radius:20px;}
+  /* ── WH KPI cards — premium, per-warehouse accent ─────────────────────── */
+  .iv-whrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(268px,1fr));gap:16px;margin-top:18px;}
+  .iv-whcard{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:18px;
+    padding:18px 20px 15px;overflow:hidden;--wc:var(--accent,#6366f1);
+    box-shadow:0 1px 2px rgba(15,23,42,.04),0 10px 26px -18px rgba(15,23,42,.22);
+    transition:transform .2s cubic-bezier(.22,1,.36,1),box-shadow .2s,border-color .2s;}
+  .iv-whcard:nth-child(1){--wc:#6366f1;} .iv-whcard:nth-child(2){--wc:#0ea5a4;} .iv-whcard:nth-child(3){--wc:#f59e0b;}
+  .iv-whcard::before{content:"";position:absolute;inset:0 0 auto 0;height:3px;
+    background:linear-gradient(90deg,var(--wc),color-mix(in srgb,var(--wc) 25%,transparent));}
+  .iv-whcard::after{content:"";position:absolute;top:-46px;right:-46px;width:150px;height:150px;border-radius:50%;
+    background:radial-gradient(circle,color-mix(in srgb,var(--wc) 13%,transparent),transparent 68%);pointer-events:none;}
+  .iv-whcard:hover{transform:translateY(-3px);border-color:color-mix(in srgb,var(--wc) 32%,var(--border));
+    box-shadow:0 2px 4px rgba(15,23,42,.05),0 20px 44px -20px color-mix(in srgb,var(--wc) 50%,rgba(15,23,42,.35));}
+  .iv-whcard.empty{border-style:dashed;box-shadow:none;--wc:var(--muted);}
+  .iv-whcard.empty::before{opacity:.35;} .iv-whcard.empty::after{display:none;}
+  .iv-whhead{display:flex;align-items:center;gap:10px;margin-bottom:14px;position:relative;}
+  .iv-whtag{font-size:11px;font-weight:800;letter-spacing:.04em;color:#fff;background:var(--wc);
+    padding:3px 10px;border-radius:8px;box-shadow:0 3px 10px -4px var(--wc);}
   .iv-whname{font-size:12.5px;font-weight:700;color:var(--muted);}
-  .iv-whqty{font-size:28px;font-weight:800;line-height:1;color:var(--text);font-variant-numeric:tabular-nums;}
-  .iv-whqty .u{font-size:11px;font-weight:600;color:var(--muted);margin-left:7px;text-transform:uppercase;letter-spacing:.04em;}
-  .iv-whmeta{display:flex;justify-content:space-between;gap:8px;margin-top:8px;font-size:12px;color:var(--muted);}
-  .iv-asof{font-style:italic;}
-  .iv-whbins{display:flex;gap:10px;margin-top:9px;font-size:11.5px;flex-wrap:wrap;}
-  .iv-whbins .ok{color:#0f9d6b;font-weight:700;}
+  .iv-whqty{display:flex;flex-direction:column;gap:3px;position:relative;}
+  .iv-whqty .iv-num{font-size:35px;font-weight:800;line-height:1;letter-spacing:-.025em;color:var(--text);font-variant-numeric:tabular-nums;}
+  .iv-whcard:hover .iv-num{color:var(--wc);}
+  .iv-whqty .u{font-size:9.5px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.09em;margin:0;}
+  .iv-whmeta{display:flex;align-items:center;gap:9px;margin-top:14px;font-size:12px;color:var(--muted);flex-wrap:wrap;}
+  .iv-whmeta>span:first-child{font-weight:600;color:var(--text-2,var(--text));}
+  .iv-whmeta b{color:var(--text);font-variant-numeric:tabular-nums;}
+  .iv-asof{margin-left:auto;font-size:11px;color:var(--muted);display:inline-flex;align-items:center;gap:4px;}
+  .iv-asof.stale{color:#b45309;font-weight:700;}
+  .iv-whbins{display:flex;gap:6px;margin-top:12px;flex-wrap:wrap;}
+  .iv-whbins span{font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:20px;border:1px solid var(--border);background:var(--surface-2);}
+  .iv-whbins .ok{color:#0f9d6b;border-color:color-mix(in srgb,#0f9d6b 25%,var(--border));background:color-mix(in srgb,#0f9d6b 8%,var(--surface-2));}
   .iv-whbins .mut{color:var(--muted);}
-  .iv-whbins .new{color:#b45309;font-weight:700;}
-  .iv-whempty{font-size:12px;color:var(--muted);padding:8px 0;}
+  .iv-whbins .new{color:#b45309;border-color:color-mix(in srgb,#f59e0b 30%,var(--border));background:color-mix(in srgb,#f59e0b 10%,var(--surface-2));}
+  .iv-whempty{font-size:12.5px;color:var(--muted);padding:14px 0 8px;line-height:1.5;}
   .iv-extra{margin-top:10px;font-size:12px;color:var(--muted);}
   /* bin coverage (considered vs excluded) */
   .iv-cov{margin-top:16px;border:1px solid var(--border);background:var(--surface);border-radius:14px;overflow:hidden;box-shadow:var(--shadow);}
@@ -309,40 +328,49 @@
   .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-weight:700;font-size:11px;white-space:nowrap;}
   .pill.good{color:#0f9d6b;background:#e7f6ef;}
   .pill.bad{color:#b45309;background:#fff1e0;}
-  /* Available-stock table (pure stock view) */
-  .iv-stockhead{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;flex-wrap:wrap;margin:26px 0 12px;}
-  .iv-stocktitle h2{margin:0;font-size:17px;font-weight:800;color:var(--text);letter-spacing:-.01em;}
-  .iv-stockmeta{margin-top:3px;font-size:12.5px;color:var(--muted);}
-  .iv-stockmeta b{color:var(--text);font-variant-numeric:tabular-nums;}
+  /* ── Available-stock section — one cohesive card ──────────────────────── */
+  .iv-stocksec{margin-top:26px;border:1px solid var(--border);border-radius:18px;overflow:hidden;background:var(--surface);
+    box-shadow:0 1px 2px rgba(15,23,42,.04),0 14px 34px -24px rgba(15,23,42,.22);}
+  .iv-stockhead{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+    padding:16px 20px;border-bottom:1px solid color-mix(in srgb,var(--border) 70%,transparent);
+    background:linear-gradient(180deg,color-mix(in srgb,var(--surface-2) 40%,var(--surface)),var(--surface));}
+  .iv-stocktitle h2{margin:0;font-size:16px;font-weight:800;color:var(--text);letter-spacing:-.015em;}
+  .iv-stockmeta{margin-top:3px;font-size:12px;color:var(--muted);}
+  .iv-stockmeta b{color:var(--text);font-variant-numeric:tabular-nums;font-weight:700;}
   .iv-search{position:relative;display:flex;align-items:center;}
-  .iv-searchic{position:absolute;left:12px;font-size:15px;color:var(--muted);pointer-events:none;line-height:1;}
-  .iv-search input{padding:9px 30px 9px 32px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--text);font-size:13px;min-width:280px;transition:border-color .14s,box-shadow .14s;}
-  .iv-search input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 15%,transparent);}
-  .iv-clear{position:absolute;right:11px;font-size:12px;color:var(--muted);text-decoration:none;line-height:1;}
-  .iv-clear:hover{color:var(--red,#b3261e);}
-  .iv-stockwrap{border:1px solid var(--border);border-radius:14px;overflow:auto;background:var(--surface);box-shadow:var(--shadow);max-height:72vh;}
+  .iv-searchic{position:absolute;left:13px;font-size:15px;color:var(--muted);pointer-events:none;line-height:1;}
+  .iv-search input{padding:9px 30px 9px 34px;border:1px solid var(--border);border-radius:10px;background:var(--surface);
+    color:var(--text);font-size:13px;min-width:290px;transition:border-color .16s,box-shadow .16s,background .16s;}
+  .iv-search input:hover{border-color:color-mix(in srgb,var(--accent) 35%,var(--border));}
+  .iv-search input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 14%,transparent);}
+  .iv-clear{position:absolute;right:11px;font-size:12px;color:var(--muted);text-decoration:none;line-height:1;
+    width:18px;height:18px;display:flex;align-items:center;justify-content:center;border-radius:50%;transition:background .13s,color .13s;}
+  .iv-clear:hover{color:var(--text);background:var(--surface-2);}
+  .iv-stockwrap{overflow:auto;background:var(--surface);max-height:70vh;}
   .iv-stock{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;font-variant-numeric:tabular-nums;}
-  .iv-stock th,.iv-stock td{padding:10px 14px;text-align:left;white-space:nowrap;border-bottom:1px solid color-mix(in srgb,var(--border) 65%,transparent);}
-  .iv-stock th{font-size:10.5px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);background:var(--surface-2);position:sticky;top:0;z-index:2;box-shadow:inset 0 -1px 0 var(--border);}
-  .iv-stock th small{display:block;font-weight:600;font-size:9px;color:var(--muted);text-transform:none;letter-spacing:0;}
+  .iv-stock th,.iv-stock td{padding:12px 18px;text-align:left;white-space:nowrap;border-bottom:1px solid color-mix(in srgb,var(--border) 50%,transparent);}
+  .iv-stock th{font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+    background:color-mix(in srgb,var(--surface-2) 85%,var(--surface));position:sticky;top:0;z-index:2;
+    box-shadow:inset 0 -1px 0 color-mix(in srgb,var(--border) 70%,transparent);backdrop-filter:saturate(1.4);}
+  .iv-stock th small{display:block;font-weight:500;font-size:9px;color:color-mix(in srgb,var(--muted) 75%,transparent);text-transform:none;letter-spacing:0;margin-top:1px;}
   .iv-stock th.r,.iv-stock td.r{text-align:right;}
-  .iv-stock tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--surface-2) 45%,transparent);}
-  .iv-stock tbody tr:hover td{background:var(--accent-soft,#eef0fe);}
-  .iv-stock td.mono{font-family:Consolas,ui-monospace,monospace;font-size:12px;color:var(--text-2,var(--text));}
-  .iv-stock td.iv-desc{white-space:normal;max-width:380px;color:var(--text);}
-  .iv-stock td.iv-ean{color:var(--muted);}
-  .iv-stock td.iv-q{font-weight:700;}
+  .iv-stock tbody tr{transition:background .13s ease;}
+  .iv-stock tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--surface-2) 30%,transparent);}
+  .iv-stock tbody tr:hover td{background:color-mix(in srgb,var(--accent) 6%,transparent);}
+  .iv-stock td{color:var(--text);}
+  .iv-stock td.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--muted);letter-spacing:-.01em;}
+  .iv-stock td.iv-desc{white-space:normal;max-width:380px;color:var(--text);font-weight:500;}
+  .iv-stock td.iv-ean{color:color-mix(in srgb,var(--muted) 80%,transparent);}
+  .iv-stock td.iv-q{font-weight:600;}
   .iv-stock td.iv-has{color:#0f9d6b;}
-  .iv-stock td.iv-zero{color:var(--muted);opacity:.5;font-weight:400;}
-  .iv-stock td.iv-tot{min-width:120px;}
-  .iv-totn{display:block;font-weight:800;color:var(--text);}
-  .iv-bar{display:block;height:4px;margin-top:4px;border-radius:3px;background:color-mix(in srgb,var(--border) 60%,transparent);overflow:hidden;}
-  .iv-bar>i{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,color-mix(in srgb,var(--accent) 55%,#0f9d6b),var(--accent));transition:width .3s ease;}
-  /* WH-card polish: accent rail + lift */
-  .iv-whcard{position:relative;}
-  .iv-whcard:not(.empty)::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:3px;border-radius:3px;background:linear-gradient(180deg,var(--accent),color-mix(in srgb,var(--accent) 40%,#0f9d6b));}
-  .iv-whcard:not(.empty){padding-left:20px;}
-  .iv-asof.stale{color:#b45309;font-weight:700;font-style:normal;}
+  .iv-stock td.iv-zero{color:var(--muted);opacity:.42;font-weight:400;}
+  .iv-stock td.iv-tot{min-width:126px;padding-top:10px;padding-bottom:10px;}
+  .iv-totn{display:block;font-weight:700;color:var(--text);letter-spacing:-.01em;}
+  .iv-bar{display:block;height:3px;width:66px;margin:5px 0 0 auto;border-radius:3px;background:color-mix(in srgb,var(--border) 40%,transparent);overflow:hidden;}
+  .iv-bar>i{display:block;height:100%;border-radius:3px;
+    background:linear-gradient(90deg,color-mix(in srgb,var(--wc,#6366f1) 45%,#0f9d6b),var(--wc,#6366f1));
+    transition:width .5s cubic-bezier(.22,1,.36,1);}
+  .iv-stock tbody tr:hover .iv-bar>i{filter:saturate(1.3);}
   /* staleness banner */
   .iv-stale{display:flex;align-items:center;gap:14px;margin:16px 0 4px;padding:13px 16px;border:1px solid #fed7aa;
     background:linear-gradient(90deg,#fff7ed,color-mix(in srgb,#fff7ed 60%,var(--surface)));border-radius:14px;box-shadow:var(--shadow);}
@@ -356,6 +384,36 @@
   .iv-stale-btn:hover span{background:#9a3412;}
   .iv-nomatch td{padding:22px 16px;}
   .iv-stock tbody tr[hidden]{display:none;}
+
+  /* ── Motion layer (reduced-motion aware) ─────────────────────────────── */
+  @keyframes iv-rise{from{opacity:0;transform:translateY(14px) scale(.985);}to{opacity:1;transform:none;}}
+  @keyframes iv-grow{from{width:0;}}
+  @keyframes iv-fade{from{opacity:0;}to{opacity:1;}}
+  @media (prefers-reduced-motion:no-preference){
+    /* staggered card + section entrance */
+    .iv-enter{animation:iv-rise .55s cubic-bezier(.22,1,.36,1) both;animation-delay:calc(var(--i,0) * .07s);}
+    .iv-cov,.iv-stockhead{animation:iv-fade .5s ease both;animation-delay:.28s;}
+    .iv-stockwrap{animation:iv-rise .55s cubic-bezier(.22,1,.36,1) both;animation-delay:.34s;}
+    /* first screenful of rows cascade in; the rest render instantly (perf) */
+    .iv-stock tbody tr:nth-child(-n+22){animation:iv-rise .5s cubic-bezier(.22,1,.36,1) both;animation-delay:calc(.36s + var(--r,0) * .018s);}
+    /* data-bars grow from zero on load (first screenful only) */
+    .iv-stock tbody tr:nth-child(-n+30) .iv-bar>i{animation:iv-grow .8s cubic-bezier(.22,1,.36,1) both;animation-delay:.5s;}
+    /* upload button sheen on hover */
+    .iv-file span,.iv-stale-btn span{transition:transform .16s ease,box-shadow .16s ease,background .16s ease;}
+    .iv-file:hover span,.iv-stale-btn:hover span{transform:translateY(-1px);box-shadow:0 6px 16px -8px color-mix(in srgb,var(--accent) 70%,#000);}
+    /* bin-coverage "tab" — soft reveal on open (close is native, kept gentle) */
+    .iv-cov[open] .iv-cov-body{animation:iv-rise .34s cubic-bezier(.22,1,.36,1);}
+  }
+  .iv-cov>summary{transition:background .16s ease;}
+  .iv-cov>summary:hover{background:color-mix(in srgb,var(--accent) 4%,transparent);}
+  .iv-cov>summary::before{transition:transform .22s cubic-bezier(.22,1,.36,1);}
+  /* row hover micro-interaction — subtle accent edge + qty pop */
+  .iv-stock tbody tr{transition:background .12s ease;}
+  .iv-stock tbody td{transition:box-shadow .14s ease;}
+  .iv-stock tbody tr:hover td:first-child{box-shadow:inset 3px 0 0 var(--accent);}
+  .iv-stock tbody tr:hover .iv-totn{color:var(--accent);}
+  .iv-whqty .iv-num{font-variant-numeric:tabular-nums;transition:color .2s;}
+  .iv-whcard:hover .iv-num{color:var(--accent);}
 </style>
 
 <script>
@@ -408,6 +466,50 @@
     e.preventDefault(); input.value = ''; input.focus(); run();
   });
   if (input.value.trim()) apply();   // honour an initial ?q= without a reload
+})();
+
+/* Count-up the warehouse "sellable units" heroes on load (rAF, eased). */
+(function () {
+  var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var nums = [].slice.call(document.querySelectorAll('.iv-num[data-to]'));
+  if (!nums.length) return;
+  function fmtIN(v) {                       // Indian digit grouping
+    var s = String(Math.round(v)), n = s.length;
+    if (n <= 3) return s;
+    var head = s.slice(0, n - 3), tail = s.slice(n - 3);
+    return head.replace(/\B(?=(\d{2})+(?!\d))/g, ',') + ',' + tail;
+  }
+  nums.forEach(function (el) {
+    var to = parseFloat(el.getAttribute('data-to')) || 0;
+    if (reduce || to <= 0) { el.textContent = fmtIN(to); return; }
+    var dur = 900, start = null;
+    function step(ts) {
+      if (start === null) start = ts;
+      var p = Math.min(1, (ts - start) / dur);
+      var e = 1 - Math.pow(1 - p, 3);        // easeOutCubic
+      el.textContent = fmtIN(to * e);
+      if (p < 1) requestAnimationFrame(step);
+      else el.textContent = fmtIN(to);
+    }
+    requestAnimationFrame(step);
+  });
+})();
+
+/* Bin-coverage <details>: re-trigger the reveal animation on EVERY open (a CSS
+   animation on a persistent [open] selector only fires once — reflow resets it). */
+(function () {
+  var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) return;
+  document.querySelectorAll('details.iv-cov').forEach(function (d) {
+    var body = d.querySelector('.iv-cov-body');
+    if (!body) return;
+    d.addEventListener('toggle', function () {
+      if (!d.open) return;
+      body.style.animation = 'none';
+      void body.offsetWidth;      // force reflow so the animation can restart
+      body.style.animation = '';
+    });
+  });
 })();
 </script>
 {% endblock %}

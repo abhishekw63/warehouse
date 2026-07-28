@@ -10,8 +10,41 @@
     <link rel="shortcut icon" href="{% static 'core/favicon.ico' %}">
     <link rel="stylesheet" href="{% static 'core/css/style.css' %}">
     {% block extra_css %}{% endblock %}
+    <style>
+      /* Global anti-FOUC: page-specific CSS loads at the bottom of the body, so
+         hide #MainContent until the DOM is parsed + styled and show a brief
+         loader. JS reveals on DOMContentLoaded; failsafe + <noscript> below cover
+         no-JS / a JS error so content is never permanently hidden. */
+      #MainContent{opacity:0;}
+      body.page-ready #MainContent{opacity:1;transition:opacity .34s ease;}
+      #pageBoot{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;
+        background:var(--surface,#fff);transition:opacity .42s ease;}
+      #pageBoot.gone{opacity:0;pointer-events:none;}
+      #pageBoot .pb-spin{width:34px;height:34px;border-radius:50%;
+        border:3px solid color-mix(in srgb,var(--accent,#6366f1) 22%,transparent);
+        border-top-color:var(--accent,#6366f1);animation:pbSpin .7s linear infinite;}
+      @keyframes pbSpin{to{transform:rotate(360deg);}}
+      @keyframes pbReveal{to{opacity:1;}}
+      #MainContent{animation:pbReveal .34s 2.5s forwards;}   /* failsafe reveal */
+      body.page-ready #MainContent{animation:none;}
+      @media (prefers-reduced-motion:reduce){body.page-ready #MainContent{transition:opacity .01s;}}
+    </style>
+    <noscript><style>#MainContent{opacity:1!important;animation:none!important;}#pageBoot{display:none!important;}</style></noscript>
 </head>
 <body class="{% block body_class %}{% endblock %}">
+<div id="pageBoot" aria-hidden="true"><div class="pb-spin"></div></div>
+<script>
+  /* reveal the styled page + drop the boot loader once the DOM is parsed+styled */
+  (function(){
+    function ready(){
+      document.body.classList.add('page-ready');
+      var b=document.getElementById('pageBoot');
+      if(b){ b.classList.add('gone'); setTimeout(function(){ if(b.parentNode) b.parentNode.removeChild(b); }, 460); }
+    }
+    if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ requestAnimationFrame(ready); });
+    else requestAnimationFrame(ready);
+  })();
+</script>
 
 {% block sidebar %}{% endblock %}
 

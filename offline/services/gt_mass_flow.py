@@ -24,16 +24,26 @@ def _line_key(po: str, item_no: str, ean: str) -> str:
 
 def _existing_pos() -> set:
     """SOs already in the DB for GT Mass (read-only — for the Skipped tab)."""
+    return set(_existing_po_stats().keys())
+
+
+def _existing_po_stats() -> dict:
+    """``{po: {'sku': items, 'qty': qty}}`` already recorded for GT Mass. Lets the
+    review tell a **true duplicate** (same PO number AND same SKU count + total
+    qty → safe to skip, no double-count) from a **revision** (same PO number but
+    changed content → must be surfaced, never silently dropped). Read-only."""
     try:
         from online_b2b.services.order_db import _conn
         with _conn() as (cur, d):
             ph = d['ph']
             cur.execute(
-                f"SELECT DISTINCT po FROM order_headers WHERE marketplace={ph}",
+                f"SELECT po, COALESCE(SUM(items),0), COALESCE(SUM(qty),0) "
+                f"FROM order_headers WHERE marketplace={ph} GROUP BY po",
                 (MARKETPLACE,))
-            return {str(r[0]) for r in cur.fetchall()}
+            return {str(r[0]): {'sku': int(r[1] or 0), 'qty': int(r[2] or 0)}
+                    for r in cur.fetchall()}
     except Exception:  # noqa: BLE001
-        return set()
+        return {}
 
 
 def _classify(reason: str) -> str:
@@ -73,15 +83,26 @@ class GTMassProcessor:
 
     def _payload(self, rec, orders, recorded=None, phase='preview',
                  output_path=None):
-        existing = _existing_pos()
+        existing = _existing_po_stats()
         headers, lines, skipped = [], [], []
         new_pos = new_lines = new_qty = 0
         new_value = 0.0
+        n_revised = 0
         for so, o in orders.items():
             if so in existing and phase == 'preview':
+                prev = existing[so]
+                in_sku, in_qty = int(o['items']), int(o['qty'])
+                identical = (in_sku == prev['sku'] and in_qty == prev['qty'])
+                if not identical:
+                    n_revised += 1
                 skipped.append({'po': so, 'location': o['location'],
                                 'qty': o['qty'], 'order_value': o['order_value'],
-                                'marketplace_label': MARKETPLACE})
+                                'marketplace_label': MARKETPLACE,
+                                # identical → safe duplicate; revised → same PO no.
+                                # but changed SKU count / qty → needs a decision.
+                                'dup_kind': 'identical' if identical else 'revised',
+                                'recorded_sku': prev['sku'], 'recorded_qty': prev['qty'],
+                                'incoming_sku': in_sku, 'incoming_qty': in_qty})
                 continue
             new_pos += 1
             new_qty += o['qty']
@@ -109,7 +130,7 @@ class GTMassProcessor:
             'ok': bool(headers) if phase == 'preview' else True,
             'summary': {'pos': new_pos, 'lines': new_lines, 'qty': new_qty,
                         'value': round(new_value, 2), 'affected': len(fi),
-                        'skipped': len(skipped)},
+                        'skipped': len(skipped), 'revised': n_revised},
             'headers': headers, 'lines': lines, 'affected': [],
             'file_issues': fi, 'skipped': skipped,
             'warnings': warnings, 'output_path': output_path,

@@ -5,6 +5,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<link rel="stylesheet" href="{% static 'online_b2b/daterange.css' %}">
+<script defer src="{% static 'online_b2b/daterange.js' %}"></script>
 {% endblock %}
 
 {% block breadcrumb %}
@@ -119,8 +121,8 @@
           <option value="">All marketplaces</option>
           {% for m in sku.marketplaces %}<option value="{{ m }}" {% if m == sku_mp %}selected{% endif %}>{{ m }}</option>{% endfor %}
         </select>
-        <label>From <input type="date" name="sku_from" value="{{ sku_from }}"></label>
-        <label>To <input type="date" name="sku_to" value="{{ sku_to }}"></label>
+        <div class="drp" data-drp data-from-name="sku_from" data-to-name="sku_to"
+             data-from="{{ sku_from }}" data-to="{{ sku_to }}" data-submit="1" data-presets="1"></div>
         <button type="submit" class="btn-primary">Apply</button>
         <a class="btn-ghost" href="?days={{ days }}{% if date %}&date={{ date }}{% endif %}">Today</a>
         <a class="btn-ghost" href="?days={{ days }}{% if date %}&date={{ date }}{% endif %}&sku_from=&sku_to=">All time</a>

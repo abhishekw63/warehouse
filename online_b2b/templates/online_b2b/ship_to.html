@@ -75,7 +75,8 @@
     <form class="im-add" id="stm-addpanel">
       {% csrf_token %}
       <div class="im-addgrid">
-        <label><span>Party <b class="req">*</b></span><input type="text" name="party" required placeholder="e.g. Myntra"></label>
+        <label><span>Party <b class="req">*</b></span><input type="text" name="party" required placeholder="Select or type a party…" list="party-options" autocomplete="off">
+          <datalist id="party-options">{% for p in overview.parties %}<option value="{{ p }}"></option>{% endfor %}</datalist></label>
         <label class="wide"><span>Del Location <b class="req">*</b></span><input type="text" name="del_location" required placeholder="warehouse / location name"></label>
         <label><span>Cust No</span><input type="text" name="cust_no" placeholder="e.g. 20011"></label>
         <label><span>Ship-to code</span><input type="text" name="ship_to" placeholder="e.g. 20011_4"></label>
