@@ -57,7 +57,10 @@ CHANNELS: list[Channel] = [
     Channel('firstcry', 'First Cry', 'Online', 'Firstcry'),
     Channel('dmart', 'D Mart', 'Online', 'Dmart'),
     Channel('meesho', 'Meesho-SB', 'Online', 'Meesho-TO'),
-    Channel('blinkmp', 'BlinkMP', 'Online', '', False),
+    # db_key='Blink RO': BlinkMP line items are recorded under marketplace
+    # 'Blink RO' (the header shows 'BlinkMP'); without this the board can't fold
+    # their qty/value → the row showed 0. Display stays 'BlinkMP'.
+    Channel('blinkmp', 'BlinkMP', 'Online', 'Blink RO', False),
     Channel('smytten', 'Smytten', 'Online', '', False),
     # ── Offline ──
     Channel('gt_mass', 'GT Mass', 'Offline', 'GT Mass'),

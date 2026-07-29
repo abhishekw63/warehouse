@@ -1,6 +1,9 @@
 {% extends 'online_b2b/base_b2b.html' %}
 {% load static b2b_extras %}
 {% block title %}Online B2B — Review{% endblock %}
+{# Same contextual boot label as the offline po_flow review → uniform loader
+   across online & offline (shared implementation in core/base.html). #}
+{% block page_boot_label %}Validating &amp; checking your PO — preparing the review…{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
 <style>
   @keyframes cpShake{10%,90%{transform:translateX(-1px)}20%,80%{transform:translateX(2px)}

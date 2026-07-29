@@ -21,6 +21,8 @@ reference address columns. A full upload **replaces** the table (latest wins).
 from __future__ import annotations
 
 import datetime as _dt
+import json as _json
+import re as _re
 
 import pandas as pd
 from online_po_processor.data.mapping_loader import MappingLoader
@@ -28,6 +30,7 @@ from online_po_processor.data.mapping_loader import MappingLoader
 from .order_db import _conn
 
 _MAP_TABLE = 'ship_to_mapping'
+_FIELD_TABLE = 'ship_to_field'   # user-defined custom-field definitions
 
 # Insert column order. ``source`` = 'excel' (from a bulk upload, wiped+rebuilt on
 # every re-upload) or 'manual' (added/edited from the UI — DURABLE: survives an
@@ -47,6 +50,9 @@ CREATE TABLE IF NOT EXISTS ship_to_mapping (
     address2      VARCHAR(500),
     postcode      VARCHAR(20),
     city          VARCHAR(120),
+    state         VARCHAR(60) DEFAULT '',
+    gst_reg       VARCHAR(60) DEFAULT '',
+    country       VARCHAR(60) DEFAULT '',
     source        VARCHAR(10) DEFAULT 'excel',
     batch_id      VARCHAR(40),
     updated_at    DATETIME,
@@ -59,6 +65,7 @@ CREATE TABLE IF NOT EXISTS ship_to_mapping (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     party         TEXT, del_location TEXT, cust_no TEXT, ship_to TEXT,
     name          TEXT, address TEXT, address2 TEXT, postcode TEXT, city TEXT,
+    state         TEXT DEFAULT '', gst_reg TEXT DEFAULT '', country TEXT DEFAULT '',
     source        TEXT DEFAULT 'excel', batch_id TEXT, updated_at TEXT
 )
 """
@@ -89,7 +96,127 @@ def ensure_table() -> None:
                         f"VARCHAR(10) DEFAULT 'excel'")
         except Exception:  # noqa: BLE001 — column already exists → fine
             pass
+        # D365 address-enrichment columns (state / GST reg / country) — additive,
+        # idempotent; the full authoritative address is loaded from the D365 dump.
+        for col in ('state', 'gst_reg', 'country'):
+            try:
+                cur.execute(f"ALTER TABLE {_MAP_TABLE} ADD COLUMN {col} "
+                            f"VARCHAR(60) DEFAULT ''")
+            except Exception:  # noqa: BLE001 — already exists → fine
+                pass
+        # Personalization: per-row values for user-defined custom fields live in
+        # this JSON blob ({field_name: value}); the field *definitions* live in
+        # ship_to_field. Both are additive — nothing existing is touched.
+        try:
+            cur.execute(f"ALTER TABLE {_MAP_TABLE} ADD COLUMN extra TEXT")
+        except Exception:  # noqa: BLE001 — already exists → fine
+            pass
+        if d['kind'] == 'mysql':
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {_FIELD_TABLE} (
+                    id         BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    name       VARCHAR(60) UNIQUE,
+                    label      VARCHAR(120),
+                    created_at DATETIME
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+        else:
+            cur.execute(f"""
+                CREATE TABLE IF NOT EXISTS {_FIELD_TABLE} (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT UNIQUE, label TEXT, created_at TEXT
+                )""")
         cur.connection.commit()
+
+
+# ── Personalization: user-defined custom fields ─────────────────────────────
+#   The operator can add extra columns (e.g. "Contact", "GST hold", "Region")
+#   without a code change. Definitions live in ship_to_field; per-row values in
+#   ship_to_mapping.extra (a JSON map). Reserved names can't collide with the
+#   built-in columns.
+
+_RESERVED_FIELDS = {
+    'id', 'party', 'del_location', 'cust_no', 'ship_to', 'name', 'address',
+    'address2', 'postcode', 'city', 'state', 'gst_reg', 'country', 'source',
+    'batch_id', 'updated_at', 'extra',
+}
+
+
+def _slug(label) -> str:
+    """A safe machine key from a human label ("GST Hold" → "gst_hold")."""
+    s = _re.sub(r'[^a-z0-9]+', '_', str(label).strip().lower()).strip('_')
+    return s[:60]
+
+
+def _parse_extra(v) -> dict:
+    """JSON blob → dict (never raises)."""
+    if not v:
+        return {}
+    try:
+        x = _json.loads(v)
+        return x if isinstance(x, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def list_custom_fields() -> list:
+    """Ordered list of custom fields ``[{'name','label'}, ...]``. Never raises."""
+    try:
+        ensure_table()
+        with _conn() as (cur, d):
+            cur.execute(f"SELECT name, label FROM {_FIELD_TABLE} ORDER BY id")
+            return [{'name': n, 'label': l or n} for n, l in cur.fetchall()]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def add_custom_field(label: str) -> dict:
+    """Define a new custom field from a human label. Returns {ok, name, label}."""
+    ensure_table()
+    label = _s(label)[:120]
+    name = _slug(label)
+    if not name:
+        return {'ok': False, 'error': 'Enter a field name.'}
+    if name in _RESERVED_FIELDS:
+        return {'ok': False, 'error': f'"{label}" is a built-in column already.'}
+    with _conn() as (cur, d):
+        ph = d['ph']
+        cur.execute(f"SELECT 1 FROM {_FIELD_TABLE} WHERE name={ph}", (name,))
+        if cur.fetchone():
+            return {'ok': False, 'error': 'That field already exists.'}
+        cur.execute(f"INSERT INTO {_FIELD_TABLE} (name, label, created_at) "
+                    f"VALUES ({ph}, {ph}, {ph})", (name, label, _dt.datetime.now()))
+        cur.connection.commit()
+    return {'ok': True, 'name': name, 'label': label}
+
+
+def delete_custom_field(name: str) -> dict:
+    """Remove a custom-field definition (per-row values in ``extra`` are left as
+    orphaned JSON keys — harmless, and restored if the field is re-added)."""
+    ensure_table()
+    name = _slug(name)
+    with _conn() as (cur, d):
+        ph = d['ph']
+        cur.execute(f"DELETE FROM {_FIELD_TABLE} WHERE name={ph}", (name,))
+        n = cur.rowcount
+        cur.connection.commit()
+    return {'ok': bool(n), 'deleted': n or 0}
+
+
+def _extract_extra(fields: dict, known: set | None = None) -> dict:
+    """Pull ``cf_<name>`` keys from a submitted form dict into an ``extra`` map,
+    keeping only currently-defined fields with a non-blank value."""
+    if known is None:
+        known = {c['name'] for c in list_custom_fields()}
+    out = {}
+    for k, v in (fields or {}).items():
+        if not k.startswith('cf_'):
+            continue
+        name = _slug(k[3:])
+        if name in known:
+            val = _s(v)[:500]
+            if val:
+                out[name] = val
+    return out
 
 
 # ── Parse (Ship-To B2B sheet → rows) ────────────────────────────────────────
@@ -214,8 +341,10 @@ def add_mapping(fields: dict) -> dict:
     f = _clean_fields(fields)
     if not f['party'] or not f['del_location']:
         return {'ok': False, 'error': 'Party and Del Location are required.'}
-    cols = _CRUD_FIELDS + ['source', 'updated_at']
-    vals = [f[k] for k in _CRUD_FIELDS] + ['manual', _dt.datetime.now()]
+    extra = _extract_extra(fields)
+    cols = _CRUD_FIELDS + ['source', 'updated_at', 'extra']
+    vals = [f[k] for k in _CRUD_FIELDS] + ['manual', _dt.datetime.now(),
+                                           _json.dumps(extra)]
     with _conn() as (cur, d):
         ph = d['ph']
         cur.execute(
@@ -227,16 +356,27 @@ def add_mapping(fields: dict) -> dict:
 
 
 def update_mapping(row_id, fields: dict) -> dict:
-    """Edit a single mapping row by id. Marks it source='manual' so the edit is
-    durable across Excel re-uploads."""
+    """Edit ONE mapping row by id. **Partial**: only the standard fields actually
+    present in ``fields`` are written — so editing e.g. City never blanks the
+    enriched Address — plus any ``cf_*`` custom values merged into ``extra``.
+    Marks the row source='manual' so the edit survives an Excel re-upload."""
     ensure_table()
-    f = _clean_fields(fields)
-    if not f['party'] or not f['del_location']:
-        return {'ok': False, 'error': 'Party and Del Location are required.'}
-    sets = _CRUD_FIELDS + ['source', 'updated_at']
-    vals = [f[k] for k in _CRUD_FIELDS] + ['manual', _dt.datetime.now()]
+    fields = fields or {}
+    present = [k for k in _CRUD_FIELDS if k in fields]
+    clean = _clean_fields(fields)
+    for k in ('party', 'del_location'):
+        if k in fields and not clean[k]:
+            return {'ok': False, 'error': 'Party and Del Location cannot be blank.'}
+    submitted_extra = _extract_extra(fields)
     with _conn() as (cur, d):
         ph = d['ph']
+        cur.execute(f"SELECT extra FROM {_MAP_TABLE} WHERE id={ph}", (int(row_id),))
+        row = cur.fetchone()
+        merged = _parse_extra(row[0]) if row else {}
+        merged.update(submitted_extra)          # incoming custom values win
+        sets = present + ['source', 'updated_at', 'extra']
+        vals = [clean[k] for k in present] + ['manual', _dt.datetime.now(),
+                                              _json.dumps(merged)]
         cur.execute(
             f"UPDATE {_MAP_TABLE} SET {', '.join(f'{c}={ph}' for c in sets)} "
             f"WHERE id={ph}", vals + [int(row_id)])
@@ -321,16 +461,19 @@ def list_mappings(party: str = '', q: str = '', limit: int = 200) -> dict:
     Returns ``{rows, total, shown, party, q, parties}``. Read-only."""
     party = (party or '').strip()
     q = (q or '').strip()
-    cols = ['id', 'party', 'del_location', 'cust_no', 'ship_to', 'city',
-            'postcode', 'source']
+    cfields = list_custom_fields()   # personalization columns (fetched first)
+    cols = ['id', 'party', 'del_location', 'cust_no', 'ship_to', 'name',
+            'address', 'city', 'state', 'postcode', 'source', 'extra']
     try:
         with _conn() as (cur, d):
             ph = d['ph']
             cur.execute(f"SELECT DISTINCT party FROM {_MAP_TABLE} ORDER BY party")
             parties = [r[0] for r in cur.fetchall()]
             where, args = [], []
-            if party:
-                where.append(f"party={ph}"); args.append(party)
+            plist = [p.strip() for p in party.split(',') if p.strip()]  # multi-select
+            if plist:
+                marks = ', '.join([ph] * len(plist))
+                where.append(f"party IN ({marks})"); args += plist
             if q:
                 like = f"%{q}%"
                 where.append(f"(del_location LIKE {ph} OR ship_to LIKE {ph} OR "
@@ -342,11 +485,18 @@ def list_mappings(party: str = '', q: str = '', limit: int = 200) -> dict:
             cur.execute(f"SELECT {', '.join(cols)} FROM {_MAP_TABLE} {wsql} "
                         f"ORDER BY party, del_location LIMIT {int(limit)}", args)
             rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+        # flatten each row's custom-field values into template-friendly cells
+        for r in rows:
+            ex = _parse_extra(r.pop('extra', ''))
+            r['custom_cells'] = [{'name': c['name'], 'label': c['label'],
+                                  'value': ex.get(c['name'], '')} for c in cfields]
         return {'rows': rows, 'total': total, 'shown': len(rows),
-                'party': party, 'q': q, 'parties': parties}
+                'party': party, 'selected_parties': plist, 'q': q,
+                'parties': parties, 'custom_fields': cfields}
     except Exception:  # noqa: BLE001
-        return {'rows': [], 'total': 0, 'shown': 0, 'party': party, 'q': q,
-                'parties': []}
+        return {'rows': [], 'total': 0, 'shown': 0, 'party': party,
+                'selected_parties': [], 'q': q, 'parties': [],
+                'custom_fields': cfields}
 
 
 def export_rows(party: str = '', q: str = '') -> tuple[list[str], list[dict]]:
@@ -360,8 +510,10 @@ def export_rows(party: str = '', q: str = '') -> tuple[list[str], list[dict]]:
     with _conn() as (cur, d):
         ph = d['ph']
         where, args = [], []
-        if party:
-            where.append(f"party={ph}"); args.append(party)
+        plist = [p.strip() for p in party.split(',') if p.strip()]  # multi-select
+        if plist:
+            marks = ', '.join([ph] * len(plist))
+            where.append(f"party IN ({marks})"); args += plist
         if q:
             like = f"%{q}%"
             where.append(f"(del_location LIKE {ph} OR ship_to LIKE {ph} OR "

@@ -1,0 +1,329 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static %}
+{% block title %}Availability Check — Order Management{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<style>
+  .av-wrap{max-width:1180px;}
+  .av-input{display:grid;grid-template-columns:1fr 220px;gap:16px;align-items:start;}
+  @media (max-width:760px){.av-input{grid-template-columns:1fr;}}
+  .av-ta{width:100%;min-height:120px;resize:vertical;padding:12px 14px;border:1px solid var(--border);border-radius:11px;background:var(--card);color:var(--text);font-size:13px;font-family:var(--mono,ui-monospace,monospace);line-height:1.6;box-sizing:border-box;}
+  .av-ta:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent);}
+  .av-side{display:flex;flex-direction:column;gap:10px;}
+  .av-lbl{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+  .av-sel{padding:9px 11px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text);font-size:13px;width:100%;}
+  .av-hint{font-size:11px;color:var(--muted);}
+  .av-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin:4px 0 6px;}
+  .av-kpi{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:12px 14px;}
+  .av-kpi .n{font-size:22px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
+  .av-kpi .l{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;margin-top:2px;}
+  .av-asof{font-size:12px;color:var(--text-2);margin:2px 0 12px;}
+  .av-asof b{color:var(--text);}
+  .av-rhead{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin:8px 0 14px;border-bottom:1px solid var(--border);}
+  .av-tabs{display:flex;gap:6px;}
+  .av-po2{font-weight:700;font-family:var(--mono,monospace);}
+  .av-ov{font-size:9.5px;font-weight:800;padding:1px 5px;border-radius:6px;background:color-mix(in srgb,#f59e0b 18%,transparent);color:#b45309;}
+  .av-tab{padding:8px 14px;border:0;background:none;color:var(--muted);font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;}
+  .av-tab.on{color:var(--accent);border-bottom-color:var(--accent);}
+  .av-pane{display:none;} .av-pane.on{display:block;}
+  .av-order{border:1px solid var(--border);border-radius:13px;margin-bottom:14px;overflow:hidden;background:var(--card);}
+  .av-ohead{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:13px 16px;cursor:pointer;background:color-mix(in srgb,var(--accent) 4%,var(--card));}
+  .av-ohead:hover{background:color-mix(in srgb,var(--accent) 8%,var(--card));}
+  .av-po{font-weight:800;font-size:14px;color:var(--text);font-family:var(--mono,monospace);}
+  .av-mp{font-size:12px;color:var(--text-2);}
+  .av-whtag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);}
+  .av-whtag.ov{background:color-mix(in srgb,#f59e0b 18%,transparent);color:#b45309;}
+  .av-ometa{margin-left:auto;display:flex;align-items:center;gap:16px;}
+  .av-fill{display:flex;align-items:center;gap:8px;min-width:150px;}
+  .av-bar{flex:1;height:8px;border-radius:20px;background:color-mix(in srgb,var(--muted) 22%,transparent);overflow:hidden;}
+  .av-bar span{display:block;height:100%;border-radius:20px;}
+  .av-fpct{font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;min-width:46px;text-align:right;}
+  .av-qs{font-size:12px;color:var(--text-2);font-variant-numeric:tabular-nums;}
+  .av-qs b{color:var(--text);}
+  .av-lines{overflow-x:auto;}
+  .av-lines table{width:100%;border-collapse:collapse;font-size:12.5px;}
+  .av-lines th,.av-lines td{padding:8px 12px;text-align:left;white-space:nowrap;border-top:1px solid var(--border);}
+  .av-lines th{font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);font-weight:700;background:var(--card);}
+  .av-lines td.num,.av-lines th.num{text-align:right;font-variant-numeric:tabular-nums;}
+  .av-desc{max-width:320px;overflow:hidden;text-overflow:ellipsis;color:var(--text-2);}
+  .av-neg{color:#dc2626;}
+  .st{font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:20px;letter-spacing:.02em;}
+  .st.OK{background:#dcfce7;color:#15803d;} .st.SHORT{background:#fef3c7;color:#b45309;}
+  .st.OOS{background:#fee2e2;color:#b91c1c;} .st.NOSTOCK{background:#e5e7eb;color:#6b7280;}
+  .av-nf{background:#fff7ed;border:1px solid #fdba74;color:#9a3412;border-radius:11px;padding:10px 14px;font-size:13px;margin-bottom:12px;}
+  .av-empty{padding:40px;text-align:center;color:var(--muted);}
+  :root[data-theme=dark] .st.OK{background:#14532d;color:#86efac;}
+  :root[data-theme=dark] .st.SHORT{background:#78350f;color:#fcd34d;}
+  :root[data-theme=dark] .st.OOS{background:#7f1d1d;color:#fca5a5;}
+  :root[data-theme=dark] .st.NOSTOCK{background:#374151;color:#9ca3af;}
+  /* SKU → bin drill-down */
+  .sku-row{cursor:pointer;transition:background .12s;}
+  .sku-row:hover{background:color-mix(in srgb,var(--accent) 7%,transparent);}
+  .sku-cx{display:inline-block;width:12px;color:var(--accent);font-size:11px;transition:transform .12s;}
+  .sku-bins-row td{background:color-mix(in srgb,var(--accent) 4%,var(--card));padding:0 !important;}
+  .sku-bins-load,.sku-bins-empty{padding:12px 18px;font-size:12px;color:var(--muted);}
+  .sku-bins{padding:10px 18px 14px;}
+  .sku-bins table{width:auto;min-width:420px;border-collapse:collapse;font-size:12px;background:var(--card);border:1px solid var(--border);border-radius:8px;overflow:hidden;}
+  .sku-bins th,.sku-bins td{padding:6px 12px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;}
+  .sku-bins th{font-size:10px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);background:color-mix(in srgb,var(--accent) 5%,var(--card));}
+  .sku-bins td.num,.sku-bins th.num{text-align:right;font-variant-numeric:tabular-nums;}
+  .bdec{font-size:10px;font-weight:800;padding:2px 8px;border-radius:20px;}
+  .bdec.inc{background:#dcfce7;color:#15803d;} .bdec.exc{background:#fee2e2;color:#b91c1c;} .bdec.new{background:#fef3c7;color:#b45309;}
+  :root[data-theme=dark] .bdec.inc{background:#14532d;color:#86efac;}
+  :root[data-theme=dark] .bdec.exc{background:#7f1d1d;color:#fca5a5;}
+  :root[data-theme=dark] .bdec.new{background:#78350f;color:#fcd34d;}
+  /* polish: KPI accent + card lift */
+  .av-kpi{position:relative;overflow:hidden;transition:transform .15s,box-shadow .15s;}
+  .av-kpi:hover{transform:translateY(-2px);box-shadow:0 8px 22px rgba(20,24,40,.09);}
+  .av-kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:linear-gradient(180deg,var(--accent),color-mix(in srgb,var(--accent) 40%,transparent));}
+  .av-kpi .n{letter-spacing:-.01em;}
+  .av-lines table tbody tr{transition:background .1s;}
+  .av-lines table tbody tr:hover{background:color-mix(in srgb,var(--accent) 5%,transparent);}
+</style>{% endblock %}
+
+{% block breadcrumb %}
+    <a href="{% url 'departments' %}">Departments</a>
+    <a href="{% url 'b2b_dashboard' %}"> / Order Management</a> <span>/ Availability Check</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap b2b-wide av-wrap">
+  <div class="b2b-head">
+    <div>
+      <h1>Availability Check <span>· Inventory</span></h1>
+      <p class="src">Paste order number(s) straight from the tracker → each order's recorded lines are checked against current stock in its <b>mapped warehouse</b>. Read-only.</p>
+    </div>
+  </div>
+
+  <div class="im-card reveal">
+    <div class="av-input">
+      <div>
+        <div class="av-lbl">Order numbers</div>
+        <textarea id="av-orders" class="av-ta" placeholder="Paste from Excel — one per line, or space/tab/comma separated&#10;e.g.  SO/RL/07/280728   5115356154   2062148"></textarea>
+        <div class="av-hint" style="margin-top:6px;">Copy the order-no column from your tracker and paste — I split it internally.</div>
+      </div>
+      <div class="av-side">
+        <div>
+          <div class="av-lbl">Warehouse</div>
+          <select id="av-wh" class="av-sel">
+            <option value="">Auto — each order's mapped WH</option>
+            {% for w in warehouses %}<option value="{{ w.code }}">Override → {{ w.short }} ({{ w.name }})</option>{% endfor %}
+          </select>
+        </div>
+        <button type="button" class="btn-primary" id="av-check" style="width:100%;">Check availability</button>
+        <span class="av-hint" id="av-status"></span>
+      </div>
+    </div>
+  </div>
+
+  <div id="av-results" hidden>
+    <div class="im-card reveal">
+      <div id="av-nf"></div>
+      <div class="av-kpis" id="av-kpis"></div>
+      <div class="av-asof" id="av-asof"></div>
+      <div class="av-rhead">
+        <div class="av-tabs">
+          <button type="button" class="av-tab on" data-pane="powise">PO-wise · Fill rate</button>
+          <button type="button" class="av-tab" data-pane="lines">PO line items</button>
+          <button type="button" class="av-tab" data-pane="sku">By SKU</button>
+        </div>
+        <button type="button" class="btn-ghost" id="av-export">⬇ Export Excel</button>
+      </div>
+      <div class="av-pane on" id="pane-powise"></div>
+      <div class="av-pane" id="pane-lines"></div>
+      <div class="av-pane" id="pane-sku"></div>
+    </div>
+  </div>
+</div>
+
+<input type="hidden" id="av-csrf" value="{{ csrf_token }}">
+<script>
+(function () {
+  var csrf = document.getElementById('av-csrf').value;
+  var ta = document.getElementById('av-orders'), whSel = document.getElementById('av-wh');
+  var btn = document.getElementById('av-check'), statusEl = document.getElementById('av-status');
+  var results = document.getElementById('av-results');
+  var checkUrl = "{% url 'b2b_availability_check' %}";
+
+  function nf(n) { return (n === null || n === undefined) ? '—' : Number(n).toLocaleString('en-IN'); }
+  function money(v) { return v ? '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 }) : '—'; }
+  function pctCell(p, has) { return '<td class="num" style="color:' + pctColor(p) + ';font-weight:700;">' + (has === false ? '—' : p + '%') + '</td>'; }
+  function pctColor(p) { return p >= 95 ? '#16a34a' : (p >= 70 ? '#f59e0b' : '#dc2626'); }
+  function stCls(s) { return 'st ' + (s || '').replace(/\s+/g, ''); }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function availCell(v) { return '<td class="num' + (v < 0 ? ' av-neg' : '') + '">' + nf(v) + '</td>'; }
+
+  function fillBar(p) {
+    return '<div class="av-fill"><div class="av-bar"><span style="width:' + Math.min(100, p) + '%;background:' + pctColor(p) + ';"></span></div>' +
+           '<span class="av-fpct" style="color:' + pctColor(p) + ';">' + p + '%</span></div>';
+  }
+
+  function render(data) {
+    // not found
+    var nf_ = document.getElementById('av-nf');
+    nf_.innerHTML = data.not_found && data.not_found.length
+      ? '<div class="av-nf">⚠️ ' + data.not_found.length + ' order(s) not found in the system: <b>' + data.not_found.map(esc).join(', ') + '</b></div>' : '';
+    // KPIs — qty + value
+    var s = data.summary;
+    var kpis = [
+      ['Orders', nf(s.orders)], ['SKUs', nf(s.skus)],
+      ['Ordered qty', nf(s.ord_qty)], ['Fillable qty', nf(s.fillable_qty)],
+      ['Fill rate (qty)', s.fill_pct + '%']];
+    if (s.has_value) kpis.push(
+      ['Ordered ₹', money(s.ord_value)], ['Fillable ₹', money(s.fillable_value)],
+      ['Fill rate (val)', s.fill_val_pct + '%']);
+    kpis.push(['Fully coverable', nf(s.fully) + '/' + nf(s.orders)]);
+    document.getElementById('av-kpis').innerHTML = kpis.map(function (k) {
+      return '<div class="av-kpi"><div class="n">' + k[1] + '</div><div class="l">' + k[0] + '</div></div>';
+    }).join('');
+    // inventory as of
+    var asof = document.getElementById('av-asof');
+    var whmap = s.wh_stock_as_of || {};
+    var keys = Object.keys(whmap);
+    asof.innerHTML = keys.length
+      ? '🕒 Inventory as of ' + keys.map(function (k) { return '<b>' + esc(k) + '</b> · ' + esc(whmap[k]); }).join(' &nbsp;|&nbsp; ')
+      : '';
+    var orders = data.orders || [];
+    // ── Tab 1 · PO-wise fill rate (one row per order — qty AND value) ──
+    var poRows = orders.map(function (o) {
+      return '<tr><td class="av-po2">' + esc(o.po) + '</td><td>' + esc(o.marketplace) + '</td>' +
+        '<td>' + esc(o.wh_short) + (o.overridden ? ' <span class="av-ov">ovr</span>' : '') + '</td>' +
+        '<td class="num">' + nf(o.skus) + '</td>' +
+        '<td class="num">' + nf(o.ord_qty) + '</td><td class="num">' + nf(o.fillable_qty) + '</td>' +
+        '<td class="num">' + nf(o.short_qty) + '</td>' + pctCell(o.fill_pct) +
+        '<td class="num">' + money(o.ord_value) + '</td><td class="num">' + money(o.fillable_value) + '</td>' +
+        pctCell(o.fill_val_pct, o.has_value) +
+        '<td><span class="' + (o.fully ? 'st OK' : 'st SHORT') + '">' + (o.fully ? 'FULL' : 'PARTIAL') + '</span></td></tr>';
+    }).join('');
+    document.getElementById('pane-powise').innerHTML =
+      '<div class="av-lines"><table><thead><tr><th>Order No</th><th>MP</th><th>WH</th><th class="num">SKUs</th>' +
+      '<th class="num">Ord Qty</th><th class="num">Fill Qty</th><th class="num">Short</th><th class="num">Fill% Qty</th>' +
+      '<th class="num">Ord ₹</th><th class="num">Fill ₹</th><th class="num">Fill% Val</th><th>Status</th></tr></thead><tbody>' +
+      (poRows || '<tr><td colspan="12" class="av-empty">No recognised orders.</td></tr>') + '</tbody></table></div>';
+
+    // ── Tab 2 · PO line items (expandable cards, qty + value) ──
+    document.getElementById('pane-lines').innerHTML = orders.map(function (o) {
+      var whtag = '<span class="av-whtag' + (o.overridden ? ' ov' : '') + '">' + esc(o.wh_short) +
+        (o.overridden ? ' (override · auto ' + esc(o.wh_auto_short) + ')' : '') + '</span>';
+      var rows = o.lines.map(function (l) {
+        return '<tr><td>' + esc(l.item_no) + '</td><td>' + esc(l.ean) + '</td>' +
+          '<td class="av-desc" title="' + esc(l.description) + '">' + esc(l.description) + '</td>' +
+          '<td class="num">' + nf(l.ordered) + '</td>' + availCell(l.available) +
+          '<td class="num">' + nf(l.fillable) + '</td><td class="num">' + nf(l.short) + '</td>' +
+          '<td class="num">' + money(l.ordered_value) + '</td><td class="num">' + money(l.fillable_value) + '</td>' +
+          '<td><span class="' + stCls(l.status) + '">' + esc(l.status) + '</span></td></tr>';
+      }).join('');
+      var valMeta = o.has_value ? ' &nbsp;·&nbsp; ₹ Ord <b>' + money(o.ord_value) + '</b> · Fill <b>' + money(o.fillable_value) + '</b> (' + o.fill_val_pct + '%)' : '';
+      return '<div class="av-order"><div class="av-ohead" data-toggle>' +
+        '<span class="av-po">' + esc(o.po) + '</span><span class="av-mp">' + esc(o.marketplace) + '</span>' + whtag +
+        '<div class="av-ometa"><span class="av-qs">Ord <b>' + nf(o.ord_qty) + '</b> · Fill <b>' + nf(o.fillable_qty) + '</b> · Short <b>' + nf(o.short_qty) + '</b> · ' + nf(o.skus) + ' SKU' + valMeta + '</span>' +
+        fillBar(o.fill_pct) + '</div></div>' +
+        '<div class="av-lines"><table><thead><tr><th>Item</th><th>EAN</th><th>Description</th>' +
+        '<th class="num">Ordered</th><th class="num">Available</th><th class="num">Fillable</th><th class="num">Short</th>' +
+        '<th class="num">Ord ₹</th><th class="num">Fill ₹</th><th>Status</th></tr></thead>' +
+        '<tbody>' + rows + '</tbody></table></div></div>';
+    }).join('') || '<div class="av-empty">No recognised orders.</div>';
+
+    // ── Tab 3 · By SKU (aggregated, qty + value) ──
+    var skuRows = (data.skus || []).map(function (k) {
+      return '<tr class="sku-row" data-wh="' + esc(k.wh) + '" data-item="' + esc(k.item_no) + '" title="Click to see which bins hold this item">' +
+        '<td><span class="sku-cx">&#9656;</span> ' + esc(k.item_no) + '</td><td>' + esc(k.ean) + '</td>' +
+        '<td class="av-desc" title="' + esc(k.description) + '">' + esc(k.description) + '</td>' +
+        '<td>' + esc(k.wh_short) + '</td><td class="num">' + nf(k.pos) + '</td>' +
+        '<td class="num">' + nf(k.ordered) + '</td>' + availCell(k.available) +
+        '<td class="num">' + nf(k.fillable) + '</td><td class="num">' + nf(k.short) + '</td>' + pctCell(k.fill_pct) +
+        '<td class="num">' + money(k.ordered_value) + '</td><td class="num">' + money(k.fillable_value) + '</td>' +
+        pctCell(k.fill_val_pct, (k.ordered_value || 0) > 0) +
+        '<td><span class="' + stCls(k.status) + '">' + esc(k.status) + '</span></td></tr>';
+    }).join('');
+    document.getElementById('pane-sku').innerHTML =
+      '<div class="av-lines"><table><thead><tr><th>Item</th><th>EAN</th><th>Description</th><th>WH</th>' +
+      '<th class="num">POs</th><th class="num">Ordered</th><th class="num">Available</th><th class="num">Fillable</th>' +
+      '<th class="num">Short</th><th class="num">Fill% Qty</th><th class="num">Ord ₹</th><th class="num">Fill ₹</th>' +
+      '<th class="num">Fill% Val</th><th>Status</th></tr></thead><tbody>' +
+      (skuRows || '<tr><td colspan="14" class="av-empty">No SKUs.</td></tr>') + '</tbody></table></div>';
+    results.hidden = false;
+    // collapse/expand line tables
+    document.querySelectorAll('#pane-lines [data-toggle]').forEach(function (h) {
+      h.addEventListener('click', function () {
+        var t = h.nextElementSibling; t.style.display = (t.style.display === 'none' ? '' : 'none');
+      });
+    });
+  }
+
+  function run() {
+    var orders = ta.value.trim();
+    if (!orders) { statusEl.textContent = 'Paste at least one order number.'; return; }
+    btn.disabled = true; statusEl.textContent = 'Checking…';
+    var body = new URLSearchParams(); body.set('orders', orders); body.set('warehouse', whSel.value);
+    fetch(checkUrl, { method: 'POST', headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        btn.disabled = false;
+        if (!j.ok) { statusEl.textContent = j.error || 'Failed.'; return; }
+        statusEl.textContent = '✓ ' + j.summary.orders + ' order(s) checked';
+        render(j);
+      })
+      .catch(function () { btn.disabled = false; statusEl.textContent = 'Network error — retry.'; });
+  }
+  btn.addEventListener('click', run);
+  document.querySelectorAll('.av-tab').forEach(function (t) {
+    t.addEventListener('click', function () {
+      document.querySelectorAll('.av-tab').forEach(function (x) { x.classList.remove('on'); });
+      document.querySelectorAll('.av-pane').forEach(function (x) { x.classList.remove('on'); });
+      t.classList.add('on'); document.getElementById('pane-' + t.dataset.pane).classList.add('on');
+    });
+  });
+
+  // Export → styled multi-sheet .xlsx (POST current orders + WH → blob download).
+  var exportBtn = document.getElementById('av-export');
+  exportBtn.addEventListener('click', function () {
+    var orders = ta.value.trim();
+    if (!orders) { statusEl.textContent = 'Nothing to export — run a check first.'; return; }
+    exportBtn.disabled = true;
+    if (window.B2B && B2B.toast) B2B.toast('Building the availability workbook…', { type: 'info', title: 'Downloading', timeout: 6000 });
+    var body = new URLSearchParams(); body.set('orders', orders); body.set('warehouse', whSel.value);
+    fetch("{% url 'b2b_availability_export' %}", { method: 'POST', headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() })
+      .then(function (r) { return r.blob(); })
+      .then(function (blob) {
+        var url = URL.createObjectURL(blob), a = document.createElement('a');
+        a.href = url; a.download = 'availability.xlsx'; document.body.appendChild(a); a.click();
+        setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 1500);
+        exportBtn.disabled = false;
+      })
+      .catch(function () { exportBtn.disabled = false; if (window.B2B && B2B.toast) B2B.toast('Export failed — retry.', { type: 'error' }); });
+  });
+
+  // Click an SKU row → lazy-load which bins hold that item (INCLUDED vs EXCLUDED).
+  var binsUrl = "{% url 'b2b_availability_bins' %}";
+  var binCache = {};
+  document.getElementById('pane-sku').addEventListener('click', function (e) {
+    var tr = e.target.closest('.sku-row'); if (!tr) return;
+    var cx = tr.querySelector('.sku-cx');
+    var nx = tr.nextElementSibling;
+    if (nx && nx.classList.contains('sku-bins-row')) { nx.remove(); cx.innerHTML = '&#9656;'; return; }
+    var wh = tr.getAttribute('data-wh'), item = tr.getAttribute('data-item');
+    cx.innerHTML = '&#9662;';
+    var row = document.createElement('tr'); row.className = 'sku-bins-row';
+    var td = document.createElement('td'); td.colSpan = 14;
+    td.innerHTML = '<div class="sku-bins-load">Loading bins…</div>';
+    row.appendChild(td); tr.parentNode.insertBefore(row, tr.nextSibling);
+    function paint(bins) {
+      if (!bins.length) { td.innerHTML = '<div class="sku-bins-empty">No per-bin detail stored yet — re-upload Bin Contents to populate.</div>'; return; }
+      td.innerHTML = '<div class="sku-bins"><table><thead><tr><th>Bin</th><th>Zone</th><th>Decision</th><th class="num">Qty</th></tr></thead><tbody>' +
+        bins.map(function (b) {
+          var cls = b.decision.indexOf('INCLUDED') === 0 ? 'inc' : (b.decision.indexOf('EXCLUDED') === 0 ? 'exc' : 'new');
+          return '<tr><td>' + esc(b.bin) + '</td><td>' + esc(b.zone) + '</td>' +
+            '<td><span class="bdec ' + cls + '">' + esc(b.decision) + '</span></td>' +
+            '<td class="num">' + nf(b.qty) + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+    }
+    var key = wh + '|' + item;
+    if (binCache[key]) { paint(binCache[key]); return; }
+    fetch(binsUrl + '?wh=' + encodeURIComponent(wh) + '&item=' + encodeURIComponent(item), { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { var b = (j.ok && j.bins) || []; binCache[key] = b; paint(b); })
+      .catch(function () { td.innerHTML = '<div class="sku-bins-empty">Could not load bins.</div>'; });
+  });
+})();
+</script>
+{% endblock %}

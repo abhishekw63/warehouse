@@ -34,6 +34,8 @@
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><span class="side-label">SKU Summary</span></a>
     <a href="{% url 'b2b_inventory' %}" class="sn{% if '/inventory' in request.path %} on{% endif %}" title="Inventory · Fill Rate">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><span class="side-label">Inventory</span></a>
+    <a href="{% url 'b2b_availability' %}" class="sn{% if '/availability' in request.path %} on{% endif %}" title="Availability Check">
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='search' %}</span><span class="side-label">Availability Check</span></a>
     <a href="{% url 'b2b_item_master' %}" class="sn{% if '/item-master' in request.path %} on{% endif %}" title="Item Master">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><span class="side-label">Item Master</span></a>
     <a href="{% url 'b2b_ship_to' %}" class="sn{% if '/ship-to' in request.path %} on{% endif %}" title="Ship-To Mapping">

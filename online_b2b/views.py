@@ -2556,11 +2556,29 @@ def ship_to_search(request):
 @login_required
 @require_POST
 def ship_to_add(request):
-    """Add ONE mapping row (durable manual)."""
+    """Add ONE mapping row (durable manual). Passes every posted field through so
+    custom ``cf_*`` values are captured too."""
     from .services import mapping_store as ms
-    res = ms.add_mapping({k: request.POST.get(k, '') for k in (
-        'party', 'del_location', 'cust_no', 'ship_to', 'name', 'address',
-        'address2', 'postcode', 'city')})
+    data = {k: v for k, v in request.POST.items() if k != 'csrfmiddlewaretoken'}
+    res = ms.add_mapping(data)
+    return JsonResponse(res, status=200 if res.get('ok') else 400)
+
+
+@login_required
+@require_POST
+def ship_to_field_add(request):
+    """Personalization — define a new custom column from a human label."""
+    from .services import mapping_store as ms
+    res = ms.add_custom_field(request.POST.get('label', ''))
+    return JsonResponse(res, status=200 if res.get('ok') else 400)
+
+
+@login_required
+@require_POST
+def ship_to_field_delete(request):
+    """Remove a custom column (per-row values are left dormant in ``extra``)."""
+    from .services import mapping_store as ms
+    res = ms.delete_custom_field(request.POST.get('name', ''))
     return JsonResponse(res, status=200 if res.get('ok') else 400)
 
 
@@ -2612,10 +2630,12 @@ def ship_to_export(request):
 @login_required
 @require_POST
 def ship_to_edit(request, row_id):
+    """Edit ONE mapping row. Only the posted keys are updated (partial), so an
+    inline City/Postcode tweak never blanks the enriched Address. Custom ``cf_*``
+    values ride along."""
     from .services import mapping_store as ms
-    res = ms.update_mapping(row_id, {k: request.POST.get(k, '') for k in (
-        'party', 'del_location', 'cust_no', 'ship_to', 'name', 'address',
-        'address2', 'postcode', 'city')})
+    data = {k: v for k, v in request.POST.items() if k != 'csrfmiddlewaretoken'}
+    res = ms.update_mapping(row_id, data)
     return JsonResponse(res, status=200 if res.get('ok') else 400)
 
 
@@ -2624,6 +2644,73 @@ def ship_to_edit(request, row_id):
 def ship_to_delete(request, row_id):
     from .services import mapping_store as ms
     return JsonResponse(ms.delete_mapping(row_id))
+
+
+class AvailabilityView(LoginRequiredMixin, TemplateView):
+    """`/b2b/availability/` — Order Availability Checker. Paste order number(s)
+    from the tracker → check each recorded line against current inventory in the
+    mapped warehouse (auto + override). Read-only compose; the check is AJAX."""
+    template_name = 'online_b2b/availability.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        from .services import inventory_store as inv
+        ctx['warehouses'] = inv.WAREHOUSES
+        return ctx
+
+
+@login_required
+@require_POST
+def availability_check(request):
+    """Paste blob → parsed order nos → availability dict (JSON). Read-only."""
+    from .services import availability as av
+    nos = av.parse_order_nos(request.POST.get('orders', ''))
+    if not nos:
+        return JsonResponse({'ok': False,
+                             'error': 'Paste at least one order number.'})
+    nos = nos[:500]                       # sane cap for a paste-and-check
+    return JsonResponse(av.check_orders(nos, request.POST.get('warehouse', '')))
+
+
+@login_required
+@require_POST
+def availability_export(request):
+    """Same check → styled multi-sheet .xlsx (Summary · PO Summary · By Order
+    Lines · By SKU · Not Found). Qty AND value fill at every angle."""
+    import datetime as _dt
+    from .services import availability as av
+    nos = av.parse_order_nos(request.POST.get('orders', ''))
+    if not nos:
+        return JsonResponse({'ok': False,
+                             'error': 'Paste at least one order number.'})
+    data = av.check_orders(nos[:500], request.POST.get('warehouse', ''))
+    # Enrich with per-item bins (bulk per WH) for the 'SKU Bins' sheet.
+    from collections import defaultdict
+    from .services import inventory_store as inv
+    by_wh = defaultdict(set)
+    for k in data.get('skus', []):
+        by_wh[k['wh']].add(k['item_no'])
+    data['sku_bins'] = {wh: inv.item_bins_bulk(wh, items)
+                        for wh, items in by_wh.items()}
+    buf = av.to_workbook(data)
+    fname = f"availability_{_dt.datetime.now():%d-%m-%Y_%H%M%S}.xlsx"
+    return FileResponse(
+        buf, as_attachment=True, filename=fname,
+        content_type='application/vnd.openxmlformats-officedocument.'
+                      'spreadsheetml.sheet')
+
+
+@login_required
+def availability_bins(request):
+    """Per-item bin breakdown for the lazy expand on an SKU row.
+    GET ?wh=<code>&item=<item_no> → {ok, item, wh, bins:[{bin,zone,decision,qty}]}."""
+    from .services import inventory_store as inv
+    wh = (request.GET.get('wh') or '').strip()
+    item = (request.GET.get('item') or '').strip()
+    if not wh or not item:
+        return JsonResponse({'ok': False, 'error': 'wh and item required.'})
+    return JsonResponse({'ok': True, 'item': item, 'wh': inv.wh_short(wh),
+                         'bins': inv.item_bins(wh, item)})
 
 
 # ── Sales Validation — REMOVED 2026-07-20 (superseded by Triangular Validation).

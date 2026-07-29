@@ -531,18 +531,33 @@ def _normalize_metro_excel(src_path):
     return path, note
 
 
+def _ls_store_key(*vals) -> str:
+    """Extract the bare Lifestyle store number from a Del Location / name. The
+    Plant ID in the .xlsb is a bare number (1317), but the DB now stores the
+    number EMBEDDED in the full store name ('Life_Style_Vijayawada_1317',
+    'Life_Style_Shantinketan-Bangalore1337'). We take the TRAILING digit run,
+    which also still matches a legacy bare-number 'name' ('1317' → '1317'). The
+    HQ row ('Lifestyle International Pvt Ltd', no trailing digits) yields ''."""
+    import re
+    for v in vals:
+        m = re.search(r'(\d+)\s*$', str(v or ''))
+        if m:
+            return m.group(1)
+    return ''
+
+
 def _lifestyle_store_map() -> dict:
     """``{store number: (Del Location, {all Del Locations for that number})}`` for
-    party='LS' — the Plant ID in the .xlsb is a bare store number (3107), but the
-    DB ship-to key is the full Del Location with that number embedded. The
-    ship_to_mapping ``name`` column holds the store number, so we key on it."""
+    party='LS' — the Plant ID in the .xlsb is a bare store number (1317); the DB
+    ship-to key is the full Del Location with that number embedded. We key on the
+    number pulled from the Del Location (fallback: the name)."""
     out: dict = {}
     try:
         from online_b2b.services.order_db import _conn
         with _conn() as (cur, _d):
             cur.execute("SELECT name, del_location FROM ship_to_mapping WHERE party='LS'")
             for nm, dl in cur.fetchall():
-                k = _cid(nm)
+                k = _ls_store_key(dl, nm)
                 if not k or not dl:
                     continue
                 slot = out.setdefault(k, [dl, set()])
@@ -550,6 +565,31 @@ def _lifestyle_store_map() -> dict:
     except Exception:  # noqa: BLE001 — no DB → empty map, engine flags stores
         pass
     return out
+
+
+def _read_xlsb_by_headers(src_path, signature, engine='pyxlsb'):
+    """Read the sheet whose header row contains ALL of ``signature`` (compared
+    space/case-insensitively) — so a RENAMED tab (e.g. a timestamped
+    'EXPORT_20260728_104016' instead of 'Sheet1') is still found by its CONTENT,
+    not its name. Returns ``(df, sheet_name)``. Raises ``ValueError`` naming the
+    sheets it looked in if none match."""
+    import pandas as pd
+
+    def _norm(c):
+        return ''.join(str(c).split()).lower()
+    want = {_norm(s) for s in signature}
+    xl = pd.ExcelFile(src_path, engine=engine)
+    for sh in xl.sheet_names:
+        try:                                   # cheap header-only probe
+            head = pd.read_excel(src_path, sheet_name=sh, engine=engine, nrows=1)
+        except Exception:  # noqa: BLE001 — unreadable sheet → skip
+            continue
+        if want <= {_norm(c) for c in head.columns}:
+            return pd.read_excel(src_path, sheet_name=sh, engine=engine), sh
+    raise ValueError(
+        f"No sheet matched the expected headers "
+        f"({', '.join(signature)}). Looked in: "
+        f"{', '.join(xl.sheet_names) or 'none'}.")
 
 
 def _normalize_lifestyle_excel(src_path):
@@ -566,7 +606,8 @@ def _normalize_lifestyle_excel(src_path):
     import tempfile
 
     import pandas as pd
-    df = pd.read_excel(src_path, sheet_name='Sheet1', engine='pyxlsb')
+    df, _sheet = _read_xlsb_by_headers(
+        src_path, ('Order No', 'Plant ID', 'EAN/UPC', 'Final Order Qty'))
     df = df[df['Order No'].notna()].copy()
     smap = _lifestyle_store_map()
 
@@ -641,7 +682,8 @@ def _normalize_hb_excel(src_path):
     import tempfile
 
     import pandas as pd
-    df = pd.read_excel(src_path, sheet_name='Sheet1', engine='pyxlsb')
+    df, _sheet = _read_xlsb_by_headers(
+        src_path, ('Purchasing Document', 'MRP', 'Net price'))
     df = df[df['Purchasing Document'].notna()].copy()
 
     def _serial(v):

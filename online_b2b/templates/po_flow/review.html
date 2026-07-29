@@ -1,6 +1,9 @@
 {% extends base_template %}
 {% load static b2b_extras %}
 {% block title %}{{ title }} — Review{% endblock %}
+{# Contextual boot label — a big PO review renders a large table; tell the user
+   what's happening instead of a bare spinner (shared loader in core/base.html). #}
+{% block page_boot_label %}Validating &amp; checking your PO — preparing the review…{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
 
 {% block breadcrumb %}
@@ -72,12 +75,12 @@
     </div>
     <div class="cb-actions">
       {% if slots.actions %}{% include slots.actions %}{% endif %}
-      {% if u_export %}<a href="{% url u_export token %}" class="btn-ghost">⬇ Export review (Excel)</a>{% endif %}
+      {% if u_export %}<a href="{% url u_export token %}" class="btn-ghost" data-download-modal="Building the review export">⬇ Export review (Excel)</a>{% endif %}
       {% comment %}Same nomenclature as Online B2B — auto-switch by lock state:
          (Review)=every line, exactly as previewed · (Completed)=recorded run
          (accepted lines; Excludes dropped). Label-only; the download route is
          unchanged (po_flow.download_path already serves review vs confirmed).{% endcomment %}
-      {% if has_download or caps.download %}<a href="{% url u_download token %}" class="btn-ghost" title="{% if locked %}Completed — the recorded run (accepted lines; Excludes dropped){% else %}Review — every line, exactly as previewed{% endif %}">⬇ Download SO Workbook {% if locked %}(Completed){% else %}(Review){% endif %}</a>{% endif %}
+      {% if has_download or caps.download %}<a href="{% url u_download token %}" class="btn-ghost" {% if locked %}data-download-bg="SO Workbook is downloading in the background — check your browser Downloads. You can keep working."{% else %}data-download-modal="Building the SO Workbook"{% endif %} title="{% if locked %}Completed — the recorded run (accepted lines; Excludes dropped){% else %}Review — every line, exactly as previewed{% endif %}">⬇ Download SO Workbook {% if locked %}(Completed){% else %}(Review){% endif %}</a>{% endif %}
       {% if locked %}
         {% if run_id %}<a href="{% url 'b2b_run_detail' run_id=run_id %}" class="btn-ghost">View run →</a>{% endif %}
       {% else %}
@@ -196,17 +199,21 @@
       <a href="{% url 'b2b_ship_to' %}" target="_blank">Ship-To Mapping</a>.</p>
     <div class="scroll">
     <table class="grid">
-      <thead><tr><th>PO</th><th>Location (from file)</th><th>Ship-to</th><th class="r">Qty</th><th>Status</th></tr></thead>
+      <thead><tr><th>PO</th><th>Location (from file)</th><th></th><th>Ship-to</th><th>City</th><th>State</th><th>Pin</th><th class="r">Qty</th><th>Status</th></tr></thead>
       <tbody>
         {% for m in r.mapping_report %}
         <tr class="{% if m.match_type == 'UNMAPPED' %}rmis{% endif %}">
           <td class="mono">{{ m.po }}</td>
           <td class="loc" title="{{ m.location }}">{{ m.location|default:'—' }}</td>
-          <td class="mono">{{ m.ship_to|default:'—' }}</td>
+          <td class="mp-arrow">→</td>
+          <td class="mono mp-ship">{{ m.ship_to|default:'—' }}</td>
+          <td>{{ m.city|default:'—' }}</td>
+          <td class="mono">{{ m.state|default:'—' }}</td>
+          <td class="mono">{{ m.postcode|default:'—' }}</td>
           <td class="r">{{ m.qty }}</td>
           <td>{% if m.match_type == 'UNMAPPED' %}<span class="po-aff">⚑ UNMAPPED</span>{% else %}<span class="po-clean">✓ MAPPED</span>{% endif %}</td>
         </tr>
-        {% empty %}<tr><td colspan="5" class="muted">No orders.</td></tr>{% endfor %}
+        {% empty %}<tr><td colspan="9" class="muted">No orders.</td></tr>{% endfor %}
       </tbody>
     </table>
     </div>
@@ -306,6 +313,8 @@
   tr.rexcl{opacity:.5;} .exc{font-size:11px;font-weight:700;color:#7a4a06;background:#fff3e0;border-radius:5px;padding:1px 7px;}
   .aff-exc{margin:0 0 16px;border:1px solid #ffd9a0;border-left:4px solid #f59e0b;border-radius:11px;background:#fff8ed;padding:12px 14px;}
   .aff-exc-h{font-size:13px;color:#7a4a06;margin-bottom:9px;line-height:1.5;}
+  .mp-arrow{color:var(--muted,#94a3b8);text-align:center;font-weight:700;}
+  .mp-ship{font-weight:700;color:var(--accent,#4f46e5);}
   .po-rev{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:800;background:#fff1e0;color:#b45309;white-space:nowrap;}
   .po-dup{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:700;background:#eef1f5;color:#64748b;white-space:nowrap;}
   tr.rrev td{background:color-mix(in srgb,#f59e0b 8%,transparent);}

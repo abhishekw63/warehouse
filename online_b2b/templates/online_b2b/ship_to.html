@@ -1,7 +1,58 @@
 {% extends 'online_b2b/base_b2b.html' %}
 {% load static %}
 {% block title %}Ship-To Mapping — Order Management{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<style>
+  /* Ship-to mapping table — location (from PO) → resolves to ship-to + D365
+     address. Keep it uncongested: nowrap cells scroll horizontally; wide text
+     columns truncate with an ellipsis (full value on hover via title). */
+  .im-table{width:max-content;min-width:100%;}
+  .im-table th,.im-table td{white-space:nowrap;}
+  .im-table .stm-loc{max-width:240px;overflow:hidden;text-overflow:ellipsis;}
+  .im-table .name{max-width:210px;overflow:hidden;text-overflow:ellipsis;}
+  .im-table .address{max-width:360px;overflow:hidden;text-overflow:ellipsis;color:var(--muted);}
+  .im-table .stm-arrow{color:var(--muted);text-align:center;font-weight:700;padding-left:2px;padding-right:2px;}
+  .im-table .stm-ship{font-weight:700;color:var(--accent);}
+  .im-table td.city,.im-table td.state{color:var(--text);}
+  /* custom (personalization) columns */
+  .im-table th.cf-th{white-space:nowrap;}
+  .im-table th.cf-th span{border-bottom:2px dotted color-mix(in srgb,var(--accent) 55%,transparent);padding-bottom:1px;}
+  .im-table td.cf{max-width:200px;overflow:hidden;text-overflow:ellipsis;color:var(--text);}
+  .cf-del{border:0;background:none;color:var(--muted);cursor:pointer;font-size:11px;line-height:1;padding:0 2px;border-radius:4px;opacity:.55;transition:opacity .15s,color .15s,background .15s;}
+  .cf-del:hover{opacity:1;color:#e5484d;background:color-mix(in srgb,#e5484d 14%,transparent);}
+  /* add-a-column panel */
+  .stm-fieldpanel{display:none;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 0 14px;padding:12px 14px;border:1px dashed var(--border);border-radius:12px;background:color-mix(in srgb,var(--accent) 5%,var(--card));}
+  .stm-fieldpanel.open{display:flex;animation:sfpIn .18s ease;}
+  @keyframes sfpIn{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:none;}}
+  .stm-fieldpanel .sfp-l{font-weight:600;color:var(--text);font-size:13px;}
+  .stm-fieldpanel input{flex:1;min-width:200px;padding:8px 11px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text);font-size:13px;}
+  .stm-fieldpanel input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent);}
+  .stm-msg{font-size:12px;}
+  .stm-msg.ok{color:#2e7d32;}
+  .stm-msg.err{color:#e5484d;}
+  /* multi-select party filter (tick several MPs — no typing) */
+  .ms{position:relative;display:inline-block;}
+  .ms-btn{display:inline-flex;align-items:center;gap:8px;min-width:160px;justify-content:space-between;padding:8px 12px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text);font-size:13px;font-weight:500;cursor:pointer;transition:border-color .15s,box-shadow .15s;}
+  .ms-btn:hover{border-color:var(--accent);}
+  .ms.open .ms-btn{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent);}
+  #stm-party-lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;}
+  .ms-chev{flex:none;opacity:.6;transition:transform .18s;}
+  .ms.open .ms-chev{transform:rotate(180deg);}
+  .ms-pop{position:absolute;z-index:60;top:calc(100% + 6px);left:0;width:260px;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:0 14px 38px rgba(20,24,40,.18);padding:8px;animation:msIn .16s ease;}
+  .ms-pop[hidden]{display:none;}
+  @keyframes msIn{from{opacity:0;transform:translateY(-6px);}to{opacity:1;transform:none;}}
+  .ms-tools{display:flex;gap:6px;margin-bottom:6px;}
+  .ms-filter{flex:1;min-width:0;padding:6px 9px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--card);color:var(--text);}
+  .ms-filter:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 15%,transparent);}
+  .ms-all,.ms-none{border:1px solid var(--border);background:var(--card);color:var(--text-2);border-radius:7px;font-size:11px;font-weight:600;padding:0 10px;cursor:pointer;white-space:nowrap;transition:border-color .12s,color .12s;}
+  .ms-all:hover,.ms-none:hover{border-color:var(--accent);color:var(--accent);}
+  .ms-list{max-height:264px;overflow:auto;display:flex;flex-direction:column;gap:1px;}
+  .ms-item{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;transition:background .12s;}
+  .ms-item:hover{background:color-mix(in srgb,var(--accent) 8%,transparent);}
+  .ms-item input{accent-color:var(--accent);width:15px;height:15px;flex:none;cursor:pointer;}
+  .ms-item.hide{display:none;}
+  .ms-empty{padding:10px;text-align:center;color:var(--muted);font-size:12px;}
+</style>{% endblock %}
 
 {% block breadcrumb %}
     <a href="{% url 'departments' %}">Departments</a>
@@ -57,19 +108,42 @@
     <div class="im-ovh">
       <h2>Mappings <span class="count" id="stm-count">{{ overview.total }}</span></h2>
       <div class="im-tools">
-        <select id="stm-party" class="stm-party">
-          <option value="">All parties</option>
-          {% for p in overview.parties %}<option value="{{ p }}"{% if p == overview.party %} selected{% endif %}>{{ p }}</option>{% endfor %}
-        </select>
+        <div class="ms" id="stm-party-ms">
+          <button type="button" class="ms-btn" id="stm-party-btn" aria-haspopup="listbox" aria-expanded="false">
+            <span id="stm-party-lbl">All parties</span>
+            <svg class="ms-chev" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 9l6 6 6-6"/></svg>
+          </button>
+          <div class="ms-pop" id="stm-party-pop" hidden>
+            <div class="ms-tools">
+              <input type="text" class="ms-filter" id="stm-party-filter" placeholder="Filter parties…" autocomplete="off">
+              <button type="button" class="ms-all" id="stm-party-all" title="Select all">All</button>
+              <button type="button" class="ms-none" id="stm-party-none" title="Clear selection">Clear</button>
+            </div>
+            <div class="ms-list" id="stm-party-list">
+              {% for p in overview.parties %}<label class="ms-item"><input type="checkbox" value="{{ p }}"{% if p in overview.selected_parties %} checked{% endif %}><span>{{ p }}</span></label>{% endfor %}
+            </div>
+          </div>
+        </div>
         <div class="im-search">
           <span class="ims-ic">{% include 'online_b2b/_icons.html' with i='search' %}</span>
           <input type="text" id="stmq" value="{{ overview.q }}" placeholder="Search location / cust no / ship-to / city…" autocomplete="off">
           <span class="ims-spin" id="stmspin" hidden></span>
         </div>
         <a href="{% url 'b2b_ship_to_export' %}" class="btn-ghost" id="stm-export" title="Download the mappings as Excel — respects the current party + search filter">⬇ Export</a>
+        <button type="button" class="btn-ghost" id="stm-fieldbtn" title="Add your own column to this table">＋ Field</button>
         <button type="button" class="btn-primary" id="stm-addbtn">＋ Add mapping</button>
       </div>
     </div>
+
+    <!-- personalization: add a custom column -->
+    <form class="stm-fieldpanel" id="stm-fieldpanel">
+      {% csrf_token %}
+      <span class="sfp-l">Add a custom column</span>
+      <input type="text" id="stm-fieldname" placeholder="e.g. Contact · GST hold · Region…" maxlength="40" autocomplete="off">
+      <button type="button" class="btn-primary" id="stm-fieldsave">Add field</button>
+      <button type="button" class="btn-clear" id="stm-fieldcancel">Cancel</button>
+      <span class="stm-msg" id="stm-fieldmsg"></span>
+    </form>
 
     <!-- inline add panel -->
     <form class="im-add" id="stm-addpanel">
@@ -82,9 +156,9 @@
         <label><span>Ship-to code</span><input type="text" name="ship_to" placeholder="e.g. 20011_4"></label>
         <label><span>City</span><input type="text" name="city" placeholder="optional"></label>
         <label><span>Postcode</span><input type="text" name="postcode" placeholder="optional"></label>
-        <label class="wide"><span>Address</span><input type="text" name="address" placeholder="optional"></label>
-        <label class="wide"><span>Address 2</span><input type="text" name="address2" placeholder="optional"></label>
+        <label class="wide"><span>Address</span><input type="text" name="address" placeholder="full address, one line"></label>
         <label class="wide"><span>Name</span><input type="text" name="name" placeholder="optional"></label>
+        {% for c in overview.custom_fields %}<label><span>{{ c.label }}</span><input type="text" name="cf_{{ c.name }}" placeholder="optional"></label>{% endfor %}
       </div>
       <div class="im-addfoot">
         <span class="im-addnote">Saved as a <b>manual</b> row — survives an Excel re-upload.</span>
@@ -99,7 +173,14 @@
     <p class="im-sub" id="stm-shown">Showing {{ overview.shown }} of {{ overview.total }}{% if overview.party %} · {{ overview.party }}{% endif %}.</p>
     <div class="scroll im-tablewrap">
     <table class="grid compact im-table">
-      <thead><tr><th>Party</th><th>Del Location</th><th>Cust No</th><th>Ship-to</th><th>City</th><th>Postcode</th><th>Source</th><th></th></tr></thead>
+      <thead><tr>
+        <th>Party</th>
+        <th class="stm-loc">Location <small>(from PO)</small></th>
+        <th class="stm-arrow">→</th>
+        <th>Cust No</th><th>Ship-to</th>
+        <th>Name</th><th>Address</th><th>City</th><th>State</th><th>Postcode</th>
+        {% for c in overview.custom_fields %}<th class="cf-th"><span>{{ c.label }}</span> <button type="button" class="cf-del" data-cf="{{ c.name }}" title="Remove “{{ c.label }}” column">✕</button></th>{% endfor %}
+        <th>Source</th><th></th></tr></thead>
       <tbody id="stm-tbody">
         {% include 'online_b2b/_ship_to_rows.html' %}
       </tbody>
@@ -114,7 +195,14 @@
   var csrf = document.getElementById('stm-csrf').value;
   var hdrs = { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded' };
   var tbody = document.getElementById('stm-tbody');
-  var partySel = document.getElementById('stm-party');
+  var msWrap = document.getElementById('stm-party-ms');
+  var msBtn = document.getElementById('stm-party-btn');
+  var msPop = document.getElementById('stm-party-pop');
+  var msLbl = document.getElementById('stm-party-lbl');
+  var msList = document.getElementById('stm-party-list');
+  function selectedParties() {
+    return Array.prototype.slice.call(msList.querySelectorAll('input:checked')).map(function (c) { return c.value; });
+  }
   var input = document.getElementById('stmq');
   var shown = document.getElementById('stm-shown');
   var spin = document.getElementById('stmspin');
@@ -126,7 +214,7 @@
 
   function syncExport() {
     var p = new URLSearchParams();
-    if (partySel.value) p.set('party', partySel.value);
+    var _sp = selectedParties(); if (_sp.length) p.set('party', _sp.join(','));
     if (input.value.trim()) p.set('q', input.value.trim());
     var qs = p.toString();
     if (exportLink) exportLink.href = exportBase + (qs ? '?' + qs : '');
@@ -134,7 +222,7 @@
 
   function reload() {
     var p = new URLSearchParams();
-    if (partySel.value) p.set('party', partySel.value);
+    var _sp = selectedParties(); if (_sp.length) p.set('party', _sp.join(','));
     if (input.value.trim()) p.set('q', input.value.trim());
     syncExport();
     if (spin) spin.hidden = false;
@@ -144,7 +232,40 @@
   }
   var t = null;
   input.addEventListener('input', function () { clearTimeout(t); t = setTimeout(reload, 180); });
-  partySel.addEventListener('change', reload);
+  // ── multi-select party filter ──────────────────────────────────────────────
+  function updatePartyLabel() {
+    var sel = selectedParties();
+    msLbl.textContent = sel.length === 0 ? 'All parties'
+      : (sel.length === 1 ? sel[0] : sel.length + ' parties');
+  }
+  function openMs(open) {
+    msPop.hidden = !open;
+    msWrap.classList.toggle('open', open);
+    msBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) {
+      var f = document.getElementById('stm-party-filter');
+      if (f) { f.value = ''; msList.querySelectorAll('.ms-item').forEach(function (it) { it.classList.remove('hide'); }); f.focus(); }
+    }
+  }
+  msBtn.addEventListener('click', function (e) { e.stopPropagation(); openMs(msPop.hidden); });
+  msList.addEventListener('change', function () { updatePartyLabel(); reload(); });
+  document.getElementById('stm-party-all').addEventListener('click', function () {
+    msList.querySelectorAll('input[type=checkbox]').forEach(function (c) { c.checked = true; });
+    updatePartyLabel(); reload();
+  });
+  document.getElementById('stm-party-none').addEventListener('click', function () {
+    msList.querySelectorAll('input[type=checkbox]').forEach(function (c) { c.checked = false; });
+    updatePartyLabel(); reload();
+  });
+  var msFilter = document.getElementById('stm-party-filter');
+  if (msFilter) msFilter.addEventListener('input', function () {
+    var q = this.value.trim().toLowerCase();
+    msList.querySelectorAll('.ms-item').forEach(function (it) {
+      it.classList.toggle('hide', !!q && it.textContent.trim().toLowerCase().indexOf(q) < 0);
+    });
+  });
+  document.addEventListener('click', function (e) { if (!msWrap.contains(e.target)) openMs(false); });
+  updatePartyLabel();
   syncExport();   // reflect any pre-set party/search on first load
 
   // add panel
@@ -163,6 +284,45 @@
         panel.querySelectorAll('input[name]').forEach(function (i) { i.value = ''; });
         panel.classList.remove('open'); reload();
       });
+  });
+
+  // ── personalization: add / remove a custom column ──────────────────────────
+  var fieldBtn = document.getElementById('stm-fieldbtn');
+  var fieldPanel = document.getElementById('stm-fieldpanel');
+  var fieldName = document.getElementById('stm-fieldname');
+  var fieldMsg = document.getElementById('stm-fieldmsg');
+  var fieldAddUrl = "{% url 'b2b_ship_to_field_add' %}";
+  var fieldDelUrl = "{% url 'b2b_ship_to_field_delete' %}";
+  if (fieldBtn) fieldBtn.addEventListener('click', function () {
+    fieldPanel.classList.toggle('open');
+    if (fieldPanel.classList.contains('open')) fieldName.focus();
+  });
+  document.getElementById('stm-fieldcancel').addEventListener('click', function () {
+    fieldPanel.classList.remove('open'); fieldMsg.textContent = '';
+  });
+  function saveField() {
+    var label = (fieldName.value || '').trim();
+    if (!label) { fieldMsg.textContent = 'Enter a field name.'; fieldMsg.className = 'stm-msg err'; return; }
+    var body = new URLSearchParams(); body.set('label', label);
+    fetch(fieldAddUrl, { method: 'POST', headers: hdrs, body: body.toString() })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok) { fieldMsg.textContent = j.error || 'failed'; fieldMsg.className = 'stm-msg err'; return; }
+        fieldMsg.textContent = '✓ added — reloading…'; fieldMsg.className = 'stm-msg ok';
+        location.reload();
+      });
+  }
+  document.getElementById('stm-fieldsave').addEventListener('click', saveField);
+  fieldName.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); saveField(); } });
+  document.querySelectorAll('.cf-del').forEach(function (b) {   // thead ✕, static
+    b.addEventListener('click', function () {
+      var name = b.getAttribute('data-cf');
+      if (!confirm('Remove the "' + name + '" column? Saved values are kept and restored if you re-add it.')) return;
+      var body = new URLSearchParams(); body.set('name', name);
+      fetch(fieldDelUrl, { method: 'POST', headers: hdrs, body: body.toString() })
+        .then(function (r) { return r.json(); })
+        .then(function (j) { if (j.ok) location.reload(); });
+    });
   });
 
   function bind() {
@@ -186,6 +346,12 @@
       var v = td.getAttribute('data-v') || td.textContent.trim();
       if (v === '—') v = '';
       td.innerHTML = '<input class="stm-in" data-f="' + f + '" value="' + v.replace(/"/g, '&quot;') + '">';
+    });
+    tr.querySelectorAll('td.cf').forEach(function (td) {   // custom columns
+      var name = td.getAttribute('data-cf');
+      var v = td.getAttribute('data-v') || td.textContent.trim();
+      if (v === '—') v = '';
+      td.innerHTML = '<input class="stm-in" data-f="cf_' + name + '" value="' + v.replace(/"/g, '&quot;') + '">';
     });
     var act = tr.querySelector('.stm-actions');
     act.innerHTML = '<button type="button" class="stm-save">save</button> <button type="button" class="stm-cancel">✕</button>';

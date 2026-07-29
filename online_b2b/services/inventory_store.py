@@ -161,6 +161,19 @@ _MYSQL_DDL = [
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
     """
+    CREATE TABLE IF NOT EXISTS inventory_bin_line (
+        id            BIGINT AUTO_INCREMENT PRIMARY KEY,
+        snapshot_id   BIGINT,
+        warehouse     VARCHAR(40),
+        item_no       VARCHAR(60),
+        bin_code      VARCHAR(120),
+        zone_code     VARCHAR(60),
+        decision      VARCHAR(10),
+        qty           DECIMAL(16,2) DEFAULT 0,
+        INDEX idx_invline_snap_item (snapshot_id, item_no)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
+    """
     CREATE TABLE IF NOT EXISTS inventory_bin_rule (
         id          BIGINT AUTO_INCREMENT PRIMARY KEY,
         pattern     VARCHAR(120),
@@ -190,6 +203,10 @@ _SQLITE_DDL = [
     """CREATE TABLE IF NOT EXISTS inventory_bin_audit (
         id INTEGER PRIMARY KEY AUTOINCREMENT, snapshot_id INTEGER, warehouse TEXT,
         bin_code TEXT, zone_code TEXT, decision TEXT, n_lines INTEGER DEFAULT 0,
+        qty REAL DEFAULT 0)""",
+    """CREATE TABLE IF NOT EXISTS inventory_bin_line (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, snapshot_id INTEGER, warehouse TEXT,
+        item_no TEXT, bin_code TEXT, zone_code TEXT, decision TEXT,
         qty REAL DEFAULT 0)""",
     """CREATE TABLE IF NOT EXISTS inventory_bin_rule (
         id INTEGER PRIMARY KEY AUTOINCREMENT, pattern TEXT, match_type TEXT DEFAULT 'prefix',
@@ -428,7 +445,7 @@ def parse_bin_content(path) -> dict:
             w = whs.get(code)
             if w is None:
                 w = whs[code] = {
-                    'stock': {}, 'bins': {},
+                    'stock': {}, 'bins': {}, 'lines': [],
                     'totals': {'total_lines': 0, 'included_lines': 0,
                                'excluded_lines': 0, 'new_lines': 0,
                                'included_qty': 0.0, 'excluded_qty': 0.0,
@@ -463,6 +480,13 @@ def parse_bin_content(path) -> dict:
                                             'qty': 0.0}
             b['lines'] += 1
             b['qty'] += qty
+            # per-item × bin line (non-zero only) — lets us later show WHERE an
+            # item's stock sits (incl. excluded return/QC bins), so a short SKU is
+            # explainable bin-by-bin. Compact: skip the many zero-qty bins.
+            if qty != 0:
+                wh['lines'].append({
+                    'item_no': str(item).strip(), 'bin_code': bin_code,
+                    'zone': zone, 'decision': decision, 'qty': qty})
             # sellable stock — INCLUDE bins only
             if decision == 'include':
                 key = str(item).strip()
@@ -530,6 +554,15 @@ def save_snapshot(warehouse, parsed_wh, source_file='', user='',
                 f"INSERT INTO inventory_bin_audit (snapshot_id, warehouse, bin_code,"
                 f" zone_code, decision, n_lines, qty) VALUES ({','.join([ph]*7)})",
                 bin_rows)
+        line_rows = [
+            (snap_id, warehouse, str(ln['item_no'])[:60], ln['bin_code'][:120],
+             ln['zone'][:60], ln['decision'], round(ln['qty'], 2))
+            for ln in parsed_wh.get('lines', [])]
+        if line_rows:
+            cur.executemany(
+                f"INSERT INTO inventory_bin_line (snapshot_id, warehouse, item_no,"
+                f" bin_code, zone_code, decision, qty) VALUES ({','.join([ph]*7)})",
+                line_rows)
         cur.connection.commit()
     return {'ok': True, 'snapshot_id': snap_id, 'warehouse': warehouse,
             'item_count': len(stock_rows)}
@@ -626,3 +659,43 @@ def bin_audit(snapshot_id) -> list[dict]:
 def new_bins(snapshot_id) -> list[dict]:
     """Unknown/new bins in a snapshot (need classification) — the alert list."""
     return [b for b in bin_audit(snapshot_id) if b['decision'] == 'new']
+
+
+_DEC_WORD = {'include': 'INCLUDED', 'exclude': 'EXCLUDED', 'new': 'NEW'}
+
+
+def item_bins_bulk(warehouse, item_nos) -> dict:
+    """``{item_no: [{bin, zone, decision, qty}, ...]}`` for the CURRENT snapshot of
+    ``warehouse`` — where each item's stock physically sits, INCLUDE (sellable)
+    bins first then EXCLUDED. Empty for items whose snapshot predates the per-line
+    capture (a fresh Bin-Contents upload backfills it). Read-only."""
+    ensure_tables()
+    items = [str(i) for i in item_nos if str(i).strip()]
+    if not items:
+        return {}
+    out: dict = {}
+    try:
+        with _conn() as (cur, d):
+            ph = d['ph']
+            marks = ','.join([ph] * len(items))
+            cur.execute(
+                f"SELECT l.item_no, l.bin_code, l.zone_code, l.decision, l.qty "
+                f"FROM inventory_bin_line l JOIN inventory_snapshot p "
+                f"ON p.snapshot_id=l.snapshot_id "
+                f"WHERE p.is_current=1 AND l.warehouse={ph} AND l.item_no IN ({marks}) "
+                f"ORDER BY (l.decision='include') DESC, l.qty DESC",
+                tuple([str(warehouse)] + items))
+            for item_no, bin_code, zone, decision, qty in cur.fetchall():
+                q = float(qty or 0)
+                out.setdefault(str(item_no), []).append({
+                    'bin': bin_code, 'zone': zone or '',
+                    'decision': _DEC_WORD.get(decision, str(decision).upper()),
+                    'qty': int(q) if q == int(q) else round(q, 1)})
+    except Exception:  # noqa: BLE001
+        return {}
+    return out
+
+
+def item_bins(warehouse, item_no) -> list[dict]:
+    """Per-bin breakdown for ONE item (see :func:`item_bins_bulk`)."""
+    return item_bins_bulk(warehouse, [item_no]).get(str(item_no), [])

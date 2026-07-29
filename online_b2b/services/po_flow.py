@@ -299,7 +299,28 @@ def _mapping_report(headers):
         rows.append({'po': h.get('po'),
                      'location': str(h.get('raw_location') or h.get('location') or ''),
                      'ship_to': ship, 'qty': h.get('qty'),
+                     'city': '', 'state': '', 'postcode': '',
                      'match_type': 'MAPPED' if mapped else 'UNMAPPED'})
+    # Enrich with the RESOLVED D365 address (city / state / pin) per ship-to code,
+    # so the Mapping tab reads "location → ship-to → where it's actually going".
+    codes = {r['ship_to'] for r in rows if r['ship_to']}
+    if codes:
+        try:
+            from .order_db import _conn
+            with _conn() as (cur, d):
+                ph = d['ph']
+                ins = ','.join([ph] * len(codes))
+                cur.execute(f"SELECT ship_to, city, state, postcode FROM ship_to_mapping "
+                            f"WHERE ship_to IN ({ins})", tuple(codes))
+                addr = {}
+                for st, city, state, pin in cur.fetchall():
+                    addr.setdefault(str(st), (str(city or ''), str(state or ''), str(pin or '')))
+            for r in rows:
+                a = addr.get(r['ship_to'])
+                if a:
+                    r['city'], r['state'], r['postcode'] = a
+        except Exception:  # noqa: BLE001 — enrichment is best-effort
+            pass
     rows.sort(key=lambda r: (r['match_type'] != 'UNMAPPED', str(r['po'])))
     return rows, n_unmapped, has_mapping
 

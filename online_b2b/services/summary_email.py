@@ -532,6 +532,10 @@ class SummaryEmailReport(EmailReport):
         return ops + vals
 
     def _board(self, board) -> str:
+        # "Inventory as of …" — the stock snapshot the tentative fill was computed
+        # against (same figure the on-page cockpit shows).
+        _sa = (board.get('fill') or {}).get('stock_as_of')
+        _asof = (f' &middot; <b>inventory as of {escape(str(_sa))}</b>' if _sa else '')
         th = ('padding:10px 12px;text-align:left;font-size:10px;color:#64748b;'
               'white-space:nowrap;text-transform:uppercase;letter-spacing:.05em;'
               'font-weight:800;border-bottom:1px solid #e5e9f0;')
@@ -569,8 +573,11 @@ class SummaryEmailReport(EmailReport):
                             r['excluded_qty_pct'], r['excluded_value_pct'], '#b45309')
                        if r['excluded_qty'] or r['excluded_value']
                        else f'<td style="{tdr}color:#94a3b8;">—</td>')
-                    + f'<td style="{tdr}color:{"#0f9d6b" if bv else "#94a3b8"};font-weight:700;">'
-                    f'{_inr(bv) if bv else "—"}</td>')
+                    # Tentative billing — qty (fill-rate adj.) on top, ₹ below,
+                    # each with its fill % (same shape as the on-page cockpit).
+                    + (_leg(r.get('billing_qty') or 0, bv,
+                            r.get('fill_qty_pct'), r.get('fill_val_pct'), '#0f9d6b')
+                       if bv else f'<td style="{tdr}color:#94a3b8;">—</td>'))
             else:
                 last = (f'<span style="color:#94a3b8;font-size:11.5px;">last received '
                         f'<b style="color:#64748b;">{escape(r["last_received"])}</b></span>'
@@ -611,8 +618,10 @@ class SummaryEmailReport(EmailReport):
                     t.get('uploaded_qty_pct'), t.get('uploaded_value_pct'), '#0f9d6b')
             + _tleg(t['excluded_qty'], t['excluded_value'],
                     t.get('excluded_qty_pct'), t.get('excluded_value_pct'), '#b45309')
-            + f'<td style="{ttr}color:#0f9d6b;font-weight:800;">'
-            f'{_inr(bvt) if bvt else "—"}</td></tr>')
+            + (_tleg(t.get('billing_qty') or 0, bvt,
+                     t.get('fill_qty_pct'), t.get('fill_val_pct'), '#0f9d6b')
+               if bvt else f'<td style="{ttr}color:#94a3b8;font-weight:800;">—</td>')
+            + '</tr>')
         rows_html.append(total_row)
         return (
             '<div style="font-size:12px;font-weight:800;letter-spacing:.05em;'
@@ -625,13 +634,14 @@ class SummaryEmailReport(EmailReport):
             f'<th style="{thr}">Raw<br><span style="font-weight:600;color:#94a3b8;">qty / &#8377;</span></th>'
             f'<th style="{thr}">Uploaded<br><span style="font-weight:600;color:#94a3b8;">qty / &#8377;</span></th>'
             f'<th style="{thr}">Excluded<br><span style="font-weight:600;color:#94a3b8;">qty / &#8377;</span></th>'
-            f'<th style="{thr}">Tentative<br><span style="font-weight:600;color:#94a3b8;">bill</span></th>'
+            f'<th style="{thr}">Tentative bill<br><span style="font-weight:600;color:#94a3b8;">qty / &#8377;</span></th>'
             f'</tr></thead>'
             f'<tbody>{"".join(rows_html)}</tbody></table>'
             '<div style="font-size:10.5px;color:#a0a7b4;margin:8px 2px 0;">'
             'Each cell = qty (top) / value &#8377; (bottom), % of raw in brackets &middot; '
             'Raw = as ordered (inc-GST), Uploaded = clean &rarr; D365, Excluded = dropped '
-            '&middot; <b>Raw = Uploaded + Excluded</b> &middot; Tentative bill = fill-rate &times; uploaded.</div>')
+            '&middot; <b>Raw = Uploaded + Excluded</b> &middot; Tentative bill = fill-rate &times; '
+            'uploaded (qty &amp; &#8377;)' + _asof + '.</div>')
 
     def _issue_ref(self, board) -> str:
         n = board['issue_total']

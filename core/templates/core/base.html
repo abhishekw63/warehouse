@@ -20,9 +20,17 @@
       #pageBoot{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;
         background:var(--surface,#fff);transition:opacity .42s ease;}
       #pageBoot.gone{opacity:0;pointer-events:none;}
+      #pageBoot .pb-box{display:flex;flex-direction:column;align-items:center;gap:15px;}
       #pageBoot .pb-spin{width:34px;height:34px;border-radius:50%;
         border:3px solid color-mix(in srgb,var(--accent,#6366f1) 22%,transparent);
         border-top-color:var(--accent,#6366f1);animation:pbSpin .7s linear infinite;}
+      /* Optional contextual line under the spinner — a page fills the
+         `page_boot_label` block when its render is heavy (e.g. a big PO review),
+         so the loader says WHAT is happening instead of a bare spin. Empty on
+         every other page → identical to before. */
+      #pageBoot .pb-label{font-size:13px;font-weight:600;color:var(--muted,#6b7280);
+        max-width:300px;text-align:center;line-height:1.45;letter-spacing:.01em;}
+      #pageBoot .pb-label:empty{display:none;}
       @keyframes pbSpin{to{transform:rotate(360deg);}}
       @keyframes pbReveal{to{opacity:1;}}
       #MainContent{animation:pbReveal .34s 2.5s forwards;}   /* failsafe reveal */
@@ -32,7 +40,7 @@
     <noscript><style>#MainContent{opacity:1!important;animation:none!important;}#pageBoot{display:none!important;}</style></noscript>
 </head>
 <body class="{% block body_class %}{% endblock %}">
-<div id="pageBoot" aria-hidden="true"><div class="pb-spin"></div></div>
+<div id="pageBoot" aria-hidden="true"><div class="pb-box"><div class="pb-spin"></div><div class="pb-label">{% block page_boot_label %}{% endblock %}</div></div></div>
 <script>
   /* reveal the styled page + drop the boot loader once the DOM is parsed+styled */
   (function(){

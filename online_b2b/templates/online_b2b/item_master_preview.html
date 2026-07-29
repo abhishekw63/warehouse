@@ -25,6 +25,7 @@
     <div class="hk"><div class="n">{{ current.count }}</div><div class="l">Current → replaced</div></div>
   </div>
 
+  {% if diff.any %}
   <form method="post" action="{% url 'b2b_item_master_confirm' token=token %}">
     {% csrf_token %}
     <div class="confirm-bar">
@@ -35,6 +36,18 @@
       </div>
     </div>
   </form>
+  {% else %}
+  {# Nothing to update → no rebuild action; just an up-to-date bar + a Close that clears the staged upload. #}
+  <form method="post" action="{% url 'b2b_item_master_discard' token=token %}">
+    {% csrf_token %}
+    <div class="confirm-bar im-uptodate">
+      <div class="cb-text">✓ <b>Master is already up to date</b> — all {{ current.count }} items match the live master (same MRP). Nothing to rebuild.</div>
+      <div class="cb-actions">
+        <button class="btn-discard" type="submit" formnovalidate>Close</button>
+      </div>
+    </div>
+  </form>
+  {% endif %}
 
   {% if warnings %}
   <div class="warnbox" style="margin-top:14px;">
@@ -93,6 +106,10 @@
   </div>
 
   <style>
+    /* nothing-to-update bar — green, no rebuild action */
+    .confirm-bar.im-uptodate{background:#f0fdf4;border-color:#bbf7d0;}
+    :root[data-theme="dark"] .confirm-bar.im-uptodate{background:color-mix(in srgb,#16a34a 14%,var(--surface));border-color:#166534;}
+    .confirm-bar.im-uptodate .cb-text{color:#0a7c4a;} :root[data-theme="dark"] .confirm-bar.im-uptodate .cb-text{color:#86efac;}
     .im-nochange{font-size:13.5px;color:#0a7c4a;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 14px;margin:0;}
     .chg-chips{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 6px;}
     .chg-chip{font-size:12px;font-weight:700;border-radius:20px;padding:4px 11px;border:1px solid var(--border);}
