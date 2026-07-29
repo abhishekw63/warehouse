@@ -144,6 +144,13 @@
   var results = document.getElementById('av-results');
   var checkUrl = "{% url 'b2b_availability_check' %}";
 
+  // Persist the last input so a refresh doesn't lose it (restored + auto-checked
+  // on load below). Local to this browser; nothing sent until Check.
+  var LS_KEY = 'b2b_availability_last';
+  function saveState() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify({ orders: ta.value, warehouse: whSel.value })); } catch (e) {}
+  }
+
   function nf(n) { return (n === null || n === undefined) ? '—' : Number(n).toLocaleString('en-IN'); }
   function money(v) { return v ? '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 }) : '—'; }
   function pctCell(p, has) { return '<td class="num" style="color:' + pctColor(p) + ';font-weight:700;">' + (has === false ? '—' : p + '%') + '</td>'; }
@@ -253,6 +260,7 @@
   function run() {
     var orders = ta.value.trim();
     if (!orders) { statusEl.textContent = 'Paste at least one order number.'; return; }
+    saveState();
     btn.disabled = true; statusEl.textContent = 'Checking…';
     var body = new URLSearchParams(); body.set('orders', orders); body.set('warehouse', whSel.value);
     fetch(checkUrl, { method: 'POST', headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() })
@@ -324,6 +332,20 @@
       .then(function (j) { var b = (j.ok && j.bins) || []; binCache[key] = b; paint(b); })
       .catch(function () { td.innerHTML = '<div class="sku-bins-empty">Could not load bins.</div>'; });
   });
+
+  // Persist input on edit, and restore + auto-run on load so a refresh keeps
+  // your list and results.
+  ta.addEventListener('input', saveState);
+  whSel.addEventListener('change', saveState);
+  (function restore() {
+    var s;
+    try { s = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (e) { s = {}; }
+    if (s && s.orders && s.orders.trim()) {
+      ta.value = s.orders;
+      if (s.warehouse) whSel.value = s.warehouse;
+      run();   // re-check → results reappear without re-pasting
+    }
+  })();
 })();
 </script>
 {% endblock %}
