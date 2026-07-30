@@ -627,6 +627,79 @@ def sku_demand_export(request):
     return resp
 
 
+class TrackerView(LoginRequiredMixin, TemplateView):
+    """Consolidated order tracker — the single source of truth across BOTH
+    segments (Online B2B + Offline). One row per order (latest run per PO) with
+    Dept · WH · Marketplace · PO · External Doc · Location · Pincode · Zone ·
+    dates · value · qty · upload · file source. Server-side filters; CSV export."""
+    template_name = 'online_b2b/tracker.html'
+    SEG_MAP = {'Online B2B': 'OnlineB2B', 'Offline': 'Offline'}
+
+    def _filters(self, request):
+        seg_label = (request.GET.get('segment') or '').strip()
+        return {
+            'segment': self.SEG_MAP.get(seg_label, ''), 'seg_label': seg_label,
+            'marketplace': (request.GET.get('marketplace') or '').strip(),
+            'warehouse': (request.GET.get('warehouse') or '').strip(),
+            'q': (request.GET.get('q') or '').strip(),
+        }
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        f = self._filters(self.request)
+        ctx['t'] = order_db.consolidated_tracker(
+            f['segment'], f['marketplace'], f['warehouse'], f['q'])
+        ctx['f'] = f
+        return ctx
+
+
+class TrackerExportView(LoginRequiredMixin, View):
+    """CSV of the consolidated tracker honoring the current filters."""
+
+    def get(self, request):
+        import csv
+        import io
+        seg = TrackerView.SEG_MAP.get((request.GET.get('segment') or '').strip(), '')
+        data = order_db.consolidated_tracker(
+            seg, (request.GET.get('marketplace') or '').strip(),
+            (request.GET.get('warehouse') or '').strip(),
+            (request.GET.get('q') or '').strip(), limit=100000)
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(['Dept', 'WH', 'Marketplace', 'PO', 'External Doc No', 'Location',
+                    'PO Date', 'Exp Date', 'Order Qty', 'Order Value', 'Pincode',
+                    'Zone', 'Uploaded', 'File Source', 'OMT'])
+        for r in data.get('rows', []):
+            w.writerow([r['dept'], r['wh'], r['marketplace'], r['po'], r['external_doc'],
+                        r['location'], r['po_date'] or '', r['exp_date'] or '',
+                        r['qty'], r['order_value'], r['pincode'], r['zone'],
+                        r['uploaded'] or '', r['file_source'], r.get('omt', '')])
+        resp = HttpResponse(buf.getvalue(), content_type='text/csv')
+        resp['Content-Disposition'] = 'attachment; filename="consolidated_tracker.csv"'
+        return resp
+
+
+class TrackerAddView(LoginRequiredMixin, View):
+    """Add a MANUAL tracker row — for a PO that can't be uploaded via the app but
+    still needs tracking. Writes only the isolated tracker_manual table."""
+
+    def post(self, request):
+        from .services import tracker_store
+        res = tracker_store.add(request.POST.dict(), user=request.user.get_username())
+        if not res.get('ok') and (request.headers.get('X-Requested-With') == 'fetch'):
+            return JsonResponse(res, status=400)
+        return redirect(request.META.get('HTTP_REFERER') or 'b2b_tracker')
+
+
+class TrackerDeleteView(LoginRequiredMixin, View):
+    """Delete a MANUAL tracker row (auto rows have no id and can't be deleted)."""
+
+    def post(self, request, row_id):
+        from .services import tracker_store
+        tracker_store.delete(row_id)
+        return redirect(request.META.get('HTTP_REFERER') or 'b2b_tracker')
+
+
 class OfflineBranchView(LoginRequiredMixin, TemplateView):
     """`/b2b/offline/` — the Offline branch: SAME rich dashboard as Online B2B
     (KPIs + charts + marketplace mix), scoped to the Offline segment."""

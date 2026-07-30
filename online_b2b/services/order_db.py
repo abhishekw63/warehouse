@@ -656,6 +656,128 @@ def value_concentration(date_from='', date_to='', marketplace='') -> dict:
     return out
 
 
+def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
+                         limit=8000) -> dict:
+    """**Consolidated order tracker** — one row per order (latest run per PO)
+    across BOTH segments (Online B2B + Offline), the single source of truth.
+    Columns: Dept · WH · Marketplace · PO · External Doc · Location · Pincode ·
+    Zone · PO Date · Exp Date · Order Value · Order Qty · Uploaded · File Source.
+    Pincode+Zone are resolved from ship_to_mapping (loc→postcode→state→zone).
+    Read-only; never raises."""
+    import os as _os
+    import re as _re
+    out = {'ok': False, 'rows': [], 'segments': [], 'marketplaces': [],
+           'warehouses': [], 'total_value': 0.0, 'total_qty': 0}
+
+    def nk(s):
+        return _re.sub(r'[^a-z0-9]', '', str(s or '').lower())
+
+    try:
+        with _conn() as (cur, d):
+            ph = d['ph']
+            # loc -> (pincode, state) from the ship-to master
+            cur.execute('SELECT del_location,ship_to,name,city,postcode,state '
+                        'FROM ship_to_mapping')
+            loc2geo = {}
+            for dl, shp, nm, ci, pc, st in cur.fetchall():
+                g = (str(pc or '').strip(), str(st or '').strip())
+                for kk in (dl, shp, nm, ci):
+                    if kk:
+                        loc2geo.setdefault(nk(kk), g)
+
+            where, args = [], []
+            if segment:
+                where.append(f"h.segment={ph}"); args.append(segment)
+            if marketplace:
+                where.append(f"h.marketplace_label={ph}"); args.append(marketplace)
+            if warehouse:
+                where.append(f"h.warehouse={ph}"); args.append(warehouse)
+            if q:
+                where.append(f"(h.po LIKE {ph} OR h.location LIKE {ph} OR "
+                             f"h.external_doc LIKE {ph} OR h.marketplace_label LIKE {ph})")
+                args += [f"%{q}%"] * 4
+            wsql = (' AND ' + ' AND '.join(where)) if where else ''
+
+            cur.execute(
+                "SELECT h.segment, h.warehouse, h.marketplace_label, h.po, "
+                "h.external_doc, h.location, h.po_date, h.exp_date, h.order_value, "
+                "h.qty, h.run_ts, h.output_file FROM order_headers h JOIN ("
+                "  SELECT marketplace, po, MAX(run_ts) mx FROM order_headers "
+                "  GROUP BY marketplace, po) t ON h.marketplace=t.marketplace "
+                f"AND h.po=t.po AND h.run_ts=t.mx WHERE 1=1{wsql} "
+                f"ORDER BY h.run_ts DESC, h.po LIMIT {int(limit)}", tuple(args))
+            cols = ['segment', 'warehouse', 'marketplace_label', 'po', 'external_doc',
+                    'location', 'po_date', 'exp_date', 'order_value', 'qty',
+                    'run_ts', 'output_file']
+            tv = tq = 0.0
+            rows = []
+            for r in cur.fetchall():
+                m = dict(zip(cols, r))
+                geo = loc2geo.get(nk(m['location']), ('', ''))
+                pin, st = geo
+                stname = _IN_STATES.get(st.upper(), st) if st else ''
+                zone = _IN_ZONES.get(stname, '') if stname else ''
+                val = float(m['order_value'] or 0)
+                qty = int(m['qty'] or 0)
+                tv += val; tq += qty
+                rows.append({
+                    'dept': _SEG_LABEL.get(m['segment'], m['segment'] or 'Other'),
+                    'wh': m['warehouse'] or '',
+                    'marketplace': m['marketplace_label'] or '',
+                    'po': m['po'], 'external_doc': m['external_doc'] or '',
+                    'location': m['location'] or '', 'pincode': pin, 'zone': zone,
+                    'po_date': m['po_date'], 'exp_date': m['exp_date'],
+                    'order_value': round(val, 2), 'qty': qty,
+                    'uploaded': m['run_ts'],
+                    'file_source': _os.path.basename(str(m['output_file'] or '')) if m['output_file'] else '',
+                    'omt': '', 'source': 'auto', 'id': None,
+                })
+
+            # merge manual rows (POs not uploadable via the app, tracked by hand)
+            try:
+                from . import tracker_store
+                seg_lbl = _SEG_LABEL.get(segment, segment)
+
+                def _keep(mm):
+                    if segment and mm['dept'] != seg_lbl:
+                        return False
+                    if marketplace and mm['marketplace'] != marketplace:
+                        return False
+                    if warehouse and mm['wh'] != warehouse:
+                        return False
+                    if q:
+                        hay = ' '.join(str(mm.get(k, '')) for k in
+                                       ('po', 'external_doc', 'location', 'marketplace')).lower()
+                        if q.lower() not in hay:
+                            return False
+                    return True
+                manual = [mm for mm in tracker_store.list_manual() if _keep(mm)]
+                for mm in manual:
+                    mm['order_value'] = round(float(mm.get('order_value') or 0), 2)
+                    tv += mm['order_value']; tq += int(mm.get('qty') or 0)
+                rows = manual + rows
+            except Exception:  # noqa: BLE001
+                pass
+            # always newest-uploaded first (covers merged manual + auto)
+            rows.sort(key=lambda r: str(r.get('uploaded') or ''), reverse=True)
+
+            # filter dropdown options (full universe, not just filtered)
+            cur.execute("SELECT DISTINCT segment FROM order_headers WHERE segment IS NOT NULL")
+            out['segments'] = sorted({_SEG_LABEL.get(x[0], x[0]) for x in cur.fetchall() if x[0]})
+            cur.execute("SELECT DISTINCT marketplace_label FROM order_headers "
+                        "WHERE marketplace_label IS NOT NULL AND marketplace_label<>'' "
+                        "ORDER BY marketplace_label")
+            out['marketplaces'] = [x[0] for x in cur.fetchall()]
+            cur.execute("SELECT DISTINCT warehouse FROM order_headers "
+                        "WHERE warehouse IS NOT NULL AND warehouse<>'' ORDER BY warehouse")
+            out['warehouses'] = [x[0] for x in cur.fetchall()]
+            out.update({'ok': True, 'rows': rows, 'total_value': round(tv, 2),
+                        'total_qty': int(tq), 'count': len(rows)})
+    except Exception as e:  # noqa: BLE001
+        out['error'] = f"{type(e).__name__}: {e}"
+    return out
+
+
 def hub_extra_kpis() -> dict:
     """Extra hub KPIs in one round-trip: avg PO value, total line items, POs in the
     last 7 days, and resolved (actioned) issue lines. Read-only; never raises."""
