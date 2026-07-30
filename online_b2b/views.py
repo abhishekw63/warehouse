@@ -668,12 +668,12 @@ class TrackerExportView(LoginRequiredMixin, View):
         w = csv.writer(buf)
         w.writerow(['Dept', 'WH', 'Marketplace', 'PO', 'External Doc No', 'Location',
                     'PO Date', 'Exp Date', 'Order Qty', 'Order Value', 'Pincode',
-                    'Zone', 'Uploaded', 'File Source', 'OMT'])
+                    'Zone', 'Uploaded', 'OMT'])
         for r in data.get('rows', []):
             w.writerow([r['dept'], r['wh'], r['marketplace'], r['po'], r['external_doc'],
                         r['location'], r['po_date'] or '', r['exp_date'] or '',
                         r['qty'], r['order_value'], r['pincode'], r['zone'],
-                        r['uploaded'] or '', r['file_source'], r.get('omt', '')])
+                        r['uploaded'] or '', r.get('omt', '')])
         resp = HttpResponse(buf.getvalue(), content_type='text/csv')
         resp['Content-Disposition'] = 'attachment; filename="consolidated_tracker.csv"'
         return resp
