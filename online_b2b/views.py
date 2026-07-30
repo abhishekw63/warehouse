@@ -670,7 +670,7 @@ class TrackerExportView(LoginRequiredMixin, View):
         data = order_db.consolidated_tracker(
             seg, (request.GET.get('marketplace') or '').strip(),
             (request.GET.get('warehouse') or '').strip(),
-            (request.GET.get('q') or '').strip(), limit=100000)
+            (request.GET.get('q') or '').strip(), limit=100000, display_limit=100000)
         buf = io.StringIO()
         w = csv.writer(buf)
         w.writerow(['Dept', 'WH', 'Marketplace', 'PO', 'External Doc No', 'Location',

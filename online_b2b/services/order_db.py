@@ -657,7 +657,7 @@ def value_concentration(date_from='', date_to='', marketplace='') -> dict:
 
 
 def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
-                         limit=8000) -> dict:
+                         limit=8000, display_limit=500) -> dict:
     """**Consolidated order tracker** — one row per order (latest run per PO)
     across BOTH segments (Online B2B + Offline), the single source of truth.
     Columns: Dept · WH · Marketplace · PO · External Doc · Location · Pincode ·
@@ -771,8 +771,10 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
             cur.execute("SELECT DISTINCT warehouse FROM order_headers "
                         "WHERE warehouse IS NOT NULL AND warehouse<>'' ORDER BY warehouse")
             out['warehouses'] = [x[0] for x in cur.fetchall()]
-            out.update({'ok': True, 'rows': rows, 'total_value': round(tv, 2),
-                        'total_qty': int(tq), 'count': len(rows)})
+            total_n = len(rows)          # KPIs/count cover ALL matching orders…
+            out.update({'ok': True, 'rows': rows[:int(display_limit)],  # …table renders latest N
+                        'total_value': round(tv, 2), 'total_qty': int(tq),
+                        'count': total_n, 'shown': min(total_n, int(display_limit))})
     except Exception as e:  # noqa: BLE001
         out['error'] = f"{type(e).__name__}: {e}"
     return out

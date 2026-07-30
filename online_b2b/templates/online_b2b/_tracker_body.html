@@ -42,7 +42,7 @@ change so the page never reloads. {% endcomment %}
   </table>
   </div>
 </div>
-<p class="trk-foot"><b>{{ t.rows|length }}</b> orders{% if t.count >= 8000 %} <span class="cap">(capped at 8,000 — narrow the filter)</span>{% endif %} · Pincode &amp; Zone resolved from the ship-to master.</p>
+<p class="trk-foot">Showing latest <b>{{ t.shown }}</b> of <b>{{ t.count }}</b> orders{% if t.count > t.shown %} <span class="cap">· filter or search to see the rest</span>{% endif %} · Pincode &amp; Zone from the ship-to master.</p>
 {% else %}
   <div class="trk-empty">No orders match {% if f.seg_label or f.marketplace or f.warehouse or f.q %}these filters{% else %}yet{% endif %}.</div>
 {% endif %}
