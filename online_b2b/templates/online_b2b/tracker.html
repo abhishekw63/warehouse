@@ -102,6 +102,7 @@
   .trk-loader{position:absolute;inset:0;z-index:6;display:flex;align-items:center;justify-content:center;gap:12px;
     background:color-mix(in srgb,var(--surface) 68%,transparent);backdrop-filter:blur(2px);border-radius:18px;
     font-size:13px;font-weight:700;color:var(--muted);animation:trkfade .15s ease both;}
+  .trk-loader[hidden]{display:none;}   /* hidden attr must win over display:flex */
   .trk-spin{width:26px;height:26px;border-radius:50%;border:3px solid color-mix(in srgb,var(--accent) 22%,transparent);border-top-color:var(--accent);animation:trkspin .8s linear infinite;}
   @keyframes trkspin{to{transform:rotate(360deg);}}
   @media (prefers-reduced-motion: reduce){.trk-spin{animation-duration:2.4s;} #trk-body{transition:none;}}
