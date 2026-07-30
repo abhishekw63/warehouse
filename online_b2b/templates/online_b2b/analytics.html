@@ -17,20 +17,29 @@
 
   <div class="b2b-head">
     <div>
-      <h1>Analytics</h1>
-      <p class="src">Daily intake &amp; SKU demand · each tab keeps its own filter</p>
+      <h1>Analytics <span>· supply-chain cockpit</span></h1>
+      <p class="src">Organised on the SCOR model — <b>Demand</b> · <b>Reliability</b> · <b>Assets</b>. Each tab keeps its own filter.</p>
     </div>
   </div>
 
   <div class="an-tabs" role="tablist">
-    <button type="button" class="an-tab on" data-tab="daily" role="tab">Daily Intake</button>
-    <button type="button" class="an-tab" data-tab="sku" role="tab">SKU Demand</button>
-    <button type="button" class="an-tab" data-tab="trends" role="tab">Trends &amp; Momentum</button>
-    <button type="button" class="an-tab" data-tab="fulfil" role="tab">Fulfilment Risk</button>
-    <button type="button" class="an-tab" data-tab="exc" role="tab">Exceptions &amp; Quality</button>
-    <button type="button" class="an-tab" data-tab="geo" role="tab">Geography &amp; Concentration</button>
-    <button type="button" class="an-tab" data-tab="otif" role="tab">OTIF · Readiness</button>
-    <button type="button" class="an-tab" data-tab="dos" role="tab">Inventory · DOS</button>
+    <div class="an-tabgroup">
+      <span class="an-tglabel" title="Plan: what demand is coming in">Demand</span>
+      <button type="button" class="an-tab on" data-tab="daily" role="tab">Daily Intake</button>
+      <button type="button" class="an-tab" data-tab="sku" role="tab">SKU Demand</button>
+      <button type="button" class="an-tab" data-tab="trends" role="tab">Trends &amp; Momentum</button>
+      <button type="button" class="an-tab" data-tab="geo" role="tab">Geography &amp; Concentration</button>
+    </div>
+    <div class="an-tabgroup">
+      <span class="an-tglabel" title="Deliver reliably: on-time, in-full, accurate">Reliability</span>
+      <button type="button" class="an-tab" data-tab="fulfil" role="tab">Fulfilment Risk</button>
+      <button type="button" class="an-tab" data-tab="otif" role="tab">OTIF · Readiness</button>
+      <button type="button" class="an-tab" data-tab="exc" role="tab">Exceptions &amp; Quality</button>
+    </div>
+    <div class="an-tabgroup">
+      <span class="an-tglabel" title="Assets: inventory efficiency">Assets</span>
+      <button type="button" class="an-tab" data-tab="dos" role="tab">Inventory · DOS</button>
+    </div>
   </div>
 
   <div class="an-pane" id="pane-daily" data-loaded="1" role="tabpanel">
@@ -61,10 +70,16 @@
 </div>
 
 <style>
-  .an-tabs{display:flex;gap:4px;margin:4px 0 20px;border-bottom:1px solid var(--border);}
+  .an-tabs{display:flex;gap:0;margin:4px 0 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:flex-end;}
+  /* SCOR pillar groups — a small pillar label sits above each cluster of tabs;
+     groups are separated by a faint divider */
+  .an-tabgroup{display:flex;flex-wrap:wrap;align-items:flex-end;}
+  .an-tabgroup + .an-tabgroup{border-left:1px solid var(--border);margin-left:12px;padding-left:12px;}
+  .an-tglabel{flex-basis:100%;font-size:9.5px;font-weight:800;text-transform:uppercase;
+    letter-spacing:.09em;color:var(--muted);padding:0 15px 2px;opacity:.7;}
   .an-tab{appearance:none;background:transparent;border:none;border-bottom:2px solid transparent;
-    padding:10px 18px;font-size:14px;font-weight:700;color:var(--muted);cursor:pointer;
-    margin-bottom:-1px;transition:color .14s,border-color .14s;font-family:inherit;}
+    padding:8px 15px;font-size:13.5px;font-weight:700;color:var(--muted);cursor:pointer;
+    margin-bottom:-1px;transition:color .14s,border-color .14s;font-family:inherit;white-space:nowrap;}
   .an-tab:hover{color:var(--text);}
   .an-tab.on{color:var(--accent);border-bottom-color:var(--accent);}
   .an-pane{animation:anfade .28s ease both;}
