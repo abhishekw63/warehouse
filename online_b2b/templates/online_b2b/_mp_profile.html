@@ -228,14 +228,64 @@
     <div class="prof-rule" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;
          padding:14px 16px;border:1px solid var(--border);border-radius:12px;background:#fafbff;">
       <span style="font-weight:800;color:var(--text);margin-right:4px;">Pricing rule</span>
-      <span class="lg-chip" style="background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;">
-        Keep {{ rule.margin_label }}</span>
+      {% if rule.margin_tiers %}
+        <span class="lg-chip" style="background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;">
+          {{ rule.margin_tiers.default_label }} (default) {{ rule.margin_tiers.default_pct }}%</span>
+        {% for t in rule.margin_tiers.tiers %}
+        <span class="lg-chip" style="background:#fdf4ff;border:1px solid #f0abfc;color:#86198f;" title="{{ t.criteria }}">
+          {{ t.label }} {{ t.keep_pct }}%</span>
+        {% endfor %}
+      {% else %}
+        <span class="lg-chip" style="background:#eef2ff;border:1px solid #c7d2fe;color:#3730a3;">
+          Keep {{ rule.margin_label }}</span>
+      {% endif %}
       <span class="lg-chip" style="background:#ecfdf5;border:1px solid #a7f3d0;color:#065f46;">
         {{ rule.basis }}</span>
       {% if rule.compare_label %}<span class="lg-chip" style="background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;">
         Compare: {{ rule.compare_label }}</span>{% endif %}
       <span class="lg-chip" style="background:#f5f3ff;border:1px solid #ddd6fe;color:#5b21b6;">
         Resolve by: {{ rule.item }}</span>
+    </div>
+    {% endif %}
+
+    {% if rule.margin_tiers %}
+    {# Category-based margin — the engine applies different keep% by product type. #}
+    <div class="prof-margins" style="margin-top:14px;border:1px solid var(--border);border-radius:12px;overflow:hidden;">
+      <div style="background:#fafbff;padding:11px 16px;font-weight:800;font-size:14px;color:var(--text);border-bottom:1px solid var(--border);">
+        Category-based margins <span style="font-weight:600;color:var(--muted);font-size:12px;">— keep% varies by product type (not flat)</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead><tr>
+          <th style="text-align:left;padding:9px 16px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border);">Product type</th>
+          <th style="text-align:right;padding:9px 16px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border);">Keep %</th>
+          <th style="text-align:left;padding:9px 16px;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border);">Matched by</th>
+        </tr></thead>
+        <tbody>
+          {% for t in rule.margin_tiers.tiers %}
+          <tr>
+            <td style="padding:9px 16px;font-weight:700;color:#86198f;border-bottom:1px solid #f0f1f6;">{{ t.label }}</td>
+            <td style="padding:9px 16px;text-align:right;font-weight:800;border-bottom:1px solid #f0f1f6;">{{ t.keep_pct }}%</td>
+            <td style="padding:9px 16px;color:var(--text-2);border-bottom:1px solid #f0f1f6;">{{ t.criteria }}</td>
+          </tr>
+          {% endfor %}
+          <tr>
+            <td style="padding:9px 16px;font-weight:700;color:#3730a3;">{{ rule.margin_tiers.default_label }} <span style="font-weight:600;color:var(--muted);">(default)</span></td>
+            <td style="padding:9px 16px;text-align:right;font-weight:800;">{{ rule.margin_tiers.default_pct }}%</td>
+            <td style="padding:9px 16px;color:var(--text-2);">everything else</td>
+          </tr>
+        </tbody>
+      </table>
+      {% if rule.margin_tiers.override_count %}
+      <div style="padding:10px 16px;border-top:1px solid var(--border);font-size:12.5px;color:var(--text-2);">
+        <b>{{ rule.margin_tiers.override_count }} item-level override{{ rule.margin_tiers.override_count|pluralize }}:</b>
+        {% for o in rule.margin_tiers.overrides %}<span class="lg-chip" style="background:#f8fafc;border:1px solid var(--border);color:var(--text);margin:2px;">{{ o.item }} → {{ o.pct }}%</span>{% endfor %}
+      </div>
+      {% endif %}
+      {% if rule.margin_tiers.flag_hsn_conflicts %}
+      <div style="padding:8px 16px;border-top:1px solid var(--border);font-size:12px;color:#9a3412;background:#fff7ed;">
+        ⚑ HSN conflicts are flagged — if a SKU's HSN and name disagree on the tier, the engine warns for review.
+      </div>
+      {% endif %}
     </div>
     {% endif %}
 
@@ -274,8 +324,9 @@
       {% endfor %}
     </div>
     {% else %}
-    <p style="color:var(--muted);font-size:13px;">No special exceptions — the flat
-      {{ rule.margin_label|default:'marketplace' }} rule applies to every line.</p>
+    <p style="color:var(--muted);font-size:13px;">
+      {% if rule.margin_tiers %}No named line-level exceptions — pricing follows the category-based margins above.
+      {% else %}No special exceptions — the flat {{ rule.margin_label|default:'marketplace' }} rule applies to every line.{% endif %}</p>
     {% endif %}
     <p class="tpl-foot" style="margin-top:12px;color:var(--muted);font-size:12px;">
       Rule + exceptions are read live from the engine config / Master Exceptions

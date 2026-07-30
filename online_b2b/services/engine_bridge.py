@@ -144,11 +144,42 @@ def marketplace_rules() -> list:
                 margin_label = f"{min(_p):g}–{max(_p):g}%"
             else:
                 margin_label = f"{c.get('default_margin', 70)}%"
+            # Category/rule-based margin tiers (e.g. Nykaa: Perfume/Fragrance 69%,
+            # Cosmetics 66%) — surfaced so the profile page renders the REAL rule
+            # instead of a single flat margin. Read straight from the engine config.
+            mr = c.get('margin_rules') or {}
+            margin_tiers = None
+            if isinstance(mr, dict) and mr.get('rules'):
+                tiers = []
+                for rr in mr.get('rules', []):
+                    crit = []
+                    if rr.get('contains'):
+                        crit.append('name has ' + ' / '.join(rr['contains']))
+                    if rr.get('hsn_prefix'):
+                        crit.append('HSN ' + ' / '.join(str(h) for h in rr['hsn_prefix']))
+                    if rr.get('excludes'):
+                        crit.append('excl. ' + ' / '.join(rr['excludes']))
+                    tiers.append({'label': rr.get('label', ''),
+                                  'keep_pct': rr.get('keep_pct'),
+                                  'criteria': '; '.join(crit)})
+                ov = mr.get('item_keep_overrides') or {}
+                margin_tiers = {
+                    'tiers': tiers,
+                    'default_pct': mr.get('default_keep_pct'),
+                    'default_label': mr.get('default_label', 'Default'),
+                    'overrides': [{'item': k, 'pct': v} for k, v in ov.items()],
+                    'override_count': len(ov),
+                    'flag_hsn_conflicts': bool(mr.get('flag_hsn_conflicts')),
+                }
+                # honest compact label: "66/69% · by category"
+                pcts = sorted({mr.get('default_keep_pct')} | {t['keep_pct'] for t in tiers})
+                margin_label = '/'.join(f'{p:g}' for p in pcts if p is not None) + '% · by category'
             out.append({
                 'name': name,
                 'party': c.get('party_name', ''),
                 'margin': c.get('default_margin', 70),
                 'margin_label': margin_label,
+                'margin_tiers': margin_tiers,
                 'basis': ('Landing — MRP × margin% (pre-GST)' if basis == 'landing'
                           else 'Cost — MRP × margin% ÷ GST (post-GST)'),
                 'compare_label': c.get('compare_label', ''),
