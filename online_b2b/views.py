@@ -534,6 +534,20 @@ def _geo_ctx(request):
             'sku_from': sf, 'sku_to': st, 'sku_mp': smp}
 
 
+def _otif_ctx(request):
+    """OTIF / Readiness tab — projected OTIF over OPEN orders. Own filter:
+    marketplace + due-horizon (0 = all open, else due within N days)."""
+    from .services import availability
+    smp = (request.GET.get('sku_mp') or '').strip()
+    try:
+        horizon = int(request.GET.get('horizon') or 0)
+    except (TypeError, ValueError):
+        horizon = 0
+    horizon = horizon if horizon in (0, 7, 30) else 0
+    return {'rd': availability.fulfilment_readiness(smp, horizon),
+            'sku_mp': smp, 'horizon': horizon}
+
+
 class AnalyticsView(LoginRequiredMixin, TemplateView):
     """Management analytics — two AJAX tabs under one page, each with its own
     filter (no page refresh):
@@ -556,6 +570,8 @@ class AnalyticsView(LoginRequiredMixin, TemplateView):
             return render(request, 'online_b2b/_analytics_exc.html', _exc_ctx(request))
         if partial == 'geo':
             return render(request, 'online_b2b/_analytics_geo.html', _geo_ctx(request))
+        if partial == 'otif':
+            return render(request, 'online_b2b/_analytics_otif.html', _otif_ctx(request))
         return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):

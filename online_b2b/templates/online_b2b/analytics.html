@@ -29,6 +29,7 @@
     <button type="button" class="an-tab" data-tab="fulfil" role="tab">Fulfilment Risk</button>
     <button type="button" class="an-tab" data-tab="exc" role="tab">Exceptions &amp; Quality</button>
     <button type="button" class="an-tab" data-tab="geo" role="tab">Geography &amp; Concentration</button>
+    <button type="button" class="an-tab" data-tab="otif" role="tab">OTIF · Readiness</button>
   </div>
 
   <div class="an-pane" id="pane-daily" data-loaded="1" role="tabpanel">
@@ -48,6 +49,9 @@
   </div>
   <div class="an-pane" id="pane-geo" data-loaded="0" role="tabpanel" hidden>
     <div class="an-loading">Loading geography…</div>
+  </div>
+  <div class="an-pane" id="pane-otif" data-loaded="0" role="tabpanel" hidden>
+    <div class="an-loading">Loading readiness…</div>
   </div>
 
 </div>
@@ -221,6 +225,8 @@
   .zone-bar{height:6px;border-radius:6px;background:color-mix(in srgb,var(--border) 60%,transparent);overflow:hidden;margin-bottom:7px;}
   .zone-bar span{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 70%,#000));}
   .zone-meta{font-size:10.5px;color:var(--muted);}
+  /* ── OTIF · Readiness tab ── */
+  .otif-note{font-size:12px;color:var(--text-2);background:color-mix(in srgb,var(--accent) 6%,transparent);border:1px solid color-mix(in srgb,var(--accent) 20%,transparent);border-radius:9px;padding:9px 13px;margin:2px 0 16px;line-height:1.5;}
   .ex-clean{font-weight:700;color:var(--text-2);} .ex-clean.full{color:#0a7d54;}
   .ex-typecard{padding:14px 16px;display:flex;flex-direction:column;gap:12px;}
   .ex-type{display:flex;flex-direction:column;gap:5px;}
@@ -259,6 +265,10 @@
     else if (activeTab === 'fulfil') s = document.querySelector('#pane-fulfil .an-fulfil');
     else if (activeTab === 'exc') s = document.querySelector('#pane-exc .an-exc');
     else if (activeTab === 'geo') s = document.querySelector('#pane-geo .an-geo');
+    else if (activeTab === 'otif') {
+      var ot = document.querySelector('#pane-otif .an-otif');
+      if (ot) { if (ot.dataset.mp) p.set('sku_mp', ot.dataset.mp); if (ot.dataset.horizon && ot.dataset.horizon !== '0') p.set('horizon', ot.dataset.horizon); }
+    }
     if (s) {
       if (s.dataset.mp) p.set('sku_mp', s.dataset.mp);
       if (s.dataset.from) p.set('sku_from', s.dataset.from);
@@ -571,6 +581,32 @@
     });
   }
 
+  // ══ OTIF · READINESS tab ══
+  function loadOtif(params) {
+    var pane = document.getElementById('pane-otif');
+    var lid = showLoader(pane, [
+      'Reading open orders (still due)…',
+      'Resolving each order’s warehouse…',
+      'Checking current stock coverage…',
+      'Scoring readiness & due-date urgency…'
+    ], 'Projected OTIF — open orders vs current stock. Not actual delivery.');
+    fetch(url(Object.assign({ partial: 'otif' }, params)), { headers: { 'X-Requested-With': 'fetch' } })
+      .then(function (r) { return r.text(); })
+      .then(function (html) { clearInterval(lid); pane.innerHTML = html; pane.dataset.loaded = '1'; wireOtif(); syncURL(); })
+      .catch(function () { clearInterval(lid); pane.innerHTML = '<div class="an-loading">Could not load readiness.</div>'; });
+  }
+
+  function wireOtif() {
+    var root = document.querySelector('#pane-otif .an-otif');
+    if (!root) return;
+    wireSort(root);
+    var mp = root.querySelector('[name=sku_mp]');
+    if (mp) mp.addEventListener('change', function () { loadOtif({ sku_mp: mp.value, horizon: root.dataset.horizon || 0 }); });
+    root.querySelectorAll('[data-otif-horizon]').forEach(function (a) {
+      a.addEventListener('click', function (e) { e.preventDefault(); loadOtif({ sku_mp: mp ? mp.value : '', horizon: a.getAttribute('data-otif-horizon') }); });
+    });
+  }
+
   // ══ tabs ══
   function showTab(name) {
     activeTab = name;
@@ -587,6 +623,8 @@
       loadExc({ sku_mp: q.get('sku_mp') || '', sku_from: q.get('sku_from') || undefined, sku_to: q.get('sku_to') || undefined });
     } else if (name === 'geo' && document.getElementById('pane-geo').dataset.loaded === '0') {
       loadGeo({ sku_mp: q.get('sku_mp') || '', sku_from: q.get('sku_from') || undefined, sku_to: q.get('sku_to') || undefined });
+    } else if (name === 'otif' && document.getElementById('pane-otif').dataset.loaded === '0') {
+      loadOtif({ sku_mp: q.get('sku_mp') || '', horizon: q.get('horizon') || 0 });
     } else {
       syncURL();
     }
@@ -600,7 +638,7 @@
     wireDaily();                                  // daily was server-rendered
     var q = new URLSearchParams(location.search);
     var t = q.get('tab');
-    if (t === 'sku' || t === 'trends' || t === 'fulfil' || t === 'exc' || t === 'geo') showTab(t);  // deep-link
+    if (['sku', 'trends', 'fulfil', 'exc', 'geo', 'otif'].indexOf(t) >= 0) showTab(t);  // deep-link
     else syncURL();
   }
   if (document.readyState !== 'loading') boot();

@@ -1,0 +1,112 @@
+{% load static b2b_extras %}
+{% comment %}
+  OTIF · Readiness tab body — PROJECTED OTIF over OPEN orders (exp_date >= today)
+  vs current stock. Ready = In-Full (stock covers) AND Accurate (no exception);
+  on-time risk carried by due-date urgency. NOT actual delivered OTIF. Lazy-loaded
+  (?partial=otif). Own filter: marketplace + due-horizon.
+{% endcomment %}
+<div class="an-otif" data-mp="{{ sku_mp }}" data-horizon="{{ horizon }}">
+
+  <div class="an-toolbar">
+    <div class="sku-filter">
+      <select name="sku_mp">
+        <option value="">All marketplaces</option>
+        {% for m in rd.marketplaces %}<option value="{{ m }}" {% if m == sku_mp %}selected{% endif %}>{{ m }}</option>{% endfor %}
+      </select>
+      <span class="range-toggle">
+        <a href="#" data-otif-horizon="0"  class="rg{% if horizon == 0 %} on{% endif %}">All open</a>
+        <a href="#" data-otif-horizon="7"  class="rg{% if horizon == 7 %} on{% endif %}">Due ≤7d</a>
+        <a href="#" data-otif-horizon="30" class="rg{% if horizon == 30 %} on{% endif %}">Due ≤30d</a>
+      </span>
+    </div>
+  </div>
+
+  <p class="otif-note">
+    <b>Projected OTIF</b> — {{ rd.summary.orders }} open orders (still due){% if sku_mp %} · {{ sku_mp }}{% endif %} scored against <b>current stock</b>.
+    Ready = coverable in-full <b>and</b> accurate. This is intent/capacity, <b>not actual delivered OTIF</b> (that needs a dispatch/delivery feed).
+  </p>
+
+  <div class="fr-kpis" style="grid-template-columns:repeat(4,1fr);">
+    <div class="fr-kpi">
+      <div class="fr-l">Ready (projected OTIF)</div>
+      <div class="fr-n">{{ rd.summary.ready_pct|floatformat:1 }}%</div>
+      <div class="fr-bar"><span class="fr-fill" style="width:{{ rd.summary.ready_pct }}%"></span></div>
+      <div class="fr-p">{{ rd.summary.ready }} of {{ rd.summary.orders }} open orders</div>
+    </div>
+    <div class="fr-kpi">
+      <div class="fr-l">In-Full (from stock)</div>
+      <div class="fr-n">{{ rd.summary.in_full_pct|floatformat:1 }}%</div>
+      <div class="fr-bar"><span class="fr-fill" style="width:{{ rd.summary.in_full_pct }}%"></span></div>
+      <div class="fr-p">{{ rd.summary.in_full }} coverable now</div>
+    </div>
+    <div class="fr-kpi">
+      <div class="fr-l">Accurate</div>
+      <div class="fr-n">{{ rd.summary.accurate_pct|floatformat:1 }}%</div>
+      <div class="fr-bar"><span class="fr-fill" style="width:{{ rd.summary.accurate_pct }}%"></span></div>
+      <div class="fr-p">no price/EAN exception</div>
+    </div>
+    <div class="fr-kpi risk">
+      <div class="fr-l">At-risk / urgent</div>
+      <div class="fr-n bad">{{ rd.summary.at_risk|compact }}</div>
+      <div class="fr-p"><span class="fr-tag oos">{{ rd.summary.urgent }} urgent</span> short & due ≤2d</div>
+    </div>
+  </div>
+
+  <div class="ex-cols">
+    <div class="ex-main">
+      <div class="sec-head"><h2>Readiness by channel <span class="muted">· lowest first</span></h2></div>
+      {% if rd.by_channel %}
+      <div class="skux-card"><div class="scroll">
+        <table class="grid compact skux sortable ex-tbl">
+          <thead><tr>
+            <th>Marketplace</th>
+            <th class="r srt" data-k="ord">Open ⇅</th>
+            <th class="r srt" data-k="rdy">Ready ⇅</th>
+            <th class="r srt on" data-k="pct" data-dir="asc">Ready % ⇅</th>
+          </tr></thead>
+          <tbody>{% for c in rd.by_channel %}
+            <tr>
+              <td class="tr-mp">{{ c.name }}</td>
+              <td class="r" data-k="ord" data-v="{{ c.orders }}">{{ c.orders }}</td>
+              <td class="r" data-k="rdy" data-v="{{ c.ready }}">{{ c.ready }}</td>
+              <td class="r barcell" data-k="pct" data-v="{{ c.ready_pct }}"><span class="bar bv" style="width:{{ c.ready_pct }}%"></span><b>{{ c.ready_pct|floatformat:1 }}%</b></td>
+            </tr>
+          {% endfor %}</tbody>
+        </table>
+      </div></div>
+      {% else %}<p class="muted" style="padding:14px 2px;">No open orders in this scope.</p>{% endif %}
+    </div>
+    <div class="ex-side">
+      <div class="sec-head"><h2>Readiness by zone</h2></div>
+      <div class="skux-card ex-typecard">
+        {% for z in rd.by_zone %}
+        <div class="ex-type">
+          <div class="ex-trow"><span class="ex-tname">{{ z.zone }} <span class="muted">· {{ z.orders }} open</span></span><b>{{ z.ready_pct|floatformat:0 }}%</b></div>
+          <div class="ex-tbar"><span style="width:{{ z.ready_pct }}%"></span></div>
+        </div>
+        {% empty %}<p class="muted">No zones.</p>{% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="sec-head" style="margin-top:22px;"><h2>At-risk open orders <span class="muted">· due soonest first</span></h2></div>
+  {% if rd.at_risk_orders %}
+  <div class="skux-card"><div class="scroll" style="max-height:46vh;">
+    <table class="grid compact skux sortable ex-tbl">
+      <thead><tr><th>Order</th><th>Marketplace</th><th>WH</th><th>Zone</th><th class="r srt on" data-k="dl" data-dir="asc">Days left ⇅</th><th>Due</th><th>Why</th></tr></thead>
+      <tbody>{% for o in rd.at_risk_orders %}
+        <tr>
+          <td class="mono">{{ o.po }}</td>
+          <td>{{ o.mp }}</td>
+          <td>{{ o.wh_short }}</td>
+          <td>{{ o.zone }}</td>
+          <td class="r {% if o.days_left <= 2 %}bad{% endif %}" data-k="dl" data-v="{{ o.days_left }}">{{ o.days_left }}</td>
+          <td>{{ o.exp }}</td>
+          <td><span class="fr-st {% if 'short' in o.why %}short{% else %}oos{% endif %}">{{ o.why }}</span></td>
+        </tr>
+      {% endfor %}</tbody>
+    </table>
+  </div></div>
+  {% else %}<p class="muted" style="padding:14px 2px;">No at-risk open orders — everything due is coverable & clean. 🎉</p>{% endif %}
+
+</div>

@@ -380,6 +380,156 @@ def fulfilment_risk(date_from='', date_to='', marketplace='') -> dict:
     return out
 
 
+def fulfilment_readiness(marketplace='', horizon=0) -> dict:
+    """**Projected OTIF / Fulfilment Readiness** — self-contained (no delivery
+    feed). Scoped to **OPEN orders** (exp_date >= today) so it isn't time-
+    degenerate: a readiness score only means something for orders still to be
+    shipped, compared to CURRENT stock. Per open order, at ORDER level:
+
+      * In-Full (projected) — every line fully coverable from current stock in the
+        order's mapped warehouse.
+      * Accurate            — no MISMATCH / NOT_IN_MASTER line on the PO.
+      * Ready               — In-Full AND Accurate (set up to be a perfect order).
+
+    On-time risk is carried by **due-date urgency**: at-risk orders (not in-full)
+    due soonest are the fire. ``horizon`` (days) optionally limits to orders due
+    within N days (0 = all open). NOT actual OTIF (that needs a delivery feed).
+    Reuses WH resolution + current_stock_map + the standard zone map. Read-only;
+    never raises."""
+    import datetime as _dt
+    from .order_db import _IN_STATES, _IN_ZONES
+
+    out = {'ok': False, 'marketplace': marketplace, 'horizon': horizon,
+           'marketplaces': [],
+           'summary': {'orders': 0, 'in_full': 0, 'accurate': 0, 'ready': 0,
+                       'at_risk': 0, 'urgent': 0, 'in_full_pct': 0.0,
+                       'accurate_pct': 0.0, 'ready_pct': 0.0},
+           'by_channel': [], 'by_zone': [], 'at_risk_orders': []}
+
+    def pct(a, b):
+        return round(a / b * 100, 1) if b else 0.0
+
+    def nk(s):
+        return re.sub(r'[^a-z0-9]', '', str(s or '').lower())
+
+    try:
+        today = _dt.date.today()
+        _stock: dict[str, dict] = {}
+
+        def stock_for(wh):
+            if wh not in _stock:
+                _stock[wh] = inv.current_stock_map(wh)
+            return _stock[wh]
+
+        with _conn() as (cur, d):
+            ph = d['ph']
+            cur.execute("SELECT DISTINCT marketplace_label FROM order_headers "
+                        "WHERE marketplace_label IS NOT NULL AND marketplace_label<>'' "
+                        "ORDER BY marketplace_label")
+            out['marketplaces'] = [r[0] for r in cur.fetchall()]
+
+            cur.execute('SELECT del_location,ship_to,name,state FROM ship_to_mapping')
+            loc2st = {}
+            for dl, shp, nm, st in cur.fetchall():
+                if not st:
+                    continue
+                for kk in (dl, shp, nm):
+                    if kk:
+                        loc2st.setdefault(nk(kk), str(st).strip())
+
+            # OPEN orders only: exp_date >= today (+ optional due-horizon)
+            where = [f"hd.exp_date >= {ph}"]
+            args = [today.isoformat()]
+            if horizon and int(horizon) > 0:
+                where.append(f"hd.exp_date <= {ph}")
+                args.append((today + _dt.timedelta(days=int(horizon))).isoformat())
+            if marketplace:
+                where.append(f"hd.marketplace_label={ph}")
+                args.append(marketplace)
+            wsql = ' AND '.join(where)
+
+            cur.execute(
+                "SELECT l.po, l.item_no, l.qty, l.status, hh.warehouse, "
+                "hh.marketplace_label, hh.exp_date, hh.location "
+                "FROM order_lines_full l JOIN ("
+                "  SELECT hd.po, hd.run_id, hd.warehouse, hd.marketplace_label, "
+                "         hd.exp_date, hd.location FROM order_headers hd JOIN ("
+                "    SELECT po, MAX(run_ts) mx FROM order_headers GROUP BY po"
+                "  ) t ON hd.po=t.po AND hd.run_ts=t.mx "
+                f"  WHERE {wsql}"
+                ") hh ON l.po=hh.po AND l.run_id=hh.run_id", tuple(args))
+
+            orders: dict = {}
+            for po, item, qty, status, wh_raw, mp, exp, loc in cur.fetchall():
+                o = orders.get(po)
+                if o is None:
+                    o = orders[po] = {'mp': mp or 'Other',
+                                      'wh': inv.resolve_order_wh(wh_raw, mp, mp),
+                                      'exp': exp, 'loc': loc, 'lines': [],
+                                      'accurate': True}
+                o['lines'].append((str(item or '').strip(), float(qty or 0)))
+                if str(status or '') in ('MISMATCH', 'NOT_IN_MASTER'):
+                    o['accurate'] = False
+
+        ch, zo = {}, {}
+        S = out['summary']
+        at_risk = []
+        for po, o in orders.items():
+            stock = stock_for(o['wh'])
+            in_full = True
+            short_lines = 0
+            for item, q in o['lines']:
+                av = float(stock.get(item, 0) or 0)
+                if (av if av > 0 else 0) < q:
+                    in_full = False
+                    short_lines += 1
+            accurate = o['accurate']
+            ready = in_full and accurate
+            ed = o['exp'].date() if hasattr(o['exp'], 'date') else o['exp']
+            days_left = (ed - today).days if ed else None
+            urgent = (not in_full) and days_left is not None and days_left <= 2
+            stname = _IN_STATES.get((loc2st.get(nk(o['loc'])) or '').upper(),
+                                    loc2st.get(nk(o['loc'])))
+            zone = _IN_ZONES.get(stname, '(Unzoned)') if stname else '(Unzoned)'
+
+            S['orders'] += 1
+            S['in_full'] += in_full
+            S['accurate'] += accurate
+            S['ready'] += ready
+            if not ready:
+                S['at_risk'] += 1
+            if urgent:
+                S['urgent'] += 1
+            c = ch.setdefault(o['mp'], {'name': o['mp'], 'orders': 0, 'ready': 0})
+            c['orders'] += 1; c['ready'] += ready
+            z = zo.setdefault(zone, {'zone': zone, 'orders': 0, 'ready': 0})
+            z['orders'] += 1; z['ready'] += ready
+            if not ready:
+                at_risk.append({'po': po, 'mp': o['mp'], 'wh_short': inv.wh_short(o['wh']),
+                                'zone': zone, 'days_left': days_left,
+                                'exp': str(ed) if ed else '',
+                                'why': ('short' if not in_full else '') +
+                                       ('+exception' if not accurate else '') if (not in_full or not accurate) else '',
+                                'short_lines': short_lines, 'lines': len(o['lines'])})
+
+        N = S['orders']
+        S['in_full_pct'] = pct(S['in_full'], N)
+        S['accurate_pct'] = pct(S['accurate'], N)
+        S['ready_pct'] = pct(S['ready'], N)
+        for c in ch.values():
+            c['ready_pct'] = pct(c['ready'], c['orders'])
+        for z in zo.values():
+            z['ready_pct'] = pct(z['ready'], z['orders'])
+        at_risk.sort(key=lambda x: (x['days_left'] if x['days_left'] is not None else 9999))
+        out['by_channel'] = sorted(ch.values(), key=lambda x: -x['orders'])
+        out['by_zone'] = sorted(zo.values(), key=lambda x: -x['orders'])
+        out['at_risk_orders'] = at_risk[:50]
+        out['ok'] = True
+    except Exception as e:  # noqa: BLE001
+        out['error'] = f"{type(e).__name__}: {e}"
+    return out
+
+
 # ── Styled Excel export (same look as our other workbook downloads) ──────────
 
 def to_workbook(data: dict):
