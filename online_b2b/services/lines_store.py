@@ -347,6 +347,52 @@ def web_dedup(result, marketplace) -> list:
     return skipped
 
 
+import logging as _logging
+_dlog = _logging.getLogger(__name__)
+
+# Quick-commerce channels whose delivery window is DAYS, not months — used to
+# catch DD/MM↔MM/DD swapped source dates at ingest (e.g. a Zepto exp read as
+# 08-Nov instead of 11-Aug). Long-window channels (Nykaa ~60d, Reliance) are
+# deliberately NOT listed: their large gaps are legit, so we never "correct" them.
+_SHORT_TAT_CHANNELS = {'Zepto', 'Blinkit', 'Swiggy', 'BlinkMP'}
+_SHORT_TAT_MAX = 45
+
+
+def _swap_daymonth(d):
+    import datetime as _d
+    try:
+        return _d.date(d.year, d.day, d.month)
+    except (ValueError, TypeError, AttributeError):
+        return None
+
+
+def sane_po_exp(marketplace, po_d, exp_d):
+    """Guard against DD/MM↔MM/DD swapped source dates. Returns
+    ``(po_d, exp_d, note)`` — ``note`` is '' when unchanged, else the reason.
+    Corrects ONLY provably-wrong cases: (1) exp before po (impossible), or (2) a
+    SHORT-TAT channel gap that a day/month swap resolves into a sane window.
+    Never touches legit long-window channels (they're not in the short-TAT set),
+    so Nykaa's ~60-day terms are preserved."""
+    if not po_d or not exp_d:
+        return po_d, exp_d, ''
+    gap = (exp_d - po_d).days
+    if gap < 0:                                   # impossible → restore order
+        sp = _swap_daymonth(po_d)
+        if sp and 0 <= (exp_d - sp).days <= 90:
+            return sp, exp_d, f'po_date {po_d}→{sp} (exp<po; DD/MM swap)'
+        se = _swap_daymonth(exp_d)
+        if se and 0 <= (se - po_d).days <= 90:
+            return po_d, se, f'exp_date {exp_d}→{se} (exp<po; DD/MM swap)'
+    elif gap > _SHORT_TAT_MAX and marketplace in _SHORT_TAT_CHANNELS:
+        se = _swap_daymonth(exp_d)
+        if se and 0 <= (se - po_d).days <= _SHORT_TAT_MAX:
+            return po_d, se, f'exp_date {exp_d}→{se} ({marketplace} gap {gap}d; DD/MM swap)'
+        sp = _swap_daymonth(po_d)
+        if sp and 0 <= (exp_d - sp).days <= _SHORT_TAT_MAX:
+            return sp, exp_d, f'po_date {po_d}→{sp} ({marketplace} gap {gap}d; DD/MM swap)'
+    return po_d, exp_d, ''
+
+
 def record_run_headers(result, marketplace, warehouse, output_file='',
                        as_of=None) -> dict:
     """Web-owned replica of the engine's ``record_manual`` — write ``runs`` +
@@ -397,11 +443,16 @@ def record_run_headers(result, marketplace, warehouse, output_file='',
                  'order_type, items, qty, order_value, output_file')
         marks = ', '.join([ph] * 17)
         for o in rows:
+            # date-guard: catch DD/MM-swapped source dates before they land
+            pod, exd = _to_date(o['po_date']), _to_date(o['exp_date'])
+            pod, exd, _note = sane_po_exp(o['marketplace_label'], pod, exd)
+            if _note:
+                _dlog.warning("date-guard: PO %s %s", o['po'], _note)
             cur.execute(
                 f"INSERT INTO order_headers ({hcols}) VALUES ({marks})",
                 (run_id, run_ts, run_ts, 'MANUAL', o.get('segment', ORDER_SEGMENT),
                  o['marketplace'], o['marketplace_label'], o['po'], o['location'],
-                 o['warehouse'], _to_date(o['po_date']), _to_date(o['exp_date']),
+                 o['warehouse'], pod, exd,
                  o['order_type'], o['items'], o['qty'], o['order_value'],
                  o['output_file']))
         cur.connection.commit()
