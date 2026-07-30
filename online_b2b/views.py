@@ -644,12 +644,19 @@ class TrackerView(LoginRequiredMixin, TemplateView):
             'q': (request.GET.get('q') or '').strip(),
         }
 
+    def _ctx(self, request):
+        f = self._filters(request)
+        return {'t': order_db.consolidated_tracker(
+            f['segment'], f['marketplace'], f['warehouse'], f['q']), 'f': f}
+
+    def get(self, request, *args, **kwargs):
+        if request.GET.get('partial'):        # AJAX: KPIs + table only, no reload
+            return render(request, 'online_b2b/_tracker_body.html', self._ctx(request))
+        return super().get(request, *args, **kwargs)
+
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        f = self._filters(self.request)
-        ctx['t'] = order_db.consolidated_tracker(
-            f['segment'], f['marketplace'], f['warehouse'], f['q'])
-        ctx['f'] = f
+        ctx.update(self._ctx(self.request))
         return ctx
 
 

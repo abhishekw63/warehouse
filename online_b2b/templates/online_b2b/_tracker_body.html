@@ -1,0 +1,48 @@
+{% load static b2b_extras %}
+{% comment %} Tracker body (KPIs + table) — re-fetched via ?partial=1 on filter
+change so the page never reloads. {% endcomment %}
+<div class="trk-kpis">
+  <div class="trk-kpi k1"><div class="k-ic">▦</div><div><div class="k-n">{{ t.count|compact }}</div><div class="k-l">Orders</div></div></div>
+  <div class="trk-kpi k2"><div class="k-ic">∑</div><div><div class="k-n">{{ t.total_qty|compact }}</div><div class="k-l">Total Qty</div></div></div>
+  <div class="trk-kpi k3"><div class="k-ic">₹</div><div><div class="k-n">{{ t.total_value|inr_short }}</div><div class="k-l">Order Value</div></div></div>
+</div>
+
+{% if t.rows %}
+<div class="trk-card">
+  <div class="trk-scroll">
+  <table class="trk-tbl sortable">
+    <thead><tr>
+      <th class="fz">Dept</th><th class="fz">WH</th><th class="fz">Marketplace</th><th class="fz srt" data-k="po">PO ⇅</th>
+      <th>External Doc</th><th>Location</th>
+      <th class="srt" data-k="pod">PO Date ⇅</th><th class="srt" data-k="exp">Exp Date ⇅</th>
+      <th class="r srt" data-k="qty">Qty ⇅</th><th class="r srt" data-k="val">Value ⇅</th>
+      <th>Pincode</th><th>Zone</th>
+      <th class="srt on" data-k="up" data-dir="desc">Uploaded ⇅</th><th>OMT</th>
+    </tr></thead>
+    <tbody>{% for r in t.rows %}
+      <tr class="{% if r.source == 'manual' %}trk-manual{% endif %}">
+        <td class="fz"><span class="dept-b {% if r.dept == 'Offline' %}off{% else %}on{% endif %}"><i></i>{{ r.dept }}</span>{% if r.source == 'manual' %}<span class="trk-mtag" title="manually added">✎</span>{% endif %}</td>
+        <td class="fz mono">{{ r.wh|default:'—' }}</td>
+        <td class="fz trk-mp" title="{{ r.marketplace }}">{{ r.marketplace|default:'—' }}</td>
+        <td class="fz mono strong" data-k="po">{{ r.po }}</td>
+        <td class="mono">{{ r.external_doc|default:'—' }}</td>
+        <td class="trk-loc" title="{{ r.location }}">{{ r.location|default:'—' }}</td>
+        <td class="nowrap" data-k="pod" data-v="{{ r.po_date|date:'Y-m-d' }}">{{ r.po_date|date:'d M Y'|default:'—' }}</td>
+        <td class="nowrap" data-k="exp" data-v="{{ r.exp_date|date:'Y-m-d' }}">{{ r.exp_date|date:'d M Y'|default:'—' }}</td>
+        <td class="r" data-k="qty" data-v="{{ r.qty }}">{{ r.qty|compact }}</td>
+        <td class="r val" data-k="val" data-v="{{ r.order_value }}">{{ r.order_value|inr_short }}</td>
+        <td class="mono">{{ r.pincode|default:'—' }}</td>
+        <td>{% if r.zone %}<span class="zn zn-{{ r.zone|lower }}">{{ r.zone }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td class="nowrap up" data-k="up" data-v="{{ r.uploaded|date:'Y-m-d H:i:s' }}">{{ r.uploaded|date:'d M y'|default:'—' }}{% if r.uploaded %}<span class="up-t">{{ r.uploaded|date:'H:i' }}</span>{% endif %}</td>
+        <td class="trk-omt">{% if r.source == 'manual' %}<span title="{{ r.omt }}">{{ r.omt|default:'' }}</span>
+          <form method="post" action="{% url 'b2b_tracker_delete' r.id %}" class="trk-del" onsubmit="return confirm('Delete this manual row?');">{% csrf_token %}<button type="submit" title="delete manual row">×</button></form>
+          {% else %}<span class="muted">—</span>{% endif %}</td>
+      </tr>
+    {% endfor %}</tbody>
+  </table>
+  </div>
+</div>
+<p class="trk-foot"><b>{{ t.rows|length }}</b> orders{% if t.count >= 8000 %} <span class="cap">(capped at 8,000 — narrow the filter)</span>{% endif %} · Pincode &amp; Zone resolved from the ship-to master.</p>
+{% else %}
+  <div class="trk-empty">No orders match {% if f.seg_label or f.marketplace or f.warehouse or f.q %}these filters{% else %}yet{% endif %}.</div>
+{% endif %}

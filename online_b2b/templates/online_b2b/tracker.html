@@ -18,7 +18,7 @@
     </div>
     <div class="trk-hero-act">
       <button type="button" class="trk-btn primary" id="trkAddBtn">＋ Add PO manually</button>
-      <a class="trk-btn ghost" href="{% url 'b2b_tracker_export' %}?segment={{ f.seg_label|urlencode }}&marketplace={{ f.marketplace|urlencode }}&warehouse={{ f.warehouse|urlencode }}&q={{ f.q|urlencode }}">⬇ Export</a>
+      <a class="trk-btn ghost" id="trkExport" href="{% url 'b2b_tracker_export' %}?segment={{ f.seg_label|urlencode }}&marketplace={{ f.marketplace|urlencode }}&warehouse={{ f.warehouse|urlencode }}&q={{ f.q|urlencode }}">⬇ Export</a>
     </div>
   </div>
 
@@ -47,78 +47,35 @@
     </div>
   </form>
 
-  <!-- KPI strip -->
-  <div class="trk-kpis">
-    <div class="trk-kpi k1"><div class="k-ic">▦</div><div><div class="k-n">{{ t.count|compact }}</div><div class="k-l">Orders</div></div></div>
-    <div class="trk-kpi k2"><div class="k-ic">∑</div><div><div class="k-n">{{ t.total_qty|compact }}</div><div class="k-l">Total Qty</div></div></div>
-    <div class="trk-kpi k3"><div class="k-ic">₹</div><div><div class="k-n">{{ t.total_value|inr_short }}</div><div class="k-l">Order Value</div></div></div>
-  </div>
-
-  <!-- filter bar -->
-  <form class="trk-filter" method="get">
-    <select name="segment" onchange="this.form.submit()">
+  <!-- filter bar (AJAX — no reload) -->
+  <form class="trk-filter" id="trkFilter" onsubmit="return false;">
+    <select name="segment">
       <option value="">All departments</option>
       {% for s in t.segments %}<option value="{{ s }}" {% if s == f.seg_label %}selected{% endif %}>{{ s }}</option>{% endfor %}
     </select>
-    <select name="marketplace" onchange="this.form.submit()">
+    <select name="marketplace">
       <option value="">All marketplaces</option>
       {% for m in t.marketplaces %}<option value="{{ m }}" {% if m == f.marketplace %}selected{% endif %}>{{ m }}</option>{% endfor %}
     </select>
-    <select name="warehouse" onchange="this.form.submit()">
+    <select name="warehouse">
       <option value="">All warehouses</option>
       {% for w in t.warehouses %}<option value="{{ w }}" {% if w == f.warehouse %}selected{% endif %}>{{ w }}</option>{% endfor %}
     </select>
     <input type="search" name="q" value="{{ f.q }}" placeholder="Search PO · ext doc · location…">
     <button type="submit" class="trk-btn primary sm">Search</button>
-    {% if f.seg_label or f.marketplace or f.warehouse or f.q %}<a class="trk-btn ghost sm" href="{% url 'b2b_tracker' %}">Clear</a>{% endif %}
+    <a class="trk-btn ghost sm" id="trkClear" href="{% url 'b2b_tracker' %}"{% if not f.seg_label and not f.marketplace and not f.warehouse and not f.q %} hidden{% endif %}>Clear</a>
     <input type="search" id="trkQuick" placeholder="⚡ filter loaded rows…" autocomplete="off">
   </form>
 
-  {% if t.rows %}
-  <div class="trk-card">
-    <div class="trk-scroll">
-    <table class="trk-tbl sortable">
-      <thead><tr>
-        <th class="fz">Dept</th><th class="fz">WH</th><th class="fz">Marketplace</th><th class="fz srt" data-k="po">PO ⇅</th>
-        <th>External Doc</th><th>Location</th>
-        <th class="srt" data-k="pod">PO Date ⇅</th><th class="srt" data-k="exp">Exp Date ⇅</th>
-        <th class="r srt" data-k="qty">Qty ⇅</th><th class="r srt" data-k="val">Value ⇅</th>
-        <th>Pincode</th><th>Zone</th>
-        <th class="srt on" data-k="up" data-dir="desc">Uploaded ⇅</th><th>OMT</th>
-      </tr></thead>
-      <tbody>{% for r in t.rows %}
-        <tr class="{% if r.source == 'manual' %}trk-manual{% endif %}">
-          <td class="fz"><span class="dept-b {% if r.dept == 'Offline' %}off{% else %}on{% endif %}"><i></i>{{ r.dept }}</span>{% if r.source == 'manual' %}<span class="trk-mtag" title="manually added">✎</span>{% endif %}</td>
-          <td class="fz mono">{{ r.wh|default:'—' }}</td>
-          <td class="fz trk-mp" title="{{ r.marketplace }}">{{ r.marketplace|default:'—' }}</td>
-          <td class="fz mono strong" data-k="po">{{ r.po }}</td>
-          <td class="mono">{{ r.external_doc|default:'—' }}</td>
-          <td class="trk-loc" title="{{ r.location }}">{{ r.location|default:'—' }}</td>
-          <td class="nowrap" data-k="pod" data-v="{{ r.po_date|date:'Y-m-d' }}">{{ r.po_date|date:'d M Y'|default:'—' }}</td>
-          <td class="nowrap" data-k="exp" data-v="{{ r.exp_date|date:'Y-m-d' }}">{{ r.exp_date|date:'d M Y'|default:'—' }}</td>
-          <td class="r" data-k="qty" data-v="{{ r.qty }}">{{ r.qty|compact }}</td>
-          <td class="r val" data-k="val" data-v="{{ r.order_value }}">{{ r.order_value|inr_short }}</td>
-          <td class="mono">{{ r.pincode|default:'—' }}</td>
-          <td>{% if r.zone %}<span class="zn zn-{{ r.zone|lower }}">{{ r.zone }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
-          <td class="nowrap up" data-k="up" data-v="{{ r.uploaded|date:'Y-m-d H:i:s' }}">{{ r.uploaded|date:'d M y'|default:'—' }}{% if r.uploaded %}<span class="up-t">{{ r.uploaded|date:'H:i' }}</span>{% endif %}</td>
-          <td class="trk-omt">{% if r.source == 'manual' %}<span title="{{ r.omt }}">{{ r.omt|default:'' }}</span>
-            <form method="post" action="{% url 'b2b_tracker_delete' r.id %}" class="trk-del" onsubmit="return confirm('Delete this manual row?');">{% csrf_token %}<button type="submit" title="delete manual row">×</button></form>
-            {% else %}<span class="muted">—</span>{% endif %}</td>
-        </tr>
-      {% endfor %}</tbody>
-    </table>
-    </div>
+  <div class="trk-bodywrap">
+    <div id="trkLoader" class="trk-loader" hidden><span class="trk-spin"></span> Loading orders…</div>
+    <div id="trk-body">{% include 'online_b2b/_tracker_body.html' %}</div>
   </div>
-  <p class="trk-foot"><b>{{ t.rows|length }}</b> orders{% if t.count >= 8000 %} <span class="cap">(capped at 8,000 — narrow the filter)</span>{% endif %} · Pincode &amp; Zone resolved from the ship-to master.</p>
-  {% else %}
-    <div class="trk-empty">No orders match {% if f.seg_label or f.marketplace or f.warehouse or f.q %}these filters{% else %}yet{% endif %}.</div>
-  {% endif %}
 </div>
 
 <style>
   :root{--trk-hd1:#1b2350;--trk-hd2:#111634;}
   .trk-wrap{max-width:min(2200px,98vw);}
-  /* hero */
   .trk-hero{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:2px 0 18px;}
   .trk-hero h1{font-size:24px;font-weight:800;margin:0;letter-spacing:-.02em;}
   .trk-hero p{margin:5px 0 0;font-size:13px;color:var(--muted);}
@@ -128,7 +85,6 @@
   .trk-btn.primary{background:linear-gradient(180deg,#4f46e5,#4338ca);color:#fff;border-color:#4338ca;box-shadow:0 4px 12px -5px rgba(79,70,229,.6);}
   .trk-btn.primary:hover{filter:brightness(1.06);}
   .trk-btn.ghost:hover{border-color:var(--accent);color:var(--accent);}
-  /* KPIs */
   .trk-kpis{display:flex;gap:14px;margin:0 0 16px;flex-wrap:wrap;}
   .trk-kpi{display:flex;align-items:center;gap:14px;border:1px solid var(--border);border-radius:16px;background:var(--surface);padding:14px 22px 14px 16px;box-shadow:0 4px 18px -12px rgba(15,23,42,.35);min-width:180px;position:relative;overflow:hidden;}
   .trk-kpi::before{content:'';position:absolute;left:0;top:0;bottom:0;width:5px;}
@@ -137,17 +93,22 @@
   .trk-kpi.k1 .k-ic{background:linear-gradient(135deg,#6366f1,#4f46e5);} .trk-kpi.k2 .k-ic{background:linear-gradient(135deg,#38bdf8,#0ea5e9);} .trk-kpi.k3 .k-ic{background:linear-gradient(135deg,#10b981,#0a9d6e);}
   .trk-kpi .k-n{font-size:23px;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums;color:var(--text);}
   .trk-kpi .k-l{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:3px;}
-  /* filter */
   .trk-filter{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 14px;padding:12px 14px;border:1px solid var(--border);border-radius:14px;background:var(--surface-2);}
   .trk-filter select,.trk-filter input[type=search]{padding:8px 11px;border:1px solid var(--border);border-radius:9px;font-size:12.5px;background:#fff;color:var(--text);font-family:inherit;}
   .trk-filter input[name=q]{min-width:230px;} #trkQuick{margin-left:auto;min-width:210px;border-color:color-mix(in srgb,var(--accent) 40%,var(--border));}
-  /* card + scroll */
+  /* AJAX body + loader */
+  .trk-bodywrap{position:relative;min-height:120px;}
+  #trk-body{transition:opacity .18s ease;} #trk-body.fade{opacity:.35;}
+  .trk-loader{position:absolute;inset:0;z-index:6;display:flex;align-items:center;justify-content:center;gap:12px;
+    background:color-mix(in srgb,var(--surface) 68%,transparent);backdrop-filter:blur(2px);border-radius:18px;
+    font-size:13px;font-weight:700;color:var(--muted);animation:trkfade .15s ease both;}
+  .trk-spin{width:26px;height:26px;border-radius:50%;border:3px solid color-mix(in srgb,var(--accent) 22%,transparent);border-top-color:var(--accent);animation:trkspin .8s linear infinite;}
+  @keyframes trkspin{to{transform:rotate(360deg);}}
+  @media (prefers-reduced-motion: reduce){.trk-spin{animation-duration:2.4s;} #trk-body{transition:none;}}
   .trk-card{border:1px solid var(--border);border-radius:18px;overflow:hidden;box-shadow:0 10px 34px -16px rgba(15,23,42,.4);background:var(--surface);}
   .trk-scroll{max-height:74vh;overflow:auto;}
-  /* table */
   table.trk-tbl{width:100%;border-collapse:separate;border-spacing:0;font-size:12.6px;}
-  table.trk-tbl thead th{position:sticky;top:0;z-index:2;background:linear-gradient(180deg,var(--trk-hd1),var(--trk-hd2));color:#c9cffa;
-    font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;padding:13px 14px;white-space:nowrap;text-align:left;}
+  table.trk-tbl thead th{position:sticky;top:0;z-index:2;background:linear-gradient(180deg,var(--trk-hd1),var(--trk-hd2));color:#c9cffa;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;padding:13px 14px;white-space:nowrap;text-align:left;}
   table.trk-tbl thead th.r{text-align:right;}
   table.trk-tbl thead th.srt{cursor:pointer;user-select:none;} table.trk-tbl thead th.srt:hover,table.trk-tbl thead th.srt.on{color:#fff;}
   table.trk-tbl tbody td{padding:9px 14px;border-bottom:1px solid var(--border-2);white-space:nowrap;vertical-align:middle;background:var(--surface);}
@@ -158,14 +119,12 @@
   .trk-tbl td.r{text-align:right;font-variant-numeric:tabular-nums;} .trk-tbl td.val{font-weight:800;color:var(--text);}
   .trk-tbl .trk-loc{max-width:230px;overflow:hidden;text-overflow:ellipsis;color:var(--text-2);}
   .trk-tbl .up{color:var(--text-2);} .up-t{display:block;font-size:10px;color:var(--muted);line-height:1;}
-  /* frozen identity columns */
   .trk-tbl th.fz,.trk-tbl td.fz{position:sticky;z-index:3;}
   .trk-tbl thead th.fz{z-index:5;}
   .trk-tbl th.fz:nth-child(1),.trk-tbl td.fz:nth-child(1){left:0;width:108px;min-width:108px;}
   .trk-tbl th.fz:nth-child(2),.trk-tbl td.fz:nth-child(2){left:108px;width:56px;min-width:56px;}
   .trk-tbl th.fz:nth-child(3),.trk-tbl td.fz:nth-child(3){left:164px;width:118px;min-width:118px;max-width:118px;overflow:hidden;text-overflow:ellipsis;}
   .trk-tbl th.fz:nth-child(4),.trk-tbl td.fz:nth-child(4){left:282px;width:104px;min-width:104px;box-shadow:6px 0 8px -6px rgba(15,23,42,.28);}
-  /* badges */
   .dept-b{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:800;padding:3px 9px;border-radius:20px;white-space:nowrap;}
   .dept-b i{width:6px;height:6px;border-radius:50%;display:inline-block;}
   .dept-b.on{color:#3730a3;background:color-mix(in srgb,#4f46e5 13%,transparent);} .dept-b.on i{background:#4f46e5;}
@@ -176,7 +135,6 @@
   .zn-north,.zn-north-1,.zn-north-2{color:#3730a3;background:color-mix(in srgb,#4f46e5 13%,transparent);}
   .zn-east{color:#be123c;background:color-mix(in srgb,#e11d48 13%,transparent);}
   .zn-central{color:#0369a1;background:color-mix(in srgb,#0ea5e9 15%,transparent);}
-  /* manual rows */
   tr.trk-manual td{background:color-mix(in srgb,#f59e0b 9%,var(--surface))!important;}
   tr.trk-manual:hover td{background:color-mix(in srgb,#f59e0b 15%,var(--surface))!important;}
   .trk-mtag{margin-left:5px;font-size:10px;color:#b45309;}
@@ -184,7 +142,6 @@
   .trk-del button:hover{background:color-mix(in srgb,#dc2626 12%,transparent);}
   .trk-foot{font-size:12px;color:var(--muted);margin-top:11px;} .trk-foot .cap{color:#b45309;}
   .trk-empty{text-align:center;color:var(--muted);padding:60px 20px;border:1px dashed var(--border);border-radius:16px;background:var(--surface);}
-  /* add panel */
   .trk-add{border:1px solid color-mix(in srgb,var(--accent) 30%,var(--border));border-radius:16px;background:color-mix(in srgb,var(--accent) 4%,var(--surface));padding:16px 18px;margin:0 0 16px;box-shadow:0 4px 16px -8px rgba(79,70,229,.35);animation:trkfade .2s ease both;}
   @keyframes trkfade{from{opacity:0;transform:translateY(-5px);}to{opacity:1;transform:none;}}
   .trk-add-hd{font-weight:800;font-size:14px;margin-bottom:12px;} .trk-add-hd span{font-weight:600;color:var(--muted);font-size:12px;}
@@ -198,22 +155,59 @@
 </style>
 <script>
 (function () {
-  var addBtn = document.getElementById('trkAddBtn'), addForm = document.getElementById('trkAdd'),
-      addCancel = document.getElementById('trkAddCancel');
-  if (addBtn && addForm) addBtn.addEventListener('click', function () {
-    addForm.hidden = !addForm.hidden;
-    if (!addForm.hidden) { var f = addForm.querySelector('[name=po]'); if (f) f.focus(); }
-  });
-  if (addCancel) addCancel.addEventListener('click', function () { addForm.hidden = true; });
+  var body = document.getElementById('trk-body');
+  var loader = document.getElementById('trkLoader');
+  var filter = document.getElementById('trkFilter');
+  var clearBtn = document.getElementById('trkClear');
+  var exportBtn = document.getElementById('trkExport');
+  var base = location.pathname;
 
-  var q = document.getElementById('trkQuick');
-  var rows = Array.prototype.slice.call(document.querySelectorAll('.trk-tbl tbody tr'));
-  if (q) q.addEventListener('input', function () {
-    var v = q.value.trim().toLowerCase();
-    rows.forEach(function (tr) { tr.style.display = (!v || tr.textContent.toLowerCase().indexOf(v) >= 0) ? '' : 'none'; });
+  function params() {
+    var p = new URLSearchParams();
+    ['segment', 'marketplace', 'warehouse', 'q'].forEach(function (n) {
+      var el = filter.querySelector('[name="' + n + '"]');
+      if (el && el.value) p.set(n, el.value);
+    });
+    return p;
+  }
+
+  function loadBody() {
+    var p = params();
+    var lt = setTimeout(function () { if (loader) loader.hidden = false; }, 180);  // loader only if slow
+    body.classList.add('fade');
+    fetch(base + '?partial=1&' + p.toString(), { headers: { 'X-Requested-With': 'fetch' } })
+      .then(function (r) { return r.text(); })
+      .then(function (html) {
+        clearTimeout(lt); if (loader) loader.hidden = true;
+        body.innerHTML = html; body.classList.remove('fade');
+        initTable(); syncUI(p);
+        history.replaceState(null, '', p.toString() ? base + '?' + p.toString() : base);
+      })
+      .catch(function () { clearTimeout(lt); if (loader) loader.hidden = true; body.classList.remove('fade'); });
+  }
+
+  function syncUI(p) {
+    var any = ['segment', 'marketplace', 'warehouse', 'q'].some(function (n) { return p.get(n); });
+    if (clearBtn) clearBtn.hidden = !any;
+    if (exportBtn) exportBtn.href = base + 'export/?' + p.toString();
+  }
+
+  // filter events (no reload)
+  filter.querySelectorAll('select').forEach(function (s) { s.addEventListener('change', loadBody); });
+  filter.addEventListener('submit', function (e) { e.preventDefault(); loadBody(); });
+  var qEl = filter.querySelector('[name=q]'), qT;
+  if (qEl) qEl.addEventListener('input', function () { clearTimeout(qT); qT = setTimeout(loadBody, 400); });
+  if (clearBtn) clearBtn.addEventListener('click', function (e) {
+    e.preventDefault();
+    filter.querySelectorAll('select').forEach(function (s) { s.value = ''; });
+    if (qEl) qEl.value = '';
+    loadBody();
   });
-  document.querySelectorAll('table.sortable').forEach(function (table) {
-    table.querySelectorAll('th.srt').forEach(function (th) {
+
+  // table init (re-run after every AJAX swap): sort + quick-filter
+  function initTable() {
+    var table = body.querySelector('table.sortable');
+    if (table) table.querySelectorAll('th.srt').forEach(function (th) {
       th.addEventListener('click', function () {
         var k = th.getAttribute('data-k'), asc = th.getAttribute('data-dir') !== 'asc';
         table.querySelectorAll('th.srt').forEach(function (x) { x.removeAttribute('data-dir'); x.classList.remove('on'); });
@@ -229,7 +223,27 @@
         }).forEach(function (r) { tb.appendChild(r); });
       });
     });
+  }
+
+  // quick client-side filter over loaded rows (re-queries fresh each keypress)
+  var quick = document.getElementById('trkQuick');
+  if (quick) quick.addEventListener('input', function () {
+    var v = quick.value.trim().toLowerCase();
+    body.querySelectorAll('.trk-tbl tbody tr').forEach(function (tr) {
+      tr.style.display = (!v || tr.textContent.toLowerCase().indexOf(v) >= 0) ? '' : 'none';
+    });
   });
+
+  // add-PO panel toggle
+  var addBtn = document.getElementById('trkAddBtn'), addForm = document.getElementById('trkAdd'),
+      addCancel = document.getElementById('trkAddCancel');
+  if (addBtn && addForm) addBtn.addEventListener('click', function () {
+    addForm.hidden = !addForm.hidden;
+    if (!addForm.hidden) { var f = addForm.querySelector('[name=po]'); if (f) f.focus(); }
+  });
+  if (addCancel) addCancel.addEventListener('click', function () { addForm.hidden = true; });
+
+  initTable();
 })();
 </script>
 {% endblock %}
