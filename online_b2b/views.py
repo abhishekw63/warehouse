@@ -515,6 +515,15 @@ def _fulfil_ctx(request):
             'sku_from': sf, 'sku_to': st, 'sku_mp': smp}
 
 
+def _exc_ctx(request):
+    """Exceptions & Quality tab context — clean rate, mismatches, exceptions by
+    marketplace + type. Reuses the SKU filter (marketplace + upload-date range;
+    defaults to last 30 days)."""
+    sf, st, smp = _sku_filters(request)
+    return {'exc': order_db.exceptions_quality(sf, st, smp),
+            'sku_from': sf, 'sku_to': st, 'sku_mp': smp}
+
+
 class AnalyticsView(LoginRequiredMixin, TemplateView):
     """Management analytics — two AJAX tabs under one page, each with its own
     filter (no page refresh):
@@ -533,6 +542,8 @@ class AnalyticsView(LoginRequiredMixin, TemplateView):
             return render(request, 'online_b2b/_analytics_trends.html', _trends_ctx(request))
         if partial == 'fulfil':
             return render(request, 'online_b2b/_analytics_fulfil.html', _fulfil_ctx(request))
+        if partial == 'exc':
+            return render(request, 'online_b2b/_analytics_exc.html', _exc_ctx(request))
         return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):

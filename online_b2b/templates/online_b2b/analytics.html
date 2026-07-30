@@ -27,6 +27,7 @@
     <button type="button" class="an-tab" data-tab="sku" role="tab">SKU Demand</button>
     <button type="button" class="an-tab" data-tab="trends" role="tab">Trends &amp; Momentum</button>
     <button type="button" class="an-tab" data-tab="fulfil" role="tab">Fulfilment Risk</button>
+    <button type="button" class="an-tab" data-tab="exc" role="tab">Exceptions &amp; Quality</button>
   </div>
 
   <div class="an-pane" id="pane-daily" data-loaded="1" role="tabpanel">
@@ -40,6 +41,9 @@
   </div>
   <div class="an-pane" id="pane-fulfil" data-loaded="0" role="tabpanel" hidden>
     <div class="an-loading">Loading fulfilment risk…</div>
+  </div>
+  <div class="an-pane" id="pane-exc" data-loaded="0" role="tabpanel" hidden>
+    <div class="an-loading">Loading exceptions…</div>
   </div>
 
 </div>
@@ -171,6 +175,36 @@
   .fr-st.oos{color:#c0392b;background:color-mix(in srgb,#ef4444 13%,transparent);}
   .fr-st.short{color:#b45309;background:color-mix(in srgb,#f59e0b 16%,transparent);}
   .fr-st.ok{color:#0a7d54;background:color-mix(in srgb,#10b981 14%,transparent);}
+  /* ── Exceptions & Quality tab ── */
+  .ex-d{display:inline-block;font-size:12px;font-weight:800;margin-left:6px;vertical-align:middle;}
+  .ex-d.up{color:#0a7d54;} .ex-d.down{color:#c0392b;}
+  .ex-cols{display:grid;grid-template-columns:2fr 1fr;gap:18px;align-items:start;}
+  @media(max-width:900px){.ex-cols{grid-template-columns:1fr;}}
+  /* this table must NOT inherit the SKU table's fixed column widths (which put
+     the marketplace name in a 4% rank column and truncated it) */
+  table.ex-tbl{table-layout:auto;}
+  table.ex-tbl th:nth-child(1),table.ex-tbl td:nth-child(1){width:auto;text-align:left;min-width:160px;overflow:visible;text-overflow:clip;}
+  table.ex-tbl th:nth-child(2),table.ex-tbl td:nth-child(2){width:auto;text-align:right;}
+  table.ex-tbl th:nth-child(3),table.ex-tbl td:nth-child(3){width:156px;text-align:right;}
+  table.ex-tbl th:nth-child(4),table.ex-tbl td:nth-child(4){width:auto;text-align:right;}
+  table.ex-tbl th:nth-child(5),table.ex-tbl td:nth-child(5){width:auto;text-align:right;}
+  table.ex-tbl th:nth-child(6),table.ex-tbl td:nth-child(6){width:auto;text-align:right;}
+  table.ex-tbl th:nth-child(7),table.ex-tbl td:nth-child(7){width:auto;text-align:right;}
+  table.ex-tbl td.bad{color:#c0392b;font-weight:700;}
+  table.ex-tbl .warn{color:#b45309;}
+  table.ex-tbl td.barcell .bar.bbad{background:linear-gradient(90deg,color-mix(in srgb,#f59e0b 45%,transparent),color-mix(in srgb,#ef4444 70%,transparent));}
+  /* tiny-sample MPs — de-emphasised, sorted to the bottom */
+  table.ex-tbl tr.ex-low td{color:var(--muted);}
+  table.ex-tbl tr.ex-low td.bad,table.ex-tbl tr.ex-low .warn{color:var(--muted);font-weight:600;}
+  table.ex-tbl tr.ex-low td.barcell .bar{background:color-mix(in srgb,var(--muted) 35%,transparent);}
+  .ex-ns{display:inline-block;font-size:9.5px;font-weight:800;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:0 5px;margin-left:5px;vertical-align:middle;}
+  .ex-clean{font-weight:700;color:var(--text-2);} .ex-clean.full{color:#0a7d54;}
+  .ex-typecard{padding:14px 16px;display:flex;flex-direction:column;gap:12px;}
+  .ex-type{display:flex;flex-direction:column;gap:5px;}
+  .ex-trow{display:flex;align-items:baseline;justify-content:space-between;font-size:12.5px;}
+  .ex-tname{color:var(--text);font-weight:600;} .ex-trow b{font-variant-numeric:tabular-nums;}
+  .ex-tbar{height:6px;border-radius:6px;background:color-mix(in srgb,var(--border) 55%,transparent);overflow:hidden;}
+  .ex-tbar span{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,#6366f1,#4f46e5);}
 </style>
 
 <script src="{% static 'online_b2b/vendor/apexcharts.min.js' %}"></script>
@@ -200,6 +234,7 @@
     var s = null;
     if (activeTab === 'sku') s = document.querySelector('#pane-sku .an-sku');
     else if (activeTab === 'fulfil') s = document.querySelector('#pane-fulfil .an-fulfil');
+    else if (activeTab === 'exc') s = document.querySelector('#pane-exc .an-exc');
     if (s) {
       if (s.dataset.mp) p.set('sku_mp', s.dataset.mp);
       if (s.dataset.from) p.set('sku_from', s.dataset.from);
@@ -434,6 +469,45 @@
     });
   }
 
+  // ══ EXCEPTIONS & QUALITY tab ══
+  function loadExc(params) {
+    var pane = document.getElementById('pane-exc');
+    var lid = showLoader(pane, [
+      'Reading uploaded PO lines…',
+      'Flagging price mismatches…',
+      'Grouping exceptions by marketplace…',
+      'Comparing clean rate vs the previous window…'
+    ], 'Scanning line-level status across the selected uploads.');
+    fetch(url(Object.assign({ partial: 'exc' }, params)), { headers: { 'X-Requested-With': 'fetch' } })
+      .then(function (r) { return r.text(); })
+      .then(function (html) { clearInterval(lid); pane.innerHTML = html; pane.dataset.loaded = '1'; wireExc(); syncURL(); })
+      .catch(function () { clearInterval(lid); pane.innerHTML = '<div class="an-loading">Could not load exceptions.</div>'; });
+  }
+
+  function wireExc() {
+    var root = document.querySelector('#pane-exc .an-exc');
+    if (!root) return;
+    wireSort(root);
+    var form = root.querySelector('[data-exc-filter]');
+    function apply() {
+      loadExc({
+        sku_mp: form.querySelector('[name=sku_mp]').value,
+        sku_from: form.querySelector('[name=sku_from]').value,
+        sku_to: form.querySelector('[name=sku_to]').value
+      });
+    }
+    if (form) form.addEventListener('submit', function (e) { e.preventDefault(); apply(); });
+    root.querySelectorAll('[data-exc-preset]').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.preventDefault();
+        var today = new Date().toISOString().slice(0, 10);
+        var mp = form.querySelector('[name=sku_mp]').value;
+        if (b.getAttribute('data-exc-preset') === 'today') loadExc({ sku_mp: mp, sku_from: today, sku_to: today });
+        else loadExc({ sku_mp: mp, sku_from: '', sku_to: '' });
+      });
+    });
+  }
+
   // ══ tabs ══
   function showTab(name) {
     activeTab = name;
@@ -446,6 +520,8 @@
       loadTrends({ days: q.get('days') || 30 });
     } else if (name === 'fulfil' && document.getElementById('pane-fulfil').dataset.loaded === '0') {
       loadFulfil({ sku_mp: q.get('sku_mp') || '', sku_from: q.get('sku_from') || undefined, sku_to: q.get('sku_to') || undefined });
+    } else if (name === 'exc' && document.getElementById('pane-exc').dataset.loaded === '0') {
+      loadExc({ sku_mp: q.get('sku_mp') || '', sku_from: q.get('sku_from') || undefined, sku_to: q.get('sku_to') || undefined });
     } else {
       syncURL();
     }
@@ -459,7 +535,7 @@
     wireDaily();                                  // daily was server-rendered
     var q = new URLSearchParams(location.search);
     var t = q.get('tab');
-    if (t === 'sku' || t === 'trends' || t === 'fulfil') showTab(t);  // deep-link / refresh into a tab
+    if (t === 'sku' || t === 'trends' || t === 'fulfil' || t === 'exc') showTab(t);  // deep-link / refresh
     else syncURL();
   }
   if (document.readyState !== 'loading') boot();

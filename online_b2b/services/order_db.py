@@ -371,6 +371,101 @@ def intake_trends(days: int = 30) -> dict:
     return out
 
 
+def exceptions_quality(date_from='', date_to='', marketplace='') -> dict:
+    """Data-quality lens over uploaded PO lines in the window: clean rate,
+    mismatches (price), not-in-master, and processed exceptions (deal SKUs /
+    price overrides / EAN remaps) — overall, per marketplace (worst first), and
+    by exception type. Includes the clean-rate vs the previous equal window as a
+    trend signal. Read-only; never raises."""
+    out = {'ok': False, 'date_from': date_from, 'date_to': date_to,
+           'marketplace': marketplace, 'marketplaces': [],
+           'overall': {'lines': 0, 'mismatch': 0, 'not_in_master': 0,
+                       'exceptions': 0, 'issues': 0, 'clean_pct': 0.0, 'issue_pct': 0.0},
+           'by_marketplace': [], 'by_exception': [],
+           'clean_prev': None, 'clean_delta': None}
+    try:
+        with _conn() as (cur, d):
+            ph = d['ph']
+            cur.execute("SELECT DISTINCT marketplace FROM order_lines_full "
+                        "WHERE marketplace IS NOT NULL AND marketplace<>'' "
+                        "ORDER BY marketplace")
+            out['marketplaces'] = [r[0] for r in cur.fetchall()]
+
+            where, args = [], []
+            if date_from:
+                where.append(f"DATE(run_ts) >= {ph}"); args.append(date_from)
+            if date_to:
+                where.append(f"DATE(run_ts) <= {ph}"); args.append(date_to)
+            if marketplace:
+                where.append(f"marketplace={ph}"); args.append(marketplace)
+            wsql = ' AND '.join(where) if where else '1=1'
+
+            cur.execute(
+                "SELECT marketplace, COUNT(*), "
+                "SUM(CASE WHEN status='MISMATCH' THEN 1 ELSE 0 END), "
+                "SUM(CASE WHEN status='NOT_IN_MASTER' THEN 1 ELSE 0 END), "
+                "SUM(CASE WHEN exception_label IS NOT NULL AND exception_label<>'' "
+                "THEN 1 ELSE 0 END) "
+                f"FROM order_lines_full WHERE {wsql} GROUP BY marketplace", tuple(args))
+            rows = []
+            T = M = N = E = 0
+            _LOW_N = 50           # below this, an issue% is statistically noisy
+            for mp, tot, mm, nim, exc in cur.fetchall():
+                tot, mm, nim, exc = int(tot or 0), int(mm or 0), int(nim or 0), int(exc or 0)
+                iss = mm + nim
+                rows.append({'mp': mp or 'Other', 'lines': tot, 'mismatch': mm,
+                             'not_in_master': nim, 'exceptions': exc, 'issues': iss,
+                             'issue_pct': round(iss / tot * 100, 2) if tot else 0.0,
+                             'clean_pct': round((tot - iss) / tot * 100, 1) if tot else 0.0,
+                             'low_sample': tot < _LOW_N})
+                T += tot; M += mm; N += nim; E += exc
+            # qualified MPs first (worst issue% on top); tiny-sample MPs sink to
+            # the bottom so a 6-line 16% doesn't outrank a 3.9k-line 4%.
+            rows.sort(key=lambda r: (r['low_sample'], -r['issue_pct'], -r['issues']))
+            clean_now = round((T - M - N) / T * 100, 2) if T else 0.0
+            out['overall'] = {'lines': T, 'mismatch': M, 'not_in_master': N,
+                              'exceptions': E, 'issues': M + N, 'clean_pct': clean_now,
+                              'issue_pct': round((M + N) / T * 100, 2) if T else 0.0}
+            out['by_marketplace'] = rows
+
+            cur.execute(
+                "SELECT exception_label, COUNT(*) FROM order_lines_full "
+                f"WHERE {wsql} AND exception_label IS NOT NULL AND exception_label<>'' "
+                "GROUP BY exception_label ORDER BY 2 DESC", tuple(args))
+            out['by_exception'] = [{'label': r[0], 'count': int(r[1])}
+                                   for r in cur.fetchall()]
+
+            # trend: clean rate vs the previous equal-length window
+            if date_from and date_to:
+                import datetime as _dt
+                try:
+                    df = _dt.date.fromisoformat(date_from)
+                    dtt = _dt.date.fromisoformat(date_to)
+                    span = (dtt - df).days
+                    p_to = df - _dt.timedelta(days=1)
+                    p_from = p_to - _dt.timedelta(days=span)
+                    pw, pa = [f"DATE(run_ts) >= {ph}", f"DATE(run_ts) <= {ph}"], \
+                        [p_from.isoformat(), p_to.isoformat()]
+                    if marketplace:
+                        pw.append(f"marketplace={ph}"); pa.append(marketplace)
+                    cur.execute(
+                        "SELECT COUNT(*), SUM(CASE WHEN status IN "
+                        "('MISMATCH','NOT_IN_MASTER') THEN 1 ELSE 0 END) "
+                        "FROM order_lines_full WHERE " + ' AND '.join(pw), tuple(pa))
+                    pr = cur.fetchone()
+                    pt, pi = int(pr[0] or 0), int(pr[1] or 0)
+                    if pt:
+                        cp = round((pt - pi) / pt * 100, 2)
+                        out['clean_prev'] = cp
+                        out['clean_delta'] = round(clean_now - cp, 2)
+                except ValueError:
+                    pass
+            out['ok'] = True
+    except Exception as e:  # noqa: BLE001
+        out['error'] = f"{type(e).__name__}: {e}"
+    return out
+
+
 def hub_extra_kpis() -> dict:
     """Extra hub KPIs in one round-trip: avg PO value, total line items, POs in the
     last 7 days, and resolved (actioned) issue lines. Read-only; never raises."""
