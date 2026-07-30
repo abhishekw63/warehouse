@@ -480,15 +480,39 @@ _IN_STATES = {
 }
 
 
+_IN_ZONES = {
+    # North
+    'Delhi': 'North', 'Haryana': 'North', 'Punjab': 'North', 'Rajasthan': 'North',
+    'Himachal Pradesh': 'North', 'Jammu & Kashmir': 'North', 'Chandigarh': 'North',
+    'Ladakh': 'North',
+    # South
+    'Karnataka': 'South', 'Tamil Nadu': 'South', 'Telangana': 'South',
+    'Andhra Pradesh': 'South', 'Kerala': 'South', 'Puducherry': 'South',
+    # West
+    'Maharashtra': 'West', 'Gujarat': 'West', 'Goa': 'West',
+    'Dadra & Nagar Haveli': 'West', 'Daman & Diu': 'West',
+    # East
+    'West Bengal': 'East', 'Bihar': 'East', 'Jharkhand': 'East', 'Odisha': 'East',
+    'Andaman & Nicobar': 'East',
+    # Central
+    'Uttar Pradesh': 'Central', 'Uttarakhand': 'Central', 'Madhya Pradesh': 'Central',
+    'Chhattisgarh': 'Central',
+    # North-East
+    'Assam': 'North-East', 'Arunachal Pradesh': 'North-East', 'Manipur': 'North-East',
+    'Meghalaya': 'North-East', 'Mizoram': 'North-East', 'Nagaland': 'North-East',
+    'Tripura': 'North-East', 'Sikkim': 'North-East',
+}
+
+
 def geography(date_from='', date_to='', marketplace='') -> dict:
     """Where demand lands — order value/qty/POs by **state → city**, resolved by
     joining ``order_headers.location`` to ``ship_to_mapping`` (del_location /
     ship_to / name). Locations that don't resolve fall into an honest
     ``(Unmapped)`` bucket. Read-only; never raises."""
     out = {'ok': False, 'date_from': date_from, 'date_to': date_to,
-           'marketplace': marketplace, 'marketplaces': [], 'by_state': [],
-           'top_cities': [], 'total_value': 0.0, 'unmapped_value': 0.0,
-           'unmapped_pct': 0.0}
+           'marketplace': marketplace, 'marketplaces': [], 'by_zone': [],
+           'by_state': [], 'top_cities': [], 'total_value': 0.0,
+           'unmapped_value': 0.0, 'unmapped_pct': 0.0}
 
     def nk(s):
         import re as _re
@@ -549,8 +573,20 @@ def geography(date_from='', date_to='', marketplace='') -> dict:
             top_cities = sorted(cities.values(), key=lambda x: -x['value'])[:15]
             for c in top_cities:
                 c['value'] = round(c['value'], 2)
-            out.update({'ok': True, 'by_state': by_state, 'top_cities': top_cities,
-                        'total_value': round(total, 2),
+            # roll states up into the standard India zones (zonal councils)
+            zones = {}
+            for s in by_state:
+                z = _IN_ZONES.get(s['state'], '(Unzoned)')
+                zz = zones.setdefault(z, {'zone': z, 'value': 0.0, 'qty': 0, 'pos': 0})
+                zz['value'] += s['value']; zz['qty'] += s['qty']; zz['pos'] += s['pos']
+            by_zone = sorted(zones.values(), key=lambda x: -x['value'])
+            topz = max((z['value'] for z in by_zone), default=1) or 1
+            for z in by_zone:
+                z['value'] = round(z['value'], 2)
+                z['bar'] = round(z['value'] / topz * 100, 1)
+                z['share'] = round(z['value'] / total * 100, 1) if total else 0.0
+            out.update({'ok': True, 'by_zone': by_zone, 'by_state': by_state,
+                        'top_cities': top_cities, 'total_value': round(total, 2),
                         'unmapped_value': round(unmapped, 2),
                         'unmapped_pct': round(unmapped / total * 100, 1) if total else 0.0})
     except Exception as e:  # noqa: BLE001

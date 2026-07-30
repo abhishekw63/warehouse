@@ -25,8 +25,23 @@
     {{ geo.total_value|inr_short }} total{% if geo.unmapped_pct %} · <span class="warn">{{ geo.unmapped_pct }}% unmapped location</span>{% endif %}.
   </p>
 
+  <!-- ── BY ZONE (standard India zonal councils) ── -->
+  {% if geo.by_zone %}
+  <div class="sec-head" style="margin-top:4px;"><h2>By zone <span class="muted">· standard India zones (N/S/E/W/Central/NE)</span></h2></div>
+  <div class="zone-strip">
+    {% for z in geo.by_zone %}
+    <div class="zone-card zone-{{ z.zone|lower }}">
+      <div class="zone-name">{{ z.zone }}</div>
+      <div class="zone-val">{{ z.value|inr_short }}</div>
+      <div class="zone-bar"><span style="width:{{ z.bar }}%"></span></div>
+      <div class="zone-meta">{{ z.share }}% · {{ z.qty|compact }} qty · {{ z.pos }} POs</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   <!-- ── GEOGRAPHY ── -->
-  <div class="sec-head" style="margin-top:4px;"><h2>Demand by geography <span class="muted">· where orders ship</span></h2></div>
+  <div class="sec-head" style="margin-top:22px;"><h2>Demand by state <span class="muted">· where orders ship</span></h2></div>
   <div class="ex-cols">
     <div class="ex-main">
       {% if geo.by_state %}
