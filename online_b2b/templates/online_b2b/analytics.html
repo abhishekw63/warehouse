@@ -28,6 +28,7 @@
     <button type="button" class="an-tab" data-tab="trends" role="tab">Trends &amp; Momentum</button>
     <button type="button" class="an-tab" data-tab="fulfil" role="tab">Fulfilment Risk</button>
     <button type="button" class="an-tab" data-tab="exc" role="tab">Exceptions &amp; Quality</button>
+    <button type="button" class="an-tab" data-tab="geo" role="tab">Geography &amp; Concentration</button>
   </div>
 
   <div class="an-pane" id="pane-daily" data-loaded="1" role="tabpanel">
@@ -44,6 +45,9 @@
   </div>
   <div class="an-pane" id="pane-exc" data-loaded="0" role="tabpanel" hidden>
     <div class="an-loading">Loading exceptions…</div>
+  </div>
+  <div class="an-pane" id="pane-geo" data-loaded="0" role="tabpanel" hidden>
+    <div class="an-loading">Loading geography…</div>
   </div>
 
 </div>
@@ -198,6 +202,13 @@
   table.ex-tbl tr.ex-low td.bad,table.ex-tbl tr.ex-low .warn{color:var(--muted);font-weight:600;}
   table.ex-tbl tr.ex-low td.barcell .bar{background:color-mix(in srgb,var(--muted) 35%,transparent);}
   .ex-ns{display:inline-block;font-size:9.5px;font-weight:800;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:0 5px;margin-left:5px;vertical-align:middle;}
+  /* ── Geography & Concentration tab ── */
+  .geo-share{font-weight:700;color:var(--text-2);font-variant-numeric:tabular-nums;}
+  .fr-fill.geo-cls-A{background:linear-gradient(90deg,#4f46e5,#4338ca);}
+  .fr-fill.geo-cls-B{background:linear-gradient(90deg,#0ea5e9,#0284c7);}
+  .fr-fill.geo-cls-C{background:linear-gradient(90deg,#cbd5e1,#94a3b8);}
+  .geo-cls{display:inline-block;min-width:22px;text-align:center;font-size:11px;font-weight:800;padding:1px 8px;border-radius:20px;}
+  .geo-cls-A{color:#fff;background:#4f46e5;} .geo-cls-B{color:#fff;background:#0ea5e9;} .geo-cls-C{color:#475569;background:#e2e8f0;}
   .ex-clean{font-weight:700;color:var(--text-2);} .ex-clean.full{color:#0a7d54;}
   .ex-typecard{padding:14px 16px;display:flex;flex-direction:column;gap:12px;}
   .ex-type{display:flex;flex-direction:column;gap:5px;}
@@ -235,6 +246,7 @@
     if (activeTab === 'sku') s = document.querySelector('#pane-sku .an-sku');
     else if (activeTab === 'fulfil') s = document.querySelector('#pane-fulfil .an-fulfil');
     else if (activeTab === 'exc') s = document.querySelector('#pane-exc .an-exc');
+    else if (activeTab === 'geo') s = document.querySelector('#pane-geo .an-geo');
     if (s) {
       if (s.dataset.mp) p.set('sku_mp', s.dataset.mp);
       if (s.dataset.from) p.set('sku_from', s.dataset.from);
@@ -508,6 +520,45 @@
     });
   }
 
+  // ══ GEOGRAPHY & CONCENTRATION tab ══
+  function loadGeo(params) {
+    var pane = document.getElementById('pane-geo');
+    var lid = showLoader(pane, [
+      'Reading order value by location…',
+      'Resolving locations to state & city…',
+      'Ranking states and cities…',
+      'Building the SKU concentration (Pareto) curve…'
+    ], 'Mapping demand geographically and computing the ABC split.');
+    fetch(url(Object.assign({ partial: 'geo' }, params)), { headers: { 'X-Requested-With': 'fetch' } })
+      .then(function (r) { return r.text(); })
+      .then(function (html) { clearInterval(lid); pane.innerHTML = html; pane.dataset.loaded = '1'; wireGeo(); syncURL(); })
+      .catch(function () { clearInterval(lid); pane.innerHTML = '<div class="an-loading">Could not load geography.</div>'; });
+  }
+
+  function wireGeo() {
+    var root = document.querySelector('#pane-geo .an-geo');
+    if (!root) return;
+    wireSort(root);
+    var form = root.querySelector('[data-geo-filter]');
+    function apply() {
+      loadGeo({
+        sku_mp: form.querySelector('[name=sku_mp]').value,
+        sku_from: form.querySelector('[name=sku_from]').value,
+        sku_to: form.querySelector('[name=sku_to]').value
+      });
+    }
+    if (form) form.addEventListener('submit', function (e) { e.preventDefault(); apply(); });
+    root.querySelectorAll('[data-geo-preset]').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.preventDefault();
+        var today = new Date().toISOString().slice(0, 10);
+        var mp = form.querySelector('[name=sku_mp]').value;
+        if (b.getAttribute('data-geo-preset') === 'today') loadGeo({ sku_mp: mp, sku_from: today, sku_to: today });
+        else loadGeo({ sku_mp: mp, sku_from: '', sku_to: '' });
+      });
+    });
+  }
+
   // ══ tabs ══
   function showTab(name) {
     activeTab = name;
@@ -522,6 +573,8 @@
       loadFulfil({ sku_mp: q.get('sku_mp') || '', sku_from: q.get('sku_from') || undefined, sku_to: q.get('sku_to') || undefined });
     } else if (name === 'exc' && document.getElementById('pane-exc').dataset.loaded === '0') {
       loadExc({ sku_mp: q.get('sku_mp') || '', sku_from: q.get('sku_from') || undefined, sku_to: q.get('sku_to') || undefined });
+    } else if (name === 'geo' && document.getElementById('pane-geo').dataset.loaded === '0') {
+      loadGeo({ sku_mp: q.get('sku_mp') || '', sku_from: q.get('sku_from') || undefined, sku_to: q.get('sku_to') || undefined });
     } else {
       syncURL();
     }
@@ -535,7 +588,7 @@
     wireDaily();                                  // daily was server-rendered
     var q = new URLSearchParams(location.search);
     var t = q.get('tab');
-    if (t === 'sku' || t === 'trends' || t === 'fulfil' || t === 'exc') showTab(t);  // deep-link / refresh
+    if (t === 'sku' || t === 'trends' || t === 'fulfil' || t === 'exc' || t === 'geo') showTab(t);  // deep-link
     else syncURL();
   }
   if (document.readyState !== 'loading') boot();

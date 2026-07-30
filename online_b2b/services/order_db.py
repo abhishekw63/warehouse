@@ -466,6 +466,160 @@ def exceptions_quality(date_from='', date_to='', marketplace='') -> dict:
     return out
 
 
+_IN_STATES = {
+    'MH': 'Maharashtra', 'KA': 'Karnataka', 'HR': 'Haryana', 'TN': 'Tamil Nadu',
+    'UP': 'Uttar Pradesh', 'WB': 'West Bengal', 'TS': 'Telangana', 'TG': 'Telangana',
+    'DL': 'Delhi', 'PB': 'Punjab', 'GJ': 'Gujarat', 'RJ': 'Rajasthan', 'KL': 'Kerala',
+    'MP': 'Madhya Pradesh', 'AP': 'Andhra Pradesh', 'BR': 'Bihar', 'OD': 'Odisha',
+    'OR': 'Odisha', 'AS': 'Assam', 'JH': 'Jharkhand', 'CG': 'Chhattisgarh',
+    'UK': 'Uttarakhand', 'UT': 'Uttarakhand', 'HP': 'Himachal Pradesh',
+    'JK': 'Jammu & Kashmir', 'GA': 'Goa', 'CH': 'Chandigarh', 'PY': 'Puducherry',
+    'TR': 'Tripura', 'ML': 'Meghalaya', 'MN': 'Manipur', 'NL': 'Nagaland',
+    'MZ': 'Mizoram', 'AR': 'Arunachal Pradesh', 'SK': 'Sikkim',
+    'AN': 'Andaman & Nicobar', 'DN': 'Dadra & Nagar Haveli', 'DD': 'Daman & Diu',
+}
+
+
+def geography(date_from='', date_to='', marketplace='') -> dict:
+    """Where demand lands — order value/qty/POs by **state → city**, resolved by
+    joining ``order_headers.location`` to ``ship_to_mapping`` (del_location /
+    ship_to / name). Locations that don't resolve fall into an honest
+    ``(Unmapped)`` bucket. Read-only; never raises."""
+    out = {'ok': False, 'date_from': date_from, 'date_to': date_to,
+           'marketplace': marketplace, 'marketplaces': [], 'by_state': [],
+           'top_cities': [], 'total_value': 0.0, 'unmapped_value': 0.0,
+           'unmapped_pct': 0.0}
+
+    def nk(s):
+        import re as _re
+        return _re.sub(r'[^a-z0-9]', '', str(s or '').lower())
+
+    try:
+        with _conn() as (cur, d):
+            ph = d['ph']
+            cur.execute("SELECT DISTINCT marketplace_label FROM order_headers "
+                        "WHERE marketplace_label IS NOT NULL AND marketplace_label<>'' "
+                        "ORDER BY marketplace_label")
+            out['marketplaces'] = [r[0] for r in cur.fetchall()]
+
+            cur.execute('SELECT del_location,ship_to,name,city,state FROM ship_to_mapping')
+            loc2geo = {}
+            for dl, shp, nm, ci, st in cur.fetchall():
+                g = (str(ci or '').strip(), str(st or '').strip())
+                for kk in (dl, shp, nm):
+                    if kk:
+                        loc2geo.setdefault(nk(kk), g)
+
+            where, args = [], []
+            if date_from:
+                where.append(f"DATE(run_ts) >= {ph}"); args.append(date_from)
+            if date_to:
+                where.append(f"DATE(run_ts) <= {ph}"); args.append(date_to)
+            if marketplace:
+                where.append(f"marketplace_label={ph}"); args.append(marketplace)
+            wsql = ' AND '.join(where) if where else '1=1'
+            cur.execute("SELECT location, COALESCE(SUM(order_value),0), "
+                        "COALESCE(SUM(qty),0), COUNT(DISTINCT po) "
+                        f"FROM order_headers WHERE {wsql} GROUP BY location", tuple(args))
+
+            states, cities = {}, {}
+            total = 0.0
+            unmapped = 0.0
+            for loc, val, qty, pos in cur.fetchall():
+                val, qty, pos = float(val or 0), int(qty or 0), int(pos or 0)
+                total += val
+                g = loc2geo.get(nk(loc))
+                if g and g[1]:
+                    st = g[1].upper()
+                    sname = _IN_STATES.get(st, st)
+                    s = states.setdefault(sname, {'state': sname, 'value': 0.0, 'qty': 0, 'pos': 0})
+                    s['value'] += val; s['qty'] += qty; s['pos'] += pos
+                    cty = g[0] or '—'
+                    ck = (cty, sname)
+                    c = cities.setdefault(ck, {'city': cty, 'state': sname, 'value': 0.0, 'qty': 0, 'pos': 0})
+                    c['value'] += val; c['qty'] += qty; c['pos'] += pos
+                else:
+                    unmapped += val
+            top_v = max((s['value'] for s in states.values()), default=1) or 1
+            by_state = sorted(states.values(), key=lambda x: -x['value'])
+            for s in by_state:
+                s['value'] = round(s['value'], 2)
+                s['bar'] = round(s['value'] / top_v * 100, 1)
+                s['share'] = round(s['value'] / total * 100, 1) if total else 0.0
+            top_cities = sorted(cities.values(), key=lambda x: -x['value'])[:15]
+            for c in top_cities:
+                c['value'] = round(c['value'], 2)
+            out.update({'ok': True, 'by_state': by_state, 'top_cities': top_cities,
+                        'total_value': round(total, 2),
+                        'unmapped_value': round(unmapped, 2),
+                        'unmapped_pct': round(unmapped / total * 100, 1) if total else 0.0})
+    except Exception as e:  # noqa: BLE001
+        out['error'] = f"{type(e).__name__}: {e}"
+    return out
+
+
+def value_concentration(date_from='', date_to='', marketplace='') -> dict:
+    """Pareto / ABC — how concentrated the order book is. Sorts SKUs by value,
+    walks the cumulative share, and classes them A (to 80%), B (80–95%), C (rest).
+    Also the classic 80/20 read: what share of value the top 20% of SKUs make.
+    Read-only; never raises."""
+    out = {'ok': False, 'date_from': date_from, 'date_to': date_to,
+           'marketplace': marketplace, 'marketplaces': [], 'classes': [],
+           'top': [], 'skus': 0, 'value': 0.0, 'top20_share': 0.0, 'curve': []}
+    try:
+        with _conn() as (cur, d):
+            ph = d['ph']
+            cur.execute("SELECT DISTINCT marketplace FROM order_lines_full "
+                        "WHERE marketplace IS NOT NULL AND marketplace<>'' "
+                        "ORDER BY marketplace")
+            out['marketplaces'] = [r[0] for r in cur.fetchall()]
+            where, args = [], []
+            if date_from:
+                where.append(f"DATE(run_ts) >= {ph}"); args.append(date_from)
+            if date_to:
+                where.append(f"DATE(run_ts) <= {ph}"); args.append(date_to)
+            if marketplace:
+                where.append(f"marketplace={ph}"); args.append(marketplace)
+            wsql = ' AND '.join(where) if where else '1=1'
+            cur.execute("SELECT item_no, MAX(description), "
+                        "SUM(qty*COALESCE(unit_price,0)) AS value "
+                        f"FROM order_lines_full WHERE {wsql} GROUP BY item_no", tuple(args))
+            rows = [{'item_no': str(r[0] or ''), 'description': str(r[1] or ''),
+                     'value': round(float(r[2] or 0), 2)} for r in cur.fetchall()]
+            rows = [r for r in rows if r['value'] > 0]
+            rows.sort(key=lambda r: -r['value'])
+            total = sum(r['value'] for r in rows)
+            n = len(rows)
+            cls = {'A': {'k': 'A', 'skus': 0, 'value': 0.0},
+                   'B': {'k': 'B', 'skus': 0, 'value': 0.0},
+                   'C': {'k': 'C', 'skus': 0, 'value': 0.0}}
+            cum = 0.0
+            top20_n = max(1, round(n * 0.20))
+            top20_val = 0.0
+            for i, r in enumerate(rows):
+                cum += r['value']
+                cpct = cum / total * 100 if total else 0
+                r['cum_pct'] = round(cpct, 1)
+                k = 'A' if cpct <= 80 else ('B' if cpct <= 95 else 'C')
+                r['class'] = k
+                cls[k]['skus'] += 1; cls[k]['value'] += r['value']
+                if i < top20_n:
+                    top20_val += r['value']
+            classes = []
+            for k in ('A', 'B', 'C'):
+                c = cls[k]
+                classes.append({'k': k, 'skus': c['skus'],
+                                'sku_pct': round(c['skus'] / n * 100, 1) if n else 0.0,
+                                'value': round(c['value'], 2),
+                                'value_pct': round(c['value'] / total * 100, 1) if total else 0.0})
+            out.update({'ok': True, 'classes': classes, 'top': rows[:12], 'skus': n,
+                        'value': round(total, 2),
+                        'top20_share': round(top20_val / total * 100, 1) if total else 0.0})
+    except Exception as e:  # noqa: BLE001
+        out['error'] = f"{type(e).__name__}: {e}"
+    return out
+
+
 def hub_extra_kpis() -> dict:
     """Extra hub KPIs in one round-trip: avg PO value, total line items, POs in the
     last 7 days, and resolved (actioned) issue lines. Read-only; never raises."""

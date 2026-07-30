@@ -524,6 +524,16 @@ def _exc_ctx(request):
             'sku_from': sf, 'sku_to': st, 'sku_mp': smp}
 
 
+def _geo_ctx(request):
+    """Geography & Concentration tab context — demand by state/city + Pareto/ABC
+    SKU concentration. Reuses the SKU filter (marketplace + upload-date range;
+    defaults to last 30 days)."""
+    sf, st, smp = _sku_filters(request)
+    return {'geo': order_db.geography(sf, st, smp),
+            'pareto': order_db.value_concentration(sf, st, smp),
+            'sku_from': sf, 'sku_to': st, 'sku_mp': smp}
+
+
 class AnalyticsView(LoginRequiredMixin, TemplateView):
     """Management analytics — two AJAX tabs under one page, each with its own
     filter (no page refresh):
@@ -544,6 +554,8 @@ class AnalyticsView(LoginRequiredMixin, TemplateView):
             return render(request, 'online_b2b/_analytics_fulfil.html', _fulfil_ctx(request))
         if partial == 'exc':
             return render(request, 'online_b2b/_analytics_exc.html', _exc_ctx(request))
+        if partial == 'geo':
+            return render(request, 'online_b2b/_analytics_geo.html', _geo_ctx(request))
         return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):

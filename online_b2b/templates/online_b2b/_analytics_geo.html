@@ -1,0 +1,107 @@
+{% load static b2b_extras %}
+{% comment %}
+  Geography & Concentration tab body — WHERE demand lands (state → city, resolved
+  via ship-to mapping; unresolved locations shown as an honest (Unmapped) bucket)
+  and HOW concentrated the SKU book is (Pareto / ABC). Lazy-loaded (?partial=geo).
+{% endcomment %}
+<div class="an-geo" data-mp="{{ sku_mp }}" data-from="{{ sku_from }}" data-to="{{ sku_to }}">
+
+  <div class="an-toolbar">
+    <form class="sku-filter" data-geo-filter onsubmit="return false;">
+      <select name="sku_mp">
+        <option value="">All marketplaces</option>
+        {% for m in geo.marketplaces %}<option value="{{ m }}" {% if m == sku_mp %}selected{% endif %}>{{ m }}</option>{% endfor %}
+      </select>
+      <label>From <input type="date" name="sku_from" value="{{ sku_from }}"></label>
+      <label>To <input type="date" name="sku_to" value="{{ sku_to }}"></label>
+      <button type="submit" class="btn-primary">Apply</button>
+      <a href="#" class="btn-ghost" data-geo-preset="today">Today</a>
+      <a href="#" class="btn-ghost" data-geo-preset="all">All time</a>
+    </form>
+  </div>
+
+  <p class="sku-scope muted">
+    {% if sku_from or sku_to %}Upload date {{ sku_from|default:'…' }} → {{ sku_to|default:'…' }}{% else %}All uploads{% endif %}{% if sku_mp %} · {{ sku_mp }}{% endif %} ·
+    {{ geo.total_value|inr_short }} total{% if geo.unmapped_pct %} · <span class="warn">{{ geo.unmapped_pct }}% unmapped location</span>{% endif %}.
+  </p>
+
+  <!-- ── GEOGRAPHY ── -->
+  <div class="sec-head" style="margin-top:4px;"><h2>Demand by geography <span class="muted">· where orders ship</span></h2></div>
+  <div class="ex-cols">
+    <div class="ex-main">
+      {% if geo.by_state %}
+      <div class="skux-card"><div class="scroll">
+        <table class="grid compact skux sortable ex-tbl">
+          <thead><tr>
+            <th>State</th>
+            <th class="r srt on" data-k="val" data-dir="desc">Order Value ⇅</th>
+            <th class="r srt" data-k="qty">Qty ⇅</th>
+            <th class="r srt" data-k="pos">POs ⇅</th>
+            <th class="r">Share</th>
+          </tr></thead>
+          <tbody>{% for s in geo.by_state %}
+            <tr>
+              <td class="tr-mp">{{ s.state }}</td>
+              <td class="r barcell" data-k="val" data-v="{{ s.value }}"><span class="bar bv" style="width:{% widthratio s.value geo.by_state.0.value 100 %}%"></span><b>{{ s.value|inr_short }}</b></td>
+              <td class="r" data-k="qty" data-v="{{ s.qty }}">{{ s.qty|compact }}</td>
+              <td class="r" data-k="pos" data-v="{{ s.pos }}">{{ s.pos }}</td>
+              <td class="r"><span class="geo-share">{{ s.share }}%</span></td>
+            </tr>
+          {% endfor %}</tbody>
+        </table>
+      </div></div>
+      {% else %}<p class="muted" style="padding:14px 2px;">No mappable locations in this scope.</p>{% endif %}
+    </div>
+    <div class="ex-side">
+      <div class="sec-head"><h2>Top cities</h2></div>
+      <div class="skux-card ex-typecard">
+        {% for c in geo.top_cities %}
+        <div class="ex-type">
+          <div class="ex-trow"><span class="ex-tname">{{ c.city }} <span class="muted">· {{ c.state }}</span></span><b>{{ c.value|inr_short }}</b></div>
+          <div class="ex-tbar"><span style="width:{% widthratio c.value geo.top_cities.0.value 100 %}%"></span></div>
+        </div>
+        {% empty %}<p class="muted">No cities.</p>{% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CONCENTRATION (Pareto / ABC) ── -->
+  <div class="sec-head" style="margin-top:26px;"><h2>SKU concentration <span class="muted">· Pareto / ABC</span></h2></div>
+
+  <div class="fr-kpis" style="grid-template-columns:repeat(4,1fr);">
+    <div class="fr-kpi">
+      <div class="fr-l">Top 20% of SKUs</div>
+      <div class="fr-n">{{ pareto.top20_share|floatformat:1 }}%</div>
+      <div class="fr-p">of total order value</div>
+    </div>
+    {% for c in pareto.classes %}
+    <div class="fr-kpi">
+      <div class="fr-l">Class {{ c.k }}{% if c.k == 'A' %} · core{% elif c.k == 'B' %} · mid{% else %} · long tail{% endif %}</div>
+      <div class="fr-n">{{ c.value_pct|floatformat:0 }}%<span class="fr-of"> val</span></div>
+      <div class="fr-bar"><span class="fr-fill geo-cls-{{ c.k }}" style="width:{{ c.value_pct }}%"></span></div>
+      <div class="fr-p">{{ c.skus|compact }} SKUs ({{ c.sku_pct|floatformat:0 }}% of {{ pareto.skus }})</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="sec-head"><h2 style="font-size:14px;">Top value contributors</h2></div>
+  {% if pareto.top %}
+  <div class="skux-card"><div class="scroll" style="max-height:46vh;">
+    <table class="grid compact skux sortable">
+      <thead><tr><th class="rkh">#</th><th>Item</th><th>Description</th>
+        <th class="r srt on" data-k="val" data-dir="desc">Value ⇅</th><th class="r">Cumulative</th><th class="r">Class</th></tr></thead>
+      <tbody>{% for r in pareto.top %}
+        <tr>
+          <td class="rk"><span class="rk-b rk-{{ forloop.counter }}">{{ forloop.counter }}</span></td>
+          <td class="mono">{{ r.item_no }}</td>
+          <td class="desc" title="{{ r.description }}">{{ r.description|default:'—' }}</td>
+          <td class="r barcell" data-k="val" data-v="{{ r.value }}"><span class="bar bv" style="width:{% widthratio r.value pareto.top.0.value 100 %}%"></span><b>{{ r.value|inr_short }}</b></td>
+          <td class="r">{{ r.cum_pct }}%</td>
+          <td class="r"><span class="geo-cls geo-cls-{{ r.class }}">{{ r.class }}</span></td>
+        </tr>
+      {% endfor %}</tbody>
+    </table>
+  </div></div>
+  {% else %}<p class="muted" style="padding:14px 2px;">No SKU value in this scope.</p>{% endif %}
+
+</div>
