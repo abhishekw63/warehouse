@@ -568,6 +568,86 @@ def save_snapshot(warehouse, parsed_wh, source_file='', user='',
             'item_count': len(stock_rows)}
 
 
+def reclassify_snapshot(snapshot_id) -> dict:
+    """Re-apply the CURRENT bin rules to an already-stored snapshot (no re-upload)
+    — used after a rule change (e.g. a new warehouse-scoped include). Recomputes
+    every bin/line decision, rebuilds the sellable ``inventory_stock`` (include
+    bins only), and refreshes the snapshot's counts. EAN/description/UOM for newly
+    -sellable items come from ``item_master`` (they weren't stored when excluded).
+    Read/writes only web-owned inventory tables. Never raises."""
+    ensure_tables()
+    out = {'ok': False, 'snapshot_id': snapshot_id}
+    try:
+        with _conn() as (cur, d):
+            ph = d['ph']
+            cur.execute(f"SELECT warehouse FROM inventory_snapshot WHERE snapshot_id={ph}",
+                        (snapshot_id,))
+            row = cur.fetchone()
+            if not row:
+                out['error'] = 'snapshot not found'
+                return out
+            wh = row[0]
+            compiled = _compile(load_rules(), wh)
+
+            # 1) per-bin audit → recompute decision + roll up counts (n_lines keeps
+            #    the original line counts, incl. zero-qty rows)
+            cur.execute(f"SELECT id, bin_code, n_lines, qty FROM inventory_bin_audit "
+                        f"WHERE snapshot_id={ph}", (snapshot_id,))
+            inc_l = exc_l = new_l = 0
+            inc_q = exc_q = new_q = 0.0
+            for aid, bc, nl, q in cur.fetchall():
+                dec = classify_bin(bc, compiled)
+                cur.execute(f"UPDATE inventory_bin_audit SET decision={ph} WHERE id={ph}",
+                            (dec, aid))
+                nl = int(nl or 0); q = float(q or 0)
+                if dec == 'include':
+                    inc_l += nl; inc_q += q
+                elif dec == 'exclude':
+                    exc_l += nl; exc_q += q
+                else:
+                    new_l += nl; new_q += q
+
+            # 2) per item×bin line → recompute decision
+            cur.execute(f"SELECT id, bin_code FROM inventory_bin_line WHERE snapshot_id={ph}",
+                        (snapshot_id,))
+            for lid, bc in cur.fetchall():
+                cur.execute(f"UPDATE inventory_bin_line SET decision={ph} WHERE id={ph}",
+                            (classify_bin(bc, compiled), lid))
+
+            # 3) rebuild sellable inventory_stock = Σ include-bin qty per item
+            cur.execute(f"SELECT item_no, SUM(qty) FROM inventory_bin_line "
+                        f"WHERE snapshot_id={ph} AND decision='include' GROUP BY item_no",
+                        (snapshot_id,))
+            inc_items = {str(a).strip(): float(b or 0) for a, b in cur.fetchall()}
+            cur.execute("SELECT item_no,ean,description,base_uom FROM item_master")
+            im = {str(a).strip(): (str(b or ''), str(c or ''), str(e or ''))
+                  for a, b, c, e in cur.fetchall()}
+            cur.execute(f"DELETE FROM inventory_stock WHERE snapshot_id={ph}", (snapshot_id,))
+            ins = []
+            for it, q in inc_items.items():
+                ean, desc, uom = im.get(it, ('', '', ''))
+                ins.append((snapshot_id, wh, it[:60], ean[:40], desc[:255], uom[:20], round(q, 2)))
+            if ins:
+                cur.executemany(
+                    f"INSERT INTO inventory_stock (snapshot_id, warehouse, item_no, ean,"
+                    f" description, uom, available_qty) VALUES ({','.join([ph]*7)})", ins)
+
+            # 4) refresh snapshot counts
+            cur.execute(
+                f"UPDATE inventory_snapshot SET included_lines={ph}, excluded_lines={ph},"
+                f" new_lines={ph}, included_qty={ph}, excluded_qty={ph}, new_qty={ph},"
+                f" item_count={ph} WHERE snapshot_id={ph}",
+                (inc_l, exc_l, new_l, round(inc_q, 2), round(exc_q, 2), round(new_q, 2),
+                 len(inc_items), snapshot_id))
+            cur.connection.commit()
+        out.update({'ok': True, 'warehouse': wh, 'included_lines': inc_l,
+                    'included_qty': round(inc_q, 2), 'excluded_qty': round(exc_q, 2),
+                    'items': len(inc_items)})
+    except Exception as e:  # noqa: BLE001
+        out['error'] = f"{type(e).__name__}: {e}"
+    return out
+
+
 # ── reads ───────────────────────────────────────────────────────────────────
 def current_snapshots() -> dict:
     """{warehouse_code: snapshot dict} for the latest snapshot of each WH."""
