@@ -112,6 +112,9 @@
   table.trk-tbl thead th{position:sticky;top:0;z-index:2;background:linear-gradient(180deg,var(--trk-hd1),var(--trk-hd2));color:#c9cffa;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;padding:13px 14px;white-space:nowrap;text-align:left;}
   table.trk-tbl thead th.r{text-align:right;}
   table.trk-tbl thead th.srt{cursor:pointer;user-select:none;} table.trk-tbl thead th.srt:hover,table.trk-tbl thead th.srt.on{color:#fff;}
+  /* row-level virtualization: browser skips painting off-screen rows → smooth
+     scroll & no hang even with a big row set (graceful no-op where unsupported) */
+  table.trk-tbl tbody tr{content-visibility:auto;contain-intrinsic-size:0 40px;}
   table.trk-tbl tbody td{padding:9px 14px;border-bottom:1px solid var(--border-2);white-space:nowrap;vertical-align:middle;background:var(--surface);}
   table.trk-tbl tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--surface-2) 50%,var(--surface));}
   table.trk-tbl tbody tr:hover td{background:color-mix(in srgb,var(--accent) 8%,var(--surface));}
@@ -227,12 +230,15 @@
   }
 
   // quick client-side filter over loaded rows (re-queries fresh each keypress)
-  var quick = document.getElementById('trkQuick');
+  var quick = document.getElementById('trkQuick'), qkT;
   if (quick) quick.addEventListener('input', function () {
-    var v = quick.value.trim().toLowerCase();
-    body.querySelectorAll('.trk-tbl tbody tr').forEach(function (tr) {
-      tr.style.display = (!v || tr.textContent.toLowerCase().indexOf(v) >= 0) ? '' : 'none';
-    });
+    clearTimeout(qkT);
+    qkT = setTimeout(function () {            // debounce so fast typing never janks
+      var v = quick.value.trim().toLowerCase();
+      body.querySelectorAll('.trk-tbl tbody tr').forEach(function (tr) {
+        tr.style.display = (!v || tr.textContent.toLowerCase().indexOf(v) >= 0) ? '' : 'none';
+      });
+    }, 140);
   });
 
   // add-PO panel toggle
