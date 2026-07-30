@@ -28,6 +28,19 @@
   .dl-email:disabled{opacity:.6;cursor:default;}
   .empty{text-align:center;color:#98a2b3;padding:48px 20px;background:#fff;border:1px dashed #d7dbe6;border-radius:12px;}
   .empty b{color:#475467;}
+  /* Reopen / re-validate loading overlay (full-page nav → slow server round-trip) */
+  .ro-overlay{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;
+    background:rgba(15,23,42,.55);backdrop-filter:blur(3px);}
+  .ro-overlay.on{display:flex;animation:rofade .18s ease both;}
+  @keyframes rofade{from{opacity:0;}to{opacity:1;}}
+  .ro-card{background:#fff;border-radius:16px;padding:30px 34px;box-shadow:0 20px 60px -20px rgba(15,23,42,.5);
+    text-align:center;max-width:380px;width:88%;}
+  .ro-spin{width:38px;height:38px;margin:0 auto 16px;border-radius:50%;
+    border:3px solid #dfe3ee;border-top-color:#2f6feb;animation:rospin .8s linear infinite;}
+  @keyframes rospin{to{transform:rotate(360deg);}}
+  .ro-msg{font-size:15px;font-weight:800;color:#1f2a5a;min-height:20px;transition:opacity .16s ease;}
+  .ro-sub{font-size:12.5px;color:#667085;margin-top:7px;line-height:1.5;}
+  @media (prefers-reduced-motion: reduce){.ro-spin{animation-duration:2.4s;}}
 </style>{% endblock %}
 
 {% block breadcrumb %}
@@ -68,8 +81,37 @@
   {% endif %}
 </div>
 
+<div class="ro-overlay" id="ro-overlay" role="status" aria-live="polite">
+  <div class="ro-card">
+    <div class="ro-spin"></div>
+    <div class="ro-msg" id="ro-msg">Reopening the parked run…</div>
+    <div class="ro-sub">Re-validating against the current master — this can take a few moments.</div>
+  </div>
+</div>
+
 <script>
 (function () {
+  // Reopen & re-validate is a full-page nav to a slow server revalidation — show
+  // an overlay immediately so the wait is narrated (nothing renders until the
+  // server responds otherwise).
+  var ov = document.getElementById('ro-overlay');
+  var msg = document.getElementById('ro-msg');
+  var STEPS = ['Reopening the parked run…', 'Re-validating against the current master…',
+    'Checking orders & mapping…', 'Re-pricing the flagged lines…', 'Almost there…'];
+  document.querySelectorAll('a.ropen[href*="revalidate"]').forEach(function (a) {
+    a.addEventListener('click', function () {
+      if (!ov) return;                       // don't block navigation if missing
+      ov.classList.add('on');
+      var i = 0;
+      setInterval(function () {
+        i = (i + 1) % STEPS.length;
+        if (!msg) return;
+        msg.style.opacity = '0';
+        setTimeout(function () { msg.textContent = STEPS[i]; msg.style.opacity = '1'; }, 160);
+      }, 1300);
+    });
+  });
+
   var csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '';
   document.querySelectorAll('.dl-email').forEach(function (btn) {
     btn.addEventListener('click', function () {
