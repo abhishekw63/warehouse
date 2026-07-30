@@ -166,29 +166,43 @@ def _seg(ph: str, segment):
 _SEG_LABEL = {'OnlineB2B': 'Online B2B', 'Offline': 'Offline'}
 
 
-def daily_intake(days: int = 30) -> dict:
+def daily_intake(days: int = 30, start: str = '', end: str = '') -> dict:
     """Per-day order arrivals (by ``created_at``) split by segment — for the
     management daily stacked chart. Returns chart-ready arrays (gaps filled with
-    0). Read-only; never raises."""
+    0). Pass ``start``+``end`` (YYYY-MM-DD) for an explicit range; otherwise the
+    last ``days`` days. Read-only; never raises."""
     import datetime as _dt
     out = {'labels': [], 'segments': [], 'value': {}, 'pos': {}, 'items': {}, 'qty': {}}
     try:
         with _conn() as (cur, d):
-            ot = d['orders']
-            cur.execute(
-                f"SELECT DATE(created_at), segment, COUNT(DISTINCT po), "
-                f"COALESCE(SUM(order_value),0), COALESCE(SUM(items),0), "
-                f"COALESCE(SUM(qty),0) "
-                f"FROM {ot} WHERE created_at >= (CURDATE() - INTERVAL {int(days) - 1} DAY) "
-                f"GROUP BY DATE(created_at), segment")
+            ot, ph = d['orders'], d['ph']
+            sel = (f"SELECT DATE(created_at), segment, COUNT(DISTINCT po), "
+                   f"COALESCE(SUM(order_value),0), COALESCE(SUM(items),0), "
+                   f"COALESCE(SUM(qty),0) FROM {ot} WHERE ")
+            if start and end:
+                cur.execute(sel + f"DATE(created_at) BETWEEN {ph} AND {ph} "
+                            f"GROUP BY DATE(created_at), segment", (start, end))
+            else:
+                cur.execute(sel + f"created_at >= (CURDATE() - INTERVAL "
+                            f"{int(days) - 1} DAY) GROUP BY DATE(created_at), segment")
             cells, segs = {}, []
             for dd, seg, pos, val, items, qty in cur.fetchall():
                 seg = _SEG_LABEL.get(seg, seg or 'Other')
                 if seg not in segs:
                     segs.append(seg)
                 cells[(str(dd), seg)] = (pos or 0, float(val or 0), int(items or 0), int(qty or 0))
-            today = _dt.date.today()
-            day_list = [today - _dt.timedelta(days=i) for i in range(int(days) - 1, -1, -1)]
+            if start and end:                       # explicit range → show every day, no trim
+                try:
+                    s0, e0 = _dt.date.fromisoformat(start), _dt.date.fromisoformat(end)
+                except ValueError:
+                    s0 = e0 = _dt.date.today()
+                span = min(max((e0 - s0).days, 0), 400)
+                day_list = [s0 + _dt.timedelta(days=i) for i in range(span + 1)]
+                trim = False
+            else:
+                today = _dt.date.today()
+                day_list = [today - _dt.timedelta(days=i) for i in range(int(days) - 1, -1, -1)]
+                trim = True
             value = {s: [] for s in segs}
             pos = {s: [] for s in segs}
             items = {s: [] for s in segs}
@@ -204,20 +218,22 @@ def daily_intake(days: int = 30) -> dict:
             labels = [dd.strftime('%d %b') for dd in day_list]
             # Trim leading all-zero days so the bars fill the chart from the left
             # instead of clustering at the right edge (orders may start mid-window).
-            start = 0
-            for i in range(len(labels)):
-                if any((value[s][i] or pos[s][i]) for s in segs):
-                    start = i
-                    break
-            else:
-                start = max(0, len(labels) - 1)
-            if start > 0:
-                labels = labels[start:]
-                for s in segs:
-                    value[s] = value[s][start:]
-                    pos[s] = pos[s][start:]
-                    items[s] = items[s][start:]
-                    qty[s] = qty[s][start:]
+            # Only in last-N-days mode — an explicit range is shown in full.
+            if trim:
+                trim_at = 0
+                for i in range(len(labels)):
+                    if any((value[s][i] or pos[s][i]) for s in segs):
+                        trim_at = i
+                        break
+                else:
+                    trim_at = max(0, len(labels) - 1)
+                if trim_at > 0:
+                    labels = labels[trim_at:]
+                    for s in segs:
+                        value[s] = value[s][trim_at:]
+                        pos[s] = pos[s][trim_at:]
+                        items[s] = items[s][trim_at:]
+                        qty[s] = qty[s][trim_at:]
             out = {'labels': labels, 'segments': segs,
                    'value': value, 'pos': pos, 'items': items, 'qty': qty}
     except Exception:  # noqa: BLE001
@@ -225,16 +241,20 @@ def daily_intake(days: int = 30) -> dict:
     return out
 
 
-def intake_hierarchy(days: int = 30, date: str = '') -> dict:
+def intake_hierarchy(days: int = 30, date: str = '', start: str = '',
+                     end: str = '') -> dict:
     """segment → parent marketplace → child breakdown (pos/value/items) for the
-    management tree. ``date`` (YYYY-MM-DD) scopes to a single day; otherwise the
-    last N days. Read-only; never raises."""
+    management tree. ``date`` (YYYY-MM-DD) scopes to a single day, ``start``+
+    ``end`` to an explicit range; otherwise the last N days. Read-only; never
+    raises."""
     out = {'segments': [], 'total': {'pos': 0, 'value': 0.0, 'items': 0}}
     try:
         with _conn() as (cur, d):
             ot, ph = d['orders'], d['ph']
             if date:
                 wsql, params = f"DATE(created_at) = {ph}", (date,)
+            elif start and end:
+                wsql, params = f"DATE(created_at) BETWEEN {ph} AND {ph}", (start, end)
             else:
                 wsql, params = (f"created_at >= (CURDATE() - INTERVAL "
                                 f"{int(days) - 1} DAY)", ())
@@ -618,7 +638,14 @@ def _where(d: dict, f: dict):
     if f['days'] > 0:
         where.append(f"run_ts >= {ph}"); params.append(_cutoff(kind, f['days']))
     if f['q']:
-        where.append(f"po LIKE {ph}"); params.append(f"%{f['q']}%")
+        # Split on space / comma / semicolon / pipe / tab / newline so a PASTED
+        # list of PO numbers filters to ALL of them (OR match). Single term →
+        # one LIKE, exactly as before.
+        import re as _re
+        terms = [t for t in _re.split(r'[\s,;|]+', f['q'].strip()) if t]
+        if terms:
+            where.append('(' + ' OR '.join(f"po LIKE {ph}" for _ in terms) + ')')
+            params.extend(f"%{t}%" for t in terms)
     if f['warehouse']:
         where.append(f"warehouse={ph}"); params.append(f['warehouse'])
     if f['order_type']:

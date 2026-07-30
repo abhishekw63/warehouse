@@ -422,12 +422,13 @@ def b2b_mp_profile(request, mp):
 
 def _sku_filters(request):
     """Shared SKU-demand filters (marketplace + upload-date range). Defaults to
-    *today's* uploads on first load; validates the dates."""
+    the *last 30 days* of uploads on first load; validates the dates."""
     import datetime as _dt
     sf, st = request.GET.get('sku_from'), request.GET.get('sku_to')
     smp = (request.GET.get('sku_mp') or '').strip()
     if sf is None and st is None:
-        sf = st = _dt.date.today().isoformat()
+        st = _dt.date.today().isoformat()
+        sf = (_dt.date.today() - _dt.timedelta(days=29)).isoformat()
 
     def _ok(v):
         v = (v or '').strip()
@@ -442,32 +443,47 @@ def _sku_filters(request):
 
 
 def _daily_ctx(request):
-    """Daily-Intake tab context (chart + breakdown tree). Its own ?days=/?date=
-    filter — independent of the SKU tab."""
+    """Daily-Intake tab context (chart + breakdown tree). Its own filter —
+    independent of the SKU tab. Either a quick preset (?days=7/30/90) or an
+    explicit range (?start=&end=). A single day (start==end, or legacy ?date=)
+    spotlights that bar on the chart. Defaults to the last 30 days."""
     import datetime as _dt
+
+    def _ok(v):
+        v = (v or '').strip()
+        if not v:
+            return ''
+        try:
+            _dt.date.fromisoformat(v)
+            return v
+        except ValueError:
+            return ''
+
     try:
         days = int(request.GET.get('days') or 30)
     except (TypeError, ValueError):
         days = 30
     days = days if days in (7, 30, 90) else 30
-    # Single-date scope for the breakdown tree (YYYY-MM-DD). Defaults to TODAY
-    # when the page first opens (no 'date' key); an explicit empty 'date=' (the
-    # Clear button) shows the whole range instead.
-    raw = request.GET.get('date')
-    date = _dt.date.today().isoformat() if raw is None else raw.strip()
-    if date:
+    start, end = _ok(request.GET.get('start')), _ok(request.GET.get('end'))
+    date = _ok(request.GET.get('date'))
+    if date and not (start and end):                 # legacy single-date → range of one
+        start = end = date
+    if start and end and start > end:
+        start, end = end, start
+
+    if start and end:
+        daily = order_db.daily_intake(start=start, end=end)
+        hier = order_db.intake_hierarchy(start=start, end=end)
+    else:
+        daily = order_db.daily_intake(days)
+        hier = order_db.intake_hierarchy(days)
+    if start and end and start == end:               # spotlight the single day
         try:
-            _dt.date.fromisoformat(date)
-        except ValueError:
-            date = ''
-    daily = order_db.daily_intake(days)              # raw dict → json_script encodes
-    if date:
-        try:
-            daily['focus'] = _dt.date.fromisoformat(date).strftime('%d %b')
+            daily['focus'] = _dt.date.fromisoformat(start).strftime('%d %b')
         except ValueError:
             pass
-    return {'days': days, 'date': date,
-            'hier': order_db.intake_hierarchy(days, date=date), 'daily': daily}
+    return {'days': days, 'start': start, 'end': end,
+            'hier': hier, 'daily': daily}
 
 
 def _sku_ctx(request):

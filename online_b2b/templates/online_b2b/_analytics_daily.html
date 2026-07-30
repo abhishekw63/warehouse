@@ -1,31 +1,37 @@
 {% load static b2b_extras %}
-{# Daily-Intake tab body — rendered inline on first paint and re-fetched via
-   AJAX (?partial=daily) on every filter change. Root carries the current
-   filter state in data-* so the shell JS can build the next request. #}
-<div class="an-daily" data-days="{{ days }}" data-date="{{ date }}">
+{% comment %}
+  Daily-Intake tab body — rendered inline on first paint and re-fetched via
+  AJAX (?partial=daily) on every filter change. Root carries the current filter
+  state in data-* so the shell JS can build the next request. (Multi-line notes
+  MUST use {% comment %}, not {# #} which is single-line only.)
+{% endcomment %}
+<div class="an-daily" data-days="{{ days }}" data-start="{{ start }}" data-end="{{ end }}">
 
   <div class="an-toolbar">
     <div class="an-scope">
       <span class="src">Orders received per day (by recorded date) ·
-        {% if date %}<b>{{ date }}</b>{% else %}last {{ days }} days{% endif %}</span>
+        {% if start and end %}{% if start == end %}<b>{{ start }}</b>{% else %}<b>{{ start }} → {{ end }}</b>{% endif %}{% else %}last {{ days }} days{% endif %}</span>
     </div>
-    <div class="head-actions">
-      <span class="date-filter">
-        <label>Any date</label>
-        <input type="date" data-daily-date value="{{ date }}">
-        {% if date %}<a href="#" data-daily-clear class="rg" title="Show full range">✕</a>{% endif %}
-      </span>
+    <div class="daily-controls">
       <span class="range-toggle">
-        <a href="#" data-daily-days="7" class="rg{% if days == 7 %} on{% endif %}">7d</a>
-        <a href="#" data-daily-days="30" class="rg{% if days == 30 %} on{% endif %}">30d</a>
-        <a href="#" data-daily-days="90" class="rg{% if days == 90 %} on{% endif %}">90d</a>
+        <a href="#" data-daily-days="7"  class="rg{% if not start and days == 7 %} on{% endif %}">7d</a>
+        <a href="#" data-daily-days="30" class="rg{% if not start and days == 30 %} on{% endif %}">30d</a>
+        <a href="#" data-daily-days="90" class="rg{% if not start and days == 90 %} on{% endif %}">90d</a>
+      </span>
+      <span class="range-picker{% if start %} on{% endif %}">
+        <svg class="rp-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        <input type="date" data-daily-start value="{{ start }}" aria-label="From date">
+        <span class="rp-sep">→</span>
+        <input type="date" data-daily-end value="{{ end }}" aria-label="To date">
+        <button type="button" class="rp-apply" data-daily-apply>Apply</button>
+        {% if start %}<a href="#" data-daily-clear class="rp-clear" title="Clear range — back to last {{ days }} days">✕</a>{% endif %}
       </span>
     </div>
   </div>
 
   <!-- period totals -->
   <div class="hub-kpis" style="grid-template-columns:repeat(4,1fr);">
-    <a class="hk" href="{% url 'b2b_orders' %}"><div class="n">{{ hier.total.pos }}</div><div class="l">POs · {% if date %}{{ date }}{% else %}last {{ days }}d{% endif %}</div></a>
+    <a class="hk" href="{% url 'b2b_orders' %}"><div class="n">{{ hier.total.pos }}</div><div class="l">POs · {% if start and end %}{% if start == end %}{{ start }}{% else %}range{% endif %}{% else %}last {{ days }}d{% endif %}</div></a>
     <div class="hk"><div class="n">{{ hier.total.qty|compact }}</div><div class="l">Total Qty</div></div>
     <div class="hk"><div class="n">{{ hier.total.value|inr_short }}</div><div class="l">Order Value</div></div>
     <a class="hk" href="{% url 'b2b_lines' %}"><div class="n">{{ hier.total.items|compact }}</div><div class="l">Line Items</div></a>
@@ -50,7 +56,7 @@
   <!-- tree-branch breakdown: segment → marketplace → child -->
   <div>
     <div class="sec-head">
-      <h2>Breakdown tree {% if date %}· {{ date }}{% else %}· last {{ days }} days{% endif %}</h2>
+      <h2>Breakdown tree {% if start and end %}· {{ start }}{% if start != end %} → {{ end }}{% endif %}{% else %}· last {{ days }} days{% endif %}</h2>
       <span class="muted">{{ hier.total.pos }} POs · {{ hier.total.value|inr_short }} · {{ hier.total.items }} items</span>
     </div>
     <div class="tree">
@@ -90,7 +96,7 @@
           {% endfor %}
         </div>
       </details>
-      {% empty %}<p class="muted">No orders received {% if date %}on {{ date }}{% else %}in this period{% endif %}.</p>{% endfor %}
+      {% empty %}<p class="muted">No orders received {% if start and end %}in {{ start }}{% if start != end %} → {{ end }}{% endif %}{% else %}in this period{% endif %}.</p>{% endfor %}
     </div>
   </div>
 

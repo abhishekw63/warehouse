@@ -48,9 +48,26 @@
   .an-pane.an-busy{opacity:.45;pointer-events:none;transition:opacity .15s;}
   .an-loading{padding:60px 0;text-align:center;color:var(--muted);font-size:13px;}
   @media (prefers-reduced-motion: reduce){.an-pane{animation:none;}}
-  .an-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
-  .an-daily .head-actions,.an-daily .date-filter,.an-daily .range-toggle{display:inline-flex;align-items:center;gap:8px;}
+  .an-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:16px;}
   .an-scope .src{font-size:12.5px;}
+  .daily-controls{display:inline-flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  /* quick presets — segmented pill */
+  .range-toggle{display:inline-flex;align-items:center;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:2px;gap:2px;}
+  .range-toggle .rg{padding:5px 12px;font-size:12px;font-weight:700;color:var(--muted);border-radius:7px;text-decoration:none;transition:all .13s;}
+  .range-toggle .rg:hover{color:var(--text);}
+  .range-toggle .rg.on{background:var(--accent);color:#fff;box-shadow:0 1px 3px -1px color-mix(in srgb,var(--accent) 60%,transparent);}
+  /* custom from–to range picker */
+  .range-picker{display:inline-flex;align-items:center;gap:7px;background:var(--surface);border:1px solid var(--border);border-radius:9px;padding:4px 8px;transition:border-color .13s,box-shadow .13s;}
+  .range-picker.on{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 12%,transparent);}
+  .range-picker .rp-ic{color:var(--muted);display:flex;flex:0 0 auto;}
+  .range-picker input[type=date]{border:none;background:transparent;color:var(--text);font-size:12.5px;padding:2px 2px;font-family:inherit;width:120px;}
+  .range-picker input[type=date]:focus{outline:none;}
+  .range-picker .rp-sep{color:var(--muted);font-size:12px;}
+  .range-picker .rp-apply{appearance:none;border:none;background:var(--accent);color:#fff;font-size:12px;font-weight:700;padding:5px 12px;border-radius:7px;cursor:pointer;font-family:inherit;transition:filter .13s;}
+  .range-picker .rp-apply:hover{filter:brightness(1.07);}
+  .range-picker .rp-clear{color:var(--muted);text-decoration:none;font-size:13px;padding:0 3px;border-radius:5px;line-height:1;}
+  .range-picker .rp-clear:hover{color:#dc2626;background:color-mix(in srgb,#dc2626 10%,transparent);}
+  @media(max-width:720px){.range-picker input[type=date]{width:104px;}}
   /* SKU tab (moved from the old sku_demand page) */
   .sku-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
   .sku-filter select,.sku-filter input[type=date]{padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12.5px;background:#fff;color:var(--text);}
@@ -106,7 +123,10 @@
     var p = new URLSearchParams();
     p.set('tab', activeTab);
     var d = document.querySelector('#pane-daily .an-daily');
-    if (d) { p.set('days', d.dataset.days || 30); if (d.dataset.date) p.set('date', d.dataset.date); }
+    if (d) {
+      if (d.dataset.start && d.dataset.end) { p.set('start', d.dataset.start); p.set('end', d.dataset.end); }
+      else { p.set('days', d.dataset.days || 30); }
+    }
     var s = document.querySelector('#pane-sku .an-sku');
     if (s) {
       if (s.dataset.mp) p.set('sku_mp', s.dataset.mp);
@@ -193,10 +213,10 @@
     });
   }
 
-  function loadDaily(days, date) {
+  function loadDaily(params) {
     var pane = document.getElementById('pane-daily');
     pane.classList.add('an-busy');
-    fetch(url({ partial: 'daily', days: days, date: date }), { headers: { 'X-Requested-With': 'fetch' } })
+    fetch(url(Object.assign({ partial: 'daily' }, params)), { headers: { 'X-Requested-With': 'fetch' } })
       .then(function (r) { return r.text(); })
       .then(function (html) { pane.innerHTML = html; pane.classList.remove('an-busy'); wireDaily(); syncURL(); })
       .catch(function () { pane.classList.remove('an-busy'); });
@@ -206,14 +226,24 @@
     buildDailyChart();
     var root = document.querySelector('#pane-daily .an-daily');
     if (!root) return;
-    var days = root.dataset.days, date = root.dataset.date;
+    var days = root.dataset.days || 30;
+    // quick presets — a preset always clears any active range
     root.querySelectorAll('[data-daily-days]').forEach(function (a) {
-      a.addEventListener('click', function (e) { e.preventDefault(); loadDaily(a.getAttribute('data-daily-days'), date); });
+      a.addEventListener('click', function (e) { e.preventDefault(); loadDaily({ days: a.getAttribute('data-daily-days') }); });
     });
-    var di = root.querySelector('[data-daily-date]');
-    if (di) di.addEventListener('change', function () { loadDaily(days, di.value); });
+    // custom from–to range
+    var s = root.querySelector('[data-daily-start]'), en = root.querySelector('[data-daily-end]');
+    var apply = root.querySelector('[data-daily-apply]');
+    function doApply() {
+      if (s.value && en.value) loadDaily({ start: s.value, end: en.value });
+      else (s.value ? en : s).focus();               // need both ends
+    }
+    if (apply) apply.addEventListener('click', doApply);
+    // auto-apply once the second date is filled
+    if (s) s.addEventListener('change', function () { if (s.value && en.value) doApply(); });
+    if (en) en.addEventListener('change', function () { if (s.value && en.value) doApply(); });
     var cl = root.querySelector('[data-daily-clear]');
-    if (cl) cl.addEventListener('click', function (e) { e.preventDefault(); loadDaily(days, ''); });
+    if (cl) cl.addEventListener('click', function (e) { e.preventDefault(); loadDaily({ days: days }); });
   }
 
   // ══ SKU tab ══

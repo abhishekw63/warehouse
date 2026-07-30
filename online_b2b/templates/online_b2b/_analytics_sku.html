@@ -1,8 +1,11 @@
 {% load static b2b_extras %}
-{# SKU-demand tab body — full SKU list. Lazy-loaded on first tab open and
-   re-fetched via AJAX (?partial=sku) on every filter change. Plain date inputs
-   (no auto-submit widget) so the range filter is driven entirely by the shell
-   JS — this is the fix for the earlier "range not working" reload bug. #}
+{% comment %}
+  SKU-demand tab body — full SKU list. Lazy-loaded on first tab open and
+  re-fetched via AJAX (?partial=sku) on every filter change. Plain date inputs
+  (no auto-submit widget) so the range filter is driven entirely by the shell JS
+  — this is the fix for the earlier "range not working" reload bug. (Multi-line
+  notes MUST use {% comment %}, not {# #} which is single-line only.)
+{% endcomment %}
 <div class="an-sku" data-mp="{{ sku_mp }}" data-from="{{ sku_from }}" data-to="{{ sku_to }}">
 
   <div class="an-toolbar">
