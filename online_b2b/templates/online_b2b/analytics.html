@@ -30,6 +30,7 @@
     <button type="button" class="an-tab" data-tab="exc" role="tab">Exceptions &amp; Quality</button>
     <button type="button" class="an-tab" data-tab="geo" role="tab">Geography &amp; Concentration</button>
     <button type="button" class="an-tab" data-tab="otif" role="tab">OTIF · Readiness</button>
+    <button type="button" class="an-tab" data-tab="dos" role="tab">Inventory · DOS</button>
   </div>
 
   <div class="an-pane" id="pane-daily" data-loaded="1" role="tabpanel">
@@ -52,6 +53,9 @@
   </div>
   <div class="an-pane" id="pane-otif" data-loaded="0" role="tabpanel" hidden>
     <div class="an-loading">Loading readiness…</div>
+  </div>
+  <div class="an-pane" id="pane-dos" data-loaded="0" role="tabpanel" hidden>
+    <div class="an-loading">Loading days of supply…</div>
   </div>
 
 </div>
@@ -227,6 +231,23 @@
   .zone-meta{font-size:10.5px;color:var(--muted);}
   /* ── OTIF · Readiness tab ── */
   .otif-note{font-size:12px;color:var(--text-2);background:color-mix(in srgb,var(--accent) 6%,transparent);border:1px solid color-mix(in srgb,var(--accent) 20%,transparent);border-radius:9px;padding:9px 13px;margin:2px 0 16px;line-height:1.5;}
+  /* ── Inventory · Days-of-Supply tab ── */
+  .dos-tables{display:flex;flex-direction:column;gap:22px;}
+  .dos-strip{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin:0 0 20px;}
+  @media(max-width:900px){.dos-strip{grid-template-columns:repeat(3,1fr);}}
+  @media(max-width:520px){.dos-strip{grid-template-columns:repeat(2,1fr);}}
+  .dos-pill{border:1px solid var(--border);border-radius:11px;background:var(--surface);padding:11px 13px;border-left:4px solid var(--muted);}
+  .dos-pill b{display:block;font-size:20px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;}
+  .dos-pill span{font-size:11px;color:var(--muted);font-weight:600;}
+  .dos-pill.dos-oos{border-left-color:#dc2626;} .dos-pill.dos-critical{border-left-color:#ef4444;}
+  .dos-pill.dos-low{border-left-color:#f59e0b;} .dos-pill.dos-healthy{border-left-color:#10b981;}
+  .dos-pill.dos-overstock{border-left-color:#0ea5e9;} .dos-pill.dos-dead{border-left-color:#94a3b8;}
+  .fr-st.dos-oos{color:#c0392b;background:color-mix(in srgb,#ef4444 14%,transparent);}
+  .fr-st.dos-critical{color:#c0392b;background:color-mix(in srgb,#ef4444 12%,transparent);}
+  .fr-st.dos-low{color:#b45309;background:color-mix(in srgb,#f59e0b 16%,transparent);}
+  .fr-st.dos-healthy{color:#0a7d54;background:color-mix(in srgb,#10b981 14%,transparent);}
+  .fr-st.dos-overstock{color:#0369a1;background:color-mix(in srgb,#0ea5e9 15%,transparent);}
+  .fr-st.dos-dead{color:#475569;background:#e2e8f0;}
   .ex-clean{font-weight:700;color:var(--text-2);} .ex-clean.full{color:#0a7d54;}
   .ex-typecard{padding:14px 16px;display:flex;flex-direction:column;gap:12px;}
   .ex-type{display:flex;flex-direction:column;gap:5px;}
@@ -268,6 +289,10 @@
     else if (activeTab === 'otif') {
       var ot = document.querySelector('#pane-otif .an-otif');
       if (ot) { if (ot.dataset.mp) p.set('sku_mp', ot.dataset.mp); if (ot.dataset.horizon && ot.dataset.horizon !== '0') p.set('horizon', ot.dataset.horizon); }
+    }
+    else if (activeTab === 'dos') {
+      var ds = document.querySelector('#pane-dos .an-dos');
+      if (ds) { if (ds.dataset.mp) p.set('sku_mp', ds.dataset.mp); p.set('days', ds.dataset.days || 30); }
     }
     if (s) {
       if (s.dataset.mp) p.set('sku_mp', s.dataset.mp);
@@ -607,6 +632,32 @@
     });
   }
 
+  // ══ INVENTORY · DAYS-OF-SUPPLY tab ══
+  function loadDos(params) {
+    var pane = document.getElementById('pane-dos');
+    var lid = showLoader(pane, [
+      'Reading current stock on-hand…',
+      'Computing average daily demand…',
+      'Calculating days of supply…',
+      'Bucketing stockout risk & overstock…'
+    ], 'Stock cover per SKU — on-hand vs demand rate.');
+    fetch(url(Object.assign({ partial: 'dos' }, params)), { headers: { 'X-Requested-With': 'fetch' } })
+      .then(function (r) { return r.text(); })
+      .then(function (html) { clearInterval(lid); pane.innerHTML = html; pane.dataset.loaded = '1'; wireDos(); syncURL(); })
+      .catch(function () { clearInterval(lid); pane.innerHTML = '<div class="an-loading">Could not load days of supply.</div>'; });
+  }
+
+  function wireDos() {
+    var root = document.querySelector('#pane-dos .an-dos');
+    if (!root) return;
+    wireSort(root);
+    var mp = root.querySelector('[name=sku_mp]');
+    if (mp) mp.addEventListener('change', function () { loadDos({ sku_mp: mp.value, days: root.dataset.days || 30 }); });
+    root.querySelectorAll('[data-dos-days]').forEach(function (a) {
+      a.addEventListener('click', function (e) { e.preventDefault(); loadDos({ sku_mp: mp ? mp.value : '', days: a.getAttribute('data-dos-days') }); });
+    });
+  }
+
   // ══ tabs ══
   function showTab(name) {
     activeTab = name;
@@ -625,6 +676,8 @@
       loadGeo({ sku_mp: q.get('sku_mp') || '', sku_from: q.get('sku_from') || undefined, sku_to: q.get('sku_to') || undefined });
     } else if (name === 'otif' && document.getElementById('pane-otif').dataset.loaded === '0') {
       loadOtif({ sku_mp: q.get('sku_mp') || '', horizon: q.get('horizon') || 0 });
+    } else if (name === 'dos' && document.getElementById('pane-dos').dataset.loaded === '0') {
+      loadDos({ sku_mp: q.get('sku_mp') || '', days: q.get('days') || 30 });
     } else {
       syncURL();
     }
@@ -638,7 +691,7 @@
     wireDaily();                                  // daily was server-rendered
     var q = new URLSearchParams(location.search);
     var t = q.get('tab');
-    if (['sku', 'trends', 'fulfil', 'exc', 'geo', 'otif'].indexOf(t) >= 0) showTab(t);  // deep-link
+    if (['sku', 'trends', 'fulfil', 'exc', 'geo', 'otif', 'dos'].indexOf(t) >= 0) showTab(t);  // deep-link
     else syncURL();
   }
   if (document.readyState !== 'loading') boot();

@@ -548,6 +548,20 @@ def _otif_ctx(request):
             'sku_mp': smp, 'horizon': horizon}
 
 
+def _dos_ctx(request):
+    """Inventory Days-of-Supply tab — stock cover per SKU (on-hand ÷ avg daily
+    demand). Own filter: demand window (?days=7/30/90) + marketplace."""
+    from .services import inventory_store
+    smp = (request.GET.get('sku_mp') or '').strip()
+    try:
+        days = int(request.GET.get('days') or 30)
+    except (TypeError, ValueError):
+        days = 30
+    days = days if days in (7, 30, 90) else 30
+    return {'dos': inventory_store.days_of_supply(days, smp),
+            'days': days, 'sku_mp': smp}
+
+
 class AnalyticsView(LoginRequiredMixin, TemplateView):
     """Management analytics — two AJAX tabs under one page, each with its own
     filter (no page refresh):
@@ -572,6 +586,8 @@ class AnalyticsView(LoginRequiredMixin, TemplateView):
             return render(request, 'online_b2b/_analytics_geo.html', _geo_ctx(request))
         if partial == 'otif':
             return render(request, 'online_b2b/_analytics_otif.html', _otif_ctx(request))
+        if partial == 'dos':
+            return render(request, 'online_b2b/_analytics_dos.html', _dos_ctx(request))
         return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):

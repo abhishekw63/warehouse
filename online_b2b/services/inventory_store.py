@@ -643,6 +643,101 @@ def stock_by_item() -> list[dict]:
     return out
 
 
+def days_of_supply(days: int = 30, marketplace: str = '') -> dict:
+    """**Inventory Days-of-Supply** (SCOR Assets). Network-wide per-SKU stock
+    cover = current on-hand ÷ average daily demand (over the last ``days``).
+    Buckets each SKU (OOS / Critical <7d / Low 7–30 / Healthy 30–90 / Overstock
+    >90 / Dead = stock but no recent demand), a demand-weighted average DOS, and
+    the capital tied in overstock + dead stock. Reuses current snapshots +
+    order_lines_full demand. Read-only; never raises."""
+    import datetime as _dt
+    ensure_tables()
+    days = int(days) or 30
+    out = {'ok': False, 'days': days, 'marketplace': marketplace, 'marketplaces': [],
+           'summary': {'skus': 0, 'oos': 0, 'critical': 0, 'low': 0, 'healthy': 0,
+                       'overstock': 0, 'dead': 0, 'at_risk': 0, 'avg_dos': 0.0,
+                       'overstock_value': 0.0, 'dead_value': 0.0},
+           'risk': [], 'overstock': []}
+    try:
+        with _conn() as (cur, d):
+            ph = d['ph']
+            cur.execute("SELECT DISTINCT marketplace FROM order_lines_full "
+                        "WHERE marketplace IS NOT NULL AND marketplace<>'' "
+                        "ORDER BY marketplace")
+            out['marketplaces'] = [r[0] for r in cur.fetchall()]
+
+            cur.execute("SELECT s.item_no, SUM(s.available_qty) FROM inventory_stock s "
+                        "JOIN inventory_snapshot p ON p.snapshot_id=s.snapshot_id "
+                        "WHERE p.is_current=1 GROUP BY s.item_no")
+            onhand = {str(r[0]).strip(): float(r[1] or 0) for r in cur.fetchall()}
+
+            w = [f"DATE(run_ts) >= {ph}"]
+            args = [(_dt.date.today() - _dt.timedelta(days=days - 1)).isoformat()]
+            if marketplace:
+                w.append(f"marketplace={ph}"); args.append(marketplace)
+            cur.execute("SELECT item_no, MAX(description), SUM(qty), "
+                        "SUM(qty*COALESCE(unit_price,0)) FROM order_lines_full "
+                        f"WHERE {' AND '.join(w)} GROUP BY item_no", tuple(args))
+            dem = {}
+            for it, de, q, v in cur.fetchall():
+                k = str(it or '').strip()
+                if k:
+                    dem[k] = {'desc': str(de or ''), 'qty': float(q or 0), 'val': float(v or 0)}
+
+            cur.execute('SELECT item_no,description,mrp,category FROM item_master')
+            im = {str(r[0]).strip(): {'desc': str(r[1] or ''), 'mrp': float(r[2] or 0),
+                                      'cat': str(r[3] or '')} for r in cur.fetchall()}
+
+        rows = []
+        S = out['summary']
+        wnum = wden = 0.0
+        for k in set(onhand) | set(dem):
+            oh = onhand.get(k, 0.0)
+            dm = dem.get(k)
+            dq = dm['qty'] if dm else 0.0
+            daily = dq / days if dq > 0 else 0.0
+            unit = (dm['val'] / dm['qty']) if (dm and dm['qty']) else im.get(k, {}).get('mrp', 0.0)
+            desc = (dm['desc'] if (dm and dm['desc']) else im.get(k, {}).get('desc', ''))
+            cat = im.get(k, {}).get('cat', '')
+            val = oh * unit
+            if daily > 0:
+                dos = oh / daily
+                if oh <= 0:
+                    st = 'OOS'; S['oos'] += 1
+                elif dos < 7:
+                    st = 'Critical'; S['critical'] += 1
+                elif dos < 30:
+                    st = 'Low'; S['low'] += 1
+                elif dos <= 90:
+                    st = 'Healthy'; S['healthy'] += 1
+                else:
+                    st = 'Overstock'; S['overstock'] += 1; S['overstock_value'] += val
+                S['skus'] += 1
+                wnum += dos * daily; wden += daily
+                rows.append({'item': k, 'desc': desc, 'cat': cat, 'on_hand': round(oh, 1),
+                             'daily': round(daily, 2), 'dos': round(dos, 1),
+                             'value': round(val, 2), 'status': st})
+            elif oh > 0:
+                S['dead'] += 1; S['dead_value'] += val
+                rows.append({'item': k, 'desc': desc, 'cat': cat, 'on_hand': round(oh, 1),
+                             'daily': 0, 'dos': None, 'value': round(val, 2), 'status': 'Dead'})
+
+        S['avg_dos'] = round(wnum / wden, 1) if wden else 0.0
+        S['at_risk'] = S['oos'] + S['critical']
+        S['overstock_value'] = round(S['overstock_value'], 2)
+        S['dead_value'] = round(S['dead_value'], 2)
+        risk = [r for r in rows if r['status'] in ('OOS', 'Critical', 'Low')]
+        risk.sort(key=lambda r: (r['dos'] if r['dos'] is not None else 0, -r['value']))
+        over = [r for r in rows if r['status'] in ('Overstock', 'Dead')]
+        over.sort(key=lambda r: -r['value'])
+        out['risk'] = risk[:40]
+        out['overstock'] = over[:40]
+        out['ok'] = True
+    except Exception as e:  # noqa: BLE001
+        out['error'] = f"{type(e).__name__}: {e}"
+    return out
+
+
 def bin_audit(snapshot_id) -> list[dict]:
     """Per-bin audit rows for a snapshot (for the bin-classification view)."""
     ensure_tables()
@@ -699,3 +794,32 @@ def item_bins_bulk(warehouse, item_nos) -> dict:
 def item_bins(warehouse, item_no) -> list[dict]:
     """Per-bin breakdown for ONE item (see :func:`item_bins_bulk`)."""
     return item_bins_bulk(warehouse, [item_no]).get(str(item_no), [])
+
+
+# Bin-name signals that a SKU is FROZEN at the item level in D365 (order block /
+# cycle-count hold / shortage / any hold). D365 won't pick ANY of the item's
+# stock — including what still sits in real pick faces — so our fill-rate must
+# ignore the whole SKU, not just the stock physically in the hold bin.
+_BLOCK_BIN_KEYWORDS = ('BLOCK', 'HOLD', 'SHORTAGE')
+
+
+def blocked_items(warehouse) -> set:
+    """Set of item_nos that have ANY non-zero stock in an order-block / hold /
+    shortage bin in the CURRENT snapshot of ``warehouse`` — these are frozen in
+    D365 and must be treated as NOT pickable. Empty if the snapshot predates the
+    per-line capture. Read-only."""
+    ensure_tables()
+    out: set = set()
+    try:
+        with _conn() as (cur, d):
+            ph = d['ph']
+            like = ' OR '.join([f"UPPER(l.bin_code) LIKE {ph}"] * len(_BLOCK_BIN_KEYWORDS))
+            cur.execute(
+                f"SELECT DISTINCT l.item_no FROM inventory_bin_line l "
+                f"JOIN inventory_snapshot p ON p.snapshot_id=l.snapshot_id "
+                f"WHERE p.is_current=1 AND l.warehouse={ph} AND l.qty<>0 AND ({like})",
+                tuple([str(warehouse)] + [f"%{k}%" for k in _BLOCK_BIN_KEYWORDS]))
+            out = {str(r[0]) for r in cur.fetchall()}
+    except Exception:  # noqa: BLE001
+        return set()
+    return out
