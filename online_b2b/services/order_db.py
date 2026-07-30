@@ -309,6 +309,68 @@ def intake_hierarchy(days: int = 30, date: str = '', start: str = '',
     return out
 
 
+def intake_trends(days: int = 30) -> dict:
+    """Momentum: the current ``days``-day window vs the immediately-preceding
+    window of equal length. Returns both windows' totals (POs / value / qty /
+    line items / avg PO value) with % deltas, plus per-marketplace movers
+    (current vs previous value, ranked by change). Read-only; never raises."""
+    out = {'ok': False, 'days': days,
+           'cur': {'pos': 0, 'value': 0.0, 'qty': 0, 'items': 0, 'avg': 0.0},
+           'prev': {'pos': 0, 'value': 0.0, 'qty': 0, 'items': 0, 'avg': 0.0},
+           'deltas': {}, 'movers': [], 'gainers': [], 'losers': []}
+
+    def _delta(c, p):
+        if p:
+            return round((c - p) / p * 100, 1)
+        return 100.0 if c else 0.0
+
+    try:
+        with _conn() as (cur, d):
+            ot = d['orders']
+            n = int(days)
+            cur_w = (f"created_at >= (CURDATE() - INTERVAL {n - 1} DAY)", ())
+            prev_w = (f"created_at >= (CURDATE() - INTERVAL {2 * n - 1} DAY) "
+                      f"AND created_at < (CURDATE() - INTERVAL {n - 1} DAY)", ())
+
+            def agg(w):
+                cur.execute(
+                    f"SELECT COUNT(DISTINCT po), COALESCE(SUM(order_value),0), "
+                    f"COALESCE(SUM(qty),0), COALESCE(SUM(items),0) "
+                    f"FROM {ot} WHERE {w[0]}", w[1])
+                r = cur.fetchone()
+                pos, val = int(r[0] or 0), float(r[1] or 0)
+                return {'pos': pos, 'value': round(val, 2), 'qty': int(r[2] or 0),
+                        'items': int(r[3] or 0), 'avg': round(val / pos, 2) if pos else 0.0}
+
+            def bymp(w):
+                cur.execute(
+                    f"SELECT marketplace_label, COALESCE(SUM(order_value),0), "
+                    f"COUNT(DISTINCT po) FROM {ot} WHERE {w[0]} "
+                    f"GROUP BY marketplace_label", w[1])
+                return {(r[0] or 'Other'): (float(r[1] or 0), int(r[2] or 0))
+                        for r in cur.fetchall()}
+
+            c, p = agg(cur_w), agg(prev_w)
+            cmp_, pmp = bymp(cur_w), bymp(prev_w)
+            movers = []
+            for m in set(cmp_) | set(pmp):
+                cv, cpos = cmp_.get(m, (0.0, 0))
+                pv = pmp.get(m, (0.0, 0))[0]
+                movers.append({'mp': m, 'cur': round(cv, 2), 'prev': round(pv, 2),
+                               'delta': round(cv - pv, 2), 'dpct': _delta(cv, pv),
+                               'pos': cpos})
+            movers.sort(key=lambda x: -x['delta'])
+            out = {'ok': True, 'days': n, 'cur': c, 'prev': p,
+                   'deltas': {k: _delta(c[k], p[k]) for k in
+                              ('pos', 'value', 'qty', 'items', 'avg')},
+                   'movers': movers,
+                   'gainers': [m for m in movers if m['delta'] > 0][:8],
+                   'losers': [m for m in movers if m['delta'] < 0][-8:][::-1]}
+    except Exception as e:  # noqa: BLE001
+        out['error'] = f"{type(e).__name__}: {e}"
+    return out
+
+
 def hub_extra_kpis() -> dict:
     """Extra hub KPIs in one round-trip: avg PO value, total line items, POs in the
     last 7 days, and resolved (actioned) issue lines. Read-only; never raises."""

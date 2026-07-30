@@ -494,6 +494,17 @@ def _sku_ctx(request):
             'sku_from': sf, 'sku_to': st, 'sku_mp': smp}
 
 
+def _trends_ctx(request):
+    """Trends & Momentum tab context — current window vs the previous equal
+    window, with per-marketplace movers. Own ?days=7/30/90 filter."""
+    try:
+        days = int(request.GET.get('days') or 30)
+    except (TypeError, ValueError):
+        days = 30
+    days = days if days in (7, 30, 90) else 30
+    return {'days': days, 'trends': order_db.intake_trends(days)}
+
+
 class AnalyticsView(LoginRequiredMixin, TemplateView):
     """Management analytics — two AJAX tabs under one page, each with its own
     filter (no page refresh):
@@ -508,6 +519,8 @@ class AnalyticsView(LoginRequiredMixin, TemplateView):
             return render(request, 'online_b2b/_analytics_daily.html', _daily_ctx(request))
         if partial == 'sku':
             return render(request, 'online_b2b/_analytics_sku.html', _sku_ctx(request))
+        if partial == 'trends':
+            return render(request, 'online_b2b/_analytics_trends.html', _trends_ctx(request))
         return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):

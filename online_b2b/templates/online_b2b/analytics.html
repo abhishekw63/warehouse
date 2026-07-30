@@ -25,6 +25,7 @@
   <div class="an-tabs" role="tablist">
     <button type="button" class="an-tab on" data-tab="daily" role="tab">Daily Intake</button>
     <button type="button" class="an-tab" data-tab="sku" role="tab">SKU Demand</button>
+    <button type="button" class="an-tab" data-tab="trends" role="tab">Trends &amp; Momentum</button>
   </div>
 
   <div class="an-pane" id="pane-daily" data-loaded="1" role="tabpanel">
@@ -32,6 +33,9 @@
   </div>
   <div class="an-pane" id="pane-sku" data-loaded="0" role="tabpanel" hidden>
     <div class="an-loading">Loading SKU demand…</div>
+  </div>
+  <div class="an-pane" id="pane-trends" data-loaded="0" role="tabpanel" hidden>
+    <div class="an-loading">Loading trends…</div>
   </div>
 
 </div>
@@ -102,6 +106,35 @@
   @media (prefers-reduced-motion: reduce){.skux td.barcell .bar,table.skux tbody{animation:none;}}
   .skux td.barcell b{position:relative;z-index:1;}
   .scroll{max-height:70vh;overflow:auto;}
+  /* ── Trends & Momentum tab ── */
+  .tr-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:24px;}
+  @media(max-width:1100px){.tr-kpis{grid-template-columns:repeat(3,1fr);}}
+  @media(max-width:640px){.tr-kpis{grid-template-columns:repeat(2,1fr);}}
+  .tr-kpi{position:relative;border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:16px 16px 14px;box-shadow:0 1px 3px rgba(15,23,42,.05);overflow:hidden;}
+  .tr-kpi::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--accent);border-radius:4px 0 0 4px;}
+  .tr-l{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);}
+  .tr-n{font-size:26px;font-weight:800;line-height:1.15;margin:6px 0 6px;color:var(--text);font-variant-numeric:tabular-nums;}
+  .tr-d{display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:800;padding:2px 9px;border-radius:20px;}
+  .tr-d.up{color:#0a7d54;background:color-mix(in srgb,#10b981 15%,transparent);}
+  .tr-d.down{color:#c0392b;background:color-mix(in srgb,#ef4444 13%,transparent);}
+  .tr-p{font-size:11px;color:var(--muted);margin-top:8px;}
+  .tr-movers{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+  @media(max-width:900px){.tr-movers{grid-template-columns:1fr;}}
+  .tr-mh{display:flex;align-items:baseline;gap:8px;font-size:13.5px;font-weight:800;margin:0 2px 10px;}
+  .tr-mh.up{color:#0a7d54;} .tr-mh.down{color:#c0392b;}
+  .tr-mh .tr-ar{font-size:12px;}
+  .tr-mh .tr-sub{font-size:11px;font-weight:600;color:var(--muted);}
+  table.tr-tbl{width:100%;margin:0;border-collapse:collapse;}
+  table.tr-tbl th{font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--border);background:var(--surface-2);text-align:left;}
+  table.tr-tbl th.r,table.tr-tbl td.r{text-align:right;}
+  table.tr-tbl td{padding:9px 12px;border-bottom:1px solid color-mix(in srgb,var(--border) 55%,transparent);font-size:12.5px;font-variant-numeric:tabular-nums;}
+  table.tr-tbl tr:last-child td{border-bottom:none;}
+  table.tr-tbl tbody tr:hover td{background:color-mix(in srgb,var(--accent) 4%,transparent);}
+  .tr-tbl .tr-mp{font-weight:700;color:var(--text);}
+  .tr-tbl td.up{color:#0a7d54;font-weight:700;} .tr-tbl td.down{color:#c0392b;font-weight:700;}
+  .tr-chip{display:inline-block;font-size:11px;font-weight:800;padding:2px 8px;border-radius:20px;}
+  .tr-chip.up{color:#0a7d54;background:color-mix(in srgb,#10b981 15%,transparent);}
+  .tr-chip.down{color:#c0392b;background:color-mix(in srgb,#ef4444 13%,transparent);}
 </style>
 
 <script src="{% static 'online_b2b/vendor/apexcharts.min.js' %}"></script>
@@ -279,14 +312,34 @@
     });
   }
 
+  // ══ TRENDS tab ══
+  function loadTrends(params) {
+    var pane = document.getElementById('pane-trends');
+    pane.classList.add('an-busy');
+    fetch(url(Object.assign({ partial: 'trends' }, params)), { headers: { 'X-Requested-With': 'fetch' } })
+      .then(function (r) { return r.text(); })
+      .then(function (html) { pane.innerHTML = html; pane.dataset.loaded = '1'; pane.classList.remove('an-busy'); wireTrends(); syncURL(); })
+      .catch(function () { pane.classList.remove('an-busy'); pane.innerHTML = '<div class="an-loading">Could not load trends.</div>'; });
+  }
+
+  function wireTrends() {
+    var root = document.querySelector('#pane-trends .an-trends');
+    if (!root) return;
+    root.querySelectorAll('[data-trends-days]').forEach(function (a) {
+      a.addEventListener('click', function (e) { e.preventDefault(); loadTrends({ days: a.getAttribute('data-trends-days') }); });
+    });
+  }
+
   // ══ tabs ══
   function showTab(name) {
     activeTab = name;
     document.querySelectorAll('.an-tab').forEach(function (t) { t.classList.toggle('on', t.dataset.tab === name); });
     document.querySelectorAll('.an-pane').forEach(function (p) { p.hidden = (p.id !== 'pane-' + name); });
+    var q = new URLSearchParams(location.search);
     if (name === 'sku' && document.getElementById('pane-sku').dataset.loaded === '0') {
-      var q = new URLSearchParams(location.search);
       loadSku({ sku_mp: q.get('sku_mp') || '', sku_from: q.get('sku_from') || undefined, sku_to: q.get('sku_to') || undefined });
+    } else if (name === 'trends' && document.getElementById('pane-trends').dataset.loaded === '0') {
+      loadTrends({ days: q.get('days') || 30 });
     } else {
       syncURL();
     }
@@ -299,7 +352,8 @@
   function boot() {
     wireDaily();                                  // daily was server-rendered
     var q = new URLSearchParams(location.search);
-    if (q.get('tab') === 'sku') showTab('sku');   // deep-link / refresh into SKU tab
+    var t = q.get('tab');
+    if (t === 'sku' || t === 'trends') showTab(t);  // deep-link / refresh into a tab
     else syncURL();
   }
   if (document.readyState !== 'loading') boot();
