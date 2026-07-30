@@ -441,46 +441,62 @@ def _sku_filters(request):
     return _ok(sf), _ok(st), smp
 
 
+def _daily_ctx(request):
+    """Daily-Intake tab context (chart + breakdown tree). Its own ?days=/?date=
+    filter — independent of the SKU tab."""
+    import datetime as _dt
+    try:
+        days = int(request.GET.get('days') or 30)
+    except (TypeError, ValueError):
+        days = 30
+    days = days if days in (7, 30, 90) else 30
+    # Single-date scope for the breakdown tree (YYYY-MM-DD). Defaults to TODAY
+    # when the page first opens (no 'date' key); an explicit empty 'date=' (the
+    # Clear button) shows the whole range instead.
+    raw = request.GET.get('date')
+    date = _dt.date.today().isoformat() if raw is None else raw.strip()
+    if date:
+        try:
+            _dt.date.fromisoformat(date)
+        except ValueError:
+            date = ''
+    daily = order_db.daily_intake(days)              # raw dict → json_script encodes
+    if date:
+        try:
+            daily['focus'] = _dt.date.fromisoformat(date).strftime('%d %b')
+        except ValueError:
+            pass
+    return {'days': days, 'date': date,
+            'hier': order_db.intake_hierarchy(days, date=date), 'daily': daily}
+
+
+def _sku_ctx(request):
+    """SKU-demand tab context — full SKU list, own marketplace + upload-date
+    filter (defaults to today's uploads)."""
+    sf, st, smp = _sku_filters(request)
+    return {'sku': order_db.sku_analytics(sf, st, smp, full=True),
+            'sku_from': sf, 'sku_to': st, 'sku_mp': smp}
+
+
 class AnalyticsView(LoginRequiredMixin, TemplateView):
-    """Management daily-intake analytics: daily stacked chart by segment +
-    segment→marketplace→child breakdown. Date range via ?days= (7/30/90)."""
+    """Management analytics — two AJAX tabs under one page, each with its own
+    filter (no page refresh):
+      • Daily Intake — daily stacked chart + segment→marketplace→child tree.
+      • SKU Demand   — every SKU's demanded qty/value (lazy-loaded on first open).
+    ``?partial=daily|sku`` returns just that tab body for the fetch() calls."""
     template_name = 'online_b2b/analytics.html'
+
+    def get(self, request, *args, **kwargs):
+        partial = request.GET.get('partial')
+        if partial == 'daily':
+            return render(request, 'online_b2b/_analytics_daily.html', _daily_ctx(request))
+        if partial == 'sku':
+            return render(request, 'online_b2b/_analytics_sku.html', _sku_ctx(request))
+        return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        try:
-            days = int(self.request.GET.get('days') or 30)
-        except (TypeError, ValueError):
-            days = 30
-        days = days if days in (7, 30, 90) else 30
-        ctx['days'] = days
-        # Single-date scope for the breakdown tree (YYYY-MM-DD). Defaults to
-        # TODAY when the page first opens (no 'date' key); an explicit empty
-        # 'date=' (the Clear button) shows the whole range instead.
-        import datetime as _dt
-        raw = self.request.GET.get('date')
-        if raw is None:
-            date = _dt.date.today().isoformat()
-        else:
-            date = raw.strip()
-        if date:
-            try:
-                _dt.date.fromisoformat(date)
-            except ValueError:
-                date = ''
-        ctx['date'] = date
-        ctx['hier'] = order_db.intake_hierarchy(days, date=date)
-        daily = order_db.daily_intake(days)          # raw dict → json_script encodes
-        if date:
-            try:
-                daily['focus'] = _dt.date.fromisoformat(date).strftime('%d %b')
-            except ValueError:
-                pass
-        ctx['daily'] = daily
-        # SKU demand (newly uploaded POs) — own filter, defaults to today.
-        sf, st, smp = _sku_filters(self.request)
-        ctx['sku'] = order_db.sku_analytics(sf, st, smp)
-        ctx['sku_from'], ctx['sku_to'], ctx['sku_mp'] = sf, st, smp
+        ctx.update(_daily_ctx(self.request))         # Daily tab rendered on first paint
         return ctx
 
 

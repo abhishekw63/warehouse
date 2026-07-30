@@ -5,8 +5,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
-<link rel="stylesheet" href="{% static 'online_b2b/daterange.css' %}">
-<script defer src="{% static 'online_b2b/daterange.js' %}"></script>
 {% endblock %}
 
 {% block breadcrumb %}
@@ -19,267 +17,149 @@
 
   <div class="b2b-head">
     <div>
-      <h1>Analytics <span>· Daily Intake</span></h1>
-      <p class="src">Orders received per day (by recorded date) · last {{ days }} days</p>
-    </div>
-    <div class="head-actions">
-      <form method="get" class="date-filter" id="dateForm">
-        <input type="hidden" name="days" value="{{ days }}">
-        <label>Any date</label>
-        <input type="date" name="date" value="{{ date }}" onchange="document.getElementById('dateForm').submit()">
-        {% if date %}<a href="?days={{ days }}&date=" class="rg" title="Show full range">✕</a>{% endif %}
-      </form>
-      <span class="range-toggle">
-        <a href="?days=7{% if date %}&date={{ date }}{% endif %}" class="rg{% if days == 7 %} on{% endif %}">7d</a>
-        <a href="?days=30{% if date %}&date={{ date }}{% endif %}" class="rg{% if days == 30 %} on{% endif %}">30d</a>
-        <a href="?days=90{% if date %}&date={{ date }}{% endif %}" class="rg{% if days == 90 %} on{% endif %}">90d</a>
-      </span>
+      <h1>Analytics</h1>
+      <p class="src">Daily intake &amp; SKU demand · each tab keeps its own filter</p>
     </div>
   </div>
 
-  <!-- period totals -->
-  {% with scope=date|default:'' %}
-  <div class="hub-kpis reveal" style="grid-template-columns:repeat(4,1fr);">
-    <a class="hk" href="{% url 'b2b_orders' %}"><div class="n">{{ hier.total.pos }}</div><div class="l">POs · {% if date %}{{ date }}{% else %}last {{ days }}d{% endif %}</div></a>
-    <div class="hk"><div class="n">{{ hier.total.qty|compact }}</div><div class="l">Total Qty</div></div>
-    <div class="hk"><div class="n">{{ hier.total.value|inr_short }}</div><div class="l">Order Value</div></div>
-    <a class="hk" href="{% url 'b2b_lines' %}"><div class="n">{{ hier.total.items|compact }}</div><div class="l">Line Items</div></a>
-  </div>
-  {% endwith %}
-
-  {{ daily|json_script:"daily-data" }}
-
-  <!-- daily stacked chart -->
-  <div class="chart-card reveal" style="margin-bottom:22px;padding:16px 18px 10px;">
-    <div class="chart-head">
-      <span class="chart-title">Daily intake · stacked by segment</span>
-      <span class="chart-toggle">
-        <button type="button" class="ctg on" data-metric="value">Value</button>
-        <button type="button" class="ctg" data-metric="qty">Qty</button>
-        <button type="button" class="ctg" data-metric="pos">POs</button>
-        <button type="button" class="ctg" data-metric="items">Items</button>
-      </span>
-    </div>
-    <div id="daily-chart"><div class="chart-ph">Loading chart…</div></div>
+  <div class="an-tabs" role="tablist">
+    <button type="button" class="an-tab on" data-tab="daily" role="tab">Daily Intake</button>
+    <button type="button" class="an-tab" data-tab="sku" role="tab">SKU Demand</button>
   </div>
 
-  <!-- tree-branch breakdown: segment → marketplace → child -->
-  <div class="reveal">
-    <div class="sec-head">
-      <h2>Breakdown tree {% if date %}· {{ date }}{% else %}· last {{ days }} days{% endif %}</h2>
-      <span class="muted">{{ hier.total.pos }} POs · {{ hier.total.value|inr_short }} · {{ hier.total.items }} items</span>
-    </div>
-    <div class="tree">
-      {% for s in hier.segments %}
-      <details class="tnode tseg" open>
-        <summary>
-          <span class="tname"><span class="seg-tag {% if s.segment == 'Offline' %}off{% else %}on{% endif %}">{{ s.segment }}</span></span>
-          <span class="tmeta">{{ s.pos }} POs · {{ s.qty|compact }} qty · <b>{{ s.value|inr_short }}</b></span>
-          <span class="tbar"><span style="width:{{ s.bar }}%"></span></span>
-        </summary>
-        <div class="tchildren">
-          {% for m in s.marketplaces %}
-            {% if m.multi %}
-            <details class="tnode tmkt">
-              <summary>
-                <span class="tname">{{ m.marketplace }} <span class="tcount">{{ m.children|length }}</span></span>
-                <span class="tmeta">{{ m.pos }} POs · {{ m.qty|compact }} qty · <b>{{ m.value|inr_short }}</b></span>
-                <span class="tbar"><span style="width:{{ m.bar }}%"></span></span>
-              </summary>
-              <div class="tchildren">
-                {% for c in m.children %}
-                <a class="tnode tleaf tlink" href="{% url 'b2b_orders' %}?marketplace={{ c.label|urlencode }}" title="View {{ c.label }} orders">
-                  <span class="tname">{{ c.label }}</span>
-                  <span class="tmeta">{{ c.pos }} POs · {{ c.qty|compact }} qty · {{ c.value|inr_short }} <span class="tgo">→</span></span>
-                  <span class="tbar"><span style="width:{{ c.bar }}%"></span></span>
-                </a>
-                {% endfor %}
-              </div>
-            </details>
-            {% else %}
-            <a class="tnode tleaf tlink" href="{% url 'b2b_orders' %}?marketplace={{ m.children.0.label|urlencode }}" title="View {{ m.marketplace }} orders">
-              <span class="tname">{{ m.marketplace }}</span>
-              <span class="tmeta">{{ m.pos }} POs · {{ m.qty|compact }} qty · <b>{{ m.value|inr_short }}</b> <span class="tgo">→</span></span>
-              <span class="tbar"><span style="width:{{ m.bar }}%"></span></span>
-            </a>
-            {% endif %}
-          {% endfor %}
-        </div>
-      </details>
-      {% empty %}<p class="muted">No orders received {% if date %}on {{ date }}{% else %}in this period{% endif %}.</p>{% endfor %}
-    </div>
+  <div class="an-pane" id="pane-daily" data-loaded="1" role="tabpanel">
+    {% include 'online_b2b/_analytics_daily.html' %}
   </div>
-
-  <!-- ── SKU demand (newly uploaded POs) — qty + value, top 10 ── -->
-  <div class="reveal sku-an">
-    <div class="sec-head">
-      <h2>SKU demand <span class="muted">· newly uploaded POs</span></h2>
-      <form method="get" class="sku-filter">
-        <input type="hidden" name="days" value="{{ days }}">
-        {% if date %}<input type="hidden" name="date" value="{{ date }}">{% endif %}
-        <select name="sku_mp">
-          <option value="">All marketplaces</option>
-          {% for m in sku.marketplaces %}<option value="{{ m }}" {% if m == sku_mp %}selected{% endif %}>{{ m }}</option>{% endfor %}
-        </select>
-        <div class="drp" data-drp data-from-name="sku_from" data-to-name="sku_to"
-             data-from="{{ sku_from }}" data-to="{{ sku_to }}" data-submit="1" data-presets="1"></div>
-        <button type="submit" class="btn-primary">Apply</button>
-        <a class="btn-ghost" href="?days={{ days }}{% if date %}&date={{ date }}{% endif %}">Today</a>
-        <a class="btn-ghost" href="?days={{ days }}{% if date %}&date={{ date }}{% endif %}&sku_from=&sku_to=">All time</a>
-        <a class="btn-primary skux-full" href="{% url 'b2b_sku_demand' %}?sku_mp={{ sku_mp|urlencode }}&sku_from={{ sku_from }}&sku_to={{ sku_to }}">Full view →</a>
-      </form>
-    </div>
-    <p class="sku-scope muted">
-      {% if sku_from or sku_to %}Upload date {{ sku_from|default:'…' }} → {{ sku_to|default:'…' }}{% else %}All uploads{% endif %}{% if sku_mp %} · {{ sku_mp }}{% endif %}.
-    </p>
-
-    <div class="hub-kpis sku-kpis" style="grid-template-columns:repeat(4,1fr);margin-bottom:14px;">
-      <div class="hk"><div class="n">{{ sku.overall.skus|compact }}</div><div class="l">SKUs</div></div>
-      <div class="hk"><div class="n">{{ sku.overall.qty|compact }}</div><div class="l">Qty demanded</div></div>
-      <div class="hk"><div class="n">{{ sku.overall.value|inr_short }}</div><div class="l">Value</div></div>
-      <div class="hk"><div class="n">{{ sku.overall.pos|compact }}</div><div class="l">POs</div></div>
-    </div>
-
-    {% if sku.overall.skus %}
-    <div class="sku-cols">
-      <div class="skux-card">
-        <div class="skux-h"><span class="dot d-q"></span>Top 10 by Qty<span class="skux-cnt">of {{ sku.overall.skus }} SKUs</span></div>
-        <table class="grid compact skux sortable">
-          <thead><tr><th class="rkh">#</th><th>Item</th><th>Description</th>
-            <th class="r srt" data-k="qty">Qty ⇅</th><th class="r srt" data-k="value">Value ⇅</th><th class="r srt" data-k="pos">POs ⇅</th></tr></thead>
-          <tbody>{% for r in sku.top_qty %}
-            <tr>
-              <td class="rk"><span class="rk-b rk-{{ forloop.counter }}">{{ forloop.counter }}</span></td>
-              <td class="mono">{{ r.item_no|default:'—' }}</td>
-              <td class="desc" title="{{ r.description }}">{{ r.description|default:'—' }}</td>
-              <td class="r barcell" data-k="qty" data-v="{{ r.qty }}"><span class="bar bq" style="width:{% widthratio r.qty sku.top_qty.0.qty 100 %}%"></span><b>{{ r.qty|compact }}</b></td>
-              <td class="r" data-k="value" data-v="{{ r.value }}">{{ r.value|inr_short }}</td>
-              <td class="r" data-k="pos" data-v="{{ r.pos }}">{{ r.pos }}</td>
-            </tr>
-          {% endfor %}</tbody>
-        </table>
-      </div>
-      <div class="skux-card">
-        <div class="skux-h"><span class="dot d-v"></span>Top 10 by Value<span class="skux-cnt">of {{ sku.overall.value|inr_short }}</span></div>
-        <table class="grid compact skux sortable">
-          <thead><tr><th class="rkh">#</th><th>Item</th><th>Description</th>
-            <th class="r srt" data-k="value">Value ⇅</th><th class="r srt" data-k="qty">Qty ⇅</th><th class="r srt" data-k="pos">POs ⇅</th></tr></thead>
-          <tbody>{% for r in sku.top_value %}
-            <tr>
-              <td class="rk"><span class="rk-b rk-{{ forloop.counter }}">{{ forloop.counter }}</span></td>
-              <td class="mono">{{ r.item_no|default:'—' }}</td>
-              <td class="desc" title="{{ r.description }}">{{ r.description|default:'—' }}</td>
-              <td class="r barcell" data-k="value" data-v="{{ r.value }}"><span class="bar bv" style="width:{% widthratio r.value sku.top_value.0.value 100 %}%"></span><b>{{ r.value|inr_short }}</b></td>
-              <td class="r" data-k="qty" data-v="{{ r.qty }}">{{ r.qty|compact }}</td>
-              <td class="r" data-k="pos" data-v="{{ r.pos }}">{{ r.pos }}</td>
-            </tr>
-          {% endfor %}</tbody>
-        </table>
-      </div>
-    </div>
-    {% else %}
-      <p class="muted" style="padding:10px 2px;">No SKUs uploaded in this scope — try “All time” or another marketplace.</p>
-    {% endif %}
+  <div class="an-pane" id="pane-sku" data-loaded="0" role="tabpanel" hidden>
+    <div class="an-loading">Loading SKU demand…</div>
   </div>
 
 </div>
 
 <style>
-  .sku-an{margin-top:34px;padding-top:26px;border-top:1px dashed var(--border);}
-  .sku-an .sec-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .an-tabs{display:flex;gap:4px;margin:4px 0 20px;border-bottom:1px solid var(--border);}
+  .an-tab{appearance:none;background:transparent;border:none;border-bottom:2px solid transparent;
+    padding:10px 18px;font-size:14px;font-weight:700;color:var(--muted);cursor:pointer;
+    margin-bottom:-1px;transition:color .14s,border-color .14s;font-family:inherit;}
+  .an-tab:hover{color:var(--text);}
+  .an-tab.on{color:var(--accent);border-bottom-color:var(--accent);}
+  .an-pane{animation:anfade .28s ease both;}
+  @keyframes anfade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+  .an-pane.an-busy{opacity:.45;pointer-events:none;transition:opacity .15s;}
+  .an-loading{padding:60px 0;text-align:center;color:var(--muted);font-size:13px;}
+  @media (prefers-reduced-motion: reduce){.an-pane{animation:none;}}
+  .an-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+  .an-daily .head-actions,.an-daily .date-filter,.an-daily .range-toggle{display:inline-flex;align-items:center;gap:8px;}
+  .an-scope .src{font-size:12.5px;}
+  /* SKU tab (moved from the old sku_demand page) */
   .sku-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
   .sku-filter select,.sku-filter input[type=date]{padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12.5px;background:#fff;color:var(--text);}
   .sku-filter label{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:5px;}
   .sku-scope{font-size:12px;margin:6px 0 12px;}
-  .sku-cols{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
-  @media(max-width:980px){.sku-cols{grid-template-columns:1fr;}}
-  /* KPI cards — colored left accent + lift */
   .sku-kpis .hk{position:relative;overflow:hidden;transition:transform .14s,box-shadow .14s;}
   .sku-kpis .hk:hover{transform:translateY(-2px);box-shadow:0 8px 20px -12px rgba(15,23,42,.3);}
   .sku-kpis .hk::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:4px 0 0 4px;}
-  .sku-kpis .hk:nth-child(1)::before{background:#6366f1;}
-  .sku-kpis .hk:nth-child(2)::before{background:#4f46e5;}
-  .sku-kpis .hk:nth-child(3)::before{background:#0a9d6e;}
-  .sku-kpis .hk:nth-child(4)::before{background:#f59e0b;}
-  /* cards */
-  .skux-card{border:1px solid var(--border);border-radius:14px;background:var(--surface);overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.05);}
-  .skux-h{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800;padding:12px 16px;border-bottom:1px solid var(--border);
-    background:linear-gradient(180deg,var(--surface),var(--surface-2));}
-  .skux-h .dot{width:9px;height:9px;border-radius:50%;box-shadow:0 0 0 3px color-mix(in srgb,currentColor 0%,transparent);} .d-q{background:#4f46e5;} .d-v{background:#0a9d6e;}
-  .skux-h .skux-cnt{margin-left:auto;font-size:11px;font-weight:700;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:2px 10px;}
-  table.skux{width:100%;margin:0;} table.skux th{font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--border);}
-  table.skux td{padding:8px 12px;border-bottom:1px solid color-mix(in srgb,var(--border) 50%,transparent);font-size:12.5px;}
-  table.skux tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--surface-2) 45%,transparent);}
-  table.skux tr:last-child td{border-bottom:none;}
-  table.skux tbody tr:hover td{background:color-mix(in srgb,var(--accent) 6%,transparent);}
-  table.skux .desc{max-width:210px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-2);}
-  .skux .rkh{width:30px;} .skux td.rk{text-align:center;}
-  .rk-b{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;font-size:11px;font-weight:800;background:var(--surface-2);color:var(--muted);}
-  .rk-b.rk-1{background:linear-gradient(135deg,#fcd34d,#f59e0b);color:#5b3700;box-shadow:0 2px 6px -2px #f59e0b;}
-  .rk-b.rk-2{background:linear-gradient(135deg,#e5e7eb,#cbd5e1);color:#3f4654;} .rk-b.rk-3{background:linear-gradient(135deg,#fed7aa,#fb923c);color:#7c2d12;}
+  .sku-kpis .hk:nth-child(1)::before{background:#6366f1;} .sku-kpis .hk:nth-child(2)::before{background:#4f46e5;}
+  .sku-kpis .hk:nth-child(3)::before{background:#0a9d6e;} .sku-kpis .hk:nth-child(4)::before{background:#f59e0b;}
+  .skux-card{border:1px solid var(--border);border-radius:12px;background:var(--surface);overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.04);}
+  table.skux{width:100%;margin:0;table-layout:fixed;}
+  table.skux th{font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface-2);z-index:1;}
+  table.skux th,table.skux td{padding:9px 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  table.skux td{border-bottom:1px solid color-mix(in srgb,var(--border) 55%,transparent);font-size:12.5px;}
+  table.skux tbody tr:hover td{background:color-mix(in srgb,var(--accent) 4%,transparent);}
+  table.skux th:nth-child(1),table.skux td:nth-child(1){width:4%;text-align:center;}
+  table.skux th:nth-child(2),table.skux td:nth-child(2){width:11%;text-align:left;}
+  table.skux th:nth-child(3),table.skux td:nth-child(3){width:34%;text-align:left;color:var(--text-2);}
+  table.skux th:nth-child(4),table.skux td:nth-child(4){width:13%;text-align:center;}
+  table.skux th:nth-child(5),table.skux td:nth-child(5){width:16%;text-align:center;}
+  table.skux th:nth-child(6),table.skux td:nth-child(6){width:11%;text-align:center;}
+  table.skux th:nth-child(7),table.skux td:nth-child(7){width:11%;text-align:center;}
+  .skux .rkh{width:34px;} .skux td.rk{text-align:center;}
+  .rk-b{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 5px;border-radius:10px;font-size:11px;font-weight:800;background:var(--surface-2);color:var(--muted);}
+  .rk-b.rk-1{background:#fde68a;color:#92600a;} .rk-b.rk-2{background:#e5e7eb;color:#4b5563;} .rk-b.rk-3{background:#fed7aa;color:#9a3412;}
   .skux th.srt{cursor:pointer;user-select:none;white-space:nowrap;} .skux th.srt:hover,.skux th.srt.on{color:var(--accent);}
-  /* proportion bars — clipped, right-anchored fill behind the (right-aligned) number */
-  /* magnitude = slim underline pinned to the cell bottom (row-height proof),
-     right-anchored under the right-aligned figure, grows on load */
   .skux td.barcell{position:relative;overflow:hidden;}
-  .skux td.barcell .bar{position:absolute;right:8px;left:auto;bottom:5px;top:auto;height:3px;border-radius:3px;z-index:0;min-width:6px;max-width:calc(100% - 16px);transform-origin:right center;animation:skuxbar .7s cubic-bezier(.2,.85,.25,1) both;}
-  @keyframes skuxbar{from{transform:scaleX(0);opacity:.3;}to{transform:scaleX(1);opacity:1;}}
-  @media (prefers-reduced-motion: reduce){.skux td.barcell .bar{animation:none;}}
-  .skux td.barcell .bar.bq{background:linear-gradient(90deg,color-mix(in srgb,#6366f1 35%,transparent),color-mix(in srgb,#4f46e5 75%,transparent));}
-  .skux td.barcell .bar.bv{background:linear-gradient(90deg,color-mix(in srgb,#10b981 35%,transparent),color-mix(in srgb,#0a9d6e 75%,transparent));}
+  .skux td.barcell .bar{position:absolute;left:50%;transform:translateX(-50%) scaleX(1);bottom:5px;top:auto;right:auto;height:3px;border-radius:3px;z-index:0;min-width:6px;max-width:calc(100% - 24px);background:linear-gradient(90deg,color-mix(in srgb,#10b981 55%,transparent),color-mix(in srgb,#0a9d6e 75%,transparent));transform-origin:center;animation:skuxbar .7s cubic-bezier(.2,.85,.25,1) both;}
+  @keyframes skuxbar{from{transform:translateX(-50%) scaleX(0);opacity:.3;}to{transform:translateX(-50%) scaleX(1);opacity:1;}}
+  table.skux tbody{animation:skuxrows .45s ease both;} @keyframes skuxrows{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+  @media (prefers-reduced-motion: reduce){.skux td.barcell .bar,table.skux tbody{animation:none;}}
   .skux td.barcell b{position:relative;z-index:1;}
-  .skux-full{margin-left:2px;}
+  .scroll{max-height:70vh;overflow:auto;}
 </style>
-<script>
-(function () {
-  // click-to-sort (asc/desc) for any table.sortable — uses each cell's data-v.
-  document.querySelectorAll('table.sortable').forEach(function (table) {
-    table.querySelectorAll('th.srt').forEach(function (th) {
-      th.addEventListener('click', function () {
-        var k = th.getAttribute('data-k');
-        var asc = th.getAttribute('data-dir') !== 'asc';
-        table.querySelectorAll('th.srt').forEach(function (x) { x.removeAttribute('data-dir'); x.classList.remove('on'); });
-        th.setAttribute('data-dir', asc ? 'asc' : 'desc'); th.classList.add('on');
-        var tb = table.tBodies[0];
-        Array.prototype.slice.call(tb.rows).sort(function (a, b) {
-          var av = parseFloat((a.querySelector('[data-k=\"' + k + '\"]') || {}).getAttribute && a.querySelector('[data-k=\"' + k + '\"]').getAttribute('data-v') || 0);
-          var bv = parseFloat((b.querySelector('[data-k=\"' + k + '\"]') || {}).getAttribute && b.querySelector('[data-k=\"' + k + '\"]').getAttribute('data-v') || 0);
-          return asc ? av - bv : bv - av;
-        }).forEach(function (r) { tb.appendChild(r); });
-      });
-    });
-  });
-})();
-</script>
 
 <script src="{% static 'online_b2b/vendor/apexcharts.min.js' %}"></script>
 <script>
 (function () {
-  var el = document.getElementById('daily-data');
-  if (!el) return;
-  var data;
-  try { data = JSON.parse(el.textContent); } catch (e) { return; }
-  function inr(v) {
-    v = Number(v) || 0; var s = v < 0 ? '-' : ''; v = Math.abs(v);
-    if (v >= 1e7) return s + '₹' + (v / 1e7).toFixed(2) + ' Cr';
-    if (v >= 1e5) return s + '₹' + (v / 1e5).toFixed(2) + ' L';
-    if (v >= 1000) return s + '₹' + Math.round(v).toLocaleString('en-IN');
-    return s + '₹' + Math.round(v);
+  var AN_URL = location.pathname;
+  var activeTab = 'daily';
+
+  function url(params) {
+    var p = new URLSearchParams();
+    Object.keys(params).forEach(function (k) {
+      if (params[k] !== undefined && params[k] !== null) p.set(k, params[k]);
+    });
+    return AN_URL + '?' + p.toString();
   }
-  function num(v) {
-    v = Number(v) || 0;
-    if (v >= 1e5) return (v / 1e5).toFixed(1) + 'L';
-    if (v >= 1000) return (v / 1000).toFixed(1) + 'k';
-    return Math.round(v);
+
+  // keep the address bar in sync so a refresh restores tab + both filters
+  function syncURL() {
+    var p = new URLSearchParams();
+    p.set('tab', activeTab);
+    var d = document.querySelector('#pane-daily .an-daily');
+    if (d) { p.set('days', d.dataset.days || 30); if (d.dataset.date) p.set('date', d.dataset.date); }
+    var s = document.querySelector('#pane-sku .an-sku');
+    if (s) {
+      if (s.dataset.mp) p.set('sku_mp', s.dataset.mp);
+      if (s.dataset.from) p.set('sku_from', s.dataset.from);
+      if (s.dataset.to) p.set('sku_to', s.dataset.to);
+    }
+    history.replaceState(null, '', AN_URL + '?' + p.toString());
   }
-  var COLORS = { 'Online B2B': '#4f46e5', 'Offline': '#11998e', 'Other': '#9aa1b2' };
-  var metric = 'value';
-  var chart = null;
-  function fmt(v) { return metric === 'value' ? inr(v) : num(v); }
-  function series() {
-    return data.segments.map(function (s) { return { name: s, data: (data[metric] || {})[s] || [] }; });
+
+  // ── generic click-to-sort for a table.sortable inside `root` ──
+  function wireSort(root) {
+    root.querySelectorAll('table.sortable').forEach(function (table) {
+      table.querySelectorAll('th.srt').forEach(function (th) {
+        th.addEventListener('click', function () {
+          var k = th.getAttribute('data-k');
+          var asc = th.getAttribute('data-dir') !== 'asc';
+          table.querySelectorAll('th.srt').forEach(function (x) { x.removeAttribute('data-dir'); x.classList.remove('on'); });
+          th.setAttribute('data-dir', asc ? 'asc' : 'desc'); th.classList.add('on');
+          var tb = table.tBodies[0];
+          Array.prototype.slice.call(tb.rows).sort(function (a, b) {
+            var ae = a.querySelector('[data-k="' + k + '"]'), be = b.querySelector('[data-k="' + k + '"]');
+            var av = parseFloat(ae ? ae.getAttribute('data-v') : 0) || 0;
+            var bv = parseFloat(be ? be.getAttribute('data-v') : 0) || 0;
+            return asc ? av - bv : bv - av;
+          }).forEach(function (r) { tb.appendChild(r); });
+        });
+      });
+    });
   }
-  function build() {
+
+  // ══ DAILY tab ══
+  function buildDailyChart() {
+    var el = document.getElementById('daily-data');
+    if (!el) return;
+    var data; try { data = JSON.parse(el.textContent); } catch (e) { return; }
+    function inr(v) {
+      v = Number(v) || 0; var s = v < 0 ? '-' : ''; v = Math.abs(v);
+      if (v >= 1e7) return s + '₹' + (v / 1e7).toFixed(2) + ' Cr';
+      if (v >= 1e5) return s + '₹' + (v / 1e5).toFixed(2) + ' L';
+      if (v >= 1000) return s + '₹' + Math.round(v).toLocaleString('en-IN');
+      return s + '₹' + Math.round(v);
+    }
+    function num(v) {
+      v = Number(v) || 0;
+      if (v >= 1e5) return (v / 1e5).toFixed(1) + 'L';
+      if (v >= 1000) return (v / 1000).toFixed(1) + 'k';
+      return Math.round(v);
+    }
+    var COLORS = { 'Online B2B': '#4f46e5', 'Offline': '#11998e', 'Other': '#9aa1b2' };
+    var metric = 'value';
+    var chart = null;
+    function fmt(v) { return metric === 'value' ? inr(v) : num(v); }
+    function series() { return data.segments.map(function (s) { return { name: s, data: (data[metric] || {})[s] || [] }; }); }
     var box = document.getElementById('daily-chart');
     if (!window.ApexCharts) { box.textContent = 'Charts library unavailable.'; return; }
     if (!data.segments || !data.segments.length) { box.innerHTML = '<div class="chart-empty">No orders in this period.</div>'; return; }
@@ -296,7 +176,6 @@
       grid: { borderColor: '#eef1f5', strokeDashArray: 4 },
       tooltip: { y: { formatter: function (v) { return fmt(v); } } }
     };
-    // When a single date is picked, dull the other days and spotlight that one.
     if (data.focus) {
       cfg.fill = { opacity: 0.32 };
       cfg.annotations = { xaxis: [{ x: data.focus, borderColor: '#4f46e5', strokeDashArray: 0,
@@ -309,14 +188,92 @@
       b.addEventListener('click', function () {
         document.querySelectorAll('.ctg').forEach(function (x) { x.classList.toggle('on', x === b); });
         metric = b.getAttribute('data-metric');
-        // Single animated update — the y-axis + tooltip formatters read `metric`
-        // via closure, so they re-format automatically (no second redraw / jank).
         chart.updateSeries(series(), true);
       });
     });
   }
-  if (document.readyState !== 'loading') build();
-  else document.addEventListener('DOMContentLoaded', build);
+
+  function loadDaily(days, date) {
+    var pane = document.getElementById('pane-daily');
+    pane.classList.add('an-busy');
+    fetch(url({ partial: 'daily', days: days, date: date }), { headers: { 'X-Requested-With': 'fetch' } })
+      .then(function (r) { return r.text(); })
+      .then(function (html) { pane.innerHTML = html; pane.classList.remove('an-busy'); wireDaily(); syncURL(); })
+      .catch(function () { pane.classList.remove('an-busy'); });
+  }
+
+  function wireDaily() {
+    buildDailyChart();
+    var root = document.querySelector('#pane-daily .an-daily');
+    if (!root) return;
+    var days = root.dataset.days, date = root.dataset.date;
+    root.querySelectorAll('[data-daily-days]').forEach(function (a) {
+      a.addEventListener('click', function (e) { e.preventDefault(); loadDaily(a.getAttribute('data-daily-days'), date); });
+    });
+    var di = root.querySelector('[data-daily-date]');
+    if (di) di.addEventListener('change', function () { loadDaily(days, di.value); });
+    var cl = root.querySelector('[data-daily-clear]');
+    if (cl) cl.addEventListener('click', function (e) { e.preventDefault(); loadDaily(days, ''); });
+  }
+
+  // ══ SKU tab ══
+  function loadSku(params) {
+    var pane = document.getElementById('pane-sku');
+    pane.classList.add('an-busy');
+    fetch(url(Object.assign({ partial: 'sku' }, params)), { headers: { 'X-Requested-With': 'fetch' } })
+      .then(function (r) { return r.text(); })
+      .then(function (html) { pane.innerHTML = html; pane.dataset.loaded = '1'; pane.classList.remove('an-busy'); wireSku(); syncURL(); })
+      .catch(function () { pane.classList.remove('an-busy'); pane.innerHTML = '<div class="an-loading">Could not load SKU demand.</div>'; });
+  }
+
+  function wireSku() {
+    var root = document.querySelector('#pane-sku .an-sku');
+    if (!root) return;
+    wireSort(root);
+    var form = root.querySelector('[data-sku-filter]');
+    function apply() {
+      loadSku({
+        sku_mp: form.querySelector('[name=sku_mp]').value,
+        sku_from: form.querySelector('[name=sku_from]').value,
+        sku_to: form.querySelector('[name=sku_to]').value
+      });
+    }
+    if (form) form.addEventListener('submit', function (e) { e.preventDefault(); apply(); });
+    root.querySelectorAll('[data-sku-preset]').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.preventDefault();
+        var today = new Date().toISOString().slice(0, 10);
+        if (b.getAttribute('data-sku-preset') === 'today') loadSku({ sku_mp: form.querySelector('[name=sku_mp]').value, sku_from: today, sku_to: today });
+        else loadSku({ sku_mp: form.querySelector('[name=sku_mp]').value, sku_from: '', sku_to: '' });
+      });
+    });
+  }
+
+  // ══ tabs ══
+  function showTab(name) {
+    activeTab = name;
+    document.querySelectorAll('.an-tab').forEach(function (t) { t.classList.toggle('on', t.dataset.tab === name); });
+    document.querySelectorAll('.an-pane').forEach(function (p) { p.hidden = (p.id !== 'pane-' + name); });
+    if (name === 'sku' && document.getElementById('pane-sku').dataset.loaded === '0') {
+      var q = new URLSearchParams(location.search);
+      loadSku({ sku_mp: q.get('sku_mp') || '', sku_from: q.get('sku_from') || undefined, sku_to: q.get('sku_to') || undefined });
+    } else {
+      syncURL();
+    }
+  }
+  document.querySelectorAll('.an-tab').forEach(function (t) {
+    t.addEventListener('click', function () { showTab(t.dataset.tab); });
+  });
+
+  // ── boot ──
+  function boot() {
+    wireDaily();                                  // daily was server-rendered
+    var q = new URLSearchParams(location.search);
+    if (q.get('tab') === 'sku') showTab('sku');   // deep-link / refresh into SKU tab
+    else syncURL();
+  }
+  if (document.readyState !== 'loading') boot();
+  else document.addEventListener('DOMContentLoaded', boot);
 })();
 </script>
 {% endblock %}

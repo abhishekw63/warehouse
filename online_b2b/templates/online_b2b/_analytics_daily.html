@@ -1,0 +1,97 @@
+{% load static b2b_extras %}
+{# Daily-Intake tab body — rendered inline on first paint and re-fetched via
+   AJAX (?partial=daily) on every filter change. Root carries the current
+   filter state in data-* so the shell JS can build the next request. #}
+<div class="an-daily" data-days="{{ days }}" data-date="{{ date }}">
+
+  <div class="an-toolbar">
+    <div class="an-scope">
+      <span class="src">Orders received per day (by recorded date) ·
+        {% if date %}<b>{{ date }}</b>{% else %}last {{ days }} days{% endif %}</span>
+    </div>
+    <div class="head-actions">
+      <span class="date-filter">
+        <label>Any date</label>
+        <input type="date" data-daily-date value="{{ date }}">
+        {% if date %}<a href="#" data-daily-clear class="rg" title="Show full range">✕</a>{% endif %}
+      </span>
+      <span class="range-toggle">
+        <a href="#" data-daily-days="7" class="rg{% if days == 7 %} on{% endif %}">7d</a>
+        <a href="#" data-daily-days="30" class="rg{% if days == 30 %} on{% endif %}">30d</a>
+        <a href="#" data-daily-days="90" class="rg{% if days == 90 %} on{% endif %}">90d</a>
+      </span>
+    </div>
+  </div>
+
+  <!-- period totals -->
+  <div class="hub-kpis" style="grid-template-columns:repeat(4,1fr);">
+    <a class="hk" href="{% url 'b2b_orders' %}"><div class="n">{{ hier.total.pos }}</div><div class="l">POs · {% if date %}{{ date }}{% else %}last {{ days }}d{% endif %}</div></a>
+    <div class="hk"><div class="n">{{ hier.total.qty|compact }}</div><div class="l">Total Qty</div></div>
+    <div class="hk"><div class="n">{{ hier.total.value|inr_short }}</div><div class="l">Order Value</div></div>
+    <a class="hk" href="{% url 'b2b_lines' %}"><div class="n">{{ hier.total.items|compact }}</div><div class="l">Line Items</div></a>
+  </div>
+
+  {{ daily|json_script:"daily-data" }}
+
+  <!-- daily stacked chart -->
+  <div class="chart-card" style="margin:18px 0 22px;padding:16px 18px 10px;">
+    <div class="chart-head">
+      <span class="chart-title">Daily intake · stacked by segment</span>
+      <span class="chart-toggle">
+        <button type="button" class="ctg on" data-metric="value">Value</button>
+        <button type="button" class="ctg" data-metric="qty">Qty</button>
+        <button type="button" class="ctg" data-metric="pos">POs</button>
+        <button type="button" class="ctg" data-metric="items">Items</button>
+      </span>
+    </div>
+    <div id="daily-chart"><div class="chart-ph">Loading chart…</div></div>
+  </div>
+
+  <!-- tree-branch breakdown: segment → marketplace → child -->
+  <div>
+    <div class="sec-head">
+      <h2>Breakdown tree {% if date %}· {{ date }}{% else %}· last {{ days }} days{% endif %}</h2>
+      <span class="muted">{{ hier.total.pos }} POs · {{ hier.total.value|inr_short }} · {{ hier.total.items }} items</span>
+    </div>
+    <div class="tree">
+      {% for s in hier.segments %}
+      <details class="tnode tseg" open>
+        <summary>
+          <span class="tname"><span class="seg-tag {% if s.segment == 'Offline' %}off{% else %}on{% endif %}">{{ s.segment }}</span></span>
+          <span class="tmeta">{{ s.pos }} POs · {{ s.qty|compact }} qty · <b>{{ s.value|inr_short }}</b></span>
+          <span class="tbar"><span style="width:{{ s.bar }}%"></span></span>
+        </summary>
+        <div class="tchildren">
+          {% for m in s.marketplaces %}
+            {% if m.multi %}
+            <details class="tnode tmkt">
+              <summary>
+                <span class="tname">{{ m.marketplace }} <span class="tcount">{{ m.children|length }}</span></span>
+                <span class="tmeta">{{ m.pos }} POs · {{ m.qty|compact }} qty · <b>{{ m.value|inr_short }}</b></span>
+                <span class="tbar"><span style="width:{{ m.bar }}%"></span></span>
+              </summary>
+              <div class="tchildren">
+                {% for c in m.children %}
+                <a class="tnode tleaf tlink" href="{% url 'b2b_orders' %}?marketplace={{ c.label|urlencode }}" title="View {{ c.label }} orders">
+                  <span class="tname">{{ c.label }}</span>
+                  <span class="tmeta">{{ c.pos }} POs · {{ c.qty|compact }} qty · {{ c.value|inr_short }} <span class="tgo">→</span></span>
+                  <span class="tbar"><span style="width:{{ c.bar }}%"></span></span>
+                </a>
+                {% endfor %}
+              </div>
+            </details>
+            {% else %}
+            <a class="tnode tleaf tlink" href="{% url 'b2b_orders' %}?marketplace={{ m.children.0.label|urlencode }}" title="View {{ m.marketplace }} orders">
+              <span class="tname">{{ m.marketplace }}</span>
+              <span class="tmeta">{{ m.pos }} POs · {{ m.qty|compact }} qty · <b>{{ m.value|inr_short }}</b> <span class="tgo">→</span></span>
+              <span class="tbar"><span style="width:{{ m.bar }}%"></span></span>
+            </a>
+            {% endif %}
+          {% endfor %}
+        </div>
+      </details>
+      {% empty %}<p class="muted">No orders received {% if date %}on {{ date }}{% else %}in this period{% endif %}.</p>{% endfor %}
+    </div>
+  </div>
+
+</div>
