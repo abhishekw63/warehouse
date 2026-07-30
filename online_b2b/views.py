@@ -505,6 +505,16 @@ def _trends_ctx(request):
     return {'days': days, 'trends': order_db.intake_trends(days)}
 
 
+def _fulfil_ctx(request):
+    """Fulfilment-Risk tab context — period demand vs current inventory, at-risk
+    SKUs ranked by unfulfillable value. Reuses the SKU filter (marketplace +
+    upload-date range; defaults to last 30 days)."""
+    from .services import availability
+    sf, st, smp = _sku_filters(request)
+    return {'risk': availability.fulfilment_risk(sf, st, smp),
+            'sku_from': sf, 'sku_to': st, 'sku_mp': smp}
+
+
 class AnalyticsView(LoginRequiredMixin, TemplateView):
     """Management analytics — two AJAX tabs under one page, each with its own
     filter (no page refresh):
@@ -521,6 +531,8 @@ class AnalyticsView(LoginRequiredMixin, TemplateView):
             return render(request, 'online_b2b/_analytics_sku.html', _sku_ctx(request))
         if partial == 'trends':
             return render(request, 'online_b2b/_analytics_trends.html', _trends_ctx(request))
+        if partial == 'fulfil':
+            return render(request, 'online_b2b/_analytics_fulfil.html', _fulfil_ctx(request))
         return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):

@@ -57,7 +57,8 @@ CREATE TABLE IF NOT EXISTS order_lines (
     created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_lines_run (run_id),
     INDEX idx_lines_mp_po (marketplace, po),
-    INDEX idx_lines_item (item_no)
+    INDEX idx_lines_item (item_no),
+    INDEX idx_lines_po_run (po, run_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
 """
 _SQLITE_FACTS = """
@@ -131,9 +132,19 @@ def ensure_table() -> None:
                     "LEFT JOIN order_line_validation v ON v.line_id = l.line_id")
         if mysql:
             cur.execute(f"CREATE OR REPLACE VIEW order_lines_full AS {view_sql}")
+            # Composite (po, run_id) index — makes the "latest run per PO" joins
+            # (Fulfilment Risk analytics + Availability Checker) index-seek instead
+            # of full-scan order_lines. Added post-hoc for pre-existing tables.
+            cur.execute(
+                "SELECT COUNT(*) FROM information_schema.statistics "
+                "WHERE table_schema=DATABASE() AND table_name='order_lines' "
+                "AND index_name='idx_lines_po_run'")
+            if not cur.fetchone()[0]:
+                cur.execute("ALTER TABLE order_lines ADD INDEX idx_lines_po_run (po, run_id)")
         else:
             cur.execute("DROP VIEW IF EXISTS order_lines_full")
             cur.execute(f"CREATE VIEW order_lines_full AS {view_sql}")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_lines_po_run ON order_lines (po, run_id)")
         cur.connection.commit()
 
 

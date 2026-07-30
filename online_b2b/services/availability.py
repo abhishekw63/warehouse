@@ -48,10 +48,11 @@ def _q(x):
 
 
 def _line_status(found: bool, ordered: float, available: float) -> str:
-    if not found:
-        return 'NO STOCK'          # item not present in the current snapshot
+    # OOS covers BOTH "no sellable stock at all" and "pick face empty/negative" —
+    # one label, since both mean nothing can be filled (avoids the confusing
+    # NO STOCK vs OOS split). ``found`` kept for signature compatibility.
     if available <= 0:
-        return 'OOS'               # present but zero available
+        return 'OOS'               # nothing available (empty or not stocked)
     if available < ordered:
         return 'SHORT'             # partial cover
     return 'OK'                    # fully coverable
@@ -238,6 +239,145 @@ def check_orders(order_nos, wh_override: str = '') -> dict:
     return {'ok': True, 'orders': orders, 'skus': skus, 'not_found': not_found,
             'bins': bins, 'override': override_code, 'wh_options': inv.WAREHOUSES,
             'summary': summary}
+
+
+def fulfilment_risk(date_from='', date_to='', marketplace='') -> dict:
+    """**Fulfilment risk over a period.** Aggregates demand (the *latest* run per
+    PO within the upload-date window) per (mapped warehouse, item), then nets it
+    against the CURRENT inventory snapshot in that warehouse. Ranks the at-risk
+    SKUs (OOS / short) by unfulfillable value, and rolls up a per-warehouse and
+    overall fill rate. Same WH-resolution + stock logic as :func:`check_orders`
+    (no duplication). Read-only; never raises.
+
+    Note: demand is historical (the chosen window); inventory is *right now* — so
+    this answers "of this period's demand, how much could we ship with today's
+    stock, and which SKUs are the biggest gaps?"."""
+    out = {'ok': False, 'date_from': date_from, 'date_to': date_to,
+           'marketplace': marketplace, 'marketplaces': [], 'rows': [], 'by_wh': [],
+           'stock_as_of': {},
+           'summary': {'skus': 0, 'at_risk': 0, 'oos': 0, 'short': 0,
+                       'demand_qty': 0, 'fill_qty': 0, 'short_qty': 0,
+                       'demand_value': 0.0, 'fill_value': 0.0, 'short_value': 0.0,
+                       'fill_pct': 0.0, 'fill_val_pct': 0.0}}
+    try:
+        _snaps = inv.current_snapshots()
+        _stock: dict[str, dict] = {}
+
+        def stock_for(wh: str) -> dict:
+            if wh not in _stock:
+                _stock[wh] = inv.current_stock_map(wh)
+            return _stock[wh]
+
+        with _conn() as (cur, d):
+            ph = d['ph']
+            cur.execute(
+                "SELECT DISTINCT marketplace_label FROM order_headers "
+                "WHERE marketplace_label IS NOT NULL AND marketplace_label<>'' "
+                "ORDER BY marketplace_label")
+            out['marketplaces'] = [r[0] for r in cur.fetchall()]
+
+            where, args = [], []
+            if date_from:
+                where.append(f"DATE(run_ts) >= {ph}"); args.append(date_from)
+            if date_to:
+                where.append(f"DATE(run_ts) <= {ph}"); args.append(date_to)
+            if marketplace:
+                where.append(f"marketplace_label={ph}"); args.append(marketplace)
+            wsql = ' AND '.join(where) if where else '1=1'
+
+            # latest run per PO in the window → its lines' demand, grouped by
+            # (item, raw warehouse, marketplace) so WH resolution happens once.
+            cur.execute(
+                "SELECT l.item_no, MAX(l.description), hh.warehouse, "
+                "hh.marketplace_label, SUM(l.qty), "
+                "SUM(l.qty*COALESCE(NULLIF(l.our_landing,0), l.unit_price, 0)) "
+                "FROM order_lines_full l JOIN ("
+                "  SELECT hd.po, hd.run_id, hd.warehouse, hd.marketplace_label "
+                "  FROM order_headers hd JOIN ("
+                f"    SELECT po, MAX(run_ts) mx FROM order_headers WHERE {wsql} GROUP BY po"
+                "  ) t ON hd.po=t.po AND hd.run_ts=t.mx"
+                ") hh ON l.po=hh.po AND l.run_id=hh.run_id "
+                "GROUP BY l.item_no, hh.warehouse, hh.marketplace_label",
+                tuple(args))
+            raw = cur.fetchall()
+
+        # aggregate demand per (resolved WH, item)
+        agg: dict = {}
+        for item_no, desc, wh_raw, mp_label, qty, val in raw:
+            item = str(item_no or '').strip()
+            if not item:
+                continue
+            wh = inv.resolve_order_wh(wh_raw, mp_label, mp_label)
+            a = agg.get((wh, item))
+            if a is None:
+                a = agg[(wh, item)] = {'item_no': item, 'description': str(desc or ''),
+                                       'wh': wh, 'wh_short': inv.wh_short(wh),
+                                       'qty': 0.0, 'value': 0.0}
+            a['qty'] += float(qty or 0)
+            a['value'] += float(val or 0)
+
+        rows: list[dict] = []
+        by_wh: dict = {}
+        tot_q = tot_v = fill_q = fill_v = short_q = short_v = 0.0
+        oos = short_n = 0
+        for a in agg.values():
+            stock = stock_for(a['wh'])
+            avail = float(stock.get(a['item_no'], 0) or 0)
+            q, v = a['qty'], a['value']
+            avail_eff = avail if avail > 0 else 0.0
+            fillable = min(q, avail_eff)
+            short = q - fillable
+            uv = (v / q) if q else 0.0
+            fv, sv = fillable * uv, short * uv
+            st = _line_status(a['item_no'] in stock, q, avail)
+            tot_q += q; tot_v += v; fill_q += fillable; fill_v += fv
+            short_q += short; short_v += sv
+            w = by_wh.setdefault(a['wh'], {'wh': a['wh'], 'wh_short': a['wh_short'],
+                                           'skus': 0, 'demand_qty': 0.0, 'demand_value': 0.0,
+                                           'short_qty': 0.0, 'short_value': 0.0})
+            w['skus'] += 1; w['demand_qty'] += q; w['demand_value'] += v
+            w['short_qty'] += short; w['short_value'] += sv
+            if st == 'OK':
+                continue                      # at-risk table lists only OOS / SHORT
+            (oos, short_n) = (oos + 1, short_n) if st == 'OOS' else (oos, short_n + 1)
+            rows.append({
+                'item_no': a['item_no'], 'description': a['description'],
+                'wh': a['wh'], 'wh_short': a['wh_short'],
+                'demand': _q(q), 'available': _q(avail), 'fillable': _q(fillable),
+                'short': _q(short), 'demand_value': round(v, 2),
+                'short_value': round(sv, 2),
+                'fill_pct': round(fillable / q * 100, 1) if q else 0.0,
+                'status': st, '_sv': sv, '_short': short})
+        rows.sort(key=lambda r: (-r['_sv'], -r['_short']))
+        for r in rows:
+            r.pop('_sv', None); r.pop('_short', None)
+
+        wh_list = []
+        for w in by_wh.values():
+            dq, dv = w['demand_qty'], w['demand_value']
+            w['demand_qty'] = _q(dq); w['short_qty'] = _q(w['short_qty'])
+            sv = round(w['short_value'], 2)
+            w['demand_value'] = round(dv, 2); w['short_value'] = sv
+            w['fill_val_pct'] = round((dv - sv) / dv * 100, 1) if dv else 0.0
+            s = _snaps.get(w['wh'])
+            w['stock_as_of'] = str(s['captured_at']) if s and s.get('captured_at') else ''
+            wh_list.append(w)
+        wh_list.sort(key=lambda x: -x['short_value'])
+
+        out['rows'] = rows
+        out['by_wh'] = wh_list
+        out['stock_as_of'] = {w['wh_short']: w['stock_as_of'] for w in wh_list if w['stock_as_of']}
+        out['summary'] = {
+            'skus': len(agg), 'at_risk': len(rows), 'oos': oos, 'short': short_n,
+            'demand_qty': _q(tot_q), 'fill_qty': _q(fill_q), 'short_qty': _q(short_q),
+            'demand_value': round(tot_v, 2), 'fill_value': round(fill_v, 2),
+            'short_value': round(short_v, 2),
+            'fill_pct': round(fill_q / tot_q * 100, 1) if tot_q else 0.0,
+            'fill_val_pct': round(fill_v / tot_v * 100, 1) if tot_v else 0.0}
+        out['ok'] = True
+    except Exception as e:  # noqa: BLE001
+        out['error'] = f"{type(e).__name__}: {e}"
+    return out
 
 
 # ── Styled Excel export (same look as our other workbook downloads) ──────────

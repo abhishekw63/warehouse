@@ -26,6 +26,7 @@
     <button type="button" class="an-tab on" data-tab="daily" role="tab">Daily Intake</button>
     <button type="button" class="an-tab" data-tab="sku" role="tab">SKU Demand</button>
     <button type="button" class="an-tab" data-tab="trends" role="tab">Trends &amp; Momentum</button>
+    <button type="button" class="an-tab" data-tab="fulfil" role="tab">Fulfilment Risk</button>
   </div>
 
   <div class="an-pane" id="pane-daily" data-loaded="1" role="tabpanel">
@@ -36,6 +37,9 @@
   </div>
   <div class="an-pane" id="pane-trends" data-loaded="0" role="tabpanel" hidden>
     <div class="an-loading">Loading trends…</div>
+  </div>
+  <div class="an-pane" id="pane-fulfil" data-loaded="0" role="tabpanel" hidden>
+    <div class="an-loading">Loading fulfilment risk…</div>
   </div>
 
 </div>
@@ -51,6 +55,12 @@
   @keyframes anfade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
   .an-pane.an-busy{opacity:.45;pointer-events:none;transition:opacity .15s;}
   .an-loading{padding:60px 0;text-align:center;color:var(--muted);font-size:13px;}
+  .an-loader{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:72px 0;text-align:center;}
+  .an-spin{width:34px;height:34px;border-radius:50%;border:3px solid color-mix(in srgb,var(--accent) 20%,transparent);border-top-color:var(--accent);animation:anspin .8s linear infinite;}
+  @keyframes anspin{to{transform:rotate(360deg);}}
+  .an-lmsg{font-size:14px;font-weight:700;color:var(--text);min-height:20px;transition:opacity .16s ease;}
+  .an-lsub{font-size:12px;color:var(--muted);max-width:380px;line-height:1.5;}
+  @media (prefers-reduced-motion: reduce){.an-spin{animation-duration:2.4s;}.an-lmsg{transition:none;}}
   @media (prefers-reduced-motion: reduce){.an-pane{animation:none;}}
   .an-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:16px;}
   .an-scope .src{font-size:12.5px;}
@@ -135,6 +145,32 @@
   .tr-chip{display:inline-block;font-size:11px;font-weight:800;padding:2px 8px;border-radius:20px;}
   .tr-chip.up{color:#0a7d54;background:color-mix(in srgb,#10b981 15%,transparent);}
   .tr-chip.down{color:#c0392b;background:color-mix(in srgb,#ef4444 13%,transparent);}
+  /* ── Fulfilment Risk tab ── */
+  .fr-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:6px 0 18px;}
+  @media(max-width:900px){.fr-kpis{grid-template-columns:repeat(2,1fr);}}
+  @media(max-width:520px){.fr-kpis{grid-template-columns:1fr;}}
+  .fr-kpi{border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:15px 16px;box-shadow:0 1px 3px rgba(15,23,42,.05);}
+  .fr-kpi.risk{background:color-mix(in srgb,#ef4444 5%,var(--surface));border-color:color-mix(in srgb,#ef4444 25%,var(--border));}
+  .fr-l{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);}
+  .fr-n{font-size:26px;font-weight:800;line-height:1.15;margin:5px 0;color:var(--text);font-variant-numeric:tabular-nums;}
+  .fr-n.bad{color:#c0392b;} .fr-n .fr-of{font-size:15px;font-weight:700;color:var(--muted);}
+  .fr-bar{height:7px;border-radius:6px;background:color-mix(in srgb,var(--border) 60%,transparent);overflow:hidden;margin:8px 0 6px;}
+  .fr-fill{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,#10b981,#0a9d6e);transition:width .5s cubic-bezier(.2,.85,.25,1);}
+  .fr-p{font-size:11px;color:var(--muted);}
+  .fr-tag{display:inline-block;font-size:10.5px;font-weight:800;padding:1px 7px;border-radius:20px;}
+  .fr-tag.oos{color:#c0392b;background:color-mix(in srgb,#ef4444 13%,transparent);}
+  .fr-tag.short{color:#b45309;background:color-mix(in srgb,#f59e0b 16%,transparent);}
+  .fr-wh{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:20px;}
+  .fr-whcard{flex:1 1 220px;border:1px solid var(--border);border-radius:12px;background:var(--surface-2);padding:12px 14px;}
+  .fr-whname{font-size:13px;font-weight:800;color:var(--text);margin-bottom:8px;}
+  .fr-whbar{height:6px;border-radius:6px;background:color-mix(in srgb,var(--border) 60%,transparent);overflow:hidden;margin-bottom:7px;}
+  .fr-whmeta{font-size:11.5px;color:var(--muted);}
+  table.fr-tbl th:nth-child(3),table.fr-tbl td:nth-child(3){text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px;}
+  table.fr-tbl td.bad{color:#c0392b;font-weight:700;}
+  .fr-st{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 9px;border-radius:20px;}
+  .fr-st.oos{color:#c0392b;background:color-mix(in srgb,#ef4444 13%,transparent);}
+  .fr-st.short{color:#b45309;background:color-mix(in srgb,#f59e0b 16%,transparent);}
+  .fr-st.ok{color:#0a7d54;background:color-mix(in srgb,#10b981 14%,transparent);}
 </style>
 
 <script src="{% static 'online_b2b/vendor/apexcharts.min.js' %}"></script>
@@ -160,13 +196,35 @@
       if (d.dataset.start && d.dataset.end) { p.set('start', d.dataset.start); p.set('end', d.dataset.end); }
       else { p.set('days', d.dataset.days || 30); }
     }
-    var s = document.querySelector('#pane-sku .an-sku');
+    // SKU + Fulfilment share the same param names — reflect only the active one
+    var s = null;
+    if (activeTab === 'sku') s = document.querySelector('#pane-sku .an-sku');
+    else if (activeTab === 'fulfil') s = document.querySelector('#pane-fulfil .an-fulfil');
     if (s) {
       if (s.dataset.mp) p.set('sku_mp', s.dataset.mp);
       if (s.dataset.from) p.set('sku_from', s.dataset.from);
       if (s.dataset.to) p.set('sku_to', s.dataset.to);
     }
     history.replaceState(null, '', AN_URL + '?' + p.toString());
+  }
+
+  // ── animated multi-step loader (for the slower tabs) ──
+  // Cycles through `steps` so a multi-second fetch feels like real progress.
+  // Returns the interval id — clear it once the response lands.
+  function showLoader(pane, steps, sub) {
+    var i = 0;
+    pane.innerHTML =
+      '<div class="an-loader"><div class="an-spin"></div>' +
+      '<div class="an-lmsg"></div>' +
+      '<div class="an-lsub">' + (sub || '') + '</div></div>';
+    var el = pane.querySelector('.an-lmsg');
+    if (el) el.textContent = steps[0];
+    return setInterval(function () {
+      i = (i + 1) % steps.length;
+      if (!el) return;
+      el.style.opacity = '0';
+      setTimeout(function () { el.textContent = steps[i]; el.style.opacity = '1'; }, 160);
+    }, 1200);
   }
 
   // ── generic click-to-sort for a table.sortable inside `root` ──
@@ -282,11 +340,16 @@
   // ══ SKU tab ══
   function loadSku(params) {
     var pane = document.getElementById('pane-sku');
-    pane.classList.add('an-busy');
+    var lid = showLoader(pane, [
+      'Reading uploaded PO lines…',
+      'Rolling up demand per SKU…',
+      'Summing qty & value…',
+      'Sorting the SKU list…'
+    ], 'Aggregating every SKU across the selected uploads.');
     fetch(url(Object.assign({ partial: 'sku' }, params)), { headers: { 'X-Requested-With': 'fetch' } })
       .then(function (r) { return r.text(); })
-      .then(function (html) { pane.innerHTML = html; pane.dataset.loaded = '1'; pane.classList.remove('an-busy'); wireSku(); syncURL(); })
-      .catch(function () { pane.classList.remove('an-busy'); pane.innerHTML = '<div class="an-loading">Could not load SKU demand.</div>'; });
+      .then(function (html) { clearInterval(lid); pane.innerHTML = html; pane.dataset.loaded = '1'; wireSku(); syncURL(); })
+      .catch(function () { clearInterval(lid); pane.innerHTML = '<div class="an-loading">Could not load SKU demand.</div>'; });
   }
 
   function wireSku() {
@@ -330,6 +393,47 @@
     });
   }
 
+  // ══ FULFILMENT RISK tab ══
+  function loadFulfil(params) {
+    var pane = document.getElementById('pane-fulfil');
+    var lid = showLoader(pane, [
+      'Reading the period’s demand…',
+      'Finding the latest run for each PO…',
+      'Resolving each order’s warehouse…',
+      'Checking current stock in each warehouse…',
+      'Netting demand against available stock…',
+      'Ranking at-risk SKUs by value…'
+    ], 'Crunching every PO line against live inventory — this can take a few seconds.');
+    fetch(url(Object.assign({ partial: 'fulfil' }, params)), { headers: { 'X-Requested-With': 'fetch' } })
+      .then(function (r) { return r.text(); })
+      .then(function (html) { clearInterval(lid); pane.innerHTML = html; pane.dataset.loaded = '1'; wireFulfil(); syncURL(); })
+      .catch(function () { clearInterval(lid); pane.innerHTML = '<div class="an-loading">Could not load fulfilment risk.</div>'; });
+  }
+
+  function wireFulfil() {
+    var root = document.querySelector('#pane-fulfil .an-fulfil');
+    if (!root) return;
+    wireSort(root);
+    var form = root.querySelector('[data-fulfil-filter]');
+    function apply() {
+      loadFulfil({
+        sku_mp: form.querySelector('[name=sku_mp]').value,
+        sku_from: form.querySelector('[name=sku_from]').value,
+        sku_to: form.querySelector('[name=sku_to]').value
+      });
+    }
+    if (form) form.addEventListener('submit', function (e) { e.preventDefault(); apply(); });
+    root.querySelectorAll('[data-fulfil-preset]').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        e.preventDefault();
+        var today = new Date().toISOString().slice(0, 10);
+        var mp = form.querySelector('[name=sku_mp]').value;
+        if (b.getAttribute('data-fulfil-preset') === 'today') loadFulfil({ sku_mp: mp, sku_from: today, sku_to: today });
+        else loadFulfil({ sku_mp: mp, sku_from: '', sku_to: '' });
+      });
+    });
+  }
+
   // ══ tabs ══
   function showTab(name) {
     activeTab = name;
@@ -340,6 +444,8 @@
       loadSku({ sku_mp: q.get('sku_mp') || '', sku_from: q.get('sku_from') || undefined, sku_to: q.get('sku_to') || undefined });
     } else if (name === 'trends' && document.getElementById('pane-trends').dataset.loaded === '0') {
       loadTrends({ days: q.get('days') || 30 });
+    } else if (name === 'fulfil' && document.getElementById('pane-fulfil').dataset.loaded === '0') {
+      loadFulfil({ sku_mp: q.get('sku_mp') || '', sku_from: q.get('sku_from') || undefined, sku_to: q.get('sku_to') || undefined });
     } else {
       syncURL();
     }
@@ -353,7 +459,7 @@
     wireDaily();                                  // daily was server-rendered
     var q = new URLSearchParams(location.search);
     var t = q.get('tab');
-    if (t === 'sku' || t === 'trends') showTab(t);  // deep-link / refresh into a tab
+    if (t === 'sku' || t === 'trends' || t === 'fulfil') showTab(t);  // deep-link / refresh into a tab
     else syncURL();
   }
   if (document.readyState !== 'loading') boot();

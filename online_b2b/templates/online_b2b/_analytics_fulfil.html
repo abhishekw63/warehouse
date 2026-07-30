@@ -1,0 +1,104 @@
+{% load static b2b_extras %}
+{% comment %}
+  Fulfilment-Risk tab body — period demand (latest run per PO in the upload-date
+  window) vs CURRENT inventory in each order's mapped warehouse. At-risk SKUs
+  (OOS / short) ranked by unfulfillable value. Lazy-loaded (?partial=fulfil),
+  own marketplace + date-range filter (shared param names with the SKU tab).
+{% endcomment %}
+<div class="an-fulfil" data-mp="{{ sku_mp }}" data-from="{{ sku_from }}" data-to="{{ sku_to }}">
+
+  <div class="an-toolbar">
+    <form class="sku-filter" data-fulfil-filter onsubmit="return false;">
+      <select name="sku_mp">
+        <option value="">All marketplaces</option>
+        {% for m in risk.marketplaces %}<option value="{{ m }}" {% if m == sku_mp %}selected{% endif %}>{{ m }}</option>{% endfor %}
+      </select>
+      <label>From <input type="date" name="sku_from" value="{{ sku_from }}"></label>
+      <label>To <input type="date" name="sku_to" value="{{ sku_to }}"></label>
+      <button type="submit" class="btn-primary">Apply</button>
+      <a href="#" class="btn-ghost" data-fulfil-preset="today">Today</a>
+      <a href="#" class="btn-ghost" data-fulfil-preset="all">All time</a>
+    </form>
+  </div>
+
+  <p class="sku-scope muted">
+    Demand {% if sku_from or sku_to %}{{ sku_from|default:'…' }} → {{ sku_to|default:'…' }}{% else %}all uploads{% endif %}{% if sku_mp %} · {{ sku_mp }}{% endif %}
+    <b>vs current inventory</b>{% if risk.stock_as_of %} · stock as of {% for k, v in risk.stock_as_of.items %}{{ k }}: {{ v }}{% if not forloop.last %} · {% endif %}{% endfor %}{% endif %}.
+  </p>
+
+  <div class="fr-kpis">
+    <div class="fr-kpi">
+      <div class="fr-l">Fill rate · Value</div>
+      <div class="fr-n">{{ risk.summary.fill_val_pct|floatformat:1 }}%</div>
+      <div class="fr-bar"><span class="fr-fill" style="width:{{ risk.summary.fill_val_pct }}%"></span></div>
+      <div class="fr-p">{{ risk.summary.fill_value|inr_short }} of {{ risk.summary.demand_value|inr_short }}</div>
+    </div>
+    <div class="fr-kpi">
+      <div class="fr-l">Fill rate · Qty</div>
+      <div class="fr-n">{{ risk.summary.fill_pct|floatformat:1 }}%</div>
+      <div class="fr-bar"><span class="fr-fill" style="width:{{ risk.summary.fill_pct }}%"></span></div>
+      <div class="fr-p">{{ risk.summary.fill_qty|compact }} of {{ risk.summary.demand_qty|compact }} units</div>
+    </div>
+    <div class="fr-kpi risk">
+      <div class="fr-l">At-risk value</div>
+      <div class="fr-n bad">{{ risk.summary.short_value|inr_short }}</div>
+      <div class="fr-p">{{ risk.summary.short_qty|compact }} units short</div>
+    </div>
+    <div class="fr-kpi">
+      <div class="fr-l">At-risk SKUs</div>
+      <div class="fr-n">{{ risk.summary.at_risk|compact }}<span class="fr-of"> / {{ risk.summary.skus }}</span></div>
+      <div class="fr-p"><span class="fr-tag oos">{{ risk.summary.oos }} OOS</span> <span class="fr-tag short">{{ risk.summary.short }} short</span></div>
+    </div>
+  </div>
+
+  {% if risk.by_wh %}
+  <div class="fr-wh">
+    {% for w in risk.by_wh %}
+    <div class="fr-whcard">
+      <div class="fr-whname">{{ w.wh_short }}</div>
+      <div class="fr-whbar"><span class="fr-fill" style="width:{{ w.fill_val_pct }}%"></span></div>
+      <div class="fr-whmeta"><b>{{ w.fill_val_pct|floatformat:1 }}%</b> value fill · {{ w.short_value|inr_short }} short · {{ w.skus }} SKUs</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="sec-head" style="margin-top:8px;">
+    <h2>At-risk SKUs <span class="muted">· ranked by unfulfillable value</span></h2>
+    <span class="muted">{{ risk.rows|length }} SKUs can't be fully shipped from today's stock</span>
+  </div>
+
+  {% if risk.rows %}
+  <div class="skux-card">
+    <div class="scroll">
+    <table class="grid compact skux sortable fr-tbl">
+      <thead><tr>
+        <th class="rkh">#</th><th>Item</th><th>Description</th><th>WH</th>
+        <th class="r srt" data-k="demand">Demand ⇅</th>
+        <th class="r srt" data-k="avail">Avail ⇅</th>
+        <th class="r srt" data-k="short">Short ⇅</th>
+        <th class="r srt on" data-k="sv" data-dir="desc">At-risk ₹ ⇅</th>
+        <th class="r srt" data-k="fill">Fill % ⇅</th>
+        <th>Status</th>
+      </tr></thead>
+      <tbody>{% for r in risk.rows %}
+        <tr>
+          <td class="rk"><span class="rk-b rk-{{ forloop.counter }}">{{ forloop.counter }}</span></td>
+          <td class="mono">{{ r.item_no }}</td>
+          <td class="desc" title="{{ r.description }}">{{ r.description|default:'—' }}</td>
+          <td>{{ r.wh_short }}</td>
+          <td class="r" data-k="demand" data-v="{{ r.demand }}">{{ r.demand|compact }}</td>
+          <td class="r" data-k="avail" data-v="{{ r.available }}">{{ r.available|compact }}</td>
+          <td class="r bad" data-k="short" data-v="{{ r.short }}">{{ r.short|compact }}</td>
+          <td class="r barcell" data-k="sv" data-v="{{ r.short_value }}"><span class="bar bv" style="width:{% widthratio r.short_value risk.rows.0.short_value 100 %}%"></span><b>{{ r.short_value|inr_short }}</b></td>
+          <td class="r" data-k="fill" data-v="{{ r.fill_pct }}">{{ r.fill_pct|floatformat:0 }}%</td>
+          <td><span class="fr-st {{ r.status|lower }}">{{ r.status }}</span></td>
+        </tr>
+      {% endfor %}</tbody>
+    </table>
+    </div>
+  </div>
+  {% else %}
+    <p class="muted" style="padding:14px 2px;">Nothing at risk in this scope — everything demanded is coverable from current stock. 🎉</p>
+  {% endif %}
+</div>
