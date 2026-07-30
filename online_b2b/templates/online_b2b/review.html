@@ -332,10 +332,10 @@
       <span id="affBulkMsg" class="abk-msg" hidden></span>
     </div>
     {% endif %}
-    <div class="scroll">
-    <table class="grid">
+    <div class="scroll aff-scroll">
+    <table class="grid compact aff-tbl">
       <thead><tr><th class="chk-col">{% if not locked %}<input type="checkbox" id="affAll" title="select all">{% endif %}</th>
-        <th>PO</th><th>Item No</th><th>EAN</th><th>Description</th><th class="r">Qty</th>
+        <th>PO</th><th>Item No</th><th>Description</th><th>EAN</th><th class="r">Qty</th>
         <th class="r">Our MRP</th><th class="r">Their MRP</th>
         <th class="r">Our Land</th><th class="r">Their Land</th>
         <th class="r">Our CP</th><th class="r">Their CP</th>
@@ -345,8 +345,8 @@
         {% for l in r.affected %}
         <tr class="{% if l.status == 'MISMATCH' %}rmis{% else %}rnim{% endif %}">
           <td class="chk-col">{% if not locked %}<input type="checkbox" class="aff-chk" data-status="{{ l.status }}">{% endif %}</td>
-          <td class="mono">{{ l.po }}</td><td class="mono">{{ l.item_no|default:'—' }}</td><td class="mono">{{ l.ean }}</td>
-          <td class="desc" title="{{ l.description }}">{{ l.description }}</td><td class="r">{{ l.qty }}</td>
+          <td class="mono">{{ l.po }}</td><td class="mono">{{ l.item_no|default:'—' }}</td>
+          <td class="desc" title="{{ l.description }}">{{ l.description }}</td><td class="mono">{{ l.ean }}</td><td class="r">{{ l.qty }}</td>
           <td class="r">{{ l.our_mrp|default_if_none:'—' }}</td><td class="r">{{ l.vendor_mrp|default_if_none:'—' }}</td>
           <td class="r {% if l.basis == 'Landing' %}basis-on{% endif %}">{{ l.our_landing|default_if_none:'—' }}</td><td class="r {% if l.basis == 'Landing' %}basis-on{% endif %}">{{ l.vendor_landing|default_if_none:'—' }}</td>
           <td class="r {% if l.basis == 'CP' %}basis-on{% endif %}">{{ l.our_cp|default_if_none:'—' }}</td><td class="r {% if l.basis == 'CP' %}basis-on{% endif %}">{{ l.vendor_cp|default_if_none:'—' }}</td>
@@ -437,6 +437,18 @@
     width:96px;text-align:right;background:#fff;color:var(--text);font-family:var(--font);}
   .act-ocp[readonly]{background:var(--bg);color:var(--muted);border-style:dashed;}
   .act-sel:focus,.act-rem:focus,.act-ocp:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
+  /* Affected line-items table — freeze identity columns (chk · PO · Item ·
+     Description) so they stay visible while scrolling right to the decision
+     controls. Pure CSS/layout; no data or logic change. */
+  .aff-tbl th,.aff-tbl td{background-clip:padding-box;}
+  .aff-tbl th.chk-col,.aff-tbl td.chk-col{position:sticky;left:0;z-index:2;background:var(--surface);}
+  .aff-tbl th:nth-child(2),.aff-tbl td:nth-child(2){position:sticky;left:30px;z-index:2;min-width:88px;background:var(--surface);}
+  .aff-tbl th:nth-child(3),.aff-tbl td:nth-child(3){position:sticky;left:118px;z-index:2;min-width:64px;background:var(--surface);}
+  .aff-tbl th:nth-child(4),.aff-tbl td:nth-child(4){position:sticky;left:182px;z-index:2;min-width:150px;max-width:170px;background:var(--surface);box-shadow:2px 0 0 var(--border);}
+  .aff-tbl thead th.chk-col,.aff-tbl thead th:nth-child(2),.aff-tbl thead th:nth-child(3),.aff-tbl thead th:nth-child(4){z-index:3;background:var(--surface-2);}
+  .aff-tbl .desc{max-width:150px;}
+  /* softer basis highlight so it reads as a tint, not a heavy band */
+  .aff-tbl td.basis-on{box-shadow:none;background:color-mix(in srgb,var(--accent) 7%,var(--surface));}
 </style>
 
 <!-- ── Lock progress overlay (AJAX; no page reload) ── -->
