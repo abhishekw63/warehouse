@@ -199,6 +199,17 @@
   table.ex-tbl tr.ex-low td.bad,table.ex-tbl tr.ex-low .warn{color:var(--muted);font-weight:600;}
   table.ex-tbl tr.ex-low td.barcell .bar{background:color-mix(in srgb,var(--muted) 35%,transparent);}
   .ex-ns{display:inline-block;font-size:9.5px;font-weight:800;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:0 5px;margin-left:5px;vertical-align:middle;}
+  /* ── Universal de-congest for EVERY shared ex-tbl (readiness, at-risk, overstock…) ──
+     Root cause: enhance.css's .skux forces table-layout:fixed + tiny nth-child
+     widths, and ex-tbl's col1 had overflow:visible → names spilled into col2.
+     Fix: auto layout (columns size to content) + a real name column + roomy cells.
+     The double-class beats .skux; specific tables below still override this. ── */
+  table.ex-tbl.skux{table-layout:auto;}
+  table.ex-tbl.skux th,table.ex-tbl.skux td{padding:11px 18px;}
+  table.ex-tbl.skux th:nth-child(1),table.ex-tbl.skux td:nth-child(1){
+    text-align:left;min-width:160px;max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  table.ex-tbl.skux td.tr-mp{font-weight:700;color:var(--text-1);}
+  table.ex-tbl.skux tbody tr:hover td{background:color-mix(in srgb,var(--accent) 6%,transparent);}
   /* ── By marketplace — spacious, non-colliding (overrides shared ex-tbl + .skux) ── */
   table.exc-mp-tbl.skux{table-layout:fixed;width:100%;}
   table.exc-mp-tbl.skux th,table.exc-mp-tbl.skux td{padding:12px 16px;vertical-align:middle;
