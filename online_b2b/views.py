@@ -6,6 +6,7 @@ Upload runs the existing engine as a library and records the result back into
 the same DB, so the dashboard reflects web runs immediately.
 """
 
+import hashlib
 import json
 import os
 import shutil
@@ -2090,6 +2091,50 @@ def review_download(request, token):
                         filename=_lot_name(meta.get('marketplace', ''), f, 'review'))
 
 
+def _completed_cache_key(meta: dict) -> str:
+    """Signature for the LOCKED completed workbook — covers every input to
+    ``export_decided_workbook``. Post-lock the run is frozen, so a matching key
+    guarantees byte-identical output → safe to re-serve instead of rebuilding."""
+    basis = {'files': meta.get('files', []), 'wh': meta.get('warehouse', ''),
+             'margin': meta.get('margin_pct', ''), 'dec': meta.get('decisions') or {},
+             'ean': meta.get('ean_fixes'), 'run': meta.get('run_id'),
+             'locked': bool(meta.get('locked'))}
+    return hashlib.md5(
+        json.dumps(basis, sort_keys=True, default=str).encode('utf-8')).hexdigest()
+
+
+def _completed_cache_get(d: Path, meta: dict):
+    """Cached completed-workbook path if the marker matches the current signature
+    and the file exists; else None. Fully guarded — never raises, so a bad cache
+    simply falls through to a normal rebuild."""
+    try:
+        marker = d / 'completed.cache.json'
+        if not marker.exists():
+            return None
+        blob = json.loads(marker.read_text(encoding='utf-8'))
+        if blob.get('key') != _completed_cache_key(meta):
+            return None
+        p = d / blob.get('name', '')
+        return str(p) if p.exists() else None
+    except Exception:  # noqa: BLE001 — cache is best-effort, never block a download
+        return None
+
+
+def _completed_cache_put(d: Path, meta: dict, built_path: str) -> None:
+    """Copy the freshly built completed workbook into the token dir + write the
+    signature marker. Guarded — a failure just means no caching, never blocks."""
+    try:
+        import shutil
+        dest = d / os.path.basename(built_path)
+        if os.path.abspath(built_path) != os.path.abspath(str(dest)):
+            shutil.copy2(built_path, dest)
+        (d / 'completed.cache.json').write_text(
+            json.dumps({'key': _completed_cache_key(meta), 'name': dest.name}),
+            encoding='utf-8')
+    except Exception:  # noqa: BLE001
+        pass
+
+
 @login_required
 def review_download_completed(request, token):
     """Download the SO Workbook with LOCKED decisions applied — accepted lines
@@ -2101,18 +2146,26 @@ def review_download_completed(request, token):
     if not meta.get('locked'):
         messages.error(request, "Lock & Record first, then download the completed workbook.")
         return redirect('b2b_review', token=token)
-    paths = [str(d / n) for n in meta['files']]
-    res = engine_bridge.export_decided_workbook(
-        meta['marketplace'], paths,
-        warehouse=meta['warehouse'], margin_pct=meta['margin_pct'] / 100.0,
-        actions=meta.get('decisions') or {}, ean_fixes=meta.get('ean_fixes'),
-        # Drop POs already uploaded in an EARLIER run from the import file so
-        # D365 doesn't get duplicate SOs (this run's new POs stay). The Review
-        # download is unaffected. [[completed-dedup]]
-        exclude_uploaded_run_id=meta.get('run_id'))
-    if not res.get('ok') or not os.path.exists(res.get('path', '')):
-        messages.error(request, res.get('error', 'Completed workbook generation failed.'))
-        return redirect('b2b_review', token=token)
+    # Post-lock the run is frozen, so the completed workbook is deterministic.
+    # Serve a cached copy on repeat downloads instead of regenerating (this was
+    # the slowest endpoint). Pure view-level cache — export_decided_workbook is
+    # UNCHANGED, and any cache miss/failure falls straight through to a rebuild.
+    _cached = _completed_cache_get(d, meta)
+    if _cached is None:
+        paths = [str(d / n) for n in meta['files']]
+        res = engine_bridge.export_decided_workbook(
+            meta['marketplace'], paths,
+            warehouse=meta['warehouse'], margin_pct=meta['margin_pct'] / 100.0,
+            actions=meta.get('decisions') or {}, ean_fixes=meta.get('ean_fixes'),
+            # Drop POs already uploaded in an EARLIER run from the import file so
+            # D365 doesn't get duplicate SOs (this run's new POs stay). The Review
+            # download is unaffected. [[completed-dedup]]
+            exclude_uploaded_run_id=meta.get('run_id'))
+        if not res.get('ok') or not os.path.exists(res.get('path', '')):
+            messages.error(request, res.get('error', 'Completed workbook generation failed.'))
+            return redirect('b2b_review', token=token)
+        _cached = res['path']
+        _completed_cache_put(d, meta, _cached)
     # Downloading the Completed workbook is a real workflow milestone → auto-tick
     # the Daily Tasks "Workbook downloaded" step for this channel. A parked
     # ("Review Later") run credits its PARK day (draft_at) — the record,
@@ -2123,8 +2176,8 @@ def review_download_completed(request, token):
     _wb_day = meta['draft_at'][:10] if (meta.get('draft') and meta.get('draft_at')) else None
     _dc.mark_workbook_downloaded(meta['marketplace'],
                                  user=request.user.get_username(), day=_wb_day)
-    return FileResponse(open(res['path'], 'rb'), as_attachment=True,
-                        filename=_lot_name(meta['marketplace'], res['path'], 'completed'))
+    return FileResponse(open(_cached, 'rb'), as_attachment=True,
+                        filename=_lot_name(meta['marketplace'], _cached, 'completed'))
 
 
 # ── Bulk import (ERP Sales Orders) ──────────────────────────────────────
@@ -2894,15 +2947,18 @@ def availability_export(request):
 
 @login_required
 def availability_bins(request):
-    """Per-item bin breakdown for the lazy expand on an SKU row.
+    """Per-item bin breakdown for the lazy expand on an SKU row — ONLY the
+    INCLUDED (sellable) bins, so the drill-down sums to the item's available qty.
+    Excluded return/QC/block bins are deliberately not shown here.
     GET ?wh=<code>&item=<item_no> → {ok, item, wh, bins:[{bin,zone,decision,qty}]}."""
     from .services import inventory_store as inv
     wh = (request.GET.get('wh') or '').strip()
     item = (request.GET.get('item') or '').strip()
     if not wh or not item:
         return JsonResponse({'ok': False, 'error': 'wh and item required.'})
+    bins = [b for b in inv.item_bins(wh, item) if b.get('decision') == 'INCLUDED']
     return JsonResponse({'ok': True, 'item': item, 'wh': inv.wh_short(wh),
-                         'bins': inv.item_bins(wh, item)})
+                         'bins': bins})
 
 
 # ── Sales Validation — REMOVED 2026-07-20 (superseded by Triangular Validation).

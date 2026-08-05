@@ -139,7 +139,7 @@
 <div id="email-modal" class="em-overlay" hidden
      data-preview-url="{% url 'b2b_daily_email_preview' %}"
      data-send-url="{% url 'b2b_daily_email_send' %}">
-  <div class="em-card">
+  <div class="em-modal">
     <div class="em-head">
       <h3 id="em-title">Email daily activity</h3>
       <button type="button" class="em-x" id="em-close" aria-label="Close">✕</button>
@@ -301,34 +301,7 @@
     background:#1A237E;color:#fff;border:none;border-radius:8px;font-weight:600;
     white-space:nowrap;cursor:pointer;box-shadow:0 7px 15px -7px rgba(26,35,126,.6);transition:.15s;}
   .dt-email:hover{background:#283593;transform:translateY(-1px);}
-  .em-overlay{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;
-    background:rgba(15,23,42,.5);backdrop-filter:blur(2px);}
-  .em-overlay[hidden]{display:none;}
-  .em-card{background:#fff;width:min(980px,95vw);max-height:92vh;border-radius:16px;display:flex;flex-direction:column;
-    box-shadow:0 30px 80px -20px rgba(15,23,42,.6);overflow:hidden;animation:emPop .22s cubic-bezier(.2,.85,.25,1);}
-  @keyframes emPop{from{transform:translateY(12px) scale(.97);opacity:0;}to{transform:none;opacity:1;}}
-  .em-head{display:flex;align-items:center;justify-content:space-between;padding:15px 22px;border-bottom:1px solid var(--border);background:var(--surface-2);}
-  .em-head h3{margin:0;font-size:16px;font-weight:700;color:var(--text);letter-spacing:-.01em;}
-  .em-x{background:none;border:none;font-size:17px;cursor:pointer;color:var(--muted);line-height:1;padding:4px;border-radius:7px;transition:.15s;}
-  .em-x:hover{background:var(--border);color:var(--text);}
-  .em-meta{padding:14px 22px;font-size:12.5px;display:grid;gap:9px;border-bottom:1px solid var(--border);background:#fff;}
-  .em-meta .em-row{display:flex;align-items:center;gap:12px;}
-  .em-meta .em-note-row{align-items:flex-start;}
-  .em-meta .em-lbl{flex:0 0 auto;width:66px;color:var(--muted);font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.05em;}
-  .em-meta .em-note-row .em-lbl{padding-top:9px;}
-  .em-meta .em-in,.em-meta .em-note{flex:1;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:9px;padding:8px 11px;font:inherit;font-size:12.5px;background:#f8fafc;color:#334155;transition:.15s;}
-  .em-meta .em-note{resize:vertical;min-height:40px;line-height:1.45;}
-  .em-meta .em-in:hover,.em-meta .em-note:hover{background:#fff;border-color:#cbd5e1;}
-  .em-meta .em-in:focus,.em-meta .em-note:focus{outline:none;background:#fff;border-color:#818cf8;box-shadow:0 0 0 3px rgba(129,140,248,.18);}
-  .em-meta .em-in.bad{border-color:#f43f5e;box-shadow:0 0 0 3px rgba(244,63,94,.12);}
-  .em-meta .em-subj{flex:1;font-weight:600;color:var(--text);}
-  .em-preview{flex:1;overflow:auto;background:#f1f5f9;min-height:200px;}
-  .em-preview iframe{width:100%;height:46vh;border:0;background:#fff;display:block;}
-  .em-foot{display:flex;align-items:center;gap:10px;padding:14px 20px;border-top:1px solid var(--border);}
-  .em-status{font-size:12.5px;font-weight:600;}
-  .em-status.ok{color:#15803d;} .em-status.err{color:#b91c1c;}
-  .em-spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.5);border-top-color:#fff;border-radius:50%;display:inline-block;vertical-align:-2px;margin-right:6px;animation:emspin .7s linear infinite;}
-  @keyframes emspin{to{transform:rotate(360deg);}}
+  /* Email-preview modal (.em-overlay/.em-modal + parts) -> enhance.css §12 */
 </style>
 <script>
 (function () {

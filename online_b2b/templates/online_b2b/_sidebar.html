@@ -30,6 +30,8 @@
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='po' %}</span><span class="side-label">Orders</span></a>
     <a href="{% url 'b2b_tracker' %}" class="sn{% if '/tracker' in request.path %} on{% endif %}" title="Consolidated Tracker — single source of truth (Online B2B + Offline)">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='po' %}</span><span class="side-label">Tracker</span></a>
+    <a href="{% url 'b2b_tables' %}" class="sn{% if '/b2b/tables' in request.path %} on{% endif %}" title="Tables — editable master data (GT Select status, etc.)">
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='hash' %}</span><span class="side-label">Tables</span></a>
     <a href="{% url 'b2b_lines' %}" class="sn{% if '/lines' in request.path %} on{% endif %}" title="Line Items">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='search' %}</span><span class="side-label">Line Items</span></a>
     <a href="{% url 'b2b_sku_summary' %}" class="sn{% if '/sku-summary' in request.path %} on{% endif %}" title="SKU Summary">

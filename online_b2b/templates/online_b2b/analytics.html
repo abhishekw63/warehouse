@@ -113,39 +113,13 @@
   .range-picker .rp-clear{color:var(--muted);text-decoration:none;font-size:13px;padding:0 3px;border-radius:5px;line-height:1;}
   .range-picker .rp-clear:hover{color:#dc2626;background:color-mix(in srgb,#dc2626 10%,transparent);}
   @media(max-width:720px){.range-picker input[type=date]{width:104px;}}
-  /* SKU tab (moved from the old sku_demand page) */
-  .sku-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-  .sku-filter select,.sku-filter input[type=date]{padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12.5px;background:#fff;color:var(--text);}
-  .sku-filter label{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:5px;}
-  .sku-scope{font-size:12px;margin:6px 0 12px;}
+  /* SKU tab — .skux table + .sku-filter styles CONSOLIDATED to enhance.css
+     (§7). Only the page-specific KPI accent bars remain here. */
   .sku-kpis .hk{position:relative;overflow:hidden;transition:transform .14s,box-shadow .14s;}
   .sku-kpis .hk:hover{transform:translateY(-2px);box-shadow:0 8px 20px -12px rgba(15,23,42,.3);}
   .sku-kpis .hk::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:4px 0 0 4px;}
   .sku-kpis .hk:nth-child(1)::before{background:#6366f1;} .sku-kpis .hk:nth-child(2)::before{background:#4f46e5;}
   .sku-kpis .hk:nth-child(3)::before{background:#0a9d6e;} .sku-kpis .hk:nth-child(4)::before{background:#f59e0b;}
-  .skux-card{border:1px solid var(--border);border-radius:12px;background:var(--surface);overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.04);}
-  table.skux{width:100%;margin:0;table-layout:fixed;}
-  table.skux th{font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface-2);z-index:1;}
-  table.skux th,table.skux td{padding:9px 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  table.skux td{border-bottom:1px solid color-mix(in srgb,var(--border) 55%,transparent);font-size:12.5px;}
-  table.skux tbody tr:hover td{background:color-mix(in srgb,var(--accent) 4%,transparent);}
-  table.skux th:nth-child(1),table.skux td:nth-child(1){width:4%;text-align:center;}
-  table.skux th:nth-child(2),table.skux td:nth-child(2){width:11%;text-align:left;}
-  table.skux th:nth-child(3),table.skux td:nth-child(3){width:34%;text-align:left;color:var(--text-2);}
-  table.skux th:nth-child(4),table.skux td:nth-child(4){width:13%;text-align:center;}
-  table.skux th:nth-child(5),table.skux td:nth-child(5){width:16%;text-align:center;}
-  table.skux th:nth-child(6),table.skux td:nth-child(6){width:11%;text-align:center;}
-  table.skux th:nth-child(7),table.skux td:nth-child(7){width:11%;text-align:center;}
-  .skux .rkh{width:34px;} .skux td.rk{text-align:center;}
-  .rk-b{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 5px;border-radius:10px;font-size:11px;font-weight:800;background:var(--surface-2);color:var(--muted);}
-  .rk-b.rk-1{background:#fde68a;color:#92600a;} .rk-b.rk-2{background:#e5e7eb;color:#4b5563;} .rk-b.rk-3{background:#fed7aa;color:#9a3412;}
-  .skux th.srt{cursor:pointer;user-select:none;white-space:nowrap;} .skux th.srt:hover,.skux th.srt.on{color:var(--accent);}
-  .skux td.barcell{position:relative;overflow:hidden;}
-  .skux td.barcell .bar{position:absolute;left:50%;transform:translateX(-50%) scaleX(1);bottom:5px;top:auto;right:auto;height:3px;border-radius:3px;z-index:0;min-width:6px;max-width:calc(100% - 24px);background:linear-gradient(90deg,color-mix(in srgb,#10b981 55%,transparent),color-mix(in srgb,#0a9d6e 75%,transparent));transform-origin:center;animation:skuxbar .7s cubic-bezier(.2,.85,.25,1) both;}
-  @keyframes skuxbar{from{transform:translateX(-50%) scaleX(0);opacity:.3;}to{transform:translateX(-50%) scaleX(1);opacity:1;}}
-  table.skux tbody{animation:skuxrows .45s ease both;} @keyframes skuxrows{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
-  @media (prefers-reduced-motion: reduce){.skux td.barcell .bar,table.skux tbody{animation:none;}}
-  .skux td.barcell b{position:relative;z-index:1;}
   .scroll{max-height:70vh;overflow:auto;}
   /* ── Trends & Momentum tab ── */
   .tr-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:24px;}
@@ -225,6 +199,28 @@
   table.ex-tbl tr.ex-low td.bad,table.ex-tbl tr.ex-low .warn{color:var(--muted);font-weight:600;}
   table.ex-tbl tr.ex-low td.barcell .bar{background:color-mix(in srgb,var(--muted) 35%,transparent);}
   .ex-ns{display:inline-block;font-size:9.5px;font-weight:800;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:0 5px;margin-left:5px;vertical-align:middle;}
+  /* ── Demand by state — spacious, non-colliding layout ──
+     Double class (.geo-state-tbl.skux) so these win over enhance.css's
+     generic .skux td:nth-child() widths (which load later in <body>). ── */
+  table.geo-state-tbl.skux{table-layout:fixed;width:100%;}
+  table.geo-state-tbl.skux th,table.geo-state-tbl.skux td{padding:12px 20px;vertical-align:middle;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  /* State — wide, left, full names (no truncation) */
+  table.geo-state-tbl.skux th:nth-child(1),table.geo-state-tbl.skux td:nth-child(1){width:34%;text-align:left;}
+  /* Order Value — right, with room + a gap from State */
+  table.geo-state-tbl.skux th:nth-child(2),table.geo-state-tbl.skux td:nth-child(2){width:20%;text-align:right;}
+  table.geo-state-tbl.skux th:nth-child(3),table.geo-state-tbl.skux td:nth-child(3){width:16%;text-align:right;}
+  table.geo-state-tbl.skux th:nth-child(4),table.geo-state-tbl.skux td:nth-child(4){width:14%;text-align:right;}
+  table.geo-state-tbl.skux th:nth-child(5),table.geo-state-tbl.skux td:nth-child(5){width:16%;text-align:right;}
+  table.geo-state-tbl.skux td.tr-mp{font-weight:700;color:var(--text-1);font-size:13px;}
+  table.geo-state-tbl.skux tbody tr:nth-child(even) td{background:color-mix(in srgb,var(--surface-2) 45%,transparent);}
+  table.geo-state-tbl.skux tbody tr:hover td{background:color-mix(in srgb,var(--accent) 6%,transparent);}
+  /* value + a clean left-anchored proportional bar UNDER the number (no crowding) */
+  table.geo-state-tbl.skux td.barcell{position:relative;overflow:hidden;padding-bottom:16px;}
+  table.geo-state-tbl.skux td.barcell b{position:relative;z-index:1;font-variant-numeric:tabular-nums;font-size:13px;}
+  table.geo-state-tbl.skux td.barcell .bar.bv{position:absolute;left:20px;right:auto;bottom:7px;top:auto;transform:none;
+    height:4px;border-radius:4px;min-width:6px;max-width:calc(100% - 40px);
+    background:linear-gradient(90deg,#6366f1,#4f46e5);animation:none;}
   /* ── Geography & Concentration tab ── */
   .geo-share{font-weight:700;color:var(--text-2);font-variant-numeric:tabular-nums;}
   .fr-fill.geo-cls-A{background:linear-gradient(90deg,#4f46e5,#4338ca);}

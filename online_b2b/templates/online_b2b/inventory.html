@@ -165,7 +165,7 @@
     </div>
     <form class="iv-search" onsubmit="return false;" autocomplete="off">
       <span class="iv-searchic" aria-hidden="true">⌕</span>
-      <input id="ivq" type="text" name="q" value="{{ q }}" placeholder="Search item / EAN / description…" autocomplete="off">
+      <input id="ivq" type="text" name="q" value="{{ q }}" placeholder="Search or paste item nos / EANs — space, comma or | separated…" autocomplete="off">
       <a class="iv-clear" href="#" title="Clear search"{% if not q %} hidden{% endif %}>✕</a>
     </form>
   </div>
@@ -200,9 +200,7 @@
 </div>
 
 <style>
-  .iv-wrap{max-width:1240px;margin:22px auto 64px;padding:0 20px;color:var(--text);}
-  .iv-wrap .b2b-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap;}
-  .iv-wrap code{background:var(--surface-2);padding:1px 5px;border-radius:5px;font-size:12px;}
+  /* .iv-wrap container → canonical in enhance.css §9 */
   .iv-upload{flex:0 0 auto;}
   .iv-file{position:relative;display:inline-flex;align-items:center;cursor:pointer;}
   .iv-file input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;}
@@ -325,9 +323,7 @@
   .iv-table tr.aff td{background:color-mix(in srgb,#f59e0b 6%,transparent);}
   .iv-table td.oos{color:#b45309;font-weight:700;}
   .iv-none{text-align:center;color:var(--muted);padding:16px;}
-  .pill{display:inline-block;padding:2px 9px;border-radius:20px;font-weight:700;font-size:11px;white-space:nowrap;}
-  .pill.good{color:#0f9d6b;background:#e7f6ef;}
-  .pill.bad{color:#b45309;background:#fff1e0;}
+  /* .pill badges → canonical token-based set in enhance.css §8 */
   /* ── Available-stock section — one cohesive card ──────────────────────── */
   .iv-stocksec{margin-top:26px;border:1px solid var(--border);border-radius:18px;overflow:hidden;background:var(--surface);
     box-shadow:0 1px 2px rgba(15,23,42,.04),0 14px 34px -24px rgba(15,23,42,.22);}
@@ -435,16 +431,22 @@
   });
   var noRow = null;
   function apply() {
-    var q = input.value.trim().toLowerCase(), shown = 0;
+    var raw = input.value.trim().toLowerCase();
+    // Split on space / comma / semicolon / pipe / tab / newline so a PASTED list
+    // of item nos or EANs filters to ALL of them at once (OR match).
+    var tokens = raw ? raw.split(/[\s,;|]+/).filter(Boolean) : [];
+    var shown = 0;
     for (var i = 0; i < rows.length; i++) {
-      var m = !q || rows[i]._s.indexOf(q) !== -1;
+      var s = rows[i]._s, m = !tokens.length;
+      for (var k = 0; !m && k < tokens.length; k++) if (s.indexOf(tokens[k]) !== -1) m = true;
       rows[i].hidden = !m; if (m) shown++;
     }
-    if (meta) meta.innerHTML = q
+    if (meta) meta.innerHTML = tokens.length
       ? '<b>' + shown.toLocaleString('en-IN') + '</b> of <b>' + rows.length.toLocaleString('en-IN') + '</b> SKUs match'
+        + (tokens.length > 1 ? ' · ' + tokens.length + ' terms' : '')
       : metaHTML;
-    if (clearBtn) clearBtn.hidden = !q;
-    if (q && shown === 0) {
+    if (clearBtn) clearBtn.hidden = !tokens.length;
+    if (tokens.length && shown === 0) {
       if (!noRow) {
         noRow = tb.insertRow(); noRow.className = 'iv-nomatch';
         var td = noRow.insertCell(); td.className = 'iv-none';

@@ -1,10 +1,37 @@
 /* =========================================================================
-   enhance.css — global, dependency-free UI enhancement layer for the B2B app.
-   Loaded once from base_b2b.html (body_end), AFTER b2b.css, so its
-   :root[data-theme=dark] overrides win over b2b.css's light :root tokens.
-   Additive only — never restyles existing components destructively; new
-   behaviour opts in via JS-added classes (.enh-*).
+   enhance.css — the B2B app's GLOBAL COMPONENT LAYER.
+
+   ARCHITECTURE (build the base strong; add floors later without rework):
+     §0  Foundation ....... design tokens (spacing · radius · elevation).
+                            Colour tokens live in b2b.css :root + §1 (dark).
+     §1  Dark theme ....... re-points tokens so every component flips.
+     §2  Header controls .. theme toggle + ⌘K launcher.
+     §3  Toasts.
+     §4  Command palette (⌘K).
+     §5  Table upgrades (.enh-table).
+     §6  Global polish (focus · scrollbars · skeleton · motion).
+     §7  SKU-summary component (.skux).
+     §8  Badge / pill (.pill) — token-based, dark-mode aware.
+     §9  Page container (.iv-wrap).
+     §10 Modal / dialog close (.em-x).   [full .em-overlay/.em-modal: pending]
+
+   Loaded once from base_b2b.html (body_end), AFTER b2b.css, so its token
+   overrides win. Additive & non-destructive.
+
+   ►► ADDING A COMPONENT: append a new "§N <name>" section below, built ONLY on
+   the §0 / colour tokens (don't hardcode a value a token already covers). ONE
+   canonical home per component — never re-declare it in a page <style>. This
+   keeps the base uniform and endlessly extensible.
    ========================================================================= */
+
+/* ---- 0. Foundation — shared scales every component builds on. ------------- */
+:root{
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:22px; --sp-6:32px;
+  --r-sm:8px; --r-md:12px; --r-lg:16px; --r-pill:20px;
+  --elev-1:0 1px 3px rgba(15,23,42,.06);
+  --elev-2:0 8px 20px -12px rgba(15,23,42,.30);
+  --elev-modal:0 30px 80px -20px rgba(15,23,42,.6);
+}
 
 /* ---- 1. Dark theme -------------------------------------------------------
    Re-point the SAME design tokens b2b.css already uses, so every tokenised
@@ -180,3 +207,114 @@ a, button, input, select, textarea,
   #MainContent { animation: none; }
   a, button, input, select, textarea, .sn, .tv-tab, .card, .im-kpi, .btn-primary, .btn-ghost { transition: none !important; }
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   7. SKU-summary component (.skux) — CONSOLIDATED here from analytics.html +
+   sku_demand.html (was duplicated verbatim). One canonical source; pages keep
+   only their page-specific KPI-accent tweaks. Frontend-enhance-layer rule:
+   extend here, never re-paste per page.
+   ───────────────────────────────────────────────────────────────────────── */
+.sku-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.sku-filter select,.sku-filter input[type=date]{padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12.5px;background:var(--surface,#fff);color:var(--text);}
+.sku-filter label{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:5px;}
+.sku-scope{font-size:12px;margin:6px 0 12px;}
+.skux-card{border:1px solid var(--border);border-radius:12px;background:var(--surface);overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.04);}
+table.skux{width:100%;margin:0;table-layout:fixed;}
+table.skux th{font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface-2);z-index:1;}
+table.skux th,table.skux td{padding:9px 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+table.skux td{border-bottom:1px solid color-mix(in srgb,var(--border) 55%,transparent);font-size:12.5px;}
+table.skux tbody tr:hover td{background:color-mix(in srgb,var(--accent) 4%,transparent);}
+table.skux th:nth-child(1),table.skux td:nth-child(1){width:4%;text-align:center;}
+table.skux th:nth-child(2),table.skux td:nth-child(2){width:11%;text-align:left;}
+table.skux th:nth-child(3),table.skux td:nth-child(3){width:34%;text-align:left;color:var(--text-2);}
+table.skux th:nth-child(4),table.skux td:nth-child(4){width:13%;text-align:center;}
+table.skux th:nth-child(5),table.skux td:nth-child(5){width:16%;text-align:center;}
+table.skux th:nth-child(6),table.skux td:nth-child(6){width:11%;text-align:center;}
+table.skux th:nth-child(7),table.skux td:nth-child(7){width:11%;text-align:center;}
+.skux .rkh{width:34px;} .skux td.rk{text-align:center;}
+.rk-b{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 5px;border-radius:10px;font-size:11px;font-weight:800;background:var(--surface-2);color:var(--muted);}
+.rk-b.rk-1{background:#fde68a;color:#92600a;} .rk-b.rk-2{background:#e5e7eb;color:#4b5563;} .rk-b.rk-3{background:#fed7aa;color:#9a3412;}
+.skux th.srt{cursor:pointer;user-select:none;white-space:nowrap;} .skux th.srt:hover,.skux th.srt.on{color:var(--accent);}
+.skux td.barcell{position:relative;overflow:hidden;}
+.skux td.barcell .bar{position:absolute;left:50%;transform:translateX(-50%) scaleX(1);bottom:5px;top:auto;right:auto;height:3px;border-radius:3px;z-index:0;min-width:6px;max-width:calc(100% - 24px);background:linear-gradient(90deg,color-mix(in srgb,#10b981 55%,transparent),color-mix(in srgb,#0a9d6e 75%,transparent));transform-origin:center;animation:skuxbar .7s cubic-bezier(.2,.85,.25,1) both;}
+@keyframes skuxbar{from{transform:translateX(-50%) scaleX(0);opacity:.3;}to{transform:translateX(-50%) scaleX(1);opacity:1;}}
+table.skux tbody{animation:skuxrows .45s ease both;} @keyframes skuxrows{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+.skux td.barcell b{position:relative;z-index:1;}
+@media (prefers-reduced-motion: reduce){.skux td.barcell .bar,table.skux tbody{animation:none;}}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   8. Badge / pill — ONE canonical, TOKEN-BASED badge for the whole app.
+   Replaces the two conflicting .pill blocks that were in b2b.css plus the
+   per-page redeclarations (drafts / inventory / inventory_bins). Because the
+   colours are design tokens, these badges now flip correctly in dark mode
+   (the old hardcoded-hex pills did not). Variant → semantic colour:
+     ok · good · so  → green   |   mis · warn → red
+     bad             → amber   |   live · to  → accent   |   wh → accent(mono)
+   ───────────────────────────────────────────────────────────────────────── */
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;white-space:nowrap;line-height:1.5;}
+.pill.ok,.pill.good,.pill.so{background:var(--green-soft);color:var(--green);}
+.pill.mis,.pill.warn{background:var(--red-soft);color:var(--red);}
+.pill.bad{background:var(--amber-soft);color:var(--amber);}
+.pill.live,.pill.to{background:var(--accent-soft);color:var(--accent);}
+.pill.wh{background:var(--accent-soft);color:var(--accent);font-family:Consolas,ui-monospace,monospace;font-size:10.5px;}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   9. Page container (.iv-wrap) — standard centred content shell. Consolidated
+   from inventory / inventory_bins / inventory_preview. Pages needing a
+   narrower shell just override max-width locally.
+   ───────────────────────────────────────────────────────────────────────── */
+.iv-wrap{max-width:1240px;margin:var(--sp-5) auto 64px;padding:0 20px;color:var(--text);}
+.iv-wrap .b2b-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap;}
+.iv-wrap code{background:var(--surface-2);padding:1px 5px;border-radius:5px;font-size:12px;}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   10. Modal / dialog close button (.em-x) — shared by every modal & panel.
+   Consolidated from daily_tasks / issues / email. (The full modal shell
+   .em-overlay/.em-modal is the next planned component.)
+   ───────────────────────────────────────────────────────────────────────── */
+.em-x{background:none;border:none;font-size:17px;cursor:pointer;color:var(--muted);line-height:1;padding:var(--sp-1);border-radius:var(--r-sm);transition:background .15s,color .15s;}
+.em-x:hover{background:var(--border);color:var(--text);}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   11. Status badge (.st) — ONE canonical, TOKEN-BASED status chip. Consolidated
+   from b2b.css (2 blocks) + availability / bulk_review / full_validation /
+   issues / triangular. Variant → semantic colour; token-based so it flips in
+   dark mode (the old hardcoded-hex variants — incl. availability's hand-rolled
+   dark overrides — are no longer needed). Bare .st = neutral chip.
+   ───────────────────────────────────────────────────────────────────────── */
+.st{display:inline-block;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:var(--r-pill);letter-spacing:.02em;line-height:1.5;background:var(--surface-2);color:var(--text-2);}
+.st.OK,.st.ok{background:var(--green-soft);color:var(--green);}
+.st.SHORT,.st.EXCLUDED,.st.not_in_master,.st.nim{background:var(--amber-soft);color:var(--amber);}
+.st.OOS,.st.bad,.st.mismatch,.st.QTY_MISMATCH,.st.MISSING_IN_D365,.st.EXTRA_IN_D365{background:var(--red-soft);color:var(--red);}
+.st.NOSTOCK{background:var(--surface-2);color:var(--muted);}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   12. Modal / dialog (email-preview) — full shell, CONSOLIDATED from
+   daily_tasks + issues (byte-identical). Renamed .em-card → .em-modal so the
+   .em-card name stays free for email.html's content card (collision fix).
+   Uses §0 tokens (--r-lg, --elev-modal). Markup: <div class="em-modal">.
+   ───────────────────────────────────────────────────────────────────────── */
+.em-overlay{position:fixed;inset:0;z-index:9998;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,.5);backdrop-filter:blur(2px);}
+.em-overlay[hidden]{display:none;}
+.em-modal{background:#fff;width:min(980px,95vw);max-height:92vh;border-radius:var(--r-lg);display:flex;flex-direction:column;box-shadow:var(--elev-modal);overflow:hidden;animation:emPop .22s cubic-bezier(.2,.85,.25,1);}
+@keyframes emPop{from{transform:translateY(12px) scale(.97);opacity:0;}to{transform:none;opacity:1;}}
+.em-head{display:flex;align-items:center;justify-content:space-between;padding:15px 22px;border-bottom:1px solid var(--border);background:var(--surface-2);}
+.em-head h3{margin:0;font-size:16px;font-weight:700;color:var(--text);letter-spacing:-.01em;}
+.em-meta{padding:14px 22px;font-size:12.5px;display:grid;gap:9px;border-bottom:1px solid var(--border);background:#fff;}
+.em-meta .em-row{display:flex;align-items:center;gap:12px;}
+.em-meta .em-note-row{align-items:flex-start;}
+.em-meta .em-lbl{flex:0 0 auto;width:66px;color:var(--muted);font-weight:700;text-transform:uppercase;font-size:10.5px;letter-spacing:.05em;}
+.em-meta .em-note-row .em-lbl{padding-top:9px;}
+.em-meta .em-in,.em-meta .em-note{flex:1;box-sizing:border-box;border:1px solid #e2e8f0;border-radius:9px;padding:8px 11px;font:inherit;font-size:12.5px;background:#f8fafc;color:#334155;transition:.15s;}
+.em-meta .em-note{resize:vertical;min-height:40px;line-height:1.45;}
+.em-meta .em-in:hover,.em-meta .em-note:hover{background:#fff;border-color:#cbd5e1;}
+.em-meta .em-in:focus,.em-meta .em-note:focus{outline:none;background:#fff;border-color:#818cf8;box-shadow:0 0 0 3px rgba(129,140,248,.18);}
+.em-meta .em-in.bad{border-color:#f43f5e;box-shadow:0 0 0 3px rgba(244,63,94,.12);}
+.em-meta .em-subj{flex:1;font-weight:600;color:var(--text);}
+.em-preview{flex:1;overflow:auto;background:#f1f5f9;min-height:200px;}
+.em-preview iframe{width:100%;height:46vh;border:0;background:#fff;display:block;}
+.em-foot{display:flex;align-items:center;gap:10px;padding:14px 20px;border-top:1px solid var(--border);}
+.em-status{font-size:12.5px;font-weight:600;}
+.em-status.ok{color:#15803d;} .em-status.err{color:#b91c1c;}
+.em-spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.5);border-top-color:#fff;border-radius:50%;display:inline-block;vertical-align:-2px;margin-right:6px;animation:emspin .7s linear infinite;}
+@keyframes emspin{to{transform:rotate(360deg);}}

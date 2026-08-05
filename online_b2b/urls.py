@@ -4,6 +4,7 @@ from . import views
 from . import full_validation_views as _fullval  # STANDALONE feature (removable)
 from . import views_triangular as _tri  # STANDALONE feature (removable)
 from . import inventory_views as _inv  # STANDALONE feature (removable)
+from . import views_tables as _tbl  # STANDALONE feature (removable)
 
 urlpatterns = [
     path('', views.CentralHubView.as_view(), name='b2b_dashboard'),
@@ -57,6 +58,16 @@ urlpatterns = [
     path('tracker/export/', views.TrackerExportView.as_view(), name='b2b_tracker_export'),
     path('tracker/add/', views.TrackerAddView.as_view(), name='b2b_tracker_add'),
     path('tracker/<int:row_id>/delete/', views.TrackerDeleteView.as_view(), name='b2b_tracker_delete'),
+    # ── Tables · master-tables manager (standalone; delete these lines + the
+    #    module/template/sidebar link to remove the whole feature) ────────────
+    path('tables/', _tbl.TablesHomeView.as_view(), name='b2b_tables'),
+    path('tables/<slug:slug>/data/', _tbl.TableDataView.as_view(), name='b2b_table_data'),
+    path('tables/row/add/', _tbl.RowAddView.as_view(), name='b2b_table_row_add'),
+    path('tables/row/<int:row_id>/update/', _tbl.RowUpdateView.as_view(), name='b2b_table_row_update'),
+    path('tables/row/<int:row_id>/delete/', _tbl.RowDeleteView.as_view(), name='b2b_table_row_delete'),
+    path('tables/create/', _tbl.TableCreateView.as_view(), name='b2b_table_create'),
+    path('tables/<int:table_id>/rename/', _tbl.TableRenameView.as_view(), name='b2b_table_rename'),
+    path('tables/<int:table_id>/delete/', _tbl.TableDeleteView.as_view(), name='b2b_table_delete'),
     path('lines/', views.lines, name='b2b_lines'),
     path('lines/more/', views.lines_more, name='b2b_lines_more'),
     path('daily/', views.daily_tasks, name='b2b_daily'),

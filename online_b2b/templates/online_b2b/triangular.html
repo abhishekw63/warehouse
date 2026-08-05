@@ -51,8 +51,7 @@ Self-contained; remove with the module + service + urls + nav link.
   table.tv tbody tr:hover{background:color-mix(in srgb,var(--accent) 5%,transparent);}
   table.tv tr.total td{font-weight:800;border-top:2px solid var(--border);background:var(--surface-2);}
   table.tv tr.total:hover{background:var(--surface-2);}
-  .st{font-weight:800;font-size:10.5px;padding:2px 8px;border-radius:20px;}
-  .st.ok{background:#e7f6ef;color:#0f9d6b;} .st.bad{background:#fdecec;color:#dc2626;}
+  /* .st status badge → canonical token-based set in enhance.css §11 */
   .dz{color:#0f9d6b;font-weight:800;} .dnz{color:#b45309;font-weight:800;}
   .tv-scroll{max-height:60vh;overflow:auto;border:1px solid var(--border);border-radius:10px;}
   .tv-note{background:#fdf1e3;border:1px solid #f4d9b0;color:#7a4d10;border-radius:10px;padding:10px 14px;font-size:12.5px;margin:0 0 12px;}
@@ -121,17 +120,130 @@ Self-contained; remove with the module + service + urls + nav link.
   .tvk-lbl{font-size:13px;font-weight:700;line-height:1.2;} .tvk-sub{font-size:11px;color:var(--text-2);margin-top:2px;}
   .tvk-det{margin-left:auto;text-align:right;font-size:12px;color:var(--text-1);font-variant-numeric:tabular-nums;align-self:center;padding-left:8px;}
   .tvk-row.bad .tvk-det{color:#c0392b;font-weight:700;}
+
+  /* ══════════════════════════════════════════════════════════════════════════
+     TVX — lean, animated result shell (limited by default; reveal for detail)
+     ══════════════════════════════════════════════════════════════════════════ */
+  @keyframes tvxUp{from{opacity:0;transform:translateY(14px);}to{opacity:1;transform:none;}}
+  @keyframes tvxPop{from{opacity:0;transform:scale(.96);}to{opacity:1;transform:none;}}
+  /* segment control — Online B2B · Offline (coming soon) */
+  .tvseg{display:inline-flex;gap:4px;padding:5px;border-radius:14px;background:var(--surface-2);
+    border:1px solid var(--border);margin:0 0 18px;box-shadow:var(--shadow);}
+  .tvseg button{position:relative;font-family:inherit;font-size:13.5px;font-weight:800;cursor:pointer;border:none;
+    background:transparent;color:var(--text-2);padding:9px 20px;border-radius:10px;display:inline-flex;align-items:center;gap:8px;
+    transition:color .18s,background .18s,box-shadow .18s;}
+  .tvseg button.on{background:var(--surface);color:var(--accent);box-shadow:0 2px 8px -3px rgba(15,23,42,.28);}
+  .tvseg button:not(.on):hover{color:var(--text-1);}
+  .tvseg .soon{font-size:9.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:20px;
+    background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);}
+  .tvseg-pane{display:none;} .tvseg-pane.on{display:block;animation:tvxUp .4s cubic-bezier(.22,.61,.36,1) both;}
+  /* coming-soon panel */
+  .tvsoon{display:flex;flex-direction:column;align-items:center;text-align:center;gap:12px;padding:56px 28px;
+    border:1.5px dashed var(--border);border-radius:20px;background:
+    radial-gradient(600px 220px at 50% -10%,color-mix(in srgb,var(--accent) 8%,transparent),transparent 70%),var(--surface);}
+  .tvsoon .ic{width:64px;height:64px;border-radius:20px;display:grid;place-items:center;font-size:30px;
+    background:color-mix(in srgb,var(--accent) 12%,var(--surface));border:1px solid var(--border);animation:tvxPop .5s both;}
+  .tvsoon h3{margin:0;font-size:19px;letter-spacing:-.01em;}
+  .tvsoon p{margin:0;max-width:520px;color:var(--text-2);font-size:13.5px;line-height:1.5;}
+  .tvsoon .chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:4px;}
+  .tvsoon .chip{font-size:11.5px;font-weight:700;padding:4px 11px;border-radius:20px;background:var(--surface-2);
+    border:1px solid var(--border);color:var(--text-2);}
+  .tvx{animation:tvxUp .5s cubic-bezier(.22,.61,.36,1) both;}
+  .tvx-1{animation-delay:.02s;} .tvx-2{animation-delay:.10s;} .tvx-3{animation-delay:.18s;} .tvx-4{animation-delay:.26s;}
+  /* hero */
+  .tvx-hero{position:relative;overflow:hidden;border-radius:20px;padding:26px 28px;margin:0 0 18px;
+    display:flex;align-items:center;gap:22px;border:1px solid var(--border);color:#fff;
+    box-shadow:0 18px 44px -22px rgba(15,23,42,.5);}
+  .tvx-hero.ok{background:linear-gradient(125deg,#0f9d6b 0%,#0b8f7d 55%,#0e7490 100%);}
+  .tvx-hero.bad{background:linear-gradient(125deg,#e8804a 0%,#dc6a52 55%,#c0392b 100%);}
+  .tvx-hero::after{content:'';position:absolute;inset:0;background:
+    radial-gradient(520px 200px at 88% -30%,rgba(255,255,255,.28),transparent 70%);pointer-events:none;}
+  .tvx-hero .bdg{width:60px;height:60px;border-radius:18px;flex:none;display:grid;place-items:center;font-size:30px;
+    background:rgba(255,255,255,.18);backdrop-filter:blur(4px);border:1px solid rgba(255,255,255,.35);animation:tvxPop .5s .1s both;}
+  .tvx-hero h2{margin:0;font-size:21px;line-height:1.15;letter-spacing:-.01em;color:#fff;}
+  .tvx-hero .hl{margin-top:5px;font-size:13px;color:rgba(255,255,255,.9);font-variant-numeric:tabular-nums;}
+  .tvx-hero .act{margin-left:auto;}
+  .tvx-hero .dlbtn{background:rgba(255,255,255,.95);color:#0f3b30;font-weight:800;font-size:13px;border:none;
+    padding:11px 18px;border-radius:11px;text-decoration:none;display:inline-flex;gap:8px;align-items:center;
+    box-shadow:0 6px 18px -8px rgba(0,0,0,.5);transition:transform .15s,box-shadow .15s;}
+  .tvx-hero.bad .dlbtn{color:#7a1c12;}
+  .tvx-hero .dlbtn:hover{transform:translateY(-2px);box-shadow:0 10px 24px -10px rgba(0,0,0,.55);}
+  /* flow ribbon — Raw − Excluded = Filled ≟ D365 */
+  .tvx-flow{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:0 0 16px;}
+  @media(max-width:640px){.tvx-flow{grid-template-columns:repeat(2,1fr);}}
+  .tvx-tile{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:16px;
+    padding:16px 18px;box-shadow:var(--shadow);transition:transform .18s,box-shadow .18s;}
+  .tvx-tile:hover{transform:translateY(-3px);box-shadow:0 12px 26px -16px rgba(15,23,42,.4);}
+  .tvx-tile .lab{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-2);font-weight:800;}
+  .tvx-tile .num{font-size:27px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:4px;letter-spacing:-.02em;}
+  .tvx-tile .sub{font-size:11px;color:var(--text-2);margin-top:2px;}
+  .tvx-tile.raw .num{color:var(--text-1);} .tvx-tile.exc .num{color:#b45309;}
+  .tvx-tile.fil .num{color:#0f9d6b;} .tvx-tile.d365 .num{color:#2748c4;}
+  .tvx-tile .op{position:absolute;right:-13px;top:50%;transform:translateY(-50%);z-index:3;width:26px;height:26px;
+    border-radius:50%;background:var(--surface);border:1px solid var(--border);display:grid;place-items:center;
+    font-weight:800;font-size:14px;color:var(--text-2);box-shadow:var(--shadow);}
+  @media(max-width:640px){.tvx-tile .op{display:none;}}
+  /* slim checks chip + accordion */
+  .tvx-chip{display:inline-flex;align-items:center;gap:9px;cursor:pointer;user-select:none;font-family:inherit;
+    background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 15px;font-size:13px;
+    font-weight:700;color:var(--text-1);box-shadow:var(--shadow);transition:border-color .15s,transform .15s;margin:0 0 16px;}
+  .tvx-chip:hover{border-color:var(--accent);transform:translateY(-1px);}
+  .tvx-chip .dot{width:9px;height:9px;border-radius:50%;flex:none;}
+  .tvx-chip.ok .dot{background:#0f9d6b;box-shadow:0 0 0 4px rgba(15,157,107,.16);}
+  .tvx-chip.bad .dot{background:#dc2626;box-shadow:0 0 0 4px rgba(220,38,38,.16);}
+  .tvx-chip .car{margin-left:2px;color:var(--text-2);transition:transform .2s;font-size:11px;}
+  .tvx-chip.open .car{transform:rotate(180deg);}
+  /* generic smooth accordion (checks + full detail) */
+  .tvx-acc{display:grid;grid-template-rows:0fr;opacity:0;transition:grid-template-rows .38s cubic-bezier(.22,.61,.36,1),opacity .3s;}
+  .tvx-acc.open{grid-template-rows:1fr;opacity:1;}
+  .tvx-acc > .inner{overflow:hidden;min-height:0;}
+  /* section card */
+  .tvx-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);
+    overflow:hidden;margin:0 0 16px;}
+  .tvx-card > .hd{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border-2);}
+  .tvx-card > .hd .ttl{font-size:14px;font-weight:800;letter-spacing:-.01em;}
+  .tvx-card > .hd .cap{font-size:11.5px;color:var(--text-2);}
+  .tvx-card > .bd{padding:4px 6px 8px;}
+  /* 'show full detail' pill */
+  .tvx-more{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;cursor:pointer;font-family:inherit;
+    background:linear-gradient(180deg,var(--surface),var(--surface-2));border:1px dashed var(--border);border-radius:14px;
+    padding:13px;font-size:13px;font-weight:800;color:var(--accent);transition:border-color .15s,background .15s;margin:2px 0 16px;}
+  .tvx-more:hover{border-color:var(--accent);background:var(--surface);}
+  .tvx-more .car{transition:transform .22s;} .tvx-more.open .car{transform:rotate(180deg);}
+  /* coverage banner — nothing skipped (every D365 order & line has raw) */
+  .tvx-cover{border-radius:14px;padding:14px 18px;margin:0 0 16px;border:1px solid;font-size:13px;box-shadow:var(--shadow);}
+  .tvx-cover.ok{background:#eafaf1;border-color:#bfe6d3;color:#0f6b4a;display:flex;align-items:center;gap:10px;font-weight:700;}
+  .tvx-cover.ok .ci{width:26px;height:26px;border-radius:50%;background:#0f9d6b;color:#fff;display:grid;place-items:center;flex:none;font-weight:800;}
+  .tvx-cover.bad{background:#fdf0ec;border-color:#f4c6b0;color:#8a2c15;}
+  .tvx-cover.bad .ct{font-size:14px;font-weight:800;display:flex;align-items:center;gap:9px;}
+  .tvx-cover.bad .ct::before{content:'⚠';font-size:17px;}
+  .tvx-cover.bad .cs{font-size:12.5px;margin:5px 0 8px;color:#9a4526;}
+  .tvx-cover.bad ul{margin:0 0 6px;padding-left:20px;} .tvx-cover.bad li{margin:2px 0;}
+  .tvx-cover .pochip{display:inline-flex;font-size:11px;font-weight:700;font-family:var(--mono,monospace);
+    background:#fff;border:1px solid #f0c4b2;color:#9a3412;border-radius:7px;padding:2px 8px;margin:3px 5px 0 0;}
+  /* status pill in tables */
+  .tvx-ok{color:#0f9d6b;font-weight:800;} .tvx-no{color:#b45309;font-weight:800;}
+  @media(prefers-reduced-motion:reduce){.tvx,.tvx-hero .bdg{animation:none;} .tvx-acc{transition:none;}}
 </style>{% endblock %}
 
 {% block breadcrumb %}<a href="{% url 'b2b_dashboard' %}">Hub</a> <span>/</span> <b>Triangular Validation</b>{% endblock %}
 
 {% block content %}
 <div class="b2b-head">
-  <h1>Triangular Validation <span>· D365 · dump · system</span></h1>
-  <p class="sub">Upload the D365 <b>Sales Orders</b> (headers) + <b>Sales Lines</b>, and the raw
-     <b>dump(s)</b> (one per marketplace). Reconciles all three legs — qty triangle, the full value
-     accounting (<b>full = deducted + included</b>, Δ vs D365), and a file audit.</p>
+  <h1>Triangular Validation <span>· D365 · raw · system</span></h1>
+  <p class="sub">Upload the D365 <b>Sales Orders</b> + <b>Sales Lines</b> and the <b>raw</b> (one per marketplace);
+     the <b>system</b> leg is pulled automatically. You get one verdict up top — expand for the full per-PO,
+     excluded-line and file detail.</p>
 </div>
+
+{# ── Segment switch: Online B2B (live) · Offline (coming soon) ── #}
+<div class="tvseg" role="tablist">
+  <button type="button" class="on" data-seg="online" role="tab">Online B2B</button>
+  <button type="button" data-seg="offline" role="tab">Offline <span class="soon">soon</span></button>
+</div>
+
+{# ═══ ONLINE B2B pane (the live triangular) ═══ #}
+<div class="tvseg-pane on" data-segpane="online">
 
 <form class="tv-up" id="tvForm" method="post" action="{% url 'b2b_triangular_run' %}" enctype="multipart/form-data"
       data-loading="Running the triangular check"
@@ -164,37 +276,54 @@ Self-contained; remove with the module + service + urls + nav link.
 
 {% if result and not result.ok %}
   <div class="tv-up" style="border-color:#dc2626;background:#fdecec;color:#7a1c1c;">⚠ {{ result.error }}</div>
-{% elif result.ok %}{% with s=data.summary vt=data.value_legs|last v=data.verdict %}
-  {# ── HERO VERDICT — the one line that connects every dot ── #}
-  <div class="tv-hero {% if v.all_clean %}ok{% else %}bad{% endif %}">
-    <div class="badge">{% if v.all_clean %}✓{% else %}!{% endif %}</div>
+{% elif result.ok %}{% with v=data.verdict %}
+  {# ═══ HERO — one clear verdict ═══ #}
+  <div class="tvx tvx-1 tvx-hero {% if v.all_clean %}ok{% else %}bad{% endif %}">
+    <div class="bdg">{% if v.all_clean %}✓{% else %}!{% endif %}</div>
     <div>
-      <h2>{% if v.all_clean %}Fully reconciled — nothing lost between the raw order and D365{% else %}{{ v.n_fail }} of {{ v.n_checks }} checks need review{% endif %}</h2>
+      <h2>{% if v.all_clean %}Fully reconciled{% else %}{{ v.n_fail }} of {{ v.n_checks }} check{{ v.n_checks|pluralize }} need review{% endif %}</h2>
       <div class="hl">{{ v.headline }}{% if v.all_clean %} · value tie Δ {{ v.value_delta|inr }}{% endif %}</div>
     </div>
-    <div class="act"><a href="{% url 'b2b_triangular_download' token=token %}" class="btn-primary">⬇ Download 360° Excel</a></div>
+    <div class="act"><a href="{% url 'b2b_triangular_download' token=token %}" class="dlbtn">⬇ 360° Excel</a></div>
   </div>
 
-  {# ── RECONCILIATION RIBBON — Raw ▸ Deducted ▸ Included ▸ D365 ── #}
-  <div class="tv-flow">
-    <div class="tv-stage raw"><div class="lab">Raw order</div><div class="val">{{ v.raw }}</div><span class="op">−</span></div>
-    <div class="tv-stage ded"><div class="lab">Deducted (logged drops)</div><div class="val">{{ v.deducted }}</div><span class="op">=</span></div>
-    <div class="tv-stage inc"><div class="lab">Included (pushed)</div><div class="val">{{ v.included }}</div><span class="op">≟</span></div>
-    <div class="tv-stage d365"><div class="lab">D365 received</div><div class="val">{{ v.d365 }}</div></div>
+  {# ═══ FLOW — Raw − Excluded = Filled ≟ D365 ═══ #}
+  <div class="tvx tvx-2 tvx-flow">
+    <div class="tvx-tile raw"><div class="lab">Raw ordered</div><div class="num">{{ v.raw|indnum }}</div><div class="sub">full marketplace order</div><span class="op">−</span></div>
+    <div class="tvx-tile exc"><div class="lab">Excluded</div><div class="num">{{ v.deducted|indnum }}</div><div class="sub">logged drops</div><span class="op">=</span></div>
+    <div class="tvx-tile fil"><div class="lab">Filled</div><div class="num">{{ v.included|indnum }}</div><div class="sub">pushed to D365</div><span class="op">≟</span></div>
+    <div class="tvx-tile d365"><div class="lab">D365 received</div><div class="num">{{ v.d365|indnum }}</div><div class="sub">{% if v.included == v.d365 %}matches{% else %}Δ {{ v.value_delta|inr }}{% endif %}</div></div>
   </div>
 
-  {# ── VALIDATION CHECKS — ONE collapsible card (minimise / maximise) ── #}
-  <details class="tv-checks {% if v.all_clean %}ok{% else %}bad{% endif %}"{% if not v.all_clean %} open{% endif %}>
-    <summary>
-      <span class="tvk-badge">{% if v.all_clean %}✓{% else %}{{ v.n_fail }}{% endif %}</span>
-      <div class="tvk-hd">
-        <div class="tvk-t">Validation checks</div>
-        <div class="tvk-s">{% if v.all_clean %}All {{ data.checks|length }} checks passed — fully reconciled{% else %}{{ v.n_fail }} of {{ data.checks|length }} need review{% endif %}</div>
-      </div>
-      {% if not v.all_clean %}<span class="tvk-pills">{% for c in data.checks %}{% if not c.ok %}<span class="tvk-pill">{{ c.label }}</span>{% endif %}{% endfor %}</span>{% endif %}
-      <span class="tvk-exp">details</span>
-    </summary>
-    <div class="tvk-body">
+  {# ═══ COVERAGE — nothing skipped: every D365 order & line must have raw ═══ #}
+  {% with cov=data.coverage %}
+  {% if cov.full %}
+  <div class="tvx tvx-2 tvx-cover ok"><span class="ci">✓</span>
+    <span>Full coverage — all <b>{{ cov.d365_pos }}</b> D365 order{{ cov.d365_pos|pluralize }} and
+    <b>{{ cov.d365_lines }}</b> line{{ cov.d365_lines|pluralize }} have matching raw. Nothing skipped.</span></div>
+  {% else %}
+  <div class="tvx tvx-2 tvx-cover bad">
+    <div class="ct">Raw data missing — {{ cov.pos_missing_raw|length }} D365 order(s){% if cov.lines_missing_raw %} &amp; {{ cov.lines_missing_raw|length }} line(s){% endif %} have NO matching raw</div>
+    <div class="cs">Upload the missing raw file(s) so every D365 order &amp; line is covered — nothing should be skipped:</div>
+    <ul>
+      {% for m in cov.by_mp %}<li><b>{{ m.mp }}</b> — raw missing/incomplete:
+        {% if m.pos %}{{ m.pos }} order(s) with no raw{% endif %}{% if m.pos and m.lines %} · {% endif %}{% if m.lines %}{{ m.lines }} line(s) ({{ m.qty|indnum }} units) in D365 but not in raw{% endif %}.</li>{% endfor %}
+    </ul>
+    {% if cov.pos_missing_raw %}<div style="margin-top:4px;"><b style="font-size:11.5px;">Orders with no raw uploaded:</b><br>
+      {% for p in cov.pos_missing_raw %}<span class="pochip">{{ p.mp }} · {{ p.po }}</span>{% endfor %}</div>{% endif %}
+  </div>
+  {% endif %}
+  {% endwith %}
+
+  {# ═══ slim checks chip (collapsed by default — expand for the grid) ═══ #}
+  <button type="button" class="tvx tvx-2 tvx-chip {% if v.all_clean %}ok{% else %}bad{% endif %}" data-acc="checks">
+    <span class="dot"></span>
+    {% if v.all_clean %}All {{ data.checks|length }} checks passed{% else %}{{ v.n_fail }} of {{ data.checks|length }} checks need review{% endif %}
+    <span class="car">▾</span>
+  </button>
+  <div class="tvx-acc {% if not v.all_clean %}open{% endif %}" id="acc-checks"><div class="inner">
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:2px;
+         border:1px solid var(--border);border-radius:14px;background:var(--surface);padding:6px;margin:0 0 16px;box-shadow:var(--shadow);">
       {% for c in data.checks %}
       <div class="tvk-row {% if c.ok %}ok{% else %}bad{% endif %}">
         <span class="tvk-ico">{% if c.ok %}✓{% else %}✕{% endif %}</span>
@@ -202,137 +331,153 @@ Self-contained; remove with the module + service + urls + nav link.
         <div class="tvk-det">{{ c.detail }}</div>
       </div>{% endfor %}
     </div>
-  </details>
-
-  {# ── FILES DETECTED — collapsed by default so the tables stay on top ── #}
-  {% if data.files_detected %}
-  <details class="tv-detect">
-    <summary><b>Files detected</b> · {{ data.files_detected|length }} used{% if data.n_ignored %} · {{ data.n_ignored }} ignored{% endif %}<span class="tv-exp">view breakdown</span></summary>
-    <div class="tv-detect-body">
-    {% for f in data.files_detected %}
-    <div class="row"><span class="role {{ f.role }}">{{ f.role }}</span>
-      {% if f.marketplace %}<span class="mpchip">{{ f.marketplace }}</span>{% endif %}
-      <span class="mono" title="{{ f.name }}">{{ f.name }}</span></div>{% endfor %}
-    {% if data.n_ignored %}<div class="row" style="border-bottom:none;color:var(--text-2);">
-      <span class="role unknown">ignored</span><span>{{ data.n_ignored }} other file(s) not part of the check — skipped.</span></div>{% endif %}
-    </div>
-  </details>
-  {% for c in data.audit.mp_conflicts %}<div class="tv-note">⚠ Marketplace name/content mismatch — {{ c }}</div>{% endfor %}
-  {% endif %}
-
-  {% if data.audit.missing_dump %}
-  <div class="tv-note">⚠ <b>{{ data.audit.missing_dump|length }} PO(s) in D365 have no dump uploaded</b> —
-    a dump file may be missing. See the <b>File Audit</b> tab.</div>{% endif %}
-  {% if data.audit.not_pushed %}
-  <div class="tv-note">⚠ <b>{{ data.audit.not_pushed|length }} PO(s) in a dump are not in D365</b> —
-    recorded but not pushed. See the <b>File Audit</b> tab.</div>{% endif %}
-  {% if data.other_segments %}<div class="tv-note" style="background:#eef4ff;border-color:#c7dbff;color:#1a3a6b;">ℹ <b>Scoped to online B2B</b> (D365 <span class="mono">Gen. Bus. Posting Group = ON-B2B</span>). Ignored other segments riding in the same file:
-    {% for o in data.other_segments %}<b>{{ o.group }}</b> ({{ o.pos }} PO · {{ o.qty|indnum }} qty){% if not forloop.last %} · {% endif %}{% endfor %} — these reconcile in their own channels.</div>{% endif %}
-  {% if data.superseded %}<div class="tv-note">ℹ Multiple D365 exports found — using the <b>newest</b>; ignored {{ data.superseded|length }} older file(s):
-    {% for s in data.superseded %}<span class="mono">{{ s.name }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}.</div>{% endif %}
-  {% for iss in data.dump_issues %}<div class="tv-note">ℹ {{ iss }}</div>{% endfor %}
-
-  <div class="tv-tabs">
-    <button class="tv-tab on" data-tvtab="qty">Raw → D365 (Qty)</button>
-    <button class="tv-tab" data-tvtab="val">Value Legs</button>
-    <button class="tv-tab" data-tvtab="tri">PO · Qty + Value <span class="tcount">{{ tri_bad|length }} flagged</span></button>
-    <button class="tv-tab" data-tvtab="sku">SKU · D365 vs Dump <span class="tcount">{{ data.sku_check.mismatches }}</span></button>
-    <button class="tv-tab" data-tvtab="audit">File Audit <span class="tcount">{{ data.audit.files|length }}</span></button>
-    <button class="tv-tab" data-tvtab="drop">Dropped Lines <span class="tcount">{{ data.dropped|length }}</span></button>
-  </div>
-
-  {# Raw → D365 (Qty) — the raw-order accounting #}
-  <div class="tv-pane on" data-tvpane="qty">
-    <p style="color:var(--text-2);font-size:12.5px;margin:0 0 8px;">The <b>untouched raw order</b> (dump
-      <span class="mono">Total Qty</span>) accounted end-to-end: <b>Raw = Deducted + Included</b>, and
-      <b>Included = D365</b>. Every unit either reached D365 or is a logged drop — nothing silently lost.</p>
-    <div class="tv-scroll"><table class="tv">
-    <thead><tr><th>Marketplace</th><th class="r">RAW (full order)</th><th class="r">Deducted</th><th class="r">Included (pushed)</th><th class="r">D365</th><th class="r">Δ (D365−Incl)</th><th class="c">Raw = Ded+Incl</th></tr></thead>
-    <tbody>{% for q in data.qty_legs %}<tr {% if q.mp == 'TOTAL' %}class="total"{% endif %}>
-      <td><b>{{ q.mp }}</b></td><td class="r">{{ q.raw|indnum }}</td><td class="r">{{ q.deducted|indnum }}</td>
-      <td class="r">{{ q.included|indnum }}</td><td class="r">{{ q.d365|indnum }}</td>
-      <td class="r"><span class="{% if q.delta == 0 %}dz{% else %}dnz{% endif %}">{{ q.delta|indnum }}</span></td>
-      <td class="c">{% if q.raw_ties %}<span class="st ok">✓</span>{% else %}<span class="st bad">✗</span>{% endif %}</td>
-    </tr>{% endfor %}</tbody>
-  </table></div>
-    <p style="color:var(--text-2);font-size:12px;margin:8px 2px 0;">
-      Verbatim <b>Raw Data</b> sheet independently confirmed the raw total for
-      <b>{{ data.raw_status.confirmed_files|length }}</b> of {{ data.audit.files|length }} dump(s){% if data.raw_status.confirmed_files %}
-      ({% for f in data.raw_status.confirmed_files %}{{ f.name|truncatechars:20 }} → “{{ f.col }}”{% if not forloop.last %}, {% endif %}{% endfor %}){% endif %}.
-      {% if data.raw_status.unconfirmed %}The rest use the engine’s Summary raw (their raw sheet carries extra POs — not a discrepancy).{% endif %}</p>
-  </div>
-
-  {# Value Legs #}
-  <div class="tv-pane" data-tvpane="val"><div class="tv-scroll"><table class="tv">
-    <thead><tr><th>Marketplace</th><th class="r">Full (inc GST)</th><th class="r">Deducted</th><th class="r">Included (pushed)</th><th class="r">D365 (Total Amt inc GST)</th><th class="r">Δ (D365 − Incl)</th></tr></thead>
-    <tbody>{% for v in data.value_legs %}<tr {% if v.mp == 'TOTAL' %}class="total"{% endif %}>
-      <td><b>{{ v.mp }}</b></td><td class="r">{{ v.full|inr }}</td><td class="r">{{ v.deducted|inr }}</td>
-      <td class="r">{{ v.included|inr }}</td><td class="r">{{ v.d365|inr }}</td>
-      <td class="r"><span class="{% if v.delta|floatformat:0 == '0' %}dz{% else %}dnz{% endif %}">{{ v.delta|inr }}</span></td>
-    </tr>{% endfor %}</tbody>
-  </table></div>
-  <p style="color:var(--text-2);font-size:12px;margin:8px 2px 0;">Value = <b>Total Amount inc GST</b>. Identity: <b>Full = Deducted + Included</b>; the only number that should move is <b>Δ</b> (D365 vs Included) — near ₹0 when clean.</p></div>
-
-  {# Qty Triangle #}
-  <div class="tv-pane" data-tvpane="tri">
-    <p style="color:var(--text-2);font-size:12.5px;margin:0 0 8px;">Per PO — D365 <b>qty</b> (vs system &amp; dump) <b>and value</b> (D365 Total Amount inc GST vs our included value). Value tolerance ₹2 / 0.5%.</p>
-    <div class="tv-scroll"><table class="tv">
-    <thead><tr><th>MP</th><th>PO</th><th class="r">D365 Qty</th><th class="r">System</th><th class="r">Dump</th><th class="r">D365 Value</th><th class="r">Our Value</th><th class="r">Δ Value</th><th class="c">Agree</th><th class="l">Note</th></tr></thead>
-    <tbody>{% for t in data.triangle %}<tr>
-      <td>{{ t.mp }}</td><td class="mono">{{ t.po }}</td><td class="r">{{ t.d365_qty|indnum }}</td>
-      <td class="r">{{ t.system_final|indnum }}</td><td class="r">{{ t.dump_final|default_if_none:'—' }}</td>
-      <td class="r">{{ t.d365_val|inr }}</td><td class="r">{{ t.our_val|inr }}</td>
-      <td class="r"><span class="{% if t.val_ok %}dz{% else %}dnz{% endif %}">{{ t.val_delta|inr }}</span></td>
-      <td class="c">{% if t.agree %}<span class="st ok">✓</span>{% else %}<span class="st bad">✗</span>{% endif %}</td>
-      <td class="l" style="font-size:11.5px;color:var(--text-2);">{{ t.note }}</td>
-    </tr>{% endfor %}</tbody>
-  </table></div></div>
-
-  {# SKU · D365 vs Dump (line-level foolproof edge) #}
-  <div class="tv-pane" data-tvpane="sku">
-    <p style="color:var(--text-2);font-size:12.5px;margin:0 0 8px;">Per <b>(PO, SKU)</b> D365 vs the raw dump —
-      the line-level edge behind the PO totals. <b>{{ data.sku_check.keys }}</b> keys checked.</p>
-    {% if data.sku_check.rows %}<div class="tv-scroll"><table class="tv">
-    <thead><tr><th>MP</th><th>PO</th><th>Item</th><th class="r">D365 Qty</th><th class="r">Dump Qty</th><th class="r">Δ</th></tr></thead>
-    <tbody>{% for r in data.sku_check.rows %}<tr>
-      <td>{{ r.mp }}</td><td class="mono">{{ r.po }}</td><td class="mono">{{ r.item }}</td>
-      <td class="r">{{ r.d365_qty }}</td><td class="r">{{ r.dump_qty }}</td>
-      <td class="r"><span class="dnz">{{ r.delta }}</span></td>
-    </tr>{% endfor %}</tbody>
-  </table></div>
-    {% else %}<div class="tv-note" style="background:#e7f6ef;border-color:#bfe6d3;color:#0f6b4a;">
-      ✓ Every (PO, SKU) line matches between D365 and the raw dump — nothing slipped between the order and D365.</div>{% endif %}
-  </div>
-
-  {# File Audit #}
-  <div class="tv-pane" data-tvpane="audit"><div class="tv-scroll"><table class="tv">
-    <thead><tr><th>File</th><th>Marketplace(s)</th><th class="r">#PO</th><th>POs</th><th>Note</th></tr></thead>
-    <tbody>{% for fe in data.audit.files %}<tr>
-      <td class="mono" title="{{ fe.name }}">{{ fe.name|truncatechars:38 }}</td>
-      <td>{{ fe.marketplaces|join:', ' }}</td><td class="r">{{ fe.po_count }}</td>
-      <td class="mono" style="font-size:11px;color:var(--text-2);">{{ fe.pos|join:', '|truncatechars:70 }}</td>
-      <td>{% if fe.skipped %}<span class="st bad">{{ fe.reason }}</span>{% else %}<span class="st ok">read</span>{% endif %}</td>
-    </tr>{% endfor %}</tbody>
-  </table></div>
-  <div style="display:flex;gap:24px;margin-top:10px;font-size:12.5px;">
-    <span>D365 POs: <b>{{ data.audit.d365_pos }}</b></span>
-    <span>Dump POs: <b>{{ data.audit.dump_pos }}</b></span>
-    <span class="{% if data.audit.missing_dump %}dnz{% else %}dz{% endif %}">Missing dump: {{ data.audit.missing_dump|length }}</span>
-    <span class="{% if data.audit.not_pushed %}dnz{% else %}dz{% endif %}">Not pushed: {{ data.audit.not_pushed|length }}</span>
   </div></div>
 
-  {# Dropped Lines #}
-  <div class="tv-pane" data-tvpane="drop"><div class="tv-scroll"><table class="tv">
-    <thead><tr><th>PO</th><th>MP</th><th>Item</th><th>EAN</th><th>Description</th><th class="r">Qty</th><th class="r">Value (inc GST)</th><th>Reason</th></tr></thead>
-    <tbody>{% for r in data.dropped %}<tr>
-      <td class="mono">{{ r.po }}</td><td>{{ r.mp }}</td><td class="mono">{{ r.item }}</td><td class="mono">{{ r.ean }}</td>
-      <td title="{{ r.desc }}">{{ r.desc|truncatechars:34 }}</td><td class="r">{{ r.qty }}</td>
-      <td class="r">{{ r.val }}</td><td style="font-size:11.5px;color:var(--text-2);">{{ r.reason }}</td>
-    </tr>{% empty %}<tr><td colspan="8" class="muted" style="text-align:center;padding:20px;">Nothing dropped — every unit pushed.</td></tr>{% endfor %}</tbody>
-  </table></div></div>
+  {# ═══ only the material warnings stay on the surface ═══ #}
+  {% if data.audit.missing_dump %}<div class="tv-note">⚠ <b>{{ data.audit.missing_dump|length }} PO(s) in D365 have no raw uploaded</b> — a file may be missing (see full detail → File Audit).</div>{% endif %}
+  {% if data.audit.not_pushed %}<div class="tv-note">⚠ <b>{{ data.audit.not_pushed|length }} PO(s) in the raw are not in D365</b> — recorded but not pushed (see full detail → File Audit).</div>{% endif %}
+  {% for c in data.audit.mp_conflicts %}<div class="tv-note">⚠ Marketplace name/content mismatch — {{ c }}</div>{% endfor %}
+  {% if data.other_segments %}<div class="tv-note" style="background:#eef4ff;border-color:#c7dbff;color:#1a3a6b;">ℹ <b>Scoped to online B2B</b> — ignored other D365 segments in the same file:
+    {% for o in data.other_segments %}<b>{{ o.group }}</b> ({{ o.pos }} PO · {{ o.qty|indnum }} qty){% if not forloop.last %} · {% endif %}{% endfor %}.</div>{% endif %}
+
+  {# ═══ PRIMARY — By marketplace (Raw = Filled + Excluded) ═══ #}
+  <div class="tvx tvx-3 tvx-card">
+    <div class="hd"><span class="ttl">By marketplace</span><span class="cap">Raw = Filled + Excluded · Δ &amp; value vs D365</span></div>
+    <div class="bd"><div class="tv-scroll"><table class="tv">
+      <thead><tr><th>Marketplace</th><th class="r">Raw</th><th class="r">Filled</th><th class="r">Excluded</th><th class="r">Δ (D365−Fill)</th><th class="r">Value (D365)</th><th class="c">Raw = F+E</th></tr></thead>
+      <tbody>{% for q in data.qty_legs %}<tr {% if q.mp == 'TOTAL' %}class="total"{% endif %}>
+        <td><b>{{ q.mp }}</b></td><td class="r">{{ q.raw|indnum }}</td><td class="r">{{ q.included|indnum }}</td>
+        <td class="r">{% if q.deducted %}<span class="tvx-no">{{ q.deducted|indnum }}</span>{% else %}0{% endif %}</td>
+        <td class="r"><span class="{% if q.delta == 0 %}tvx-ok{% else %}tvx-no{% endif %}">{{ q.delta|indnum }}</span></td>
+        <td class="r">{{ q.value|inr }}</td>
+        <td class="c">{% if q.raw_ties %}<span class="st ok">✓</span>{% else %}<span class="st bad">✗</span>{% endif %}</td>
+      </tr>{% endfor %}</tbody>
+    </table></div></div>
+  </div>
+
+  {# ═══ SHOW FULL DETAIL — everything else, revealed on demand ═══ #}
+  <button type="button" class="tvx tvx-4 tvx-more" data-acc="detail">
+    <span>Show full detail — per PO, excluded lines, SKU &amp; file audit</span><span class="car">▾</span>
+  </button>
+  <div class="tvx-acc" id="acc-detail"><div class="inner">
+
+    <div class="tv-tabs">
+      <button class="tv-tab on" data-tvtab="tri">Per PO <span class="tcount">{{ data.triangle|length }}</span></button>
+      <button class="tv-tab" data-tvtab="drop">Excluded lines <span class="tcount">{{ data.dropped|length }}</span></button>
+      <button class="tv-tab" data-tvtab="val">Value</button>
+      <button class="tv-tab" data-tvtab="sku">SKU vs raw <span class="tcount">{{ data.sku_check.mismatches }}</span></button>
+      <button class="tv-tab" data-tvtab="audit">Files <span class="tcount">{{ data.audit.files|length }}</span></button>
+    </div>
+
+    {# PO-wise — Raw / Filled / Excluded (the standard format) #}
+    <div class="tv-pane on" data-tvpane="tri">
+      <p style="color:var(--text-2);font-size:12.5px;margin:0 0 8px;">Per PO — <b>Raw = Filled + Excluded</b>, plus value (D365 vs ours, ±₹2/0.5%) and ship-to. Green ✓ = identity holds &amp; value/address match.</p>
+      <div class="tv-scroll"><table class="tv">
+      <thead><tr><th>MP</th><th>PO</th><th class="r">Raw</th><th class="r">Filled</th><th class="r">Excluded</th><th class="c">Raw=F+E</th><th class="r">D365 Value</th><th class="c">Value</th><th class="c">Addr</th><th class="l">Note</th></tr></thead>
+      <tbody>{% for t in data.triangle %}<tr>
+        <td>{{ t.mp }}</td><td class="mono">{{ t.po }}</td>
+        <td class="r">{{ t.raw_qty|default_if_none:'—' }}</td>
+        <td class="r">{{ t.filled_qty|indnum }}</td>
+        <td class="r">{% if t.excluded_qty %}<span class="tvx-no">{{ t.excluded_qty|indnum }}</span>{% else %}0{% endif %}</td>
+        <td class="c">{% if t.ident_ok %}<span class="st ok">✓</span>{% else %}<span class="st bad">✗</span>{% endif %}</td>
+        <td class="r">{{ t.d365_val|inr }}</td>
+        <td class="c">{% if t.val_ok %}<span class="st ok">✓</span>{% else %}<span class="st bad">✗</span>{% endif %}</td>
+        <td class="c">{% if t.addr_ok %}<span class="st ok">✓</span>{% else %}<span class="st bad">✗</span>{% endif %}</td>
+        <td class="l" style="font-size:11.5px;color:var(--text-2);">{{ t.note }}</td>
+      </tr>{% endfor %}</tbody>
+    </table></div></div>
+
+    {# Excluded lines — named, with the cost-mismatch reason #}
+    <div class="tv-pane" data-tvpane="drop"><div class="tv-scroll"><table class="tv">
+      <thead><tr><th>PO</th><th>MP</th><th>Item</th><th>EAN</th><th>Description</th><th class="r">Qty</th><th class="r">Value (inc GST)</th><th class="l">Reason</th></tr></thead>
+      <tbody>{% for r in data.dropped %}<tr>
+        <td class="mono">{{ r.po }}</td><td>{{ r.mp }}</td><td class="mono">{{ r.item }}</td><td class="mono">{{ r.ean }}</td>
+        <td title="{{ r.desc }}">{{ r.desc|truncatechars:34 }}</td><td class="r">{{ r.qty }}</td>
+        <td class="r">{{ r.val }}</td><td class="l" style="font-size:11.5px;color:var(--text-2);">{{ r.reason }}</td>
+      </tr>{% empty %}<tr><td colspan="8" class="muted" style="text-align:center;padding:20px;">Nothing excluded — every unit pushed.</td></tr>{% endfor %}</tbody>
+    </table></div></div>
+
+    {# Value legs #}
+    <div class="tv-pane" data-tvpane="val"><div class="tv-scroll"><table class="tv">
+      <thead><tr><th>Marketplace</th><th class="r">Full (inc GST)</th><th class="r">Excluded</th><th class="r">Filled</th><th class="r">D365</th><th class="r">Δ (D365 − Filled)</th></tr></thead>
+      <tbody>{% for vl in data.value_legs %}<tr {% if vl.mp == 'TOTAL' %}class="total"{% endif %}>
+        <td><b>{{ vl.mp }}</b></td><td class="r">{{ vl.full|inr }}</td><td class="r">{{ vl.deducted|inr }}</td>
+        <td class="r">{{ vl.included|inr }}</td><td class="r">{{ vl.d365|inr }}</td>
+        <td class="r"><span class="{% if vl.delta|floatformat:0 == '0' %}tvx-ok{% else %}tvx-no{% endif %}">{{ vl.delta|inr }}</span></td>
+      </tr>{% endfor %}</tbody>
+    </table></div></div>
+
+    {# SKU vs raw (line-level) #}
+    <div class="tv-pane" data-tvpane="sku">
+      {% if data.sku_check.rows %}<div class="tv-scroll"><table class="tv">
+      <thead><tr><th>MP</th><th>PO</th><th>Item</th><th class="r">D365 Qty</th><th class="r">Raw Qty</th><th class="r">Δ</th></tr></thead>
+      <tbody>{% for r in data.sku_check.rows %}<tr>
+        <td>{{ r.mp }}</td><td class="mono">{{ r.po }}</td><td class="mono">{{ r.item }}</td>
+        <td class="r">{{ r.d365_qty }}</td><td class="r">{{ r.dump_qty }}</td><td class="r"><span class="tvx-no">{{ r.delta }}</span></td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+      {% else %}<div class="tv-note" style="background:#e7f6ef;border-color:#bfe6d3;color:#0f6b4a;">✓ Every (PO, SKU) line matches between D365 and the raw — {{ data.sku_check.keys }} keys checked.</div>{% endif %}
+    </div>
+
+    {# Files #}
+    <div class="tv-pane" data-tvpane="audit"><div class="tv-scroll"><table class="tv">
+      <thead><tr><th>File</th><th>Marketplace(s)</th><th class="r">#PO</th><th class="l">POs</th><th class="l">Note</th></tr></thead>
+      <tbody>{% for fe in data.audit.files %}<tr>
+        <td class="mono" title="{{ fe.name }}">{{ fe.name|truncatechars:38 }}</td>
+        <td>{{ fe.marketplaces|join:', ' }}</td><td class="r">{{ fe.po_count }}</td>
+        <td class="l mono" style="font-size:11px;color:var(--text-2);">{{ fe.pos|join:', '|truncatechars:70 }}</td>
+        <td class="l">{% if fe.skipped %}<span class="st bad">{{ fe.reason }}</span>{% else %}<span class="st ok">read</span>{% endif %}</td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+    <div style="display:flex;gap:24px;margin:10px 4px 4px;font-size:12.5px;flex-wrap:wrap;">
+      <span>D365 POs: <b>{{ data.audit.d365_pos }}</b></span>
+      <span>Raw POs: <b>{{ data.audit.dump_pos }}</b></span>
+      <span class="{% if data.audit.missing_dump %}tvx-no{% else %}tvx-ok{% endif %}">Missing: {{ data.audit.missing_dump|length }}</span>
+      <span class="{% if data.audit.not_pushed %}tvx-no{% else %}tvx-ok{% endif %}">Not pushed: {{ data.audit.not_pushed|length }}</span>
+    </div></div>
+
+  </div></div>
 {% endwith %}{% endif %}
 
+</div>{# /online pane #}
+
+{# ═══ OFFLINE pane — coming soon ═══ #}
+<div class="tvseg-pane" data-segpane="offline">
+  <div class="tvsoon">
+    <div class="ic">🧾</div>
+    <h3>Offline triangular — coming soon</h3>
+    <p>Same 3-leg check (D365 · raw · system) tuned for the <b>Offline</b> segment — MT Select &amp; its
+       children — with Site-code ship-to matching and the MT posting-group scope. The engine is shared;
+       we're wiring the Offline scope next.</p>
+    <div class="chips">
+      <span class="chip">MT Select</span><span class="chip">H&amp;B</span><span class="chip">SS</span>
+      <span class="chip">GT Mass</span><span class="chip">Site-code ship-to</span>
+    </div>
+    <p style="font-size:12px;margin-top:6px;">For now, run <b>Online B2B</b> in the tab above.</p>
+  </div>
+</div>
+
 <script>
+  // segment switch — Online B2B (live) · Offline (coming soon)
+  document.querySelectorAll('.tvseg button').forEach(function(b){
+    b.addEventListener('click',function(){
+      var seg=b.getAttribute('data-seg');
+      document.querySelectorAll('.tvseg button').forEach(function(x){x.classList.toggle('on',x===b);});
+      document.querySelectorAll('.tvseg-pane').forEach(function(p){
+        p.classList.toggle('on', p.getAttribute('data-segpane')===seg);
+      });
+    });
+  });
+  // smooth accordions (checks chip + 'show full detail')
+  document.querySelectorAll('[data-acc]').forEach(function(btn){
+    var pane=document.getElementById('acc-'+btn.getAttribute('data-acc'));
+    if(!pane) return;
+    if(pane.classList.contains('open')) btn.classList.add('open');
+    btn.addEventListener('click',function(){
+      var open=pane.classList.toggle('open');
+      btn.classList.toggle('open',open);
+    });
+  });
   document.querySelectorAll('.tv-tab').forEach(function(t){
     t.addEventListener('click',function(){
       document.querySelectorAll('.tv-tab').forEach(function(x){x.classList.remove('on');});

@@ -166,6 +166,7 @@ def _load_dumps(paths):
     issues      = [str]  (never-silent: skipped/odd files)
     """
     per_po, per_item, files, issues = {}, defaultdict(int), [], []
+    per_warn = {}          # (po, item) -> Warnings text (cost mismatch etc.); item -> text fallback
     for wbp in paths:
         base = os.path.basename(_s(wbp))
         entry = {'name': base, 'pos': [], 'skipped': False, 'reason': ''}
@@ -230,9 +231,26 @@ def _load_dumps(paths):
             it = _s(r[lh['No.']]); q = int(_f(r[lh['Quantity']]))
             if it:
                 per_item[(po, it)] += q
+        # Warnings sheet → per-line reason (cost mismatch etc.), keyed (po, item)
+        # with an item-only fallback (same SKU flagged across POs). Additive.
+        wn = _sheet(wb, 'Warnings'); wh = _hdr(wn)
+        c_wpo, c_wloc, c_wtxt = wh.get('PO'), wh.get('Location'), wh.get('Warning')
+        if c_wtxt is not None:
+            for r in wn[1:]:
+                if not r or c_wtxt >= len(r):
+                    continue
+                txt = _s(r[c_wtxt])
+                if not txt:
+                    continue
+                wpo = so2po.get(_s(r[c_wpo]), _s(r[c_wpo])) if c_wpo is not None else ''
+                wit = _s(r[c_wloc]) if c_wloc is not None else ''
+                if wit:
+                    per_warn.setdefault(wit, txt)              # item-only fallback
+                    if wpo:
+                        per_warn[(wpo, wit)] = txt             # precise (po,item)
         entry['pos'] = sorted(seen)
         files.append(entry)
-    return per_po, per_item, files, issues
+    return per_po, per_item, files, issues, per_warn
 
 
 def _load_d365_lines(so_path, lines_path):
@@ -494,7 +512,7 @@ def validate(headers_path, lines_path, dumps, excel_out=None):
                                'value': round(v['val'], 2)}
                               for g, v in sorted(oseg.items())]
 
-        d_po, d_item, files, dump_issues = _load_dumps(list(dumps or []))
+        d_po, d_item, files, dump_issues, d_warn = _load_dumps(list(dumps or []))
 
         # per-PO MP map. Start from the D365 headers, then fill dump-only POs
         # (e.g. BlinkMP — present in a dump / our DB but NOT in this D365 export)
@@ -505,6 +523,14 @@ def validate(headers_path, lines_path, dumps, excel_out=None):
         legs = _db_legs(d365_pos | dump_pos)            # our_landing basis (26-paise fix)
         po_mp_full = {po: L['mp'] for po, L in legs.items()}   # DB label (BlinkMP…)
         po_mp_full.update({p: m for p, m in po_mp.items() if m})  # D365 label wins
+
+        # enrich each dropped line's reason with the dump's Warnings text (the
+        # cost-mismatch numbers) — precise (po,item) first, else item-only. Additive.
+        for L in legs.values():
+            for dl in L['dropped']:
+                w = d_warn.get((dl['po'], dl['item'])) or d_warn.get(dl['item'])
+                if w:
+                    dl['reason'] = w
 
         # ── LINE-LEVEL D365 ⟷ dump edge (the "foolproof, line-wise" check the
         #    per-PO triangle alone can't catch — right PO total, wrong SKU split). ──
@@ -562,15 +588,20 @@ def validate(headers_path, lines_path, dumps, excel_out=None):
             d3_q[r['mp']] += r['d365_qty']
         qty_legs = []
         qt = {'raw': 0, 'deducted': 0, 'included': 0, 'd365': 0}
+        qt_val = 0.0
         for mp in sorted(set(raw_q) | set(d3_q) | set(inc_q)):
             raw, ded, inc, d3 = raw_q[mp], drp_q[mp], inc_q[mp], d3_q[mp]
+            val = round(d365_v.get(mp, 0.0), 2)               # D365 value (inc GST) per MP
             qty_legs.append({'mp': mp, 'raw': raw, 'deducted': ded, 'included': inc,
-                             'd365': d3, 'delta': d3 - inc, 'raw_ties': raw == inc + ded})
+                             'd365': d3, 'delta': d3 - inc, 'raw_ties': raw == inc + ded,
+                             'value': val})
             qt['raw'] += raw; qt['deducted'] += ded; qt['included'] += inc; qt['d365'] += d3
+            qt_val += val
         qty_legs.append({'mp': 'TOTAL', 'raw': qt['raw'], 'deducted': qt['deducted'],
                          'included': qt['included'], 'd365': qt['d365'],
                          'delta': qt['d365'] - qt['included'],
-                         'raw_ties': qt['raw'] == qt['included'] + qt['deducted']})
+                         'raw_ties': qt['raw'] == qt['included'] + qt['deducted'],
+                         'value': round(qt_val, 2)})
         raw_unconfirmed = [f['name'] for f in files if f.get('raw_confirmed') is False]
         raw_status = {
             'all_confirmed': not raw_unconfirmed,
@@ -603,8 +634,19 @@ def validate(headers_path, lines_path, dumps, excel_out=None):
             val_ok = abs(val_delta) < max(2.0, our_val * 0.005)   # ≤ ₹2 or 0.5%
             if not val_ok and our_val:
                 flags.append(f"VALUE d365 ₹{d365_val:.0f} vs ours ₹{our_val:.0f}")
+            # ── standard format: Raw = Filled + Excluded (per PO) ──
+            #   raw      = the untouched marketplace order (dump Total Qty)
+            #   filled   = what reached D365
+            #   excluded = system-logged drops for this PO
+            raw_q = dqd.get('full_qty')            # None if no dump for this PO
+            drop_q = int(legs.get(po, {}).get('drop_qty', 0))
+            ident_ok = (raw_q is None) or (raw_q == d365_q + drop_q)
+            addr_ok = not (dqd and r.get('ship_d365') and dqd.get('ship')
+                           and r['ship_d365'] != dqd['ship'])
             triangle.append({'mp': r['mp'], 'po': po, 'd365_qty': d365_q,
                              'system_final': sys_final, 'dump_final': dump_final,
+                             'raw_qty': raw_q, 'filled_qty': d365_q, 'excluded_qty': drop_q,
+                             'ident_ok': ident_ok, 'addr_ok': addr_ok,
                              'd365_val': d365_val, 'our_val': our_val,
                              'val_delta': val_delta, 'val_ok': val_ok,
                              'dump_ship': dqd.get('ship', ''), 'd365_ship': r.get('ship_d365', ''),
@@ -635,12 +677,42 @@ def validate(headers_path, lines_path, dumps, excel_out=None):
             'not_pushed': [{'po': p, 'dump_file': d_po[p]['dump_file']} for p in not_pushed],
         }
 
+        # ── COVERAGE: every D365 order AND every D365 line must have a matching
+        #    raw — so nothing is skipped. Two gaps, both surfaced loudly:
+        #      • PO-level  — a D365 PO with NO raw uploaded  (raw file missing)
+        #      • line-level — a D365 (PO,SKU) line absent from the raw
+        #    Grouped by marketplace so the operator knows WHICH raw file to add. ──
+        pos_missing_raw = audit['missing_dump']
+        lines_missing_raw = [{'po': r['po'], 'mp': r['mp'], 'item': r['item'],
+                              'd365_qty': r['d365_qty']}
+                             for r in sku_check['rows']
+                             if r['dump_qty'] == 0 and r['d365_qty'] > 0]
+        miss_by_mp = defaultdict(lambda: {'pos': 0, 'lines': 0, 'qty': 0})
+        for m in pos_missing_raw:
+            miss_by_mp[m['mp']]['pos'] += 1
+        for l in lines_missing_raw:
+            miss_by_mp[l['mp']]['lines'] += 1
+            miss_by_mp[l['mp']]['qty'] += l['d365_qty']
+        coverage = {
+            'd365_pos': len(d365_pos), 'd365_lines': len(d365_lines),
+            'pos_missing_raw': pos_missing_raw,
+            'lines_missing_raw': lines_missing_raw,
+            'by_mp': [{'mp': k, **v} for k, v in sorted(miss_by_mp.items())],
+            'full': not pos_missing_raw and not lines_missing_raw,
+        }
+
         # ── connect the dots: every check → one verdict + the review headline ──
         vt = value_legs[-1]; qtot = qty_legs[-1]
         ship_flags = [t for t in triangle if 'SHIP' in t['note']]
         qty_flags = [t for t in triangle if not t['agree'] and 'SHIP' not in t['note']]
         n_mp = len([q for q in qty_legs if q['mp'] != 'TOTAL'])
         checks = [
+            {'key': 'cover', 'label': 'Full coverage — nothing skipped',
+             'sub': 'every D365 order & line has raw', 'ok': coverage['full'],
+             'detail': (f"{coverage['d365_pos']} POs · {coverage['d365_lines']} lines covered"
+                        if coverage['full'] else
+                        f"{len(coverage['pos_missing_raw'])} PO · "
+                        f"{len(coverage['lines_missing_raw'])} line(s) missing raw")},
             {'key': 'raw', 'label': 'Raw order fully accounted',
              'sub': 'Raw = Deducted + Included', 'ok': raw_status['qty_ties'],
              'detail': f"{qtot['raw']:,} = {qtot['deducted']:,} dropped + {qtot['included']:,} pushed"},
@@ -682,7 +754,7 @@ def validate(headers_path, lines_path, dumps, excel_out=None):
                      'raw_status': raw_status, 'triangle': triangle,
                      'sku_check': sku_check, 'checks': checks, 'verdict': verdict,
                      'dropped': dropped, 'dump_issues': dump_issues, 'audit': audit,
-                     'other_segments': other_segments,
+                     'coverage': coverage, 'other_segments': other_segments,
                      'included_delta': value_legs[-1]['delta']})
         return {'ok': True, 'error': None, 'data': data}
     except Exception as e:  # noqa: BLE001

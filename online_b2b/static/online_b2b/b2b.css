@@ -173,13 +173,11 @@ table.grid tbody tr:hover td{background:var(--surface-2);}
 .lnk{color:var(--muted);text-decoration:none;font-weight:600;} .lnk:hover{color:var(--accent);}
 
 /* badges / pills ---------------------------------------------- */
-.pill{font-size:10.5px;font-weight:700;padding:2px 9px;border-radius:20px;}
-.pill.so{background:var(--green-soft);color:var(--green);} .pill.to{background:var(--accent-soft);color:var(--accent);}
+/* .pill → canonical token-based badge lives in enhance.css §8 (dark-mode aware) */
 .exp{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;}
 .exp.gone{background:var(--red-soft);color:var(--red);} .exp.soon{background:var(--amber-soft);color:var(--amber);}
 .exp.ok{background:#eef0f4;color:var(--text-2);} .exp.none{color:#cfd3df;}
-.st{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;}
-.st.mismatch{background:var(--red-soft);color:var(--red);} .st.not_in_master{background:var(--amber-soft);color:var(--amber);}
+/* .st → canonical token-based status badge in enhance.css §11 */
 
 /* misc --------------------------------------------------------- */
 .scroll{max-height:560px;overflow:auto;border-radius:var(--radius);}
@@ -305,7 +303,7 @@ tr.rexcl td{background:#f6f7f9;color:#8b94a3;} tr.rexcl td.mono,tr.rexcl td.desc
 .tab.on{background:var(--accent);color:#fff;border-color:var(--accent);}
 .tcount{background:rgba(0,0,0,.08);padding:1px 7px;border-radius:20px;font-size:11px;font-weight:700;}
 .tab.on .tcount{background:rgba(255,255,255,.25);}
-.st.ok{background:var(--green-soft);color:var(--green);}
+/* .st.ok → enhance.css §11 */
 .exc{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:20px;background:#fff4e0;color:var(--amber);}
 /* exception/deal applied — subtle amber row tint (matches the SO workbook) */
 tr.has-exc > td{background:#fff8ec;}
@@ -534,10 +532,7 @@ details[open]>.tchildren>.tnode{animation:treeIn .26s ease both;}
 .eg{font-size:12.5px;color:var(--text-2);background:var(--surface);border:1px dashed var(--border);
   border-radius:9px;padding:10px 12px;line-height:1.7;}
 .eg b{color:var(--text);}
-.pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;}
-.pill.ok{background:#e6f4ea;color:#1b7a3d;}
-.pill.mis{background:#fce8e6;color:#b71c1c;}
-.pill.live{background:var(--accent-soft);color:var(--accent);}
+/* .pill (ok/mis/live) → canonical token-based badge in enhance.css §8 */
 .tagx{display:inline-block;font-size:10.5px;font-weight:600;background:var(--bg);border:1px solid var(--border);
   border-radius:6px;padding:1px 7px;margin-right:4px;color:var(--text-2);}
 .exc-grid,.dec-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:14px;}

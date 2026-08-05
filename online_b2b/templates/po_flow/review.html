@@ -199,7 +199,7 @@
       <a href="{% url 'b2b_ship_to' %}" target="_blank">Ship-To Mapping</a>.</p>
     <div class="scroll">
     <table class="grid">
-      <thead><tr><th>PO</th><th>Location (from file)</th><th></th><th>Ship-to</th><th>City</th><th>State</th><th>Pin</th><th class="r">Qty</th><th>Status</th></tr></thead>
+      <thead><tr><th>PO</th><th>Location (from file)</th><th></th><th>Ship-to</th><th>Del Location</th><th>City</th><th>State</th><th>Pin</th><th class="r">Qty</th><th>Status</th></tr></thead>
       <tbody>
         {% for m in r.mapping_report %}
         <tr class="{% if m.match_type == 'UNMAPPED' %}rmis{% endif %}">
@@ -207,13 +207,14 @@
           <td class="loc" title="{{ m.location }}">{{ m.location|default:'—' }}</td>
           <td class="mp-arrow">→</td>
           <td class="mono mp-ship">{{ m.ship_to|default:'—' }}</td>
+          <td class="loc mp-del" title="{{ m.del_location }}{% if m.name and m.name != m.del_location %} · {{ m.name }}{% endif %}">{{ m.del_location|default:m.name|default:'—' }}</td>
           <td>{{ m.city|default:'—' }}</td>
           <td class="mono">{{ m.state|default:'—' }}</td>
           <td class="mono">{{ m.postcode|default:'—' }}</td>
           <td class="r">{{ m.qty }}</td>
           <td>{% if m.match_type == 'UNMAPPED' %}<span class="po-aff">⚑ UNMAPPED</span>{% else %}<span class="po-clean">✓ MAPPED</span>{% endif %}</td>
         </tr>
-        {% empty %}<tr><td colspan="9" class="muted">No orders.</td></tr>{% endfor %}
+        {% empty %}<tr><td colspan="10" class="muted">No orders.</td></tr>{% endfor %}
       </tbody>
     </table>
     </div>
@@ -315,6 +316,7 @@
   .aff-exc-h{font-size:13px;color:#7a4a06;margin-bottom:9px;line-height:1.5;}
   .mp-arrow{color:var(--muted,#94a3b8);text-align:center;font-weight:700;}
   .mp-ship{font-weight:700;color:var(--accent,#4f46e5);}
+  .mp-del{color:var(--text-2,#475569);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .po-rev{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:800;background:#fff1e0;color:#b45309;white-space:nowrap;}
   .po-dup{display:inline-block;padding:2px 9px;border-radius:20px;font-size:10.5px;font-weight:700;background:#eef1f5;color:#64748b;white-space:nowrap;}
   tr.rrev td{background:color-mix(in srgb,#f59e0b 8%,transparent);}

@@ -299,10 +299,13 @@ def _mapping_report(headers):
         rows.append({'po': h.get('po'),
                      'location': str(h.get('raw_location') or h.get('location') or ''),
                      'ship_to': ship, 'qty': h.get('qty'),
+                     'del_location': '', 'name': '',
                      'city': '', 'state': '', 'postcode': '',
                      'match_type': 'MAPPED' if mapped else 'UNMAPPED'})
-    # Enrich with the RESOLVED D365 address (city / state / pin) per ship-to code,
-    # so the Mapping tab reads "location → ship-to → where it's actually going".
+    # Enrich with the RESOLVED D365 delivery location + address (del location /
+    # name / city / state / pin) per ship-to code, so the Mapping tab reads
+    # "location (from file) → ship-to → the resolved delivery location + address"
+    # exactly like the Online B2B ship-to page.
     codes = {r['ship_to'] for r in rows if r['ship_to']}
     if codes:
         try:
@@ -310,15 +313,16 @@ def _mapping_report(headers):
             with _conn() as (cur, d):
                 ph = d['ph']
                 ins = ','.join([ph] * len(codes))
-                cur.execute(f"SELECT ship_to, city, state, postcode FROM ship_to_mapping "
-                            f"WHERE ship_to IN ({ins})", tuple(codes))
+                cur.execute(f"SELECT ship_to, del_location, name, city, state, postcode "
+                            f"FROM ship_to_mapping WHERE ship_to IN ({ins})", tuple(codes))
                 addr = {}
-                for st, city, state, pin in cur.fetchall():
-                    addr.setdefault(str(st), (str(city or ''), str(state or ''), str(pin or '')))
+                for st, dl, nm, city, state, pin in cur.fetchall():
+                    addr.setdefault(str(st), (str(dl or ''), str(nm or ''),
+                                              str(city or ''), str(state or ''), str(pin or '')))
             for r in rows:
                 a = addr.get(r['ship_to'])
                 if a:
-                    r['city'], r['state'], r['postcode'] = a
+                    r['del_location'], r['name'], r['city'], r['state'], r['postcode'] = a
         except Exception:  # noqa: BLE001 — enrichment is best-effort
             pass
     rows.sort(key=lambda r: (r['match_type'] != 'UNMAPPED', str(r['po'])))

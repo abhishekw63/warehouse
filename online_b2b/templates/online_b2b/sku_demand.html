@@ -70,35 +70,8 @@
 <style>
   /* use (almost) the full screen — this is a single wide data table */
   .b2b-wrap.b2b-wide{ max-width:min(2300px, 97vw); }
-  .sku-an{margin-bottom:4px;} .sku-filter{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
-  .sku-filter select,.sku-filter input[type=date]{padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12.5px;background:#fff;color:var(--text);}
-  .sku-filter label{font-size:12px;color:var(--muted);display:inline-flex;align-items:center;gap:5px;}
-  .sku-scope{font-size:12px;margin:6px 0 12px;}
-  .skux-card{border:1px solid var(--border);border-radius:12px;background:var(--surface);overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,.04);}
-  table.skux{width:100%;margin:0;} table.skux th{font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);padding:9px 12px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--surface-2);z-index:1;}
-  table.skux td{padding:7px 12px;border-bottom:1px solid color-mix(in srgb,var(--border) 55%,transparent);font-size:12.5px;}
-  table.skux tbody tr:hover td{background:color-mix(in srgb,var(--accent) 4%,transparent);}
-  /* Excel-style fixed grid: even columns, centered figures, reasonable description */
-  table.skux{table-layout:fixed;width:100%;}
-  table.skux th,table.skux td{padding:9px 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  table.skux th:nth-child(1),table.skux td:nth-child(1){width:4%;text-align:center;}   /* # */
-  table.skux th:nth-child(2),table.skux td:nth-child(2){width:11%;text-align:left;}     /* Item */
-  table.skux th:nth-child(3),table.skux td:nth-child(3){width:34%;text-align:left;color:var(--text-2);} /* Description */
-  table.skux th:nth-child(4),table.skux td:nth-child(4){width:13%;text-align:center;}   /* Qty */
-  table.skux th:nth-child(5),table.skux td:nth-child(5){width:16%;text-align:center;}   /* Value */
-  table.skux th:nth-child(6),table.skux td:nth-child(6){width:11%;text-align:center;}   /* POs */
-  table.skux th:nth-child(7),table.skux td:nth-child(7){width:11%;text-align:center;}   /* MPs */
-  .skux .rkh{width:34px;} .skux td.rk{text-align:center;}
-  .rk-b{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 5px;border-radius:10px;font-size:11px;font-weight:800;background:var(--surface-2);color:var(--muted);}
-  .rk-b.rk-1{background:#fde68a;color:#92600a;} .rk-b.rk-2{background:#e5e7eb;color:#4b5563;} .rk-b.rk-3{background:#fed7aa;color:#9a3412;}
-  .skux th.srt{cursor:pointer;user-select:none;white-space:nowrap;} .skux th.srt:hover,.skux th.srt.on{color:var(--accent);}
-  /* value magnitude = thin centered underline beneath the figure */
-  .skux td.barcell{position:relative;overflow:hidden;}
-  .skux td.barcell .bar{position:absolute;left:50%;transform:translateX(-50%) scaleX(1);bottom:5px;top:auto;right:auto;height:3px;border-radius:3px;z-index:0;min-width:6px;max-width:calc(100% - 24px);background:linear-gradient(90deg,color-mix(in srgb,#10b981 55%,transparent),color-mix(in srgb,#0a9d6e 75%,transparent));transform-origin:center;animation:skuxbar .7s cubic-bezier(.2,.85,.25,1) both;}
-  @keyframes skuxbar{from{transform:translateX(-50%) scaleX(0);opacity:.3;}to{transform:translateX(-50%) scaleX(1);opacity:1;}}
-  table.skux tbody{animation:skuxrows .45s ease both;} @keyframes skuxrows{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
-  @media (prefers-reduced-motion: reduce){.skux td.barcell .bar,table.skux tbody{animation:none;}}
-  .skux td.barcell b{position:relative;z-index:1;}
+  .sku-an{margin-bottom:4px;}
+  /* .skux table + .sku-filter styles CONSOLIDATED to enhance.css (§7). */
   .scroll{max-height:70vh;overflow:auto;}
 </style>
 <script>
