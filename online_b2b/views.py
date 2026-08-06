@@ -2098,7 +2098,11 @@ def _completed_cache_key(meta: dict) -> str:
     basis = {'files': meta.get('files', []), 'wh': meta.get('warehouse', ''),
              'margin': meta.get('margin_pct', ''), 'dec': meta.get('decisions') or {},
              'ean': meta.get('ean_fixes'), 'run': meta.get('run_id'),
-             'locked': bool(meta.get('locked'))}
+             'locked': bool(meta.get('locked')),
+             # bump when the exporter output changes so stale caches rebuild.
+             # v2: Summary Included/Excluded now reads the real line action
+             # (INCLUDE/OVERRIDE no longer shown as dropped).
+             'exp_v': 2}
     return hashlib.md5(
         json.dumps(basis, sort_keys=True, default=str).encode('utf-8')).hexdigest()
 

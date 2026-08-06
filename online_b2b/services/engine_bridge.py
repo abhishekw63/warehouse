@@ -1083,7 +1083,12 @@ class Processor:
                           # never dropped. Shown so "we included this" reads clearly
                           # instead of the qty silently sitting inside Final Qty.
         for l in lines:
-            act = (l.get('decision') or {}).get('action') or ''
+            # build_lines() stamps the operator decision as a TOP-LEVEL 'action'
+            # (INCLUDE/OVERRIDE/EXCLUDE); keep the legacy 'decision' dict as a
+            # fallback. Reading only 'decision' made every INCLUDE/OVERRIDE line
+            # show as Excluded (it never reached D365 in the Summary, though the
+            # Lines correctly kept it) — the phantom "1 dropped" bug.
+            act = (l.get('action') or (l.get('decision') or {}).get('action') or '').upper()
             st = l.get('status')
             dropped = act == 'EXCLUDE' or (st in _ISSUE_STATUSES
                                            and act not in ('INCLUDE', 'OVERRIDE'))
