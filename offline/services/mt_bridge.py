@@ -254,6 +254,41 @@ def _register_web_channels(eng) -> None:
             expected_landing_ratio=None,      # NO price check (mapping-only)
         )
 
+    # Reliance Retail — Offline MT  ── SAME D365 customer as Centro (20043), but a
+    # DIFFERENT input format. Centro (RL) ships the tabular 'Renee.XLSX' (Site key,
+    # _normalize_reliance_excel); the Reliance JioMart / value-DC business exports
+    # the 'PurchaseOrders*.xlsx' (sheet "Purchase Orders", DC_CODE key) — the SAME
+    # schema as Metro/RSB, so it reuses _normalize_metro_excel. Kept as a SEPARATE
+    # channel (not merged into Centro) so each channel stays one-format-uniform and
+    # the working Centro parser is untouched. Store key = DC_CODE matched EXACT to
+    # the party='Reliance Retail' Del Location — e.g. **T0G2 → 20043_3 (Bhiwandi /
+    # JioMart Value DC, GSTIN 27AABCR1718E1ZP)**. Mapping-only — NO price check.
+    if 'RRLMT' not in eng.CHANNELS:
+        eng.CHANNELS['RRLMT'] = eng.ChannelConfig(
+            code='RRLMT',
+            display_name='Reliance Retail — Offline MT',
+            party='Reliance Retail',          # ship_to_mapping party (cust 20043)
+            input_folder_name='Input_RRLMT',
+            output_folder_name='Output_RRLMT',
+            sell_to='20043',                  # Reliance Retail Limited (same as Centro)
+            csv_required_cols=['PURCH_ORDER_NUMBER', 'DC_CODE', 'EAN_NO',
+                               'TOTAL_QUANTITY'],
+            csv_po_col='PURCH_ORDER_NUMBER',
+            csv_store_col='DC_CODE',          # DC code (T0G2…) → Del Location (exact)
+            csv_id_col='EAN_NO',
+            csv_qty_col='TOTAL_QUANTITY',
+            csv_mrp_col='MRP_PER_UNIT',
+            csv_cost_col='LANDING_COST_INCL_TAX_PER_UNIT',   # inc-GST (reference)
+            csv_value_col='COST_PRICE_INCL_TAX_PER_PO_OU',   # inc-GST line total
+            csv_date_col='PURCH_ORDER_DATE',
+            csv_expdate_col='EXPECTED_DATE',
+            lookup_via='EAN',
+            channel_master_sheet=None,
+            store_match='exact',
+            tester_unit_price=None,           # no testers
+            expected_landing_ratio=None,      # NO price check (mapping-only)
+        )
+
     # H&B (Health & Beauty) — cust 20010. Excel BINARY workbook ('Renee Rep PO
     # Excel *.xlsb', one 'Sheet1' with ALL POs); EAN lookup; store key = numeric
     # 'Site' code matched EXACT to the party='h&b' Del Location. Mapping-only
@@ -311,7 +346,7 @@ LULU_EXCEL_MODE = True
 # marketplace; these are its children (the operator picks one). Off Institutional
 # (INST) is a SEPARATE parent and is not listed here. SS is verified end-to-end;
 # the others share the same generic pipeline (test each before production use).
-WEB_CHANNELS = ['SS', 'HG', 'NT', 'BN', 'LL', 'RL', 'MET', 'LS', 'PPL', 'RSB', 'HB', 'RBL']
+WEB_CHANNELS = ['SS', 'HG', 'NT', 'BN', 'LL', 'RL', 'MET', 'LS', 'PPL', 'RSB', 'HB', 'RBL', 'RRLMT']
 
 # ── Per-channel input REQUIREMENTS ──────────────────────────────────────
 # Shown on the upload page (so the operator knows what each channel demands)
@@ -376,6 +411,18 @@ CHANNEL_REQUIREMENTS: dict = {
             'if_absent': 'No price check — records the inc-GST value; the effective supply '
             'margin (landing ex-GST ÷ MRP) is computed and noted. Unknown DC_CODE → flagged, '
             'never silent.'},
+    'RRLMT': {'required': 'Reliance Retail — Offline MT tabular Excel (PurchaseOrders*.xlsx, '
+                          'sheet "Purchase Orders") — DC_CODE, PURCH_ORDER_NUMBER, EAN_NO, '
+                          'TOTAL_QUANTITY, MRP + dates. NOTE: this is a DIFFERENT format from '
+                          '"Reliance Retail (Centro)" (which uses the tabular Renee.XLSX with a '
+                          '"Site" key) — SAME D365 customer 20043. DC_CODE is the ship-to key '
+                          '(exact), e.g. T0G2 → 20043_3 (Bhiwandi / JioMart value DC).',
+              'optional': 'PO PDF(s) — reference for the per-store delivery address cross-check.',
+              'if_absent': 'No price check (mapping-only) — records the inc-GST value; the '
+              'effective supply margin (landing ex-GST ÷ MRP) is computed and noted. Note: '
+              'TOTAL_QUANTITY is in UNITS (inner-box 12/pack already expanded). Unknown '
+              'DC_CODE → flagged UNMAPPED, never silent (add it under party "Reliance Retail", '
+              'cust 20043).'},
 }
 
 
@@ -1080,9 +1127,10 @@ class MTProcessor:
                 if str(p).lower().endswith(('.xlsx', '.xls')) else p
                 for p in engine_paths]
 
-        # ── Metro / Reliance Smart Bazaar: identical 'Purchase Orders' schema —
-        #    read that sheet, clean, + supply-margin note. ──
-        if channel.code in ('MET', 'RSB'):
+        # ── Metro / Reliance Smart Bazaar / Reliance Retail-Offline MT: identical
+        #    'Purchase Orders' schema (DC_CODE) — read that sheet, clean, + margin
+        #    note. RRLMT is the DC_CODE format for cust 20043 (JioMart/value DCs). ──
+        if channel.code in ('MET', 'RSB', 'RRLMT'):
             norm = []
             for p in engine_paths:
                 if str(p).lower().endswith(('.xlsx', '.xls')):
