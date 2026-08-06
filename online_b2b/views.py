@@ -1831,6 +1831,27 @@ def confirm(request, token):
         if k and (a or r):
             actions[k] = {'action': a, 'remark': r, 'override_cp': ocp}
 
+    # ── HARD GUARD: never record an affected line with NO explicit decision ──
+    #   Every affected row submits an ``aff_key`` + ``aff_action``; a blank action
+    #   means the operator hasn't chosen Include / Override / Exclude. Recording it
+    #   would silently push the line (at our CP) — the CP-issue bug. Block the push
+    #   until each is decided. The ONLY way through is the deliberate "Record
+    #   anyway" button, which sends ``include_undecided=1`` (explicit, never silent).
+    #   Server-side so a bypassed/direct POST can't slip an undecided line through.
+    _force_undecided = (request.POST.get('include_undecided') or '').strip() == '1'
+    _valid = {'INCLUDE', 'OVERRIDE', 'EXCLUDE'}
+    _undecided = [k for i, k in enumerate(keys)
+                  if k and (acts[i] if i < len(acts) else '').strip().upper() not in _valid]
+    if _undecided and not _force_undecided:
+        msg = (f"{len(_undecided)} affected line(s) still need a decision "
+               f"(Include / Override / Exclude) before recording. Decide each on the "
+               f"Affected tab, or Save for Review Later.")
+        if ajax:
+            return JsonResponse({'ok': False, 'error': msg,
+                                 'undecided': len(_undecided)}, status=400)
+        messages.error(request, msg)
+        return redirect('b2b_review', token=token)
+
     # A finalized "Review-later" draft belongs to the day it was PARKED, not
     # today — back-date the whole recorded run (run_ts + created_at on headers &
     # lines) to draft_at so Daily Tasks / analytics credit the park day. Normal

@@ -131,6 +131,9 @@
 
   <!-- Confirm bar -->
   <form id="confirm-form" method="post" action="{% url 'b2b_confirm' token=token %}">{% csrf_token %}
+  {# Set to '1' ONLY by the deliberate "Record anyway" choice so the server allows
+     recording undecided line(s); blank on a normal lock → server blocks undecided. #}
+  <input type="hidden" name="include_undecided" id="inclUndecided" value="">
   <div class="confirm-bar{% if locked %} locked{% endif %}" id="confirmBar">
     <div class="cb-text">
       {% if locked %}
@@ -375,6 +378,10 @@
           <td>
             <input type="hidden" name="aff_key" value="{{ l.po }}|{{ l.item_no }}|{{ l.ean }}">
             <select name="aff_action" class="act-sel"{% if locked %} disabled{% endif %}>
+              {# blank default so an UNDECIDED CP-issue line reads as "unset" (not
+                 auto-INCLUDE) — this is what the lock-guard checks, so you can't
+                 silently record a CP mismatch. You must pick Include/Override/Exclude. #}
+              <option value="" {% if not l.decision.action %}selected{% endif %}>— set —</option>
               <option value="INCLUDE" {% if l.decision.action == 'INCLUDE' %}selected{% endif %}>Include (their CP)</option>
               <option value="OVERRIDE" {% if l.decision.action == 'OVERRIDE' %}selected{% endif %}>Include (our CP)</option>
               <option value="EXCLUDE" {% if l.decision.action == 'EXCLUDE' %}selected{% endif %}>Exclude</option>
@@ -931,8 +938,12 @@
         return;
       }
       // Guard: undecided affected line(s) → shake + flash + ask (unless the
-      // operator already chose "Record anyway").
-      if (!lockBtn._forced) {
+      // operator already chose "Record anyway"). The server enforces the SAME
+      // rule; the hidden flag tells it this was the deliberate "anyway" path.
+      var forced = !!lockBtn._forced;
+      var inclEl = document.getElementById('inclUndecided');
+      if (inclEl) inclEl.value = forced ? '1' : '';   // explicit escape only
+      if (!forced) {
         var undec = undecidedSelects();
         if (undec.length) { cpGuard(undec); return; }
       }
