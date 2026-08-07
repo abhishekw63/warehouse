@@ -25,7 +25,7 @@ from django.views.generic import TemplateView, View
 
 from online_b2b.services import po_flow
 
-from .flows import GT_MASS_SPEC, MT_SPEC
+from .flows import EKA_SPEC, GT_MASS_SPEC, MT_SPEC
 from .services import gt_mass_bridge, mt_bridge
 from .utils import (
     EMAIL_CONFIG,
@@ -757,3 +757,39 @@ class MTFlowSaveLaterView(_FlowSaveLaterView):
 
 class MTFlowDraftsView(_FlowDraftsView):
     spec = MT_SPEC
+
+# ── EKA (EBO / Kiosk / Airport → SO/TO) — third offline channel on po_flow ───
+class EKAFlowUploadView(_FlowUploadView):
+    spec = EKA_SPEC
+
+
+class EKAFlowReviewView(_FlowReviewView):
+    spec = EKA_SPEC
+
+
+class EKAFlowConfirmView(_FlowConfirmView):
+    spec = EKA_SPEC
+
+
+class EKAFlowDecisionView(_FlowDecisionView):
+    spec = EKA_SPEC
+
+
+class EKAFlowDiscardView(_FlowDiscardView):
+    spec = EKA_SPEC
+
+
+class EKAFlowDownloadView(_FlowDownloadView):
+    spec = EKA_SPEC
+
+
+class EKAFlowExportView(_FlowExportView):
+    spec = EKA_SPEC
+
+
+class EKAFlowSaveLaterView(_FlowSaveLaterView):
+    spec = EKA_SPEC
+
+
+class EKAFlowDraftsView(_FlowDraftsView):
+    spec = EKA_SPEC

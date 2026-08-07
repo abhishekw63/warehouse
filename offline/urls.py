@@ -51,4 +51,15 @@ urlpatterns = [
     path('mt-flow/<str:token>/download/', views.MTFlowDownloadView.as_view(), name='mt_flow_download'),
     path('mt-flow/<str:token>/export/', views.MTFlowExportView.as_view(), name='mt_flow_export'),
     path('mt-flow/<str:token>/save-later/', views.MTFlowSaveLaterView.as_view(), name='mt_flow_save_later'),
+    # EKA (EBO / Kiosk / Airport → SO/TO) — third offline channel on the shared
+    # po-flow scaffold (upload single/bulk → review → confirm → record). No CP check.
+    path('eka-flow/', views.EKAFlowUploadView.as_view(), name='eka_flow_upload'),
+    path('eka-flow/drafts/', views.EKAFlowDraftsView.as_view(), name='eka_flow_drafts'),
+    path('eka-flow/<str:token>/', views.EKAFlowReviewView.as_view(), name='eka_flow_review'),
+    path('eka-flow/<str:token>/confirm/', views.EKAFlowConfirmView.as_view(), name='eka_flow_confirm'),
+    path('eka-flow/<str:token>/decision/', views.EKAFlowDecisionView.as_view(), name='eka_flow_decision'),
+    path('eka-flow/<str:token>/discard/', views.EKAFlowDiscardView.as_view(), name='eka_flow_discard'),
+    path('eka-flow/<str:token>/download/', views.EKAFlowDownloadView.as_view(), name='eka_flow_download'),
+    path('eka-flow/<str:token>/export/', views.EKAFlowExportView.as_view(), name='eka_flow_export'),
+    path('eka-flow/<str:token>/save-later/', views.EKAFlowSaveLaterView.as_view(), name='eka_flow_save_later'),
 ]

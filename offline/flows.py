@@ -10,6 +10,7 @@ from online_b2b.services.po_flow import FlowSpec
 
 from . import services  # noqa: F401 — ensure package import order
 from .services import mt_bridge
+from .services.eka_flow import EKAFlowProcessor
 from .services.gt_mass_flow import GTMassProcessor
 from .services.mt_flow import MTFlowProcessor, RelianceTrendsFlowProcessor
 
@@ -106,6 +107,33 @@ MT_SPEC = FlowSpec(
         'discard': 'mt_flow_discard', 'download': 'mt_flow_download',
         'export': 'mt_flow_export',
         'save_later': 'mt_flow_save_later', 'drafts': 'mt_flow_drafts',
+        'back': 'offline_dashboard', 'dashboard': 'offline_dashboard',
+    },
+)
+
+
+EKA_SPEC = FlowSpec(
+    key='eka',
+    title='EKA',
+    segment='Offline',
+    base_template='online_b2b/base_b2b.html',
+    upload_dirname='eka_flow',
+    processor=EKAFlowProcessor,
+    # EKA has NO CP check → no per-line decisions (no 'exclude'/'margin'); the
+    # store is picked from the filename (no 'marketplace' picker). 'download' ON:
+    # the review workbook (9-sheet PO_Output) is downloadable any time.
+    caps=frozenset({'download'}),
+    intro=('Upload EKA store PO files — one or many (EBO · Kiosk · Airport). Each '
+           'file is one store → SO/TO docs + a tester doc (₹0.54). Pricing uses '
+           'the live web item master (current MRP) and the DB store registry. '
+           'Review → record to the dashboard. No CP check.'),
+    accept='.xlsx,.xlsm,.xls',
+    urls={
+        'upload': 'eka_flow_upload', 'review': 'eka_flow_review',
+        'confirm': 'eka_flow_confirm', 'decision': 'eka_flow_decision',
+        'discard': 'eka_flow_discard', 'download': 'eka_flow_download',
+        'export': 'eka_flow_export',
+        'save_later': 'eka_flow_save_later', 'drafts': 'eka_flow_drafts',
         'back': 'offline_dashboard', 'dashboard': 'offline_dashboard',
     },
 )
