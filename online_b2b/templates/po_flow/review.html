@@ -1,8 +1,7 @@
 {% extends base_template %}
 {% load static b2b_extras %}
 {% block title %}{{ title }} — Review{% endblock %}
-{# Contextual boot label — a big PO review renders a large table; tell the user
-   what's happening instead of a bare spinner (shared loader in core/base.html). #}
+{% comment %}Contextual boot label — a big PO review renders a large table; tell the user what's happening instead of a bare spinner (shared loader in core/base.html).{% endcomment %}
 {% block page_boot_label %}Validating &amp; checking your PO — preparing the review…{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
 

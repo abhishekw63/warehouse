@@ -1,8 +1,7 @@
 {% extends 'online_b2b/base_b2b.html' %}
 {% load static b2b_extras %}
 {% block title %}Online B2B — Review{% endblock %}
-{# Same contextual boot label as the offline po_flow review → uniform loader
-   across online & offline (shared implementation in core/base.html). #}
+{% comment %}Same contextual boot label as the offline po_flow review -> uniform loader across online & offline (shared implementation in core/base.html).{% endcomment %}
 {% block page_boot_label %}Validating &amp; checking your PO — preparing the review…{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
 <style>
@@ -131,8 +130,7 @@
 
   <!-- Confirm bar -->
   <form id="confirm-form" method="post" action="{% url 'b2b_confirm' token=token %}">{% csrf_token %}
-  {# Set to '1' ONLY by the deliberate "Record anyway" choice so the server allows
-     recording undecided line(s); blank on a normal lock → server blocks undecided. #}
+  {# Set to '1' ONLY by the deliberate "Record anyway" choice so the server allows recording undecided line(s); blank on a normal lock -> server blocks undecided. #}
   <input type="hidden" name="include_undecided" id="inclUndecided" value="">
   <div class="confirm-bar{% if locked %} locked{% endif %}" id="confirmBar">
     <div class="cb-text">
@@ -378,9 +376,7 @@
           <td>
             <input type="hidden" name="aff_key" value="{{ l.po }}|{{ l.item_no }}|{{ l.ean }}">
             <select name="aff_action" class="act-sel"{% if locked %} disabled{% endif %}>
-              {# blank default so an UNDECIDED CP-issue line reads as "unset" (not
-                 auto-INCLUDE) — this is what the lock-guard checks, so you can't
-                 silently record a CP mismatch. You must pick Include/Override/Exclude. #}
+              {% comment %}blank default so an UNDECIDED CP-issue line reads as "unset" (not auto-INCLUDE) — this is what the lock-guard checks, so you can't silently record a CP mismatch. You must pick Include/Override/Exclude.{% endcomment %}
               <option value="" {% if not l.decision.action %}selected{% endif %}>— set —</option>
               <option value="INCLUDE" {% if l.decision.action == 'INCLUDE' %}selected{% endif %}>Include (their CP)</option>
               <option value="OVERRIDE" {% if l.decision.action == 'OVERRIDE' %}selected{% endif %}>Include (our CP)</option>

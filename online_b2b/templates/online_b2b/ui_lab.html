@@ -72,18 +72,13 @@ reference you can revisit.
 
 <div class="lab-wrap">
 
-  {# ========================================================================
-     1. htmx — LIVE SEARCH. Type → htmx GETs the search URL and swaps the
-        results fragment in. No fetch(), no JSON, no DOM code. If JS is off,
-        the same box still works as a normal GET form (progressive fallback).
-     ==================================================================== #}
+  {% comment %} 1. htmx — LIVE SEARCH. Type -> htmx GETs the search URL and swaps the results fragment in. No fetch(), no JSON, no DOM code. If JS is off, the same box still works as a normal GET form (progressive fallback). {% endcomment %}
   <div class="lab-sec">
     <h2>Live search <span class="lab-tag">htmx</span></h2>
     <p class="hint">One input, two attributes. htmx sends the request and drops the server’s
        HTML straight into the page.</p>
     <div class="lab-demo">
-      {# hx-get: where to fetch · hx-target: what to replace · hx-trigger: when.
-         hx-indicator points at the spinner text; htmx adds .htmx-request while loading. #}
+      {% comment %} hx-get: where to fetch · hx-target: what to replace · hx-trigger: when. hx-indicator points at the spinner text; htmx adds .htmx-request while loading. {% endcomment %}
       <form class="lab-search"
             hx-get="{% url 'b2b_ui_lab_search' %}"
             hx-target="#lab-results"
@@ -101,10 +96,7 @@ reference you can revisit.
        <code>_ui_lab_rows.html</code> partial used for the first paint — one template, no duplication.</div>
   </div>
 
-  {# ========================================================================
-     2. Alpine — page-local UI state (tabs + counter), no separate JS file.
-        x-data declares state; @click mutates it; x-show/x-text/:class react.
-     ==================================================================== #}
+  {% comment %} 2. Alpine — page-local UI state (tabs + counter), no separate JS file. x-data declares state; @click mutates it; x-show/x-text/:class react. {% endcomment %}
   <div class="lab-sec" x-data="{ tab: 'a', n: 1 }">
     <h2>Interactive state <span class="lab-tag">Alpine</span></h2>
     <p class="hint">State lives in the HTML (<code>x-data</code>). No event wiring, no querySelector.</p>
@@ -131,9 +123,7 @@ reference you can revisit.
        <code>x-show</code>, <code>x-transition</code>, <code>x-text</code>. Zero custom JS.</div>
   </div>
 
-  {# ========================================================================
-     3. Animation — CSS keyframes + Alpine transitions. A collapsible reveal.
-     ==================================================================== #}
+  {% comment %} 3. Animation — CSS keyframes + Alpine transitions. A collapsible reveal. {% endcomment %}
   <div class="lab-sec" x-data="{ open: false }">
     <h2>Animation <span class="lab-tag">CSS + Alpine</span></h2>
     <p class="hint">Search rows already fade-and-rise in (CSS keyframes). Here’s a smooth collapsible.</p>
@@ -147,10 +137,7 @@ reference you can revisit.
     <div class="lab-note">Prefers-reduced-motion is respected globally by the enhance layer.</div>
   </div>
 
-  {# ========================================================================
-     4. Charts — we already standardise on ApexCharts (no new lib). Reused
-        here to show the house style. Tiny demo series (front-end only).
-     ==================================================================== #}
+  {% comment %} 4. Charts — we already standardise on ApexCharts (no new lib). Reused here to show the house style. Tiny demo series (front-end only). {% endcomment %}
   <div class="lab-sec">
     <h2>Charts <span class="lab-tag">ApexCharts (existing standard)</span></h2>
     <p class="hint">No new charting library — ApexCharts already powers Analytics &amp; the Hub, so we reuse it.</p>
