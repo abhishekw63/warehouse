@@ -3251,37 +3251,39 @@ class SetupView(LoginRequiredMixin, UserPassesTestMixin, View):
 
         if action == 'save_local':
             res = db_target.save_current('local')
-            _msg = "Saved the current connection as the Local profile."
+            _msg = ("Saved the current connection as the Local profile."
+                    if res.get('ok') else res.get('error', 'Save failed.'))
         elif action == 'save_tidb':
             res = db_target.save_tidb(request.POST)
-            _msg = "Saved the TiDB (server) profile."
+            _msg = ("Saved the TiDB (server) profile."
+                    if res.get('ok') else res.get('error', 'Save failed.'))
         elif action == 'test':
             name = (request.POST.get('target') or '').strip().lower()
             res = db_target.test(name)
             if res.get('ok'):
                 oh = res.get('order_headers')
-                rows = (f" · order_headers: {oh:,} rows" if oh is not None
-                        else " · order_headers: not created yet — run the migration")
-                messages.success(
-                    request, f"✓ '{name}' connection OK — {res.get('version')} · "
-                    f"{res.get('tables')} table(s){rows}")
+                rows = (f" · order_headers {oh:,} rows" if oh is not None
+                        else " · order_headers not created yet")
+                _msg = (f"'{name}' connection OK — {res.get('version')} · "
+                        f"{res.get('tables')} table(s){rows}")
             else:
-                messages.error(request, f"✗ '{name}' connection FAILED: {res.get('error')}")
-            return redirect('b2b_setup')
+                _msg = f"'{name}' connection FAILED: {res.get('error')}"
         else:                                   # switch
-            target = (request.POST.get('target') or '').strip().lower()
-            res = db_target.switch(target)
+            name = (request.POST.get('target') or '').strip().lower()
+            res = db_target.switch(name)
             if res.get('ok'):
                 self._repoint_orm()             # live — no restart needed
-            _msg = (f"Switched to '{target}' "
-                    f"({res.get('host')}:{res.get('port')}/{res.get('database')})"
-                    + (" · TLS" if res.get('tls') else "")
-                    + " — in effect now.")
+                _msg = (f"Switched to '{name}' "
+                        f"({res.get('host')}:{res.get('port')}/{res.get('database')})"
+                        + (" · TLS" if res.get('tls') else "") + " — in effect now.")
+            else:
+                _msg = res.get('error', 'Switch failed.')
 
-        if res.get('ok'):
-            messages.success(request, _msg)
-        else:
-            messages.error(request, res.get('error', 'Action failed.'))
+        ok = bool(res.get('ok'))
+        if _is_ajax(request):
+            return JsonResponse({'ok': ok, 'message': _msg,
+                                 'status': db_target.status()})
+        (messages.success if ok else messages.error)(request, _msg)
         return redirect('b2b_setup')
 
     @staticmethod
@@ -3295,8 +3297,23 @@ class SetupView(LoginRequiredMixin, UserPassesTestMixin, View):
             from django.db import connections
             from renee_cosmetics import settings as _st
             newdb = _st._load_orders_db()
-            if newdb:
+            if not newdb:
+                return
+            existing = connections.databases.get('orders')
+            if existing is not None:
+                # UPDATE in place — keep Django's defaults (ATOMIC_REQUESTS,
+                # AUTOCOMMIT, CONN_MAX_AGE, …); only re-point host/creds/options.
+                existing.update(newdb)
+            else:
                 connections.databases['orders'] = newdb
-                connections['orders'].close()
+                try:
+                    connections.ensure_defaults('orders')
+                    connections.prepare_test_settings('orders')
+                except Exception:  # noqa: BLE001
+                    pass
+            try:
+                connections['orders'].close()   # next query reconnects w/ new cfg
+            except Exception:  # noqa: BLE001
+                pass
         except Exception:  # noqa: BLE001
             pass
