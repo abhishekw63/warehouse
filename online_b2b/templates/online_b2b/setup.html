@@ -129,9 +129,32 @@
 // state from the server-returned status. Every failure is caught → error toast.
 (function () {
   function toast(msg, ok) {
-    if (window.B2B && B2B.toast)
+    // Prefer the shared skeleton toast; otherwise a self-contained slide-in
+    // toast — NEVER a native alert().
+    if (window.B2B && typeof B2B.toast === 'function') {
       B2B.toast(msg, { type: ok ? 'success' : 'error', title: 'Database', timeout: 7000 });
-    else alert(msg);
+      return;
+    }
+    var host = document.getElementById('su-toasts');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'su-toasts';
+      host.style.cssText = 'position:fixed;top:74px;right:20px;z-index:99999;'
+        + 'display:flex;flex-direction:column;gap:10px;max-width:380px';
+      document.body.appendChild(host);
+    }
+    var t = document.createElement('div');
+    t.textContent = msg;
+    t.style.cssText = 'background:' + (ok ? '#047857' : '#b91c1c') + ';color:#fff;'
+      + 'padding:12px 15px;border-radius:11px;font-size:.85rem;line-height:1.4;'
+      + 'box-shadow:0 14px 36px -12px rgba(0,0,0,.55);opacity:0;transform:translateY(-8px);'
+      + 'transition:opacity .2s ease,transform .2s ease';
+    host.appendChild(t);
+    requestAnimationFrame(function () { t.style.opacity = '1'; t.style.transform = 'none'; });
+    setTimeout(function () {
+      t.style.opacity = '0'; t.style.transform = 'translateY(-8px)';
+      setTimeout(function () { if (t.parentNode) t.remove(); }, 260);
+    }, 6500);
   }
   function el(id) { return document.getElementById(id); }
 
