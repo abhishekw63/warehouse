@@ -50,6 +50,14 @@ SECRET_KEY = os.environ.get(
 # Hosting sets DJANGO_DEBUG=0 (see serve.bat / HOSTING.md). Default = dev (on).
 DEBUG = os.environ.get('DJANGO_DEBUG', '1') != '0'
 
+# Fail fast: never serve production (DEBUG off) with the committed insecure dev
+# key — a host that forgets DJANGO_SECRET_KEY must NOT boot silently exposed.
+if not DEBUG and SECRET_KEY.startswith('django-insecure-'):
+    raise RuntimeError(
+        "DJANGO_SECRET_KEY is still the insecure dev fallback but DEBUG is off. "
+        "Set a real DJANGO_SECRET_KEY before hosting (see .env.example / "
+        "PYTHONANYWHERE.md).")
+
 # LAN hosting: allow the office subnet by default; override with DJANGO_ALLOWED_HOSTS
 # (comma-separated). '*' is fine for a trusted internal network.
 ALLOWED_HOSTS = [h.strip() for h in
