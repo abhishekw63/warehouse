@@ -37,7 +37,6 @@ import logging
 import time
 from datetime import datetime
 from pathlib import Path
-from tkinter import messagebox
 from typing import Optional
 
 from openpyxl import Workbook
@@ -48,6 +47,16 @@ from online_po_processor.exporter.sheets import (
     rules_sheet, skipped_sheet, summary_sheet, tracker_sheet,
     validation_sheet, warnings_sheet,
 )
+
+try:
+    from tkinter import messagebox
+except ModuleNotFoundError:
+    class _HeadlessMessageBox:
+        @staticmethod
+        def showwarning(title, message):
+            logging.getLogger(__name__).warning("%s: %s", title, message)
+
+    messagebox = _HeadlessMessageBox()
 
 
 class SOExporter:
