@@ -73,6 +73,7 @@ cp db_config.example.json db_config.json    # or put it at ~/db_config.json
 Edit **`.env`** — set `DJANGO_SECRET_KEY`, `DJANGO_DEBUG=0`,
 `DJANGO_ALLOWED_HOSTS=USERNAME.pythonanywhere.com`,
 `DJANGO_CSRF_TRUSTED_ORIGINS=https://USERNAME.pythonanywhere.com`,
+**`DJANGO_SECURE_SSL=1`** (secure cookies + HTTPS redirect — PA is HTTPS),
 `ONLINE_PO_DB_CONFIG=/home/USERNAME/db_config.json`, and the `EMAIL_*` values.
 
 Generate a secret key:
@@ -145,7 +146,8 @@ Open `https://USERNAME.pythonanywhere.com/` and log in.
 
 - [ ] Old Gmail App Password **revoked**; new one in `.env` only.
 - [ ] Fresh `DJANGO_SECRET_KEY` in `.env`.
-- [ ] `DJANGO_DEBUG=0`, `DJANGO_ALLOWED_HOSTS` + `DJANGO_CSRF_TRUSTED_ORIGINS` set.
+- [ ] `DJANGO_DEBUG=0`, `DJANGO_ALLOWED_HOSTS` + `DJANGO_CSRF_TRUSTED_ORIGINS` + `DJANGO_SECURE_SSL=1` set.
+- [ ] `python manage.py check --deploy` clean (only the HSTS opt-out warning remains by design).
 - [ ] `db_config.json` present, `ONLINE_PO_DB_CONFIG` points to it, MySQL reachable.
 - [ ] `renee_orders` data imported into PA MySQL.
 - [ ] `migrate` + `createsuperuser` + `collectstatic` done.

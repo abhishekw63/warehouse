@@ -62,6 +62,23 @@ CSRF_TRUSTED_ORIGINS = [o.strip() for o in
                         os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',')
                         if o.strip()]
 
+# ── Production HTTPS hardening (opt-in) ──────────────────────────────────
+# Set DJANGO_SECURE_SSL=1 on an HTTPS host (e.g. PythonAnywhere). LAN/dev runs on
+# plain HTTP, so this stays OFF by default (else it would break local access).
+# PythonAnywhere terminates SSL at its proxy and forwards X-Forwarded-Proto, so
+# we trust that header for the redirect + secure-cookie flags.
+if os.environ.get('DJANGO_SECURE_SSL', '') == '1':
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    # HSTS is opt-in via seconds (0 = off). Be careful on a shared domain like
+    # *.pythonanywhere.com — read Django's HSTS docs before enabling.
+    SECURE_HSTS_SECONDS = int(os.environ.get('DJANGO_HSTS_SECONDS', '0'))
+    if SECURE_HSTS_SECONDS:
+        SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+        SECURE_HSTS_PRELOAD = True
+
 
 # Application definition
 
