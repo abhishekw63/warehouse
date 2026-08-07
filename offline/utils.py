@@ -1028,11 +1028,32 @@ class GTMassAutomation:
 
 import os as _os  # noqa: E402 — local alias for env-sourced email creds
 
+
+def _email_cred(key: str, default: str = '') -> str:
+    """Email cred from the environment first (.env on a host), else the gitignored
+    online_po_management/Calculation Data/email_config.json — NEVER hardcoded."""
+    v = _os.environ.get(key)
+    if v:
+        return v
+    try:
+        import json as _json
+        from pathlib import Path as _P
+        here = _P(__file__).resolve()
+        for base in [here, *here.parents]:
+            j = base / 'online_po_management' / 'Calculation Data' / 'email_config.json'
+            if j.exists():
+                return _json.loads(j.read_text(encoding='utf-8-sig')).get(key, default)
+    except Exception:  # noqa: BLE001
+        pass
+    return default
+
+
 EMAIL_CONFIG = {
-    # Credentials come from the environment (.env on a host) — never hardcoded /
-    # committed. Blank when unset → email simply doesn't send (soft-fail).
-    'EMAIL_SENDER': _os.environ.get('EMAIL_SENDER', ''),
-    'EMAIL_PASSWORD': _os.environ.get('EMAIL_PASSWORD', ''),
+    # Credentials from the environment (.env on a host) or the gitignored
+    # Calculation Data/email_config.json — never hardcoded / committed. Blank when
+    # unset → email simply doesn't send (soft-fail).
+    'EMAIL_SENDER': _email_cred('EMAIL_SENDER'),
+    'EMAIL_PASSWORD': _email_cred('EMAIL_PASSWORD'),
     'SMTP_SERVER': _os.environ.get('SMTP_SERVER', 'smtp.gmail.com'),
     'SMTP_PORT': int(_os.environ.get('SMTP_PORT', '587')),
     'DEFAULT_RECIPIENT': _os.environ.get('EMAIL_DEFAULT_RECIPIENT',
