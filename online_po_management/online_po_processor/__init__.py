@@ -134,21 +134,50 @@ __all__ = [
     "main",
 ]
 
-# --- public re-exports (kept thin; all real code lives in submodules) -------
-from online_po_processor.config.email_config import get_email_config
-from online_po_processor.config.marketplaces import (
-    DEFAULT_WAREHOUSE,
-    MARKETPLACE_CONFIGS,
-    MARKETPLACE_NAMES,
-    WAREHOUSE_CODES,
-    WAREHOUSE_DISPLAY_NAMES,
-)
-from online_po_processor.data.mapping_loader import MappingLoader
-from online_po_processor.data.master_loader import MasterLoader
-from online_po_processor.data.models import ProcessingResult, SORow
-from online_po_processor.emailer import EmailBuilder, EmailSender
-from online_po_processor.engine.marketplace_engine import MarketplaceEngine
-from online_po_processor.exporter.d365_exporter import D365Exporter
-from online_po_processor.exporter.so_exporter import SOExporter
-from online_po_processor.gui.app_window import OnlinePOApp
-from online_po_processor.app import main
+def __getattr__(name):
+    """Lazy public re-exports.
+
+    Render/Linux web imports need config/data/history modules without loading the
+    Tkinter desktop GUI. Import the heavier desktop pieces only when callers ask
+    for those package-level names directly.
+    """
+    if name == "get_email_config":
+        from online_po_processor.config.email_config import get_email_config
+        return get_email_config
+    if name in {
+        "DEFAULT_WAREHOUSE",
+        "MARKETPLACE_CONFIGS",
+        "MARKETPLACE_NAMES",
+        "WAREHOUSE_CODES",
+        "WAREHOUSE_DISPLAY_NAMES",
+    }:
+        from online_po_processor.config import marketplaces
+        return getattr(marketplaces, name)
+    if name == "MappingLoader":
+        from online_po_processor.data.mapping_loader import MappingLoader
+        return MappingLoader
+    if name == "MasterLoader":
+        from online_po_processor.data.master_loader import MasterLoader
+        return MasterLoader
+    if name in {"ProcessingResult", "SORow"}:
+        from online_po_processor.data import models
+        return getattr(models, name)
+    if name in {"EmailBuilder", "EmailSender"}:
+        from online_po_processor import emailer
+        return getattr(emailer, name)
+    if name == "MarketplaceEngine":
+        from online_po_processor.engine.marketplace_engine import MarketplaceEngine
+        return MarketplaceEngine
+    if name == "D365Exporter":
+        from online_po_processor.exporter.d365_exporter import D365Exporter
+        return D365Exporter
+    if name == "SOExporter":
+        from online_po_processor.exporter.so_exporter import SOExporter
+        return SOExporter
+    if name == "OnlinePOApp":
+        from online_po_processor.gui.app_window import OnlinePOApp
+        return OnlinePOApp
+    if name == "main":
+        from online_po_processor.app import main
+        return main
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

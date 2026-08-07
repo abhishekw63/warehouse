@@ -15,7 +15,15 @@ Two exporters, different destinations:
     Package" button on the GUI.
 """
 
-from online_po_processor.exporter.d365_exporter import D365Exporter
-from online_po_processor.exporter.so_exporter import SOExporter
-
 __all__ = ['SOExporter', 'D365Exporter']
+
+
+def __getattr__(name):
+    """Lazy exporter re-exports so sheet imports do not require Tkinter."""
+    if name == 'D365Exporter':
+        from online_po_processor.exporter.d365_exporter import D365Exporter
+        return D365Exporter
+    if name == 'SOExporter':
+        from online_po_processor.exporter.so_exporter import SOExporter
+        return SOExporter
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

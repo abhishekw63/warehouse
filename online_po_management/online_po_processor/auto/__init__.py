@@ -14,6 +14,12 @@ just without any dialogs or per-file clicking.
 Public entry point: :class:`auto_runner.AutoRunner`.
 """
 
-from online_po_processor.auto.auto_runner import AutoRunner, MarketplaceRun
-
 __all__ = ["AutoRunner", "MarketplaceRun"]
+
+
+def __getattr__(name):
+    """Lazy auto re-exports so history_db can load on headless web hosts."""
+    if name in {"AutoRunner", "MarketplaceRun"}:
+        from online_po_processor.auto.auto_runner import AutoRunner, MarketplaceRun
+        return {"AutoRunner": AutoRunner, "MarketplaceRun": MarketplaceRun}[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
