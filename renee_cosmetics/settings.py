@@ -62,6 +62,9 @@ if not DEBUG and SECRET_KEY.startswith('django-insecure-'):
 # (comma-separated). '*' is fine for a trusted internal network.
 ALLOWED_HOSTS = [h.strip() for h in
                  os.environ.get('DJANGO_ALLOWED_HOSTS', '*').split(',') if h.strip()]
+_render_host = os.environ.get('RENDER_EXTERNAL_HOSTNAME', '').strip()
+if _render_host and _render_host not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(_render_host)
 
 # CSRF: HTTPS hosts (e.g. PythonAnywhere) require the site origin WITH scheme for
 # POST forms to be accepted. Comma-separated, e.g.
@@ -69,6 +72,10 @@ ALLOWED_HOSTS = [h.strip() for h in
 CSRF_TRUSTED_ORIGINS = [o.strip() for o in
                         os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',')
                         if o.strip()]
+if _render_host:
+    _render_origin = f'https://{_render_host}'
+    if _render_origin not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(_render_origin)
 
 # ── Production HTTPS hardening (opt-in) ──────────────────────────────────
 # Set DJANGO_SECURE_SSL=1 on an HTTPS host (e.g. PythonAnywhere). LAN/dev runs on
