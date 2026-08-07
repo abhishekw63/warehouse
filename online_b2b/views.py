@@ -3255,6 +3255,19 @@ class SetupView(LoginRequiredMixin, UserPassesTestMixin, View):
         elif action == 'save_tidb':
             res = db_target.save_tidb(request.POST)
             _msg = "Saved the TiDB (server) profile."
+        elif action == 'test':
+            name = (request.POST.get('target') or '').strip().lower()
+            res = db_target.test(name)
+            if res.get('ok'):
+                oh = res.get('order_headers')
+                rows = (f" · order_headers: {oh:,} rows" if oh is not None
+                        else " · order_headers: not created yet — run the migration")
+                messages.success(
+                    request, f"✓ '{name}' connection OK — {res.get('version')} · "
+                    f"{res.get('tables')} table(s){rows}")
+            else:
+                messages.error(request, f"✗ '{name}' connection FAILED: {res.get('error')}")
+            return redirect('b2b_setup')
         else:                                   # switch
             target = (request.POST.get('target') or '').strip().lower()
             res = db_target.switch(target)

@@ -103,6 +103,48 @@ def save_tidb(fields) -> dict:
     return {'ok': True, **status()}
 
 
+def test(name: str) -> dict:
+    """Live-test a profile: connect (with TLS) + run a sample query, report the
+    server version, table count and order_headers rows. Never switches anything —
+    a safe pre-flight check. Short timeout so a bad host can't hang the request."""
+    prof = PROFILES / f'{name}.json'
+    if not prof.exists():
+        return {'ok': False, 'error': f'No DB profile "{name}" to test.'}
+    cfg = _read(prof)
+    try:
+        import pymysql
+        from online_po_processor.auto.history_db import mysql_ssl
+        conn = pymysql.connect(
+            host=cfg.get('host', '127.0.0.1'), port=int(cfg.get('port', 3306)),
+            user=cfg.get('user', 'root'), password=cfg.get('password', ''),
+            database=cfg.get('database', 'renee_orders'),
+            charset='utf8mb4', connect_timeout=8, read_timeout=8,
+            **mysql_ssl(cfg))
+    except Exception as e:  # noqa: BLE001
+        return {'ok': False, 'error': str(e), 'host': cfg.get('host'),
+                'database': cfg.get('database')}
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT VERSION()")
+        version = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM information_schema.tables "
+                    "WHERE table_schema = DATABASE()")
+        n_tables = cur.fetchone()[0]
+        oh = None
+        try:
+            cur.execute("SELECT COUNT(*) FROM order_headers")
+            oh = cur.fetchone()[0]
+        except Exception:  # noqa: BLE001 — table not there yet (fresh DB)
+            oh = None
+        return {'ok': True, 'version': version, 'tables': n_tables,
+                'order_headers': oh, 'host': cfg.get('host'),
+                'database': cfg.get('database')}
+    except Exception as e:  # noqa: BLE001
+        return {'ok': False, 'error': str(e)}
+    finally:
+        conn.close()
+
+
 def switch(name: str) -> dict:
     """Activate a profile by copying it onto the active db_config path."""
     prof = PROFILES / f'{name}.json'

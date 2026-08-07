@@ -67,6 +67,10 @@
         <button class="su-btn ghost" type="submit" {% if db.active == 'local' %}disabled{% endif %}>
           {% if db.active == 'local' %}In use{% else %}Switch to Local{% endif %}</button>
       </form>
+      <form method="post" action="{% url 'b2b_setup' %}" style="margin-top:8px">{% csrf_token %}
+        <input type="hidden" name="action" value="test"><input type="hidden" name="target" value="local">
+        <button class="su-btn" type="submit" style="background:#0ea5e9">Test connection</button>
+      </form>
       {% else %}
       <p class="su-missing">Save your <b>current</b> connection as the Local profile so you can always come back to it.</p>
       <form method="post" action="{% url 'b2b_setup' %}">{% csrf_token %}
@@ -87,6 +91,10 @@
         <input type="hidden" name="target" value="tidb">
         <button class="su-btn" type="submit" {% if db.active == 'tidb' %}disabled{% endif %}>
           {% if db.active == 'tidb' %}In use{% else %}Switch to TiDB{% endif %}</button>
+      </form>
+      <form method="post" action="{% url 'b2b_setup' %}" style="margin-top:8px">{% csrf_token %}
+        <input type="hidden" name="action" value="test"><input type="hidden" name="target" value="tidb">
+        <button class="su-btn" type="submit" style="background:#0ea5e9">Test connection</button>
       </form>
       {% endif %}
       <details {% if 'tidb' not in db.profiles %}open{% endif %} style="margin-top:12px">
