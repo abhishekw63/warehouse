@@ -3247,15 +3247,43 @@ class SetupView(LoginRequiredMixin, UserPassesTestMixin, View):
 
     def post(self, request):
         from .services import db_target
-        target = (request.POST.get('target') or '').strip().lower()
-        res = db_target.switch(target)
+        action = (request.POST.get('action') or '').strip()
+
+        if action == 'save_local':
+            res = db_target.save_current('local')
+            _msg = "Saved the current connection as the Local profile."
+        elif action == 'save_tidb':
+            res = db_target.save_tidb(request.POST)
+            _msg = "Saved the TiDB (server) profile."
+        else:                                   # switch
+            target = (request.POST.get('target') or '').strip().lower()
+            res = db_target.switch(target)
+            if res.get('ok'):
+                self._repoint_orm()             # live — no restart needed
+            _msg = (f"Switched to '{target}' "
+                    f"({res.get('host')}:{res.get('port')}/{res.get('database')})"
+                    + (" · TLS" if res.get('tls') else "")
+                    + " — in effect now.")
+
         if res.get('ok'):
-            messages.success(
-                request, f"Database switched to '{target}' "
-                f"({res.get('host')}:{res.get('port')}/{res.get('database')})"
-                + (" · TLS" if res.get('tls') else "")
-                + ". Takes effect immediately; restart the server if the Django "
-                "admin/ORM connection also needs it.")
+            messages.success(request, _msg)
         else:
-            messages.error(request, res.get('error', 'Switch failed.'))
+            messages.error(request, res.get('error', 'Action failed.'))
         return redirect('b2b_setup')
+
+    @staticmethod
+    def _repoint_orm():
+        """Re-point Django's live 'orders' ORM connection at the just-switched DB
+        so the change is immediate — no server restart. (Single-process/dev is
+        fully live; a multi-worker prod server may still want a reload for other
+        workers, but every business page uses the raw connection which re-reads
+        the config per request anyway.)"""
+        try:
+            from django.db import connections
+            from renee_cosmetics import settings as _st
+            newdb = _st._load_orders_db()
+            if newdb:
+                connections.databases['orders'] = newdb
+                connections['orders'].close()
+        except Exception:  # noqa: BLE001
+            pass

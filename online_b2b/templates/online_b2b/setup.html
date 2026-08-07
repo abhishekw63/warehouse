@@ -67,8 +67,13 @@
         <button class="su-btn ghost" type="submit" {% if db.active == 'local' %}disabled{% endif %}>
           {% if db.active == 'local' %}In use{% else %}Switch to Local{% endif %}</button>
       </form>
-      {% else %}<div class="su-missing">No <code>db_profiles/local.json</code> yet — run
-        <code>python db_switch.py save local</code> once.</div>{% endif %}
+      {% else %}
+      <p class="su-missing">Save your <b>current</b> connection as the Local profile so you can always come back to it.</p>
+      <form method="post" action="{% url 'b2b_setup' %}">{% csrf_token %}
+        <input type="hidden" name="action" value="save_local">
+        <button class="su-btn ghost" type="submit">Save current as Local</button>
+      </form>
+      {% endif %}
     </div>
 
     {# TiDB #}
@@ -83,15 +88,31 @@
         <button class="su-btn" type="submit" {% if db.active == 'tidb' %}disabled{% endif %}>
           {% if db.active == 'tidb' %}In use{% else %}Switch to TiDB{% endif %}</button>
       </form>
-      {% else %}<div class="su-missing">No <code>db_profiles/tidb.json</code> yet — copy
-        <code>db_profiles/tidb.json.example</code>, fill the TiDB creds.</div>{% endif %}
+      {% endif %}
+      <details {% if 'tidb' not in db.profiles %}open{% endif %} style="margin-top:12px">
+        <summary style="cursor:pointer;font-size:.82rem;font-weight:600;color:#4338ca">
+          {% if 'tidb' in db.profiles %}Edit TiDB connection{% else %}Configure TiDB connection{% endif %}</summary>
+        <form method="post" action="{% url 'b2b_setup' %}" style="margin-top:10px;display:grid;gap:7px">{% csrf_token %}
+          <input type="hidden" name="action" value="save_tidb">
+          <input name="host" placeholder="gateway01.<region>.prod.aws.tidbcloud.com" required
+                 style="padding:8px;border:1px solid #d7dbe3;border-radius:8px;font-size:.82rem">
+          <div style="display:flex;gap:7px">
+            <input name="user" placeholder="xxxxxx.root" required style="flex:1;padding:8px;border:1px solid #d7dbe3;border-radius:8px;font-size:.82rem">
+            <input name="port" placeholder="4000" value="4000" style="width:80px;padding:8px;border:1px solid #d7dbe3;border-radius:8px;font-size:.82rem">
+          </div>
+          <input name="password" type="password" placeholder="TiDB password" style="padding:8px;border:1px solid #d7dbe3;border-radius:8px;font-size:.82rem">
+          <input name="database" placeholder="renee_orders" value="renee_orders" style="padding:8px;border:1px solid #d7dbe3;border-radius:8px;font-size:.82rem">
+          <button class="su-btn" type="submit">Save TiDB profile</button>
+        </form>
+      </details>
     </div>
   </div>
 
   <div class="su-warn">
-    ⚠ Switching re-points <b>every</b> connection for the whole app (all users). Business pages pick it
-    up on the next request; the Django admin/ORM connection updates on the next <b>server restart</b>.
-    Active config file: <code>{{ db.active_path }}</code>.
+    Switching re-points <b>every</b> connection for the whole app (all users) and takes effect
+    <b>immediately</b> — the live connection is re-pointed, no restart needed. (On a multi-worker
+    production server, other workers refresh on their next request.) Active config file:
+    <code>{{ db.active_path }}</code>.
   </div>
 </div>
 {% endblock %}

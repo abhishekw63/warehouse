@@ -64,6 +64,45 @@ def status() -> dict:
     }
 
 
+def save_current(name: str) -> dict:
+    """Snapshot the CURRENT active connection as profile ``name`` (e.g. 'local')
+    — so you can always switch back to exactly what works now."""
+    from online_po_processor.auto.history_db import load_db_config
+    cfg = load_db_config()
+    if not cfg:
+        return {'ok': False, 'error': 'No active DB config to save.'}
+    try:
+        PROFILES.mkdir(exist_ok=True)
+        (PROFILES / f'{name}.json').write_text(
+            json.dumps(cfg, indent=2), encoding='utf-8')
+    except Exception as e:  # noqa: BLE001
+        return {'ok': False, 'error': f'Could not save: {e}'}
+    return {'ok': True, **status()}
+
+
+def save_tidb(fields) -> dict:
+    """Write the TiDB profile from the Setup form (host/port/user/password/db).
+    TLS is forced on (TiDB Serverless requires it)."""
+    host = (fields.get('host') or '').strip()
+    user = (fields.get('user') or '').strip()
+    if not host or not user:
+        return {'ok': False, 'error': 'TiDB host and user are required.'}
+    prof = {
+        'backend': 'mysql', 'host': host,
+        'port': int(fields.get('port') or 4000),
+        'user': user, 'password': fields.get('password') or '',
+        'database': (fields.get('database') or 'renee_orders').strip(),
+        'ssl': True,
+    }
+    try:
+        PROFILES.mkdir(exist_ok=True)
+        (PROFILES / 'tidb.json').write_text(
+            json.dumps(prof, indent=2), encoding='utf-8')
+    except Exception as e:  # noqa: BLE001
+        return {'ok': False, 'error': f'Could not save: {e}'}
+    return {'ok': True, **status()}
+
+
 def switch(name: str) -> dict:
     """Activate a profile by copying it onto the active db_config path."""
     prof = PROFILES / f'{name}.json'
