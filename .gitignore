@@ -38,6 +38,14 @@ Output_*/
 # Django web app media (uploaded POs + generated workbooks — runtime, not source)
 media/
 
+# Secrets / host config — NEVER commit. Templates (.env.example,
+# db_config.example.json) ARE committed so a colleague knows what to fill.
+.env
+.env.*
+!.env.example
+db_config.json
+*db_config.json
+
 # Python tooling caches
 .ruff_cache/
 .mypy_cache/

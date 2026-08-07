@@ -41,6 +41,7 @@ ported from there can use it verbatim.
 from __future__ import annotations
 import json
 import logging
+import os
 from typing import Any, Dict, List
 
 from online_po_processor.config.paths import get_bundled_data_folder
@@ -59,9 +60,13 @@ _EMAIL_CONFIG_FILENAME = "email_config.json"
 # involved in online-PO flow).
 
 _DEFAULT_EMAIL_CONFIG: Dict[str, Any] = {
-    # ── Sender credentials (Gmail App Password, not regular password) ──
-    'EMAIL_SENDER':   'abhishekwagh420@gmail.com',
-    'EMAIL_PASSWORD': 'bomn ktfx jhct xexy',
+    # ── Sender credentials (Gmail App Password) ──
+    # NEVER hardcoded. Sourced from the environment (.env on a host) or the
+    # gitignored Calculation Data/email_config.json (get_email_config overlays
+    # it over these defaults). Blank when unset → email soft-fails, never sends
+    # from a committed secret.
+    'EMAIL_SENDER':   os.environ.get('EMAIL_SENDER', ''),
+    'EMAIL_PASSWORD': os.environ.get('EMAIL_PASSWORD', ''),
 
     # ── SMTP server ────────────────────────────────────────────────────
     'SMTP_SERVER': 'smtp.gmail.com',

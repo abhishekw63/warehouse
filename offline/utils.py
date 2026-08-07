@@ -1026,12 +1026,17 @@ class GTMassAutomation:
 #  EMAIL CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════════════
 
+import os as _os  # noqa: E402 — local alias for env-sourced email creds
+
 EMAIL_CONFIG = {
-    'EMAIL_SENDER': 'abhishekwagh420@gmail.com',
-    'EMAIL_PASSWORD': 'bomn ktfx jhct xexy',
-    'SMTP_SERVER': 'smtp.gmail.com',
-    'SMTP_PORT': 587,
-    'DEFAULT_RECIPIENT': 'abhishek.wagh@reneecosmetics.in',
+    # Credentials come from the environment (.env on a host) — never hardcoded /
+    # committed. Blank when unset → email simply doesn't send (soft-fail).
+    'EMAIL_SENDER': _os.environ.get('EMAIL_SENDER', ''),
+    'EMAIL_PASSWORD': _os.environ.get('EMAIL_PASSWORD', ''),
+    'SMTP_SERVER': _os.environ.get('SMTP_SERVER', 'smtp.gmail.com'),
+    'SMTP_PORT': int(_os.environ.get('SMTP_PORT', '587')),
+    'DEFAULT_RECIPIENT': _os.environ.get('EMAIL_DEFAULT_RECIPIENT',
+                                         'abhishek.wagh@reneecosmetics.in'),
     'CC_RECIPIENTS': [
         'offlineb2b@reneecosmetics.in',
         'kirpalsinh.bihola@reneecosmetics.in',

@@ -1,0 +1,9 @@
+{
+  "_comment": "Copy to db_config.json (gitignored) and point ONLINE_PO_DB_CONFIG at its absolute path. These are the MySQL 'renee_orders' credentials the whole app reads. On PythonAnywhere: database is USERNAME$renee_orders, host is USERNAME.mysql.pythonanywhere-services.com.",
+  "backend": "mysql",
+  "database": "USERNAME$renee_orders",
+  "user": "USERNAME",
+  "password": "your-mysql-password",
+  "host": "USERNAME.mysql.pythonanywhere-services.com",
+  "port": 3306
+}

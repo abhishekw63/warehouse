@@ -25,6 +25,17 @@ ENGINE_ROOT = BASE_DIR / 'online_po_management'
 if ENGINE_ROOT.is_dir() and str(ENGINE_ROOT) not in sys.path:
     sys.path.insert(0, str(ENGINE_ROOT))
 
+# ── Config from a project-root .env (optional, host-friendly) ────────────
+# Lets DJANGO_* vars + ONLINE_PO_DB_CONFIG live in one .env file (handy on
+# PythonAnywhere / any host). No-op when python-dotenv or .env is absent — the
+# app still reads real OS environment variables exactly as before. See
+# .env.example + PYTHONANYWHERE.md. Never commit the real .env (it's gitignored).
+try:
+    from dotenv import load_dotenv
+    load_dotenv(BASE_DIR / '.env')
+except Exception:  # noqa: BLE001 — dotenv optional; OS env still works
+    pass
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
@@ -43,6 +54,13 @@ DEBUG = os.environ.get('DJANGO_DEBUG', '1') != '0'
 # (comma-separated). '*' is fine for a trusted internal network.
 ALLOWED_HOSTS = [h.strip() for h in
                  os.environ.get('DJANGO_ALLOWED_HOSTS', '*').split(',') if h.strip()]
+
+# CSRF: HTTPS hosts (e.g. PythonAnywhere) require the site origin WITH scheme for
+# POST forms to be accepted. Comma-separated, e.g.
+# "https://USERNAME.pythonanywhere.com". Empty on LAN/dev (plain HTTP).
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in
+                        os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',')
+                        if o.strip()]
 
 
 # Application definition

@@ -278,10 +278,32 @@ STATE_LIKE_VALUES = {
 #  EMAIL CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _email_cred(key: str, default: str = '') -> str:
+    """Email cred from the environment first (.env on a host), else the gitignored
+    online_po_management/Calculation Data/email_config.json — NEVER hardcoded."""
+    v = os.environ.get(key)
+    if v:
+        return v
+    try:
+        import json
+        here = os.path.abspath(__file__)
+        base = here
+        for _ in range(8):
+            base = os.path.dirname(base)
+            j = os.path.join(base, 'online_po_management',
+                             'Calculation Data', 'email_config.json')
+            if os.path.exists(j):
+                with open(j, encoding='utf-8-sig') as fh:
+                    return json.load(fh).get(key, default)
+    except Exception:
+        pass
+    return default
+
+
 EMAIL_CONFIG = {
-    # Gmail SMTP credentials (App Password, not regular password)
-    'EMAIL_SENDER': 'abhishekwagh420@gmail.com',
-    'EMAIL_PASSWORD': 'bomn ktfx jhct xexy',
+    # Gmail SMTP credentials (App Password) — env / gitignored JSON, not committed.
+    'EMAIL_SENDER': _email_cred('EMAIL_SENDER'),
+    'EMAIL_PASSWORD': _email_cred('EMAIL_PASSWORD'),
 
     # SMTP server
     'SMTP_SERVER': 'smtp.gmail.com',
@@ -303,7 +325,7 @@ EMAIL_CONFIG = {
         'pankaj.semwal@reneecosmetics.in',
         # 'ashish.dewan@reneecosmetics.in',
         
-        'yogesh.parekh@reneecosmetics.in'
+        # 'yogesh.parekh@reneecosmetics.in'
     ],
 }
 
