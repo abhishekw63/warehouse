@@ -729,9 +729,14 @@ def _normalize_hb_excel(src_path):
     import tempfile
 
     import pandas as pd
+    # MRP is OPTIONAL for H&B — it feeds only the informational supply-ratio note
+    # (mapping-only channel, NO price check). Some H&B exports omit the MRP column
+    # entirely, so match the sheet on the truly-required cols and treat MRP as
+    # absent-but-fine (a note is raised below so it's never silent).
     df, _sheet = _read_xlsb_by_headers(
-        src_path, ('Purchasing Document', 'MRP', 'Net price'))
+        src_path, ('Purchasing Document', 'Site', 'EAN', 'Order Quantity'))
     df = df[df['Purchasing Document'].notna()].copy()
+    has_mrp = 'MRP' in df.columns
 
     def _serial(v):
         # Excel serial int → DAY-FIRST 'dd-mm-YYYY' (the frozen engine parses the
@@ -742,7 +747,8 @@ def _normalize_hb_excel(src_path):
         except (TypeError, ValueError):
             return ''
 
-    mrp = pd.to_numeric(df['MRP'], errors='coerce')
+    mrp = (pd.to_numeric(df['MRP'], errors='coerce') if has_mrp
+           else pd.Series([float('nan')] * len(df), index=df.index))
     net = pd.to_numeric(df['Net price'], errors='coerce')     # post-GST unit cost
     ratio = (net / mrp * 100).where(mrp > 0)
     out = pd.DataFrame({
@@ -762,6 +768,11 @@ def _normalize_hb_excel(src_path):
     out.to_excel(path, index=False)
 
     notes: list[str] = []
+    if not has_mrp:
+        notes.append(
+            "H&B: no MRP column in this file — supply-ratio check skipped. MRP is "
+            "informational only (mapping-only, no price check); qty / ship-to / "
+            "value / posting are unaffected.")
     r = ratio.dropna()
     if len(r):
         notes.append(
