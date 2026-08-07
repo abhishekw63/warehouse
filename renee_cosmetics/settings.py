@@ -211,6 +211,18 @@ if _ORDERS_DB:
     DATABASES['orders'] = _ORDERS_DB
     DATABASE_ROUTERS = ['online_b2b.db_router.OrdersRouter']
 
+# ── Persist Django's OWN tables (auth / sessions / admin) on a real DB ──────
+# The default connection is SQLite (fine for LAN/dev). But a host with NO
+# persistent disk (e.g. Render free) wipes that file on every deploy/restart →
+# users + logins vanish. Set DJANGO_DEFAULT_DB=mysql on such a host to put the
+# 'default' connection on the SAME MySQL/TiDB as the business data, so auth +
+# sessions persist. The OrdersRouter still keeps the engine-owned business tables
+# migration-free; only Django's own tables get created there. Unset (LAN/dev) →
+# 'default' stays SQLite, unchanged.
+if _ORDERS_DB and os.environ.get('DJANGO_DEFAULT_DB', '').lower() in (
+        'mysql', 'tidb', 'orders'):
+    DATABASES['default'] = dict(_ORDERS_DB)
+
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators

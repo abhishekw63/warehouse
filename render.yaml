@@ -19,6 +19,10 @@ services:
         value: "https://renee-b2b.onrender.com"
       - key: DJANGO_SECURE_SSL
         value: "1"
+      # Put Django's auth/sessions in TiDB too (Render's disk is ephemeral, so
+      # sqlite would wipe logins on every deploy/restart).
+      - key: DJANGO_DEFAULT_DB
+        value: "mysql"
       # ── TiDB (business DB) — set these as secrets in the Render dashboard ──
       - key: DB_HOST
         sync: false

@@ -35,7 +35,10 @@ Manual web service:
   `DJANGO_ALLOWED_HOSTS=<your>.onrender.com`,
   `DJANGO_CSRF_TRUSTED_ORIGINS=https://<your>.onrender.com`, `DJANGO_SECURE_SSL=1`,
   `DB_HOST`, `DB_NAME=renee_orders`, `DB_USER`, `DB_PASSWORD`, `DB_PORT=4000`, `DB_SSL=1`,
-  `EMAIL_SENDER`, `EMAIL_PASSWORD`.
+  `DJANGO_DEFAULT_DB=mysql`, `EMAIL_SENDER`, `EMAIL_PASSWORD`.
+- `DJANGO_DEFAULT_DB=mysql` is important on Render: its disk is ephemeral, so
+  without it Django's auth/sessions (sqlite) would be wiped on every deploy/restart
+  and everyone would have to log in again. This puts them in TiDB instead.
 - First deploy runs `migrate` (creates Django's auth/session tables in TiDB).
   Then create your login via the Render **Shell**: `python manage.py createsuperuser`.
 
