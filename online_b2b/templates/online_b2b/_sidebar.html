@@ -67,12 +67,17 @@
 
   <div class="side-foot">
     {% if user.is_staff %}
-    <a href="{% url 'b2b_setup' %}" class="sn sn-dim{% if '/setup' in request.path %} on{% endif %}" title="Setup · switch database (local ↔ server)">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><span class="side-label">Setup</span></a>
-    <a href="{% url 'dev_dashboard' %}" class="sn sn-dim{% if '/dev/' in request.path %} on{% endif %}" title="Dev · Health">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><span class="side-label">Dev · Health</span></a>
-    <a href="{% url 'b2b_ui_lab' %}" class="sn sn-dim{% if '/ui-lab' in request.path %} on{% endif %}" title="UI Lab (htmx · Alpine)">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><span class="side-label">UI Lab</span></a>
+    {# Admin group — collapsible; Setup (DB) is the first of more to come. #}
+    <button type="button" class="sn sn-dim side-group" id="adminGroup" aria-controls="adminSub" title="Admin">
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><span class="side-label">Admin</span><span class="side-caret side-label">▸</span></button>
+    <div class="side-subnav{% if '/setup' in request.path or '/dev/' in request.path or '/ui-lab' in request.path %} open{% endif %}" id="adminSub">
+      <a href="{% url 'b2b_setup' %}" class="sn sn-dim{% if '/setup' in request.path %} on{% endif %}" title="Setup · switch database (local ↔ server)">
+        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><span class="side-label">Setup · DB</span></a>
+      <a href="{% url 'dev_dashboard' %}" class="sn sn-dim{% if '/dev/' in request.path %} on{% endif %}" title="Dev · Health">
+        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><span class="side-label">Dev · Health</span></a>
+      <a href="{% url 'b2b_ui_lab' %}" class="sn sn-dim{% if '/ui-lab' in request.path %} on{% endif %}" title="UI Lab (htmx · Alpine)">
+        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><span class="side-label">UI Lab</span></a>
+    </div>
     {% endif %}
     <a href="{% url 'departments' %}" class="sn sn-dim" title="Departments">
       <span class="sn-ic">←</span><span class="side-label">Departments</span></a>
@@ -88,5 +93,20 @@
     var c = document.body.classList.toggle('b2b-collapsed');
     localStorage.setItem(KEY, c ? '1' : '0');
   });
+
+  // Admin group — click to expand/collapse (remembers state; auto-open when a
+  // child page is active, handled server-side via the .open class).
+  var ag = document.getElementById('adminGroup'), asub = document.getElementById('adminSub');
+  if (ag && asub) {
+    var AKEY = 'b2b_admin_open';
+    var initOpen = asub.classList.contains('open') || localStorage.getItem(AKEY) === '1';
+    asub.classList.toggle('open', initOpen);
+    ag.setAttribute('aria-expanded', initOpen ? 'true' : 'false');
+    ag.addEventListener('click', function () {
+      var open = asub.classList.toggle('open');
+      ag.setAttribute('aria-expanded', open ? 'true' : 'false');
+      localStorage.setItem(AKEY, open ? '1' : '0');
+    });
+  }
 })();
 </script>
