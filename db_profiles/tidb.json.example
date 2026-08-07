@@ -1,0 +1,10 @@
+{
+  "_comment": "TiDB Cloud Serverless. Get these from the TiDB console 'Connect' dialog. Port is 4000. ssl:true enables TLS (required) using the system CA store — works on Windows, Linux and Render. If TLS verification fails on your box, set ssl_ca to a CA bundle path instead (Linux: /etc/ssl/certs/ca-certificates.crt, or download isrgrootx1.pem and point at it).",
+  "backend": "mysql",
+  "host": "gateway01.<region>.prod.aws.tidbcloud.com",
+  "port": 4000,
+  "user": "xxxxxxxxxxxxxxx.root",
+  "password": "your-tidb-password",
+  "database": "renee_orders",
+  "ssl": true
+}

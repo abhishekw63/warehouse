@@ -45,6 +45,9 @@ media/
 !.env.example
 db_config.json
 *db_config.json
+# DB switch profiles hold creds — templates (*.json.example) stay committed.
+db_profiles/*.json
+!db_profiles/*.json.example
 
 # Python tooling caches
 .ruff_cache/

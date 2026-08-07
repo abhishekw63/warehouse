@@ -67,16 +67,53 @@ def _db_config_path() -> Path:
 
 
 def load_db_config() -> Optional[dict]:
+    """Single source of DB config for the whole app (engine + web + Django ORM).
+
+    Order: (1) the db_config.json file (ONLINE_PO_DB_CONFIG / LOCALAPPDATA), then
+    (2) individual env vars — so a host that injects creds as env vars (Render,
+    etc.) needs NO file. Same code runs locally (file) and on the server (env).
+    """
     p = _db_config_path()
-    if not p.exists():
-        return None
-    try:
-        # utf-8-sig tolerates a UTF-8 BOM (Windows editors / PowerShell
-        # Set-Content add one), which plain json.load would reject.
-        with open(p, 'r', encoding='utf-8-sig') as f:
-            return json.load(f)
-    except Exception:        # noqa: BLE001 — bad/locked config ⇒ fall back to SQLite
-        return None
+    if p.exists():
+        try:
+            # utf-8-sig tolerates a UTF-8 BOM (Windows editors / PowerShell
+            # Set-Content add one), which plain json.load would reject.
+            with open(p, 'r', encoding='utf-8-sig') as f:
+                cfg = json.load(f)
+            if cfg:
+                return cfg
+        except Exception:    # noqa: BLE001 — bad/locked file ⇒ try env, else SQLite
+            pass
+    # Env-var fallback (host-injected creds, no file) — e.g. Render + TiDB.
+    if os.environ.get('DB_NAME') or os.environ.get('DB_HOST'):
+        return {
+            'backend':  'mysql',
+            'host':     os.environ.get('DB_HOST', '127.0.0.1'),
+            'port':     int(os.environ.get('DB_PORT', '3306')),
+            'user':     os.environ.get('DB_USER', 'root'),
+            'password': os.environ.get('DB_PASSWORD', ''),
+            'database': os.environ.get('DB_NAME', 'renee_orders'),
+            # TiDB Serverless requires TLS: point DB_SSL_CA at a CA bundle
+            # (Linux: /etc/ssl/certs/ca-certificates.crt) or set DB_SSL=1.
+            'ssl_ca':   os.environ.get('DB_SSL_CA', ''),
+            'ssl':      os.environ.get('DB_SSL', '') in ('1', 'true', 'True'),
+        }
+    return None
+
+
+def mysql_ssl(cfg: dict) -> dict:
+    """PyMySQL ``ssl`` connect-kwargs for a MySQL/TiDB config. TiDB Serverless
+    REQUIRES TLS on port 4000: set ``ssl_ca`` (path to a CA bundle) or ``ssl``:
+    true in the config. Plain local MySQL (no keys) → {} (no TLS). Shared by the
+    engine store, the web raw reader, and the Django ORM connection."""
+    if not cfg:
+        return {}
+    ca = cfg.get('ssl_ca') or ''
+    if ca:
+        return {'ssl': {'ca': ca}}
+    if cfg.get('ssl') is True or str(cfg.get('ssl', '')).lower() in ('1', 'true', 'yes'):
+        return {'ssl': {}}          # TLS using the system CA store
+    return {}
 
 
 def _to_date(val):
@@ -540,6 +577,7 @@ class MySqlHistoryStore(HistoryStore):
             database=cfg.get('database', 'renee_orders'),
             charset='utf8mb4',
             autocommit=False,
+            **mysql_ssl(cfg),               # TiDB / any TLS host
         )
         self._init_schema()
 

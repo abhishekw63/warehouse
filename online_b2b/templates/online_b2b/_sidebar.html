@@ -67,6 +67,8 @@
 
   <div class="side-foot">
     {% if user.is_staff %}
+    <a href="{% url 'b2b_setup' %}" class="sn sn-dim{% if '/setup' in request.path %} on{% endif %}" title="Setup · switch database (local ↔ server)">
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><span class="side-label">Setup</span></a>
     <a href="{% url 'dev_dashboard' %}" class="sn sn-dim{% if '/dev/' in request.path %} on{% endif %}" title="Dev · Health">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><span class="side-label">Dev · Health</span></a>
     <a href="{% url 'b2b_ui_lab' %}" class="sn sn-dim{% if '/ui-lab' in request.path %} on{% endif %}" title="UI Lab (htmx · Alpine)">

@@ -42,6 +42,7 @@ def _conn():
     kind, target = _backend()
     if kind == 'mysql':
         import pymysql
+        from online_po_processor.auto.history_db import mysql_ssl
         c = pymysql.connect(
             host=target.get('host', '127.0.0.1'),
             port=int(target.get('port', 3306)),
@@ -49,6 +50,7 @@ def _conn():
             password=target.get('password', ''),
             database=target.get('database', 'renee_orders'),
             charset='utf8mb4', autocommit=True,
+            **mysql_ssl(target),            # TiDB / any TLS host
         )
         dialect = {'ph': '%s', 'orders': 'order_headers', 'kind': 'mysql'}
         try:

@@ -16,7 +16,7 @@ from pathlib import Path
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.utils.decorators import method_decorator
@@ -3228,3 +3228,34 @@ def exception_update(request, row_id):
 def exception_delete(request, row_id):
     from .services import overrides_store as ov
     return JsonResponse(ov.delete_manual(row_id))
+
+
+# ── Setup — switch the active database target (staff only) ────────────────────
+# Toggle the whole app between the LOCAL MySQL (current working) and the TiDB
+# server. Switching swaps the active db_config.json (db_target.switch); every
+# business connection re-reads it per call, so it takes effect on the next
+# request. Local stays the default — one click back any time.
+class SetupView(LoginRequiredMixin, UserPassesTestMixin, View):
+    template_name = 'online_b2b/setup.html'
+
+    def test_func(self):
+        return self.request.user.is_staff
+
+    def get(self, request):
+        from .services import db_target
+        return render(request, self.template_name, {'db': db_target.status()})
+
+    def post(self, request):
+        from .services import db_target
+        target = (request.POST.get('target') or '').strip().lower()
+        res = db_target.switch(target)
+        if res.get('ok'):
+            messages.success(
+                request, f"Database switched to '{target}' "
+                f"({res.get('host')}:{res.get('port')}/{res.get('database')})"
+                + (" · TLS" if res.get('tls') else "")
+                + ". Takes effect immediately; restart the server if the Django "
+                "admin/ORM connection also needs it.")
+        else:
+            messages.error(request, res.get('error', 'Switch failed.'))
+        return redirect('b2b_setup')

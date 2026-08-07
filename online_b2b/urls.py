@@ -147,4 +147,6 @@ urlpatterns = [
     path('run/<int:run_id>/download/', views.download, name='b2b_download'),
     path('run/<int:run_id>/d365/', views.download_d365, name='b2b_download_d365'),
     path('run/<int:run_id>/delete/', views.run_delete, name='b2b_run_delete'),
+    # Setup — switch the active DB target (local ↔ TiDB server). Staff only.
+    path('setup/', views.SetupView.as_view(), name='b2b_setup'),
 ]

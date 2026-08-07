@@ -1,0 +1,39 @@
+# Render Blueprint — one-click deploy of the RENEE B2B web app.
+# Business data lives in TiDB Cloud Serverless (set DB_* as secrets below).
+# See HOSTING-CLOUD.md for the full walkthrough.
+services:
+  - type: web
+    name: renee-b2b
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput"
+    startCommand: "gunicorn renee_cosmetics.wsgi --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
+    envVars:
+      - key: DJANGO_DEBUG
+        value: "0"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true            # Render generates a strong key
+      - key: DJANGO_ALLOWED_HOSTS
+        value: "renee-b2b.onrender.com" # ← change to your actual Render URL
+      - key: DJANGO_CSRF_TRUSTED_ORIGINS
+        value: "https://renee-b2b.onrender.com"
+      - key: DJANGO_SECURE_SSL
+        value: "1"
+      # ── TiDB (business DB) — set these as secrets in the Render dashboard ──
+      - key: DB_HOST
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_PORT
+        value: "4000"
+      - key: DB_SSL
+        value: "1"
+      # ── Email (Gmail SMTP) — set as secrets ──
+      - key: EMAIL_SENDER
+        sync: false
+      - key: EMAIL_PASSWORD
+        sync: false

@@ -170,21 +170,21 @@ DATABASES = {
 # engine-owned tables, so the schema + data are never reset. Admin edits/deletes
 # only the specific rows an admin acts on.
 def _load_orders_db():
-    import json
-    import os as _os
-    from pathlib import Path as _P
-    env = _os.environ.get('ONLINE_PO_DB_CONFIG')
-    p = (_P(env) if env else
-         _P(_os.environ.get('LOCALAPPDATA') or _os.path.expanduser('~'))
-         / 'OnlinePOProcessor' / 'db_config.json')
-    if not p.exists():
-        return None
+    # ONE config source for the whole app (engine + web + this ORM connection):
+    # history_db.load_db_config() = db_config.json file OR host env vars (DB_*).
+    # mysql_ssl() adds TLS for TiDB. So the SAME code runs locally (file) and on
+    # the server (env vars), against local MySQL or TiDB.
     try:
-        cfg = json.loads(p.read_text(encoding='utf-8-sig'))
-    except Exception:
+        from online_po_processor.auto.history_db import load_db_config, mysql_ssl
+        cfg = load_db_config()
+    except Exception:  # noqa: BLE001 — engine not importable ⇒ sqlite only
         return None
-    if str(cfg.get('backend', '')).lower() != 'mysql':
+    if not cfg or str(cfg.get('backend', '')).lower() != 'mysql':
         return None
+    opts = {'charset': 'utf8mb4'}
+    ssl = mysql_ssl(cfg)
+    if ssl.get('ssl') is not None:
+        opts['ssl'] = ssl['ssl']
     return {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': cfg.get('database', 'renee_orders'),
@@ -192,7 +192,7 @@ def _load_orders_db():
         'PASSWORD': cfg.get('password', ''),
         'HOST': cfg.get('host', '127.0.0.1'),
         'PORT': str(cfg.get('port', 3306)),
-        'OPTIONS': {'charset': 'utf8mb4'},
+        'OPTIONS': opts,
         'TIME_ZONE': 'UTC',
     }
 
