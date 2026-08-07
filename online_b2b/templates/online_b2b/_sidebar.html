@@ -72,8 +72,7 @@
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='hash' %}</span><span class="side-label">Triangular</span></a>
 
     <div class="side-sep">Process</div>
-    {# Process PO = a toggle: click to expand/collapse Online (this app) + Offline
-       (GT Mass · EKA · MT — SS/H&G/…/Reliance Trends live under MT — · GT Select). #}
+    {% comment %}Process PO = a toggle: click to expand/collapse Online (this app) + Offline (GT Mass · EKA · MT — SS/H&G/…/Reliance Trends live under MT — · GT Select).{% endcomment %}
     <button type="button" class="sn sn-toggle" id="procToggle" aria-expanded="false" aria-controls="procChildren" title="Process PO">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='download' %}</span><span class="side-label">Process PO</span><span class="sn-caret side-label">▸</span></button>
     <div class="sn-children" id="procChildren">
