@@ -1,20 +1,4 @@
 {% load static %}
-<style>
-  /* Process PO — click to expand/collapse Online + Offline (smooth) */
-  .b2b-side .sn-toggle{width:100%;background:none;border:0;text-align:left;
-    cursor:pointer;font:inherit}
-  .b2b-side .sn-caret{margin-left:auto;transition:transform .2s ease;
-    font-size:.7rem;opacity:.6}
-  .b2b-side .sn-toggle[aria-expanded="true"] .sn-caret{transform:rotate(90deg)}
-  .b2b-side .sn-children{overflow:hidden;max-height:0;opacity:.4;
-    transition:max-height .28s ease, opacity .28s ease}
-  .b2b-side .sn-children.open{max-height:140px;opacity:1}
-  .b2b-side .sn-sub .side-label{padding-left:14px}
-  body.b2b-collapsed .b2b-side .sn-sub .side-label{padding-left:0}
-  body.b2b-collapsed .b2b-side .sn-caret{display:none}
-  /* collapsed rail: always show children (no room for the toggle affordance) */
-  body.b2b-collapsed .b2b-side .sn-children{max-height:140px;opacity:1}
-</style>
 <aside class="b2b-side">
   <div class="side-top">
     <a href="{% url 'b2b_dashboard' %}" class="side-brand">⬡ <span class="side-label">Order Mgmt</span></a>
@@ -72,15 +56,11 @@
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='hash' %}</span><span class="side-label">Triangular</span></a>
 
     <div class="side-sep">Process</div>
-    {% comment %}Process PO = a toggle: click to expand/collapse Online (this app) + Offline (GT Mass · EKA · MT — SS/H&G/…/Reliance Trends live under MT — · GT Select).{% endcomment %}
-    <button type="button" class="sn sn-toggle" id="procToggle" aria-expanded="false" aria-controls="procChildren" title="Process PO">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='download' %}</span><span class="side-label">Process PO</span><span class="sn-caret side-label">▸</span></button>
-    <div class="sn-children" id="procChildren">
-      <a href="{% url 'b2b_upload' %}" class="sn sn-sub{% if '/upload' in request.path or '/review' in request.path %} on{% endif %}" title="Online — Process PO">
-        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='store' %}</span><span class="side-label">Online</span></a>
-      <a href="{% url 'offline_dashboard' %}" class="sn sn-sub{% if '/offline/' in request.path %} on{% endif %}" title="Offline — GT Mass · EKA · MT (SS · H&amp;G · … · Reliance Trends) · GT Select">
-        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><span class="side-label">Offline</span></a>
-    </div>
+    {# Process PO split into two flat links: Online (this app) + Offline (GT Mass · EKA · MT — Reliance Trends lives under MT — · GT Select, on the Offline dashboard). #}
+    <a href="{% url 'b2b_upload' %}" class="sn{% if '/upload' in request.path or '/review' in request.path %} on{% endif %}" title="Online — Process PO">
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='store' %}</span><span class="side-label">Online</span></a>
+    <a href="{% url 'offline_dashboard' %}" class="sn{% if '/offline/' in request.path %} on{% endif %}" title="Offline — GT Mass · EKA · MT · GT Select">
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><span class="side-label">Offline</span></a>
     <a href="{% url 'b2b_drafts' %}" class="sn{% if '/drafts' in request.path %} on{% endif %}" title="Review Later">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='clock' %}</span><span class="side-label">Review Later</span></a>
   </nav>
@@ -106,25 +86,5 @@
     var c = document.body.classList.toggle('b2b-collapsed');
     localStorage.setItem(KEY, c ? '1' : '0');
   });
-
-  // Process PO — click to expand/collapse Online + Offline (smooth). Remembers
-  // the last state; auto-opens when a child page (Online / Offline) is active.
-  var pt = document.getElementById('procToggle'),
-      pc = document.getElementById('procChildren');
-  if (pt && pc) {
-    var PKEY = 'b2b_proc_open';
-    var p = location.pathname;
-    var active = /\/upload|\/review|\/offline\//.test(p);
-    var open = active || localStorage.getItem(PKEY) === '1';
-    function setProc(o) {
-      pc.classList.toggle('open', o);
-      pt.setAttribute('aria-expanded', o ? 'true' : 'false');
-    }
-    setProc(open);
-    pt.addEventListener('click', function () {
-      open = !open; setProc(open);
-      localStorage.setItem(PKEY, open ? '1' : '0');
-    });
-  }
 })();
 </script>
