@@ -107,6 +107,9 @@
 {% block footer %}{% endblock %}
 
 <script src="{% static 'core/js/script.js' %}"></script>
+{# Global UI enhance layer (dark mode, ONE toast system, palette, tables) — loaded on every page so all toasts share one system; kept out of the body_end block so child pages can't drop it. #}
+<link rel="stylesheet" href="{% static 'online_b2b/enhance.css' %}">
+<script defer src="{% static 'online_b2b/enhance.js' %}"></script>
 {% block body_end %}{% endblock %}
 </body>
 </html>

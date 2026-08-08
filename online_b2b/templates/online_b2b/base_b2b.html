@@ -9,9 +9,8 @@ extend THIS instead of core/base.html and keep filling title/breadcrumb/content.
 
 {% block body_end %}
 {% load static %}
-{% comment %}Global UI enhancement skeleton (dark mode · toasts · ⌘K palette · table upgrades) — one layer for every B2B page; see static/online_b2b/enhance.*{% endcomment %}
-<link rel="stylesheet" href="{% static 'online_b2b/enhance.css' %}">
-<script defer src="{% static 'online_b2b/enhance.js' %}"></script>
+{% comment %}Enhance layer (dark mode · toasts · ⌘K palette · tables) now loads
+globally in core/base.html — one toast system on every page, no duplication.{% endcomment %}
 
 {# Reusable processing overlay — opt in per element with data-loading="message". #}
 <div id="b2b-load" aria-hidden="true">

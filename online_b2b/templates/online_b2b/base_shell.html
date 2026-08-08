@@ -1,13 +1,9 @@
 {% extends 'core/base.html' %}
 {% comment %}
 Lean chrome for top-level / cross-department pages (the Department chooser, GRN):
-the RENÉE header + the global enhance layer (dark mode · toasts), but NO
+the RENÉE header + the global enhance layer (dark mode · one toast system), but NO
 Order-Management sidebar. The OM sidebar belongs only INSIDE Order Management, so
 those pages extend base_b2b.html; everything else extends this shell.
-No `b2b-app` body class → content is full-width (no left rail gutter).
+The enhance layer now loads globally in core/base.html, so this shell just = the
+neutral header + full-width content (no b2b-app rail).
 {% endcomment %}
-{% block body_end %}
-{% load static %}
-<link rel="stylesheet" href="{% static 'online_b2b/enhance.css' %}">
-<script defer src="{% static 'online_b2b/enhance.js' %}"></script>
-{% endblock %}
