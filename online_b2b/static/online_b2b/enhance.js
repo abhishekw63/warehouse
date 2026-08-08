@@ -103,6 +103,26 @@
     });
   }
 
+  /* ---- ONE toast system, app-wide -------------------------------------- *
+   * Route every legacy notifier into B2B.toast so no page can render a
+   * different popup: (a) native alert() calls scattered through templates,
+   * (b) the old core/js/script.js createToast(). confirm()/prompt() stay
+   * native — they're blocking and callers depend on the return value.      */
+  B2B._nativeAlert = w.alert && w.alert.bind ? w.alert.bind(w) : null;
+  function inferType(msg) {
+    var s = String(msg || "").toLowerCase();
+    if (/error|failed|could ?n'?t|cannot|can'?t|network|invalid|required|⚠|denied|no .*found/.test(s)) return "error";
+    if (/success|saved|sent|added|done|ready|complete/.test(s)) return "success";
+    return "info";
+  }
+  // Any alert(...) anywhere becomes the single toast (no native browser box).
+  w.alert = function (msg) { B2B.toast(String(msg == null ? "" : msg), { type: inferType(msg) }); };
+  // Legacy programmatic toast helper → same single system (type names remapped).
+  var _legacyMap = { success: "success", error: "error", warning: "warn", warn: "warn", info: "info", danger: "error" };
+  w.createToast = function (message, type) {
+    return B2B.toast(String(message == null ? "" : message), { type: _legacyMap[type] || inferType(message) });
+  };
+
   /* ===================================================================== *
    * 3. COMMAND PALETTE (⌘K / Ctrl-K) — jump anywhere; index from sidebar  *
    * ===================================================================== */
