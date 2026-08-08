@@ -16,8 +16,14 @@
  * ======================================================================= */
 (function (w, d) {
   "use strict";
-  if (w.B2B) return;                         // idempotent — never double-init
-  var B2B = (w.B2B = {});
+  // Idempotent against double-loading THIS script, but must NOT bail just because
+  // a partial window.B2B already exists — base_b2b.html's body_end inline script
+  // (load overlay + bgDownload) runs during parse and creates window.B2B BEFORE
+  // this deferred script executes. So EXTEND that object (keeping .load/.bgDownload)
+  // rather than replacing it, and guard on our own init marker.
+  if (w.B2B && w.B2B._enhanced) return;
+  var B2B = (w.B2B = w.B2B || {});
+  B2B._enhanced = true;
   var $ = function (s, r) { return (r || d).querySelector(s); };
   var el = function (tag, cls, html) {
     var n = d.createElement(tag);
