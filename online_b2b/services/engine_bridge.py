@@ -1911,17 +1911,39 @@ class DmartProcessor(Processor):
     """
 
     def _run(self, skip_dedup=False):
-        # Confirm every DMart PO's FC before the engine runs. Block (never
-        # default) on any unresolved ship-to. [[never-skip-silently]]
+        # Confirm every DMart PO's FC before the engine runs. Split the failures
+        # so a ship-to *nitpick* never reads like a parse failure:
+        #   • UNROUTABLE (no ship_to resolved at all — PDF unreadable, FC not in
+        #     the mapping / likely a non-DMart or wrong-format file, or an
+        #     ambiguous multi-FC match): HARD-block the import, because the frozen
+        #     parser would otherwise silently default the ship-to to 'Bhiwandi'.
+        #     [[never-skip-silently]] [[dmart-shipto-fix]]
+        #   • ROUTABLE-BUT-UNVERIFIED (a single FC WAS identified but a soft
+        #     cross-check failed, e.g. the PDF pincode differs from the mapping):
+        #     the ship_to code is known and correct, so DON'T kill the run —
+        #     inject the FC and surface the issue as a review WARNING. The operator
+        #     opens the page, verifies / fixes the mapping pincode, then locks.
         from . import dmart_shipto
         res = dmart_shipto.resolve_paths(self.po_paths)
-        bad = {po: r for po, r in res.items() if not r.get('ok')}
-        if bad:
-            details = "\n• ".join(f"PO {po}: {r['reason']}" for po, r in bad.items())
+        unroutable = {po: r for po, r in res.items()
+                      if not r.get('ok') and not r.get('ship_to')}
+        if unroutable:
+            details = "\n• ".join(f"PO {po}: {r['reason']}"
+                                  for po, r in unroutable.items())
             return {'ok': False, 'error':
-                    "DMart ship-to could not be confirmed — nothing was recorded "
-                    "(no PO was routed to a default warehouse):\n• " + details}
-        loc_by_po = {po: r['fc'] for po, r in res.items()}
+                    "DMart ship-to could not be identified — nothing was recorded "
+                    "(no PO was routed to a default warehouse). This usually means "
+                    "the FC isn't in the Ship-To Mapping yet, or a non-DMart / "
+                    "wrong-format file was picked:\n• " + details}
+        # Soft issues (FC known, only a cross-check failed) → proceed + warn on
+        # the review page so the operator can confirm rather than being blocked.
+        for po, r in res.items():
+            if not r.get('ok') and r.get('ship_to'):
+                self.warnings.append(
+                    f"DMart PO {po}: {r['reason']} Routed to '{r['fc']}' "
+                    f"({r['ship_to']}) — verify the ship-to; if the mapping "
+                    f"pincode is wrong, fix it on the Ship-To Mapping page.")
+        loc_by_po = {po: r['fc'] for po, r in res.items() if r.get('fc')}
         if not loc_by_po:
             return super()._run(skip_dedup=skip_dedup)   # no PDFs → base flow
 
