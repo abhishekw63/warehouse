@@ -24,6 +24,12 @@
   if (w.B2B && w.B2B._enhanced) return;
   var B2B = (w.B2B = w.B2B || {});
   B2B._enhanced = true;
+  // Mark the document as enhanced so CSS can hide the raw Django `.toast`
+  // (server-rendered in #toast-container) — enhance is the SINGLE visible toast
+  // system and adoptDjangoMessages() re-renders those messages as enh-toasts.
+  // The raw ones stay in the DOM only as a no-JS fallback (shown when this class
+  // is absent), so a message is never lost, but two toasts never show at once.
+  try { d.documentElement.classList.add("enh-on"); } catch (e) {}
   var $ = function (s, r) { return (r || d).querySelector(s); };
   var el = function (tag, cls, html) {
     var n = d.createElement(tag);
@@ -80,21 +86,32 @@
     var type = opts.type || "info";
     if (!toastHost) { toastHost = el("div", "enh-toasts"); d.body.appendChild(toastHost); }
     var t = el("div", "enh-toast " + type);
-    var icon = el("span", "enh-ticon", ICON[type] || ICON.info);
+    var badge = el("span", "enh-tbadge");            // circular icon badge
+    badge.appendChild(el("span", "enh-ticon", ICON[type] || ICON.info));
     var tx = el("div", "enh-tx");
     if (opts.title) tx.appendChild(el("p", "enh-tt", opts.title));
     tx.appendChild(el("div", "enh-tc", msg));
     var close = el("button", "enh-tclose", "&times;");
-    t.appendChild(icon); t.appendChild(tx); t.appendChild(close);
+    t.appendChild(badge); t.appendChild(tx); t.appendChild(close);
+    // Countdown progress bar — depletes over the toast's lifetime (skipped for
+    // sticky toasts, timeout === 0). Duration is set inline so it always matches.
+    var life = (opts.timeout === 0) ? 0 : (opts.timeout || 4000);
+    if (life) {
+      var bar = el("div", "enh-tbar");
+      bar.style.animationDuration = life + "ms";
+      t.appendChild(bar);
+    }
     toastHost.appendChild(t);
     var timer, dismiss = function () {
       if (t.classList.contains("enh-out")) return;
       t.classList.add("enh-out");
-      w.setTimeout(function () { t.remove(); }, 260);
+      w.setTimeout(function () { t.remove(); }, 460);   // matches the .45s enh-out fade
       w.clearTimeout(timer);
     };
     close.addEventListener("click", dismiss);
-    if (opts.timeout !== 0) timer = w.setTimeout(dismiss, opts.timeout || 4200);
+    // Auto-dismiss after ~4s (smooth fade). Pass opts.timeout to override,
+    // or opts.timeout === 0 to keep a toast until dismissed.
+    if (opts.timeout !== 0) timer = w.setTimeout(dismiss, opts.timeout || 4000);
     return { dismiss: dismiss };
   };
   // Upgrade Django's server-rendered messages into toasts (one code path).
@@ -104,7 +121,7 @@
       var cls = (node.className.match(/toast-(\w+)/) || [])[1];
       var span = node.querySelector("span");
       B2B.toast((span ? span.textContent : node.textContent).trim(),
-                { type: map[cls] || "info", timeout: 5500 });
+                { type: map[cls] || "info", timeout: 4000 });
       node.remove();
     });
   }
@@ -118,13 +135,15 @@
   function inferType(msg) {
     var s = String(msg || "").toLowerCase();
     if (/error|failed|could ?n'?t|cannot|can'?t|network|invalid|required|⚠|denied|no .*found/.test(s)) return "error";
-    if (/success|saved|sent|added|done|ready|complete/.test(s)) return "success";
+    if (/success|saved|sent|added|done|ready|complete/.test(s)) return "ok";
     return "info";
   }
   // Any alert(...) anywhere becomes the single toast (no native browser box).
   w.alert = function (msg) { B2B.toast(String(msg == null ? "" : msg), { type: inferType(msg) }); };
-  // Legacy programmatic toast helper → same single system (type names remapped).
-  var _legacyMap = { success: "success", error: "error", warning: "warn", warn: "warn", info: "info", danger: "error" };
+  // Legacy programmatic toast helper → same single system. Canonical toast types
+  // are ok/warn/error/info (matches ICON + CSS), so map success→ok, warning→warn.
+  var _legacyMap = { success: "ok", ok: "ok", error: "error", danger: "error",
+                     warning: "warn", warn: "warn", info: "info" };
   w.createToast = function (message, type) {
     return B2B.toast(String(message == null ? "" : message), { type: _legacyMap[type] || inferType(message) });
   };
@@ -296,10 +315,76 @@
     host.insertBefore(cmd, host.firstChild);
   }
 
+  /* ===================================================================== *
+   * 4b. COUNT-UP — dashboard KPI numbers tick 0 → value on load           *
+   * ===================================================================== */
+  // Animates the leading number in each target while preserving its prefix/suffix
+  // and formatting (₹, Cr, M, %, commas). Reduced-motion → shows the final value
+  // instantly. Idempotent per element. Exposed so an AJAX refresh can re-run it.
+  B2B.countUp = function (root) {
+    var reduce = w.matchMedia && w.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var els = (root || d).querySelectorAll(".hub-kpis .hk .n, [data-countup]");
+    [].forEach.call(els, function (node) {
+      if (node._counted) return;
+      node._counted = true;
+      var raw = node.textContent.trim();
+      var m = raw.match(/-?[\d,]*\.?\d+/);          // first number in the string
+      if (!m) return;
+      var target = parseFloat(m[0].replace(/,/g, ""));
+      if (isNaN(target) || reduce) return;          // leave text as-is
+      var prefix = raw.slice(0, m.index);
+      var suffix = raw.slice(m.index + m[0].length);
+      var decimals = (m[0].split(".")[1] || "").length;
+      var hasComma = m[0].indexOf(",") !== -1;
+      function fmt(v) {
+        var s = decimals ? v.toFixed(decimals) : String(Math.round(v));
+        if (hasComma) { try { s = Number(s).toLocaleString("en-IN"); } catch (e) {} }
+        return prefix + s + suffix;
+      }
+      var dur = 900, t0 = null;
+      function step(ts) {
+        if (t0 === null) t0 = ts;
+        var p = Math.min(1, (ts - t0) / dur);
+        var eased = 1 - Math.pow(1 - p, 3);         // easeOutCubic
+        node.textContent = fmt(target * eased);
+        if (p < 1) w.requestAnimationFrame(step);
+        else node.textContent = raw;                // restore exact original
+      }
+      node.textContent = fmt(0);
+      w.requestAnimationFrame(step);
+    });
+  };
+
   function init() {
     mountControls();
     adoptDjangoMessages();
     B2B.enhanceTables(d);
+    B2B.countUp(d);
+
+    // Step 4: fade the newly-shown tab panel on switch. Delegated + runs AFTER
+    // each page's own tab handler (setTimeout 0), so it works everywhere without
+    // touching per-page JS. Re-triggers the animation by reflowing the class.
+    d.addEventListener("click", function (e) {
+      var tab = e.target.closest && e.target.closest(".tabs .tab[data-tab]");
+      if (!tab) return;
+      var name = tab.getAttribute("data-tab");
+      w.setTimeout(function () {
+        var pane = d.querySelector('.tabpane[data-pane="' + name + '"]');
+        if (pane) { pane.classList.remove("enh-panefade"); void pane.offsetWidth; pane.classList.add("enh-panefade"); }
+      }, 0);
+    });
+
+    // Step 8: when the Hub KPI strip is replaced by the AJAX range switch, the
+    // fresh numbers re-run the count-up (a satisfying "pulse" on the new values).
+    var kpi = d.querySelector(".hub-kpis");
+    if (kpi && kpi.parentNode && w.MutationObserver) {
+      var deb;
+      var obs = new MutationObserver(function () {
+        w.clearTimeout(deb);
+        deb = w.setTimeout(function () { B2B.countUp(d); }, 40);
+      });
+      obs.observe(kpi.parentNode, { childList: true, subtree: true });
+    }
   }
 
   // Global shortcut: ⌘K / Ctrl-K opens the palette anywhere.

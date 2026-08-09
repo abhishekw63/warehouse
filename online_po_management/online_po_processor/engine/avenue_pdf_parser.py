@@ -348,8 +348,18 @@ def _try_parse_primary(line: str, expected_sr_min: int = 1) -> Optional[Dict[str
     cess_p_idx  = uom_idx + 6
     igst_p_idx  = uom_idx + 7
     ugst_p_idx  = uom_idx + 8
-    landed_idx  = uom_idx + 9
-    total_idx   = uom_idx + 10
+    # Landed + Total are ALWAYS the last two tokens on the row, so anchor them
+    # from the END rather than by fixed offset from UOM. Some DMart POs carry a
+    # value in the DP column (e.g. '14.00') instead of a dash; pdfplumber keeps
+    # that as an extra token, which shifts every fixed offset one to the right —
+    # silently reading Landed as '-' (→ 0.0) and Total as the per-unit Landed
+    # price (e.g. 174.15 instead of 20,898.00). End-anchoring is immune to that
+    # shift and matches the "LAST 2 tokens are Landed + Total" note above. The
+    # GST%% columns in the middle stay best-effort (they aren't used for pricing;
+    # GST comes from the item master), but Qty/MRP/Basic (front) and Landed/Total
+    # (end) — the fields that drive value — are now both anchored to stable ends.
+    landed_idx  = len(tokens) - 2
+    total_idx   = len(tokens) - 1
 
     try:
         return {

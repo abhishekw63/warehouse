@@ -1506,11 +1506,17 @@ def upload(request):
             # (Flipkart 77, Blink 70) — same as the Tkinter app's pre-fill.
             margin = (form.cleaned_data.get('margin_pct')
                       or engine_bridge.default_margin_pct(marketplace))
+            import datetime as _dt
             meta = {
                 'marketplace': marketplace,
                 'warehouse': form.cleaned_data['warehouse'],
                 'margin_pct': margin,
                 'files': saved,
+                # When the PO was UPLOADED (not confirmed). The run belongs to this
+                # day everywhere (Daily Tasks / analytics / tracker), even if it's
+                # parked as a Review-later draft and confirmed days later. run_ts is
+                # back-dated to this at lock time. [[daily-bucket-by-upload]]
+                'uploaded_at': _dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
             }
             (up_dir / 'meta.json').write_text(json.dumps(meta), encoding='utf-8')
             # AJAX: do the import HERE (engine preview, cached) so the upload
@@ -1852,15 +1858,18 @@ def confirm(request, token):
         messages.error(request, msg)
         return redirect('b2b_review', token=token)
 
-    # A finalized "Review-later" draft belongs to the day it was PARKED, not
-    # today — back-date the whole recorded run (run_ts + created_at on headers &
-    # lines) to draft_at so Daily Tasks / analytics credit the park day. Normal
-    # runs pass as_of=None → stamped now. Bad/absent draft_at → falls back to now.
+    # A run belongs to the day it was UPLOADED, not the day it was confirmed —
+    # so back-date the whole recorded run (run_ts + created_at on headers & lines)
+    # to the upload timestamp. Upload today + confirm today → today; upload today,
+    # park as a Review-later draft, confirm two days later → still credited to the
+    # UPLOAD day (not today). Prefer uploaded_at (true upload); fall back to
+    # draft_at (older runs, pre-uploaded_at) then now. [[daily-bucket-by-upload]]
     as_of = None
-    if meta.get('draft') and meta.get('draft_at'):
-        import datetime as _dt
+    import datetime as _dt
+    _stamp = meta.get('uploaded_at') or (meta.get('draft_at') if meta.get('draft') else None)
+    if _stamp:
         try:
-            as_of = _dt.datetime.strptime(meta['draft_at'][:19], '%Y-%m-%d %H:%M:%S')
+            as_of = _dt.datetime.strptime(str(_stamp)[:19], '%Y-%m-%d %H:%M:%S')
         except (ValueError, TypeError):
             as_of = None
 
@@ -3268,6 +3277,22 @@ class SetupView(LoginRequiredMixin, UserPassesTestMixin, View):
                         f"{res.get('tables')} table(s){rows}")
             else:
                 _msg = f"'{name}' connection FAILED: {res.get('error')}"
+        elif action == 'backup_local':
+            # One-click: pull ALL data from TiDB back into the local MySQL profile
+            # (local is overwritten to mirror the server). Does NOT switch targets.
+            res = db_target.backup_tidb_to_local()
+            if res.get('ok'):
+                _msg = (f"Backup complete — local MySQL now mirrors TiDB: "
+                        f"{res.get('n_tables')} table(s), "
+                        f"{res.get('total_rows', 0):,} rows, "
+                        f"{res.get('views')} view(s) in {res.get('elapsed')}s. "
+                        f"(Source {res.get('source')} → {res.get('target')})")
+            else:
+                extra = ''
+                if res.get('copied_tables') is not None:
+                    extra = (f" (stopped after {res.get('copied_tables')} table(s), "
+                             f"{res.get('rows_so_far', 0):,} rows)")
+                _msg = f"Backup failed: {res.get('error')}{extra}"
         else:                                   # switch
             name = (request.POST.get('target') or '').strip().lower()
             res = db_target.switch(name)

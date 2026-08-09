@@ -115,6 +115,25 @@
     </div>
   </div>
 
+  {# ── Backup: pull everything from TiDB back into local MySQL ── #}
+  <div id="card-backup" class="su-card" style="margin-top:16px;border-color:#0ea5e9">
+    <span class="su-badge" style="background:#0ea5e9;color:#fff">Backup</span>
+    <h3>⬇ Backup TiDB → local MySQL</h3>
+    <p>One click pulls <b>all data from TiDB</b> and mirrors it into your <b>local MySQL</b>
+       (the DB you were using earlier) — full schema, every row, and views.</p>
+    <p style="color:#b45309"><b>Heads up:</b> this <b>overwrites local</b> to match TiDB
+       (TiDB itself is only read, never changed) and does <b>not</b> switch which DB the app
+       uses. The full dataset can take up to a minute.</p>
+    <p id="su-lastbackup" style="font-weight:700;{% if db.last_backup %}color:#16a34a{% else %}color:#94a3b8{% endif %}">
+      {% if db.last_backup %}✓ Last backup: {{ db.last_backup.at }} · {{ db.last_backup.rows }} rows, {{ db.last_backup.tables }} tables, {{ db.last_backup.views }} views ({{ db.last_backup.elapsed }}s){% else %}No backup run yet.{% endif %}
+    </p>
+    <p style="font-size:.78rem;color:var(--b2b-muted,#6b7280)">Auto-runs once a day (9 PM); if the laptop was off it backs up the next time you open it.</p>
+    <form method="post" action="{% url 'b2b_setup' %}">{% csrf_token %}
+      <input type="hidden" name="action" value="backup_local">
+      <button class="su-btn" type="submit" style="background:#0ea5e9">⬇ Backup TiDB → local now</button>
+    </form>
+  </div>
+
   <div class="su-warn">
     Switching re-points <b>every</b> connection for the whole app (all users) and takes effect
     <b>immediately</b> — the live connection is re-pointed, no restart needed. (On a multi-worker
@@ -173,6 +192,14 @@
       if (badge) { badge.textContent = isact ? '● Active' : p[1]; badge.classList.toggle('active', isact); }
       if (btn) { btn.disabled = isact; btn.textContent = isact ? 'In use' : ('Switch to ' + (n === 'local' ? 'Local' : 'TiDB')); }
     });
+    // Last-backup line on the backup card.
+    var lb = el('su-lastbackup');
+    if (lb && st.last_backup) {
+      var b = st.last_backup;
+      lb.style.color = '#16a34a';
+      lb.textContent = '✓ Last backup: ' + b.at + ' · ' + (b.rows || 0) + ' rows, '
+        + (b.tables || 0) + ' tables, ' + (b.views || 0) + ' views (' + (b.elapsed || 0) + 's)';
+    }
   }
 
   document.addEventListener('submit', function (ev) {
@@ -181,8 +208,16 @@
     ev.preventDefault();
     var actEl = form.querySelector('[name=action]');
     var action = actEl ? actEl.value : 'switch';
+    // Destructive backup → confirm before running (default already prevented above,
+    // so returning here cancels cleanly with no request).
+    if (action === 'backup_local' && !window.confirm(
+        'Backup TiDB → local MySQL?\n\nThis OVERWRITES your local MySQL with ALL TiDB '
+        + 'data (schema + rows + views). TiDB is not changed. Continue?')) return;
     var btn = form.querySelector('button[type=submit]');
-    if (btn) { btn.disabled = true; btn._label = btn.textContent; btn.textContent = 'Working…'; }
+    if (btn) {
+      btn.disabled = true; btn._label = btn.textContent;
+      btn.textContent = (action === 'backup_local') ? 'Backing up… (up to a minute)' : 'Working…';
+    }
     function restore() { if (btn) { btn.disabled = false; btn.textContent = btn._label; } }
 
     // Always POST to the trailing-slash URL — Django APPEND_SLASH does NOT

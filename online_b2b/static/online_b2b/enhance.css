@@ -82,27 +82,54 @@
 .enh-ctl .enh-kbd{background:transparent;border-color:var(--border-2,#eee);}
 
 /* ---- 3. Toasts ----------------------------------------------------------- */
-.enh-toasts{position:fixed;right:20px;top:20px;z-index:10050;display:flex;
-  flex-direction:column;gap:10px;max-width:min(380px,calc(100vw - 40px));pointer-events:none;}
-.enh-toast{pointer-events:auto;display:flex;align-items:flex-start;gap:11px;
-  background:var(--surface,#fff);border:1px solid var(--border,#e5e7eb);
-  border-left:4px solid var(--accent,#4f46e5);border-radius:12px;padding:13px 15px;
-  box-shadow:var(--shadow-lg,0 10px 30px rgba(16,24,40,.14));
-  font-size:13.5px;color:var(--text,#1d2433);line-height:1.4;
-  animation:enhToastIn .32s cubic-bezier(.2,.9,.25,1);will-change:transform,opacity;}
-.enh-toast.enh-out{animation:enhToastOut .26s ease forwards;}
-.enh-toast .enh-tx{flex:1;min-width:0;}
-.enh-toast .enh-tt{font-weight:800;margin:0 0 1px;}
+.enh-toasts{position:fixed;bottom:24px;right:24px;z-index:10050;
+  display:flex;flex-direction:column;align-items:flex-end;gap:12px;
+  max-width:min(460px,calc(100vw - 32px));pointer-events:none;}
+/* Single toast system: when enhance is active it adopts Django's server-rendered
+   messages into enh-toasts, so hide the raw #toast-container .toast to guarantee
+   only ONE toast ever shows. Without JS (no .enh-on) the raw toast still renders,
+   so messages are never lost. */
+html.enh-on #toast-container .toast{display:none !important;}
+.enh-toast{--tc:var(--accent,#4f46e5);pointer-events:auto;position:relative;overflow:hidden;
+  display:flex;align-items:flex-start;gap:13px;min-width:320px;max-width:460px;
+  padding:15px 17px 17px;border-radius:16px;
+  background:color-mix(in srgb,var(--surface,#fff) 82%,transparent);
+  -webkit-backdrop-filter:blur(16px) saturate(1.7);backdrop-filter:blur(16px) saturate(1.7);
+  border:1px solid color-mix(in srgb,var(--tc) 22%,var(--border,#e5e7eb));
+  box-shadow:0 22px 55px -14px color-mix(in srgb,var(--tc) 30%,rgba(16,24,40,.30)),
+    0 6px 16px rgba(16,24,40,.12),inset 0 1px 0 rgba(255,255,255,.4);
+  font-size:14px;color:var(--text,#1d2433);line-height:1.45;
+  animation:enhToastIn .42s cubic-bezier(.2,.9,.25,1);will-change:transform,opacity;}
+/* gradient accent rail down the left edge */
+.enh-toast::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;
+  background:linear-gradient(180deg,var(--tc),color-mix(in srgb,var(--tc) 45%,transparent));}
+.enh-toast.enh-out{animation:enhToastOut .45s cubic-bezier(.4,0,.2,1) forwards;}
+/* circular icon badge, tinted by type */
+.enh-toast .enh-tbadge{flex:none;width:36px;height:36px;border-radius:50%;display:grid;place-items:center;
+  background:color-mix(in srgb,var(--tc) 15%,transparent);color:var(--tc);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--tc) 26%,transparent) inset;}
+.enh-toast .enh-ticon{display:grid;place-items:center;width:20px;height:20px;}
+.enh-toast .enh-ticon svg{width:20px;height:20px;}
+.enh-toast .enh-tx{flex:1;min-width:0;padding-top:2px;}
+.enh-toast .enh-tt{font-weight:800;margin:0 0 2px;letter-spacing:.005em;}
 .enh-toast .enh-tc{color:var(--text-2,#5b6478);}
 .enh-toast .enh-tclose{background:none;border:0;cursor:pointer;color:var(--muted,#9aa1b2);
-  font-size:17px;line-height:1;padding:0 2px;flex:none;}
-.enh-toast .enh-ticon{flex:none;width:20px;height:20px;}
-.enh-toast.ok   {border-left-color:var(--green,#0f9d6b);} .enh-toast.ok .enh-ticon{color:var(--green,#0f9d6b);}
-.enh-toast.warn {border-left-color:var(--amber,#d97706);} .enh-toast.warn .enh-ticon{color:var(--amber,#d97706);}
-.enh-toast.error{border-left-color:var(--red,#dc2626);}  .enh-toast.error .enh-ticon{color:var(--red,#dc2626);}
-.enh-toast.info .enh-ticon{color:var(--accent,#4f46e5);}
-@keyframes enhToastIn{from{opacity:0;transform:translateX(24px) scale(.96);}to{opacity:1;transform:none;}}
-@keyframes enhToastOut{to{opacity:0;transform:translateX(24px) scale(.96);}}
+  font-size:18px;line-height:1;padding:0 2px;flex:none;transition:color .15s,transform .15s;}
+.enh-toast .enh-tclose:hover{color:var(--text,#1d2433);transform:scale(1.15);}
+/* countdown progress bar — duration set inline from the toast's timeout */
+.enh-toast .enh-tbar{position:absolute;left:0;bottom:0;height:3px;width:100%;
+  background:linear-gradient(90deg,var(--tc),color-mix(in srgb,var(--tc) 40%,transparent));
+  animation-name:enhToastBar;animation-timing-function:linear;animation-fill-mode:forwards;opacity:.9;}
+/* per-type accent color drives rail, badge, shadow glow and bar */
+.enh-toast.ok{--tc:var(--green,#0f9d6b);}
+.enh-toast.warn{--tc:var(--amber,#d97706);}
+.enh-toast.error{--tc:var(--red,#dc2626);}
+.enh-toast.info{--tc:var(--accent,#4f46e5);}
+@keyframes enhToastIn{from{opacity:0;transform:translateX(44px) translateY(8px) scale(.95);}
+  to{opacity:1;transform:none;}}
+@keyframes enhToastOut{to{opacity:0;transform:translateX(44px) scale(.95);}}
+@keyframes enhToastBar{from{width:100%;}to{width:0;}}
+@media (prefers-reduced-motion:reduce){.enh-toast{animation-duration:.01s;}.enh-toast .enh-tbar{display:none;}}
 
 /* ---- 4. Command palette (⌘K) -------------------------------------------- */
 .enh-cmdk{position:fixed;inset:0;z-index:10060;display:none;
@@ -318,3 +345,61 @@ table.skux tbody{animation:skuxrows .45s ease both;} @keyframes skuxrows{from{op
 .em-status.ok{color:#15803d;} .em-status.err{color:#b91c1c;}
 .em-spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.5);border-top-color:#fff;border-radius:50%;display:inline-block;vertical-align:-2px;margin-right:6px;animation:emspin .7s linear infinite;}
 @keyframes emspin{to{transform:rotate(360deg);}}
+
+/* ===================================================================== *
+ * MICRO-INTERACTIONS (global) — Step 2: card hover-lift                  *
+ * Dashboard KPI tiles, the Online/Offline group cards, and Setup cards  *
+ * gently rise + deepen their shadow on hover. Reduced-motion → no lift.  *
+ * ===================================================================== */
+.hub-kpis .hk, .hub-groups .group-card, .su-card{
+  transition:transform .18s cubic-bezier(.2,.8,.3,1), box-shadow .2s ease, border-color .18s ease;}
+.hub-kpis .hk:hover, .hub-groups .group-card:hover{
+  transform:translateY(-3px); box-shadow:0 14px 30px -14px rgba(16,24,40,.28);}
+@media (prefers-reduced-motion: reduce){
+  .hub-kpis .hk:hover, .hub-groups .group-card:hover{transform:none;}}
+
+/* Step 3: button press/hover feedback — primary actions feel tactile.     */
+.btn-primary, .su-btn, a.btn-primary{transition:transform .12s ease, box-shadow .2s ease, filter .15s ease;}
+.btn-primary:hover, .su-btn:hover{transform:translateY(-1px); box-shadow:0 8px 20px -10px rgba(79,70,229,.55);}
+.btn-primary:active, .su-btn:active{transform:translateY(1px) scale(.985);}
+@media (prefers-reduced-motion: reduce){
+  .btn-primary, .su-btn{transition:none;}
+  .btn-primary:hover, .su-btn:hover, .btn-primary:active, .su-btn:active{transform:none;}}
+
+/* ===================================================================== *
+ * Step 4: TAB SWITCH — active pill press + panel fade-in on switch       *
+ * ===================================================================== */
+.tabs .tab{transition:transform .12s ease, background .18s ease, color .18s ease, border-color .18s ease;}
+.tabs .tab:active{transform:scale(.96);}
+.enh-panefade{animation:enhPaneIn .3s cubic-bezier(.2,.8,.3,1);}
+@keyframes enhPaneIn{from{opacity:0;transform:translateY(7px);}to{opacity:1;transform:none;}}
+
+/* ===================================================================== *
+ * Step 5: TABLE ROWS — first 12 rows fade/stagger in (rest instant →     *
+ * performant even on 1000+ row tables). Applies to enhanced data tables. *
+ * ===================================================================== */
+.enh-table tbody tr:nth-child(-n+12){animation:enhRowIn .34s ease both;}
+.enh-table tbody tr:nth-child(1){animation-delay:.02s}
+.enh-table tbody tr:nth-child(2){animation-delay:.05s}
+.enh-table tbody tr:nth-child(3){animation-delay:.08s}
+.enh-table tbody tr:nth-child(4){animation-delay:.11s}
+.enh-table tbody tr:nth-child(5){animation-delay:.14s}
+.enh-table tbody tr:nth-child(6){animation-delay:.17s}
+.enh-table tbody tr:nth-child(7){animation-delay:.20s}
+.enh-table tbody tr:nth-child(8){animation-delay:.23s}
+.enh-table tbody tr:nth-child(9){animation-delay:.26s}
+.enh-table tbody tr:nth-child(10){animation-delay:.29s}
+.enh-table tbody tr:nth-child(11){animation-delay:.32s}
+.enh-table tbody tr:nth-child(12){animation-delay:.35s}
+@keyframes enhRowIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+
+/* ===================================================================== *
+ * Step 7: SIDEBAR NAV — hover slide + active-item indicator bar          *
+ * ===================================================================== */
+.side-nav .sn{transition:transform .16s ease, background .16s ease, color .16s ease, box-shadow .16s ease;}
+.side-nav .sn:hover{transform:translateX(3px);}
+.side-nav .sn.on{box-shadow:inset 3px 0 0 var(--accent,#4f46e5);}
+
+@media (prefers-reduced-motion: reduce){
+  .enh-panefade, .enh-table tbody tr{animation:none;}
+  .tabs .tab:active, .side-nav .sn:hover{transform:none;}}

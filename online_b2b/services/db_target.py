@@ -21,6 +21,16 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
 PROFILES = _ROOT / 'db_profiles'
+_LAST_BACKUP = _ROOT / 'logs' / 'tidb_last_backup.json'   # last successful TiDB->local backup
+
+
+def last_backup() -> dict | None:
+    """Details of the last successful TiDB -> local backup ({at, tables, rows,
+    views, elapsed, source, target}), or None if none has run yet."""
+    try:
+        return json.loads(_LAST_BACKUP.read_text(encoding='utf-8'))
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _active_path() -> Path:
@@ -61,6 +71,7 @@ def status() -> dict:
         'active': _match_profile(cfg),
         'active_path': str(_active_path()),
         'profiles': profiles(),
+        'last_backup': last_backup(),
     }
 
 
@@ -143,6 +154,120 @@ def test(name: str) -> dict:
         return {'ok': False, 'error': str(e)}
     finally:
         conn.close()
+
+
+def backup_tidb_to_local() -> dict:
+    """ONE-CLICK BACKUP: copy ALL data from TiDB (source) into the local MySQL
+    profile (destination) so local becomes an exact mirror of the server. Per base
+    table: SHOW CREATE TABLE on TiDB -> DROP+CREATE on local -> batch-copy every
+    row; then recreate views. **Destructive on LOCAL only** (local is overwritten
+    to match TiDB); TiDB is read-only here. Reverse of ``db_push_to_tidb.py``.
+    Returns a per-table summary or {ok:False,error}. Does NOT change the active
+    target — after a backup the app keeps pointing wherever it already was."""
+    import re
+    import time
+    src_p, dst_p = PROFILES / 'tidb.json', PROFILES / 'local.json'
+    if not src_p.exists():
+        return {'ok': False, 'error': 'No db_profiles/tidb.json (the source).'}
+    if not dst_p.exists():
+        return {'ok': False, 'error': 'No db_profiles/local.json (the backup target). '
+                'Save your local MySQL as the "local" profile first.'}
+    src, dst = _read(src_p), _read(dst_p)
+    try:
+        import pymysql
+        from online_po_processor.auto.history_db import mysql_ssl
+    except Exception as e:  # noqa: BLE001
+        return {'ok': False, 'error': f'pymysql unavailable: {e}'}
+
+    def _c(cfg, autocommit):
+        return pymysql.connect(
+            host=cfg.get('host', '127.0.0.1'), port=int(cfg.get('port', 3306)),
+            user=cfg.get('user', 'root'), password=cfg.get('password', ''),
+            database=cfg.get('database', 'renee_orders'),
+            charset='utf8mb4', autocommit=autocommit,
+            connect_timeout=15, read_timeout=900, write_timeout=900,
+            **mysql_ssl(cfg))
+
+    BATCH = 1000
+    t0 = time.time()
+    try:
+        sconn = _c(src, True)                     # TiDB source (TLS via mysql_ssl)
+    except Exception as e:  # noqa: BLE001
+        return {'ok': False, 'error': f'Cannot connect to TiDB (source): {e}'}
+    try:
+        dconn = _c(dst, False)                    # local MySQL destination
+    except Exception as e:  # noqa: BLE001
+        sconn.close()
+        return {'ok': False, 'error': f'Cannot connect to local MySQL (target): {e}'}
+
+    out = {'ok': True, 'tables': [], 'total_rows': 0, 'views': 0,
+           'source': f"{src.get('host')}:{src.get('port')}/{src.get('database')}",
+           'target': f"{dst.get('host')}:{dst.get('port')}/{dst.get('database')}"}
+    try:
+        scur, dcur = sconn.cursor(), dconn.cursor()
+        scur.execute("SELECT table_name, table_type FROM information_schema.tables "
+                     "WHERE table_schema = DATABASE() ORDER BY table_name")
+        base, views = [], []
+        for name, ttype in scur.fetchall():
+            (views if str(ttype).upper() == 'VIEW' else base).append(name)
+        dcur.execute('SET FOREIGN_KEY_CHECKS=0')
+        for t in base:
+            scur.execute(f"SHOW CREATE TABLE `{t}`")
+            ddl = scur.fetchone()[1]
+            dcur.execute(f"DROP TABLE IF EXISTS `{t}`")
+            dcur.execute(ddl)
+            scur.execute(f"SELECT * FROM `{t}`")
+            cols = [d[0] for d in scur.description]
+            collist = ', '.join(f'`{c}`' for c in cols)
+            ph = ', '.join(['%s'] * len(cols))
+            ins = f"INSERT INTO `{t}` ({collist}) VALUES ({ph})"
+            n = 0
+            while True:
+                rows = scur.fetchmany(BATCH)
+                if not rows:
+                    break
+                dcur.executemany(ins, rows)
+                n += len(rows)
+            dconn.commit()
+            out['tables'].append({'table': t, 'rows': n})
+            out['total_rows'] += n
+        for v in views:
+            scur.execute(f"SHOW CREATE VIEW `{v}`")
+            vddl = scur.fetchone()[1]
+            vddl = re.sub(r'DEFINER=`[^`]*`@`[^`]*`\s*', '', vddl)
+            vddl = re.sub(r'SQL SECURITY DEFINER', 'SQL SECURITY INVOKER', vddl)
+            dcur.execute(f"DROP VIEW IF EXISTS `{v}`")
+            dcur.execute(vddl)
+            out['views'] += 1
+        dcur.execute('SET FOREIGN_KEY_CHECKS=1')
+        dconn.commit()
+    except Exception as e:  # noqa: BLE001
+        try:
+            dconn.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        return {'ok': False, 'error': f'{type(e).__name__}: {e}',
+                'copied_tables': len(out['tables']), 'rows_so_far': out['total_rows']}
+    finally:
+        for c in (dconn, sconn):
+            try:
+                c.close()
+            except Exception:  # noqa: BLE001
+                pass
+    out['n_tables'] = len(out['tables'])
+    out['elapsed'] = round(time.time() - t0, 1)
+    # Record this successful backup so the Setup card can show "last backup at ...".
+    try:
+        _LAST_BACKUP.parent.mkdir(parents=True, exist_ok=True)
+        _LAST_BACKUP.write_text(json.dumps({
+            'at': time.strftime('%Y-%m-%d %H:%M:%S'),
+            'tables': out['n_tables'], 'rows': out['total_rows'],
+            'views': out['views'], 'elapsed': out['elapsed'],
+            'source': out['source'], 'target': out['target'],
+        }), encoding='utf-8')
+    except Exception:  # noqa: BLE001 — never fail the backup over the marker
+        pass
+    return out
 
 
 def switch(name: str) -> dict:
