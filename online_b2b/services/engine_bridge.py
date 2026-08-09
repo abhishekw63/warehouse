@@ -727,11 +727,25 @@ class Processor:
         return None
 
     # ── D365 package from the operator's locked decisions ───────────────
+    def _vendor_cp(self, so):
+        """The line's vendor CP ('Their CP') for the run's compare basis — the
+        value that **Include (their CP)** must stamp into Unit Price. Mirrors
+        lines_store: fob_price on a cost basis, else ref_fob_price."""
+        basis = getattr(self.result, 'compare_basis', None) or 'landing'
+        v = so.fob_price if basis == 'cost' else so.ref_fob_price
+        try:
+            return round(float(v), 2) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
     def _apply_decisions(self, actions):
-        """Copy of ``self.result`` with operator decisions applied: EXCLUDE rows
-        dropped, OVERRIDE rows repriced via the engine's own ``forced_unit_price``
-        (which the D365 package reads as Unit Price). Originals are NOT mutated;
-        the engine is untouched. ``actions`` is keyed ``po|item_no|ean``."""
+        """Copy of ``self.result`` with operator decisions applied to Unit Price
+        (via the engine's own ``forced_unit_price``, which the D365 package reads):
+        EXCLUDE rows dropped; **INCLUDE (their CP)** stamped to the vendor CP;
+        **OVERRIDE (our CP)** stamped to the operator's CP. Originals are NOT
+        mutated; the engine is untouched. ``actions`` is keyed ``po|item_no|ean``.
+        Inclusion means the line stays in Lines(SO) at the CHOSEN price — their CP
+        for INCLUDE, our CP for OVERRIDE."""
         import copy
         actions = actions or {}
         rows = []
@@ -749,6 +763,11 @@ class Processor:
                 if ocp is not None:
                     so = copy.copy(so)
                     so.forced_unit_price = round(ocp, 2)
+            elif act == 'INCLUDE':
+                vcp = self._vendor_cp(so)      # their CP → Lines(SO) unit price
+                if vcp is not None:
+                    so = copy.copy(so)
+                    so.forced_unit_price = vcp
             rows.append(so)
         r2 = copy.copy(self.result)
         r2.rows = rows
@@ -846,11 +865,12 @@ class Processor:
         wb.save(path)
 
     def _finalize_lines_so(self, path, actions) -> None:
-        """In-place: drop EXCLUDEd rows + reprice OVERRIDE rows on the
-        **'Lines (SO)' sheet ONLY** (matched on Document No. + item No.). Every
-        other sheet is left exactly as the review workbook, so completed and
-        review differ solely in Lines (SO)."""
-        excl, over = set(), {}
+        """In-place on the **'Lines (SO)' sheet ONLY** (matched on Document No. +
+        item No.): drop EXCLUDEd rows, reprice OVERRIDE rows to the operator's CP,
+        and reprice INCLUDE rows to the vendor's CP ('Include their CP'). Every
+        other sheet is left exactly as the review workbook, so completed and review
+        differ solely in Lines (SO)."""
+        excl, over, incl_keys = set(), {}, set()
         for key, dec in (actions or {}).items():
             parts = str(key).split('|')
             if len(parts) < 2:
@@ -864,7 +884,18 @@ class Processor:
                     over[(po, item)] = round(float(dec.get('override_cp')), 2)
                 except (TypeError, ValueError):
                     pass
-        if not excl and not over:
+            elif act == 'INCLUDE':
+                incl_keys.add((po, item))
+        # INCLUDE → stamp the vendor CP (their CP), sourced from the run's rows.
+        incl = {}
+        if incl_keys and getattr(self, 'result', None) is not None:
+            for so in self.result.rows:
+                k = (str(so.po_number), str(so.item_no or ''))
+                if k in incl_keys:
+                    vcp = self._vendor_cp(so)
+                    if vcp is not None:
+                        incl[k] = vcp
+        if not excl and not over and not incl:
             return
         import openpyxl
         wb = openpyxl.load_workbook(path)
@@ -885,6 +916,8 @@ class Processor:
                     drop.append(r)
                 elif k in over and c_up:
                     ws.cell(r, c_up).value = over[k]
+                elif k in incl and c_up:
+                    ws.cell(r, c_up).value = incl[k]
             for r in reversed(drop):
                 ws.delete_rows(r, 1)
             wb.save(path)

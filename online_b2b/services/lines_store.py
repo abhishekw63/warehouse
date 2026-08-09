@@ -553,9 +553,9 @@ def build_lines(result, run_id=None, output_file: str = '', actions=None,
         o_landing = None
         if so.mrp is not None and _f(so.mrp) is not None and row_margin:
             o_landing = round(float(so.mrp) * float(row_margin), 2)
-        up = (so.forced_unit_price
-              if getattr(so, 'forced_unit_price', None) is not None
-              else getattr(so, 'cost_price_ref', None))
+        up_base = (so.forced_unit_price
+                   if getattr(so, 'forced_unit_price', None) is not None
+                   else getattr(so, 'cost_price_ref', None))
         po = str(so.po_number)
         item = str(so.item_no or '')
         raw_ean = str(so.ean or '')
@@ -568,6 +568,19 @@ def build_lines(result, run_id=None, output_file: str = '', actions=None,
             recv_ean = raw_ean
         act = (actions.get(f"{po}|{item}|{ean}")
                or actions.get(f"{po}|{item}|{raw_ean}") or {})
+        # Recorded Unit Price reflects the operator's decision so the DB matches
+        # the workbook + D365: INCLUDE → their (vendor) CP, OVERRIDE → our CP,
+        # else the engine's own price. [[deal-sku-exception-behavior]]
+        _ak = str(act.get('action') or '').upper()
+        if _ak == 'INCLUDE':
+            up = v_cp if v_cp is not None else up_base
+        elif _ak == 'OVERRIDE' and str(act.get('override_cp') or '') != '':
+            try:
+                up = round(float(act.get('override_cp')), 2)
+            except (TypeError, ValueError):
+                up = up_base
+        else:
+            up = up_base
         out.append({
             'run_id': run_id, 'run_ts': run_ts,
             'marketplace': result.marketplace,
