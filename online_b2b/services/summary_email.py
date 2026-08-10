@@ -807,7 +807,7 @@ class SummaryEmailReport(EmailReport):
     {self._note_block()}
     {segments}
     <p style="margin:18px 0 0;font-size:11px;color:#a0a7b4;border-top:1px solid #eef0f4;padding-top:12px;">
-      Consolidated summary — auto-generated from the Order Management dashboard
+      Consolidated summary — auto-generated from Claude AI
       &middot; {_dt.datetime.now():%d-%b-%Y %H:%M}. Full issue-line + SKU detail: Issues &amp; SKU Summary tabs.
     </p>
   </div>

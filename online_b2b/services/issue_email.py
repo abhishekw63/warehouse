@@ -519,7 +519,7 @@ class IssuesEmailReport(EmailReport):
   {incl}
   {empty}
   <p style="margin:16px 0 0;font-size:11px;color:#94a3b8;">
-    Auto-generated from the Order Management dashboard · {_dt.datetime.now():%d-%b-%Y %H:%M}.
+    Auto-generated from Claude AI · {_dt.datetime.now():%d-%b-%Y %H:%M}.
   </p>
 </div>"""
 

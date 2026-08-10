@@ -788,57 +788,16 @@
   }
 
   function flourish(j) {
-    var f = document.createElement('div');
-    f.className = 'lock-done';
-    // Big downloads use data-download-bg → browser-native (survive popup close + navigation).
-    var d365 = j.has_d365
-      ? '<a class="ld-btn ld-d365" href="' + j.run_url + 'd365/" ' +
-        'data-download-bg="D365 dump is downloading in the background — check your browser Downloads. You can keep working.">⬇ Download D365 dump</a>' : '';
-    f.innerHTML = '<div class="ld-card"><div class="lo-lock locked-glow"><span class="lo-shackle"></span>' +
-      '<span class="lo-body"><i class="lo-key"></i></span></div>' +
-      '<div class="ld-title">Locked &amp; recorded ✓</div>' +
-      '<div class="ld-sub">Run #' + j.run_id + ' · ' + j.pos + ' PO(s) · ' + j.lines + ' line(s) pushed to the DB' +
-        '<br><span class="ld-auto" style="display:inline-block;margin-top:6px;font-weight:700;color:#6366f1;">⬇ SO Workbook downloading in the background — you can keep working</span></div>' +
-      '<div class="ld-actions">' + d365 +
-        '<a class="ld-btn" href="' + COMPLETED_DL_URL + '" ' +
-          'data-download-bg="SO Workbook is downloading in the background — check your browser Downloads. You can keep working.">⬇ SO Workbook</a>' +
-        '<a class="ld-btn" href="' + j.run_url + '">View run →</a>' +
-        '<a class="ld-btn ld-ghost" href="' + UPLOAD_URL + '">＋ New upload</a>' +
-      '</div>' +
-      '<button type="button" class="ld-btn ld-continue">✓ Continue working</button>' +
-      '<button type="button" class="ld-close">stay on this page ✕</button></div>';
-    // Kick off the Completed SO Workbook download automatically once locked —
-    // NATIVE (see autoDownload), so it keeps going after the popup is closed.
+    // No blocking modal — the page has ALREADY morphed to its locked state
+    // (morphLocked): the run banner + Download SO Workbook (Completed) / View run
+    // / Generate D365 dump buttons are right there. So just: kick off the auto
+    // download, celebrate, and confirm with a non-blocking toast. Zero clicks.
     autoDownload(COMPLETED_DL_URL, 'Building the Completed SO Workbook');
-    var burst = document.createElement('div');
-    burst.className = 'ld-confetti';
-    var cols = ['#4f46e5', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#a855f7'];
-    for (var c = 0; c < 28; c++) {
-      var p = document.createElement('i');
-      p.style.left = (40 + Math.random() * 20).toFixed(1) + '%';
-      p.style.background = cols[c % cols.length];
-      p.style.setProperty('--x', (Math.random() * 2 - 1).toFixed(2));
-      p.style.setProperty('--d', (0.7 + Math.random() * 0.7).toFixed(2) + 's');
-      p.style.setProperty('--rot', ((Math.random() * 540) | 0) + 'deg');
-      burst.appendChild(p);
-    }
-    f.appendChild(burst);
-    document.body.appendChild(f);
-    requestAnimationFrame(function () { f.classList.add('show'); });
-    // Confetti fades, but the modal STAYS until the user picks a next step.
-    setTimeout(function () { if (burst.parentNode) burst.parentNode.removeChild(burst); }, 2600);
-    // Both "Continue working" (primary) and "stay on this page ✕" dismiss the
-    // popup immediately. The download is browser-native, so it keeps running.
-    function closeFlourish() {
-      f.classList.remove('show');
-      setTimeout(function () { if (f.parentNode) f.parentNode.removeChild(f); }, 300);
-      if (window.B2B && B2B.toast) B2B.toast(
-        'You can keep working — the SO Workbook download continues in your browser. Check your Downloads.',
-        { type: 'info', title: 'Downloading in background', timeout: 6000 });
-    }
-    f.querySelectorAll('.ld-close, .ld-continue').forEach(function (btn) {
-      btn.addEventListener('click', closeFlourish);
-    });
+    if (window.B2B && B2B.celebrate) B2B.celebrate();
+    if (window.B2B && B2B.toast) B2B.toast(
+      'Run #' + j.run_id + ' · ' + j.pos + ' PO(s) · ' + j.lines +
+        ' line(s) pushed to D365. Download buttons are ready below.',
+      { type: 'ok', title: 'Locked & recorded ✓', timeout: 7000 });
   }
 
   // The actual lock+record (progress bar → AJAX). Called once all guards pass.

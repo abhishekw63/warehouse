@@ -124,8 +124,13 @@ globally in core/base.html — one toast system on every page, no duplication.{%
     var url = a.getAttribute('href') || a.dataset.href;
     if (!url || url === '#') return;
     a.dataset.dlBusy = '1'; a.classList.add('is-loading');
-    show(a.getAttribute('data-download-modal') || 'Preparing your download',
-         a.getAttribute('data-loading-steps'));
+    // Only show the overlay if the build is genuinely SLOW (>450ms) — a quick
+    // download shouldn't flash a modal that vanishes in a blink. If the file is
+    // ready before then, the overlay never appears (just a "Downloaded" toast).
+    var _showTimer = setTimeout(function () {
+      show(a.getAttribute('data-download-modal') || 'Preparing your download',
+           a.getAttribute('data-loading-steps'));
+    }, 450);
     fetch(url, { credentials: 'same-origin' })
       .then(function (r) {
         if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -135,6 +140,7 @@ globally in core/base.html — one toast system on every page, no duplication.{%
         return r.blob().then(function (b) { return { b: b, name: name }; });
       })
       .then(function (o) {
+        clearTimeout(_showTimer);
         var u = URL.createObjectURL(o.b), t = document.createElement('a');
         t.href = u; t.download = o.name; document.body.appendChild(t); t.click(); t.remove();
         setTimeout(function () { URL.revokeObjectURL(u); }, 4000);
@@ -142,11 +148,12 @@ globally in core/base.html — one toast system on every page, no duplication.{%
         if (B2B.toast) B2B.toast('Downloaded ' + o.name, { type: 'success', title: 'Ready' });
       })
       .catch(function (e) {
+        clearTimeout(_showTimer);
         hide();
         if (B2B.toast) B2B.toast('Download failed — ' + e.message, { type: 'error', title: 'Download' });
         else alert('Download failed: ' + e.message);
       })
-      .then(function () { delete a.dataset.dlBusy; a.classList.remove('is-loading'); });
+      .then(function () { clearTimeout(_showTimer); delete a.dataset.dlBusy; a.classList.remove('is-loading'); });
   });
   // Big post-lock downloads (SO Workbook / D365 dump) opt in via
   // data-download-bg="toast message": trigger a browser-NATIVE download instead

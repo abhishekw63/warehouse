@@ -321,9 +321,17 @@
   // Animates the leading number in each target while preserving its prefix/suffix
   // and formatting (₹, Cr, M, %, commas). Reduced-motion → shows the final value
   // instantly. Idempotent per element. Exposed so an AJAX refresh can re-run it.
+  // KPI/stat number elements across the app that should tick up on reveal.
+  var COUNTUP_SEL = [
+    ".hub-kpis .hk .n", "[data-countup]",           // Hub
+    ".kpis .card .n",                                  // Review KPI cards
+    ".iss-kpis .ik .n",                                // Issues
+    ".fr-n", ".tr-n", ".zone-val", ".xstat b", ".dos-pill b",  // Analytics family
+    ".av-kpi .n", ".iv-kpi .k-val"                    // Availability / Inventory cockpit
+  ].join(", ");
   B2B.countUp = function (root) {
     var reduce = w.matchMedia && w.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    var els = (root || d).querySelectorAll(".hub-kpis .hk .n, [data-countup]");
+    var els = (root || d).querySelectorAll(COUNTUP_SEL);
     [].forEach.call(els, function (node) {
       if (node._counted) return;
       node._counted = true;
@@ -355,11 +363,68 @@
     });
   };
 
+  /* ===================================================================== *
+   * 4c. BAR FILLS — every progress/fill bar springs 0 → target when it     *
+   * scrolls into view (Motion One). Reads the inline width % the server    *
+   * rendered. Reduced-motion / no-Motion → left at full width (unchanged). *
+   * ===================================================================== */
+  // Curated fill-bar selectors across analytics, tasks, TAT, availability.
+  var BAR_SEL = [
+    ".fr-fill", ".zone-bar > span", ".ex-tbar > span", ".tbar > span",
+    ".tat-prog__track > span", ".av-bar > span", ".dt-parent-bar > span",
+    "#dt-ovfill"
+  ].join(", ");
+  B2B.revealBars = function (root) {
+    var reduce = w.matchMedia && w.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    var M = w.Motion;
+    if (reduce || !M || !M.animate || !M.inView) return;   // graceful: bars stay filled
+    (root || d).querySelectorAll(BAR_SEL).forEach(function (el) {
+      if (el._barred) return;
+      var target = (el.style && el.style.width) || "";
+      if (target.indexOf("%") < 0) return;                 // only inline-% bars
+      el._barred = true;
+      el.style.width = "0%";
+      var fired = false;
+      var stop = M.inView(el, function () {
+        if (fired) return; fired = true;
+        M.animate(el, { width: ["0%", target] },
+                  { duration: 0.9, easing: [0.2, 0.8, 0.2, 1] });
+        if (stop) stop();
+      }, { amount: 0.15 });
+    });
+  };
+
+  /* ===================================================================== *
+   * 4d. CELEBRATE — a confetti burst for big wins (Lock & Record, Backup). *
+   * Reduced-motion / no-confetti → silent no-op. Call B2B.celebrate() or   *
+   * add [data-celebrate] to an element that appears on success.            *
+   * ===================================================================== */
+  B2B.celebrate = function (opts) {
+    var reduce = w.matchMedia && w.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || typeof w.confetti !== "function") return;
+    opts = opts || {};
+    var end = Date.now() + (opts.ms || 900);
+    var colors = ["#4f46e5", "#10b981", "#f59e0b", "#ec4899", "#06b6d4"];
+    (function frame() {
+      w.confetti({ particleCount: 4, angle: 60, spread: 60, origin: { x: 0 }, colors: colors });
+      w.confetti({ particleCount: 4, angle: 120, spread: 60, origin: { x: 1 }, colors: colors });
+      if (Date.now() < end) w.requestAnimationFrame(frame);
+    })();
+  };
+
   function init() {
     mountControls();
     adoptDjangoMessages();
     B2B.enhanceTables(d);
     B2B.countUp(d);
+    B2B.revealBars(d);
+
+    // AJAX-loaded content (htmx swaps) gets the same treatment — tables, count-up
+    // and bar-fills re-run on the swapped-in fragment so nothing lands "flat".
+    d.body.addEventListener("htmx:afterSwap", function (e) {
+      var t = (e && e.target) || d;
+      B2B.enhanceTables(t); B2B.countUp(t); B2B.revealBars(t);
+    });
 
     // Step 4: fade the newly-shown tab panel on switch. Delegated + runs AFTER
     // each page's own tab handler (setTimeout 0), so it works everywhere without
@@ -374,16 +439,29 @@
       }, 0);
     });
 
-    // Step 8: when the Hub KPI strip is replaced by the AJAX range switch, the
-    // fresh numbers re-run the count-up (a satisfying "pulse" on the new values).
-    var kpi = d.querySelector(".hub-kpis");
-    if (kpi && kpi.parentNode && w.MutationObserver) {
+    // Universal re-animate: watch the whole document for NEW content (added by
+    // fetch, htmx, or hand-rolled JS render — Analytics tabs, Availability
+    // results, the Hub range switch, etc.) and re-run the enhancers on it. Cheap:
+    // debounced, and each enhancer is idempotent (per-element guards skip
+    // already-processed nodes), so nothing double-animates.
+    if (w.MutationObserver) {
       var deb;
-      var obs = new MutationObserver(function () {
+      var obs = new MutationObserver(function (muts) {
+        var added = false;
+        for (var i = 0; i < muts.length; i++) {
+          if (muts[i].addedNodes && muts[i].addedNodes.length) { added = true; break; }
+        }
+        if (!added) return;
         w.clearTimeout(deb);
-        deb = w.setTimeout(function () { B2B.countUp(d); }, 40);
+        deb = w.setTimeout(function () {
+          B2B.enhanceTables(d); B2B.countUp(d); B2B.revealBars(d);
+          // Celebrate a big win the moment its success node appears — the Lock &
+          // Record "done" card, or anything tagged [data-celebrate]. Once each.
+          var win = d.querySelector(".ld-card:not([data-celebrated]), [data-celebrate]:not([data-celebrated])");
+          if (win) { win.setAttribute("data-celebrated", "1"); B2B.celebrate(); }
+        }, 120);
       });
-      obs.observe(kpi.parentNode, { childList: true, subtree: true });
+      obs.observe(d.body, { childList: true, subtree: true });
     }
   }
 

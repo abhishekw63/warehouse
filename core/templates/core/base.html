@@ -38,6 +38,12 @@
       @media (prefers-reduced-motion:reduce){body.page-ready #MainContent{transition:opacity .01s;}}
     </style>
     <noscript><style>#MainContent{opacity:1!important;animation:none!important;}#pageBoot{display:none!important;}</style></noscript>
+    {% comment %}Single-toast guard: hide Django's RAW server-rendered toasts the instant
+    the page parses (before they can flash) so ONLY enhance.js's enh-toast shows — kills the
+    "green + duplicate" flash. enh-on is set synchronously here (JS on); with no JS the rule
+    is inert so the raw toast still shows (never lost).{% endcomment %}
+    <style>html.enh-on #toast-container .toast{display:none!important;}</style>
+    <script>try{document.documentElement.classList.add('enh-on');}catch(e){}</script>
 </head>
 <body class="{% block body_class %}{% endblock %}">
 <div id="pageBoot" aria-hidden="true"><div class="pb-box"><div class="pb-spin"></div><div class="pb-label">{% block page_boot_label %}{% endblock %}</div></div></div>
@@ -107,7 +113,11 @@
 {% block footer %}{% endblock %}
 
 <script src="{% static 'core/js/script.js' %}"></script>
-{# Global UI enhance layer (dark mode, ONE toast system, palette, tables) — loaded on every page so all toasts share one system; kept out of the body_end block so child pages can't drop it. #}
+{# Global UI enhance layer (dark mode, ONE toast system, palette, tables, motion) — loaded on every page so all toasts share one system; kept out of the body_end block so child pages can't drop it. #}
+{# Motion One (window.Motion) — the app-wide animation engine (spring bar-fills, count-up, reveals). Vendored, offline-safe. Loaded BEFORE enhance.js so it can use it. #}
+<script defer src="{% static 'online_b2b/vendor/motion.min.js' %}"></script>
+{# canvas-confetti (window.confetti) — celebratory bursts for big wins (Lock & Record, Backup complete). Vendored, offline-safe. #}
+<script defer src="{% static 'online_b2b/vendor/confetti.min.js' %}"></script>
 <link rel="stylesheet" href="{% static 'online_b2b/enhance.css' %}">
 <script defer src="{% static 'online_b2b/enhance.js' %}"></script>
 {% block body_end %}{% endblock %}

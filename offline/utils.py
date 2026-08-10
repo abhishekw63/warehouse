@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 LOCATION_CODE_MAP: Dict[str, str] = {
     'AHD': 'PICK',
     'BLR': 'DS_BL_OFF1',
+    'NORTH': 'NORTH WH-0',   # North region → North Warehouse (3rd inventory WH)
 }
 
 STATE_LIKE_VALUES = {

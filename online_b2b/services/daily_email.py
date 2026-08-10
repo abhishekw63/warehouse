@@ -329,7 +329,7 @@ class DailyTasksEmailReport(EmailReport):
     <div class="da-sec">{self._pending_block()}</div>
     <div class="da-sec">{self._adhoc_block()}</div>
     <p style="margin:18px 0 0;font-size:11px;color:#a0a7b4;border-top:1px solid #eef0f4;padding-top:12px;">
-      Auto-generated from the Order Management dashboard · {_dt.datetime.now():%d-%b-%Y %H:%M}.
+      Auto-generated from Claude AI · {_dt.datetime.now():%d-%b-%Y %H:%M}.
     </p>
   </div>
 </div>

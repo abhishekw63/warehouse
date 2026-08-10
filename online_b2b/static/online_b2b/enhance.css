@@ -371,8 +371,11 @@ table.skux tbody{animation:skuxrows .45s ease both;} @keyframes skuxrows{from{op
  * ===================================================================== */
 .tabs .tab{transition:transform .12s ease, background .18s ease, color .18s ease, border-color .18s ease;}
 .tabs .tab:active{transform:scale(.96);}
-.enh-panefade{animation:enhPaneIn .3s cubic-bezier(.2,.8,.3,1);}
-@keyframes enhPaneIn{from{opacity:0;transform:translateY(7px);}to{opacity:1;transform:none;}}
+/* Tab switch: content-only opacity fade — NO position shift and it starts
+   already-visible (opacity .4) so there's no blank flash between panes. Only the
+   swapped pane fades; the header/KPIs/tabs stay perfectly still. */
+.enh-panefade{animation:enhPaneIn .2s ease;}
+@keyframes enhPaneIn{from{opacity:.4;}to{opacity:1;}}
 
 /* ===================================================================== *
  * Step 5: TABLE ROWS — first 12 rows fade/stagger in (rest instant →     *
@@ -392,6 +395,11 @@ table.skux tbody{animation:skuxrows .45s ease both;} @keyframes skuxrows{from{op
 .enh-table tbody tr:nth-child(11){animation-delay:.32s}
 .enh-table tbody tr:nth-child(12){animation-delay:.35s}
 @keyframes enhRowIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+/* Row-reveal must NOT re-fire when a hidden tab becomes visible: showing a
+   display:none pane restarts its CSS animations, which flickered the rows on
+   EVERY tab switch (the "flash" on switching to/from Already uploaded). The pane
+   cross-fade already covers the switch; row-reveal stays on standalone tables. */
+.tabpane .enh-table tbody tr{animation:none !important;}
 
 /* ===================================================================== *
  * Step 7: SIDEBAR NAV — hover slide + active-item indicator bar          *
@@ -403,3 +411,57 @@ table.skux tbody{animation:skuxrows .45s ease both;} @keyframes skuxrows{from{op
 @media (prefers-reduced-motion: reduce){
   .enh-panefade, .enh-table tbody tr{animation:none;}
   .tabs .tab:active, .side-nav .sn:hover{transform:none;}}
+
+/* ===================================================================== *
+ * Step B: STATUS CHIPS / BADGES — smooth colour transitions + a gentle   *
+ * scale-in when injected (resolved / status changes feel tactile).       *
+ * ===================================================================== */
+.pill, .st, .chip, .fr-st, .dept-b, .zn, .seg-tag, .rk-b, .tr-chip, .tr-d,
+.basis-badge, .su-badge, .hk-tag, .tcount{
+  transition:background-color .18s ease, color .18s ease, border-color .18s ease, transform .15s ease;}
+@keyframes enhChipIn{from{opacity:0;transform:scale(.82);}to{opacity:1;transform:none;}}
+.enh-chip-in{animation:enhChipIn .28s cubic-bezier(.2,.9,.3,1.2);}
+
+/* ===================================================================== *
+ * Step C: MODAL / OVERLAY BACKDROPS — fade in instead of snapping.       *
+ * Applies to the shared overlays (.em-overlay, .cpg-ov, .gt-modal-overlay,*
+ * .lock-overlay) whenever they're shown.                                 *
+ * ===================================================================== */
+.em-overlay:not([hidden]), .cpg-ov, .gt-modal-overlay:not([hidden]),
+.lock-overlay.show, .lock-done.show{animation:enhBackdropIn .22s ease;}
+@keyframes enhBackdropIn{from{opacity:0;}to{opacity:1;}}
+
+@media (prefers-reduced-motion: reduce){
+  .pill,.st,.chip,.fr-st,.dept-b,.zn,.seg-tag,.rk-b,.tr-chip,.tr-d,.basis-badge,.su-badge,.hk-tag,.tcount{transition:none;}
+  .enh-chip-in,.em-overlay:not([hidden]),.cpg-ov,.gt-modal-overlay:not([hidden]),.lock-overlay.show,.lock-done.show{animation:none;}}
+
+/* ===================================================================== *
+ * Step D: DAILY-TASKS checkbox tick — the box pops and the ✓ draws in on  *
+ * :checked, so completing a step feels rewarding.                        *
+ * ===================================================================== */
+.dt-box input:checked ~ .dt-mark,
+.dt-ad-chk input:checked ~ .dt-ad-mark{animation:enhTick .3s cubic-bezier(.2,.9,.3,1.4);}
+.dt-box input:checked ~ .dt-mark::after,
+.dt-ad-chk input:checked ~ .dt-ad-mark::after{animation:enhCheckPop .34s cubic-bezier(.2,.9,.3,1.5);}
+@keyframes enhTick{0%{transform:scale(1);}45%{transform:scale(1.18);}100%{transform:scale(1);}}
+@keyframes enhCheckPop{0%{opacity:0;transform:scale(.3);}60%{opacity:1;transform:scale(1.25);}100%{opacity:1;transform:scale(1);}}
+@media (prefers-reduced-motion: reduce){
+  .dt-box input:checked ~ .dt-mark,.dt-ad-chk input:checked ~ .dt-ad-mark,
+  .dt-box input:checked ~ .dt-mark::after,.dt-ad-chk input:checked ~ .dt-ad-mark::after{animation:none;}}
+
+/* ===================================================================== *
+ * Step F: misc polish                                                    *
+ * - Exceptions inline-edit row (.edrow) slides in when opened            *
+ * - Reusable .enh-empty (icon + fade) and .enh-skel-lines (skeleton)     *
+ * ===================================================================== */
+.edrow{animation:enhRowIn .3s cubic-bezier(.2,.8,.3,1);}
+.enh-empty{animation:enhFadeUp .45s ease both;text-align:center;color:var(--muted,#94a3b8);padding:26px 16px;}
+.enh-empty .enh-empty-ic{font-size:30px;opacity:.7;display:block;margin-bottom:8px;}
+@keyframes enhFadeUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
+.enh-skel-lines > i{display:block;height:12px;border-radius:6px;margin:9px 0;
+  background:linear-gradient(90deg,var(--surface-2,#eef1f6) 25%,var(--border,#e2e6ee) 37%,var(--surface-2,#eef1f6) 63%);
+  background-size:400% 100%;animation:enhShimmer 1.3s ease-in-out infinite;}
+.enh-skel-lines > i:nth-child(2){width:82%} .enh-skel-lines > i:nth-child(3){width:64%}
+@keyframes enhShimmer{0%{background-position:100% 0;}100%{background-position:-100% 0;}}
+@media (prefers-reduced-motion: reduce){
+  .edrow,.enh-empty{animation:none;} .enh-skel-lines > i{animation:none;}}

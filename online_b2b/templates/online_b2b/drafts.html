@@ -101,8 +101,13 @@
       if (!ov) return;                       // don't block navigation if missing
       ov.classList.add('on');
       var i = 0;
-      setInterval(function () {
-        i = (i + 1) % STEPS.length;
+      // Advance through the phases ONCE, then HOLD on the last one ("Almost
+      // there…") until the server responds and the page navigates. Never loop
+      // back to the start — restarting from "Reopening…" reads as if the whole
+      // thing began again, which is misleading; the work only moves forward.
+      var timer = setInterval(function () {
+        if (i >= STEPS.length - 1) { clearInterval(timer); return; }  // hold on last step
+        i++;
         if (!msg) return;
         msg.style.opacity = '0';
         setTimeout(function () { msg.textContent = STEPS[i]; msg.style.opacity = '1'; }, 160);
