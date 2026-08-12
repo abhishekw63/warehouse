@@ -125,6 +125,11 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # RBAC write-guard — denies POST/PUT/PATCH/DELETE from non-Editors by default
+    # (read-only exports/searches/previews allowlisted). Must sit AFTER
+    # AuthenticationMiddleware so request.user exists. Additive: Editors + all
+    # GET traffic pass untouched. See core/access.py.
+    "core.access.WriteGuardMiddleware",
     # Dev · Health perf capture — innermost, times the view + DB. Additive;
     # appends to logs/perf.jsonl, never alters the response or the business DB.
     "core.observability.PerfMiddleware",
@@ -143,6 +148,7 @@ TEMPLATES = [
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
                 "online_b2b.context_processors.build_info",
+                "core.access.roles",
             ],
             # Explicit UNCACHED loaders → template/HTML/chart edits go live on the
             # prod server (DEBUG=0) with just a browser refresh, no restart. The

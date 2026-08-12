@@ -45,8 +45,14 @@
     <style>html.enh-on #toast-container .toast{display:none!important;}</style>
     <script>try{document.documentElement.classList.add('enh-on');}catch(e){}</script>
 </head>
-<body class="{% block body_class %}{% endblock %}">
+<body class="{% block body_class %}{% endblock %}" data-can-write="{% if can_write %}1{% else %}0{% endif %}"{% if user.is_authenticated and not can_write %} data-view-only="1"{% endif %}>
 <div id="pageBoot" aria-hidden="true"><div class="pb-box"><div class="pb-spin"></div><div class="pb-label">{% block page_boot_label %}{% endblock %}</div></div></div>
+{% if user.is_authenticated and not can_write %}
+<div id="viewOnlyBar" role="status" style="position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:8px;justify-content:center;
+     padding:6px 14px;background:#fff8e6;border-bottom:1px solid #f4d58a;color:#7a5b12;font-size:12.5px;">
+  🔒 <b>View-only access</b> — you can browse and export, but making changes is disabled. Ask an admin for Editor access.
+</div>
+{% endif %}
 <script>
   /* reveal the styled page + drop the boot loader once the DOM is parsed+styled */
   (function(){

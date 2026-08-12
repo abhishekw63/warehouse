@@ -412,12 +412,98 @@
     })();
   };
 
+  /* ── View-only (RBAC) ────────────────────────────────────────────────── *
+   * When the user is a Viewer (body[data-can-write="0"]), disable every write   *
+   * control so writes read as "disabled with tooltip" instead of click→error.   *
+   * The SAFE regex MIRRORS the server allowlist in core/access.py (export /      *
+   * download / search / pagination / preview / data / recon-run / availability  *
+   * / d365 / auth) so client + server never disagree. The server middleware is  *
+   * the real boundary; this is the UX layer. Idempotent + re-runs on new DOM.   */
+  var _VO_SAFE = /\/(export|download|search|more|preview|data|run|check|bins|d365|login|logout|signup|password-change|profile|po-skus)\/?$/i;
+  B2B.applyViewOnly = function (root) {
+    root = root || d;
+    if (d.body.getAttribute("data-can-write") !== "0") return;
+    var mark = function (b) {
+      if (b.getAttribute("data-vo")) return;
+      b.setAttribute("data-vo", "1");
+      // Look disabled (greyed + not-allowed) but stay CLICKABLE, so the capture
+      // click-guard can fire the one view-only toast on every write button. A
+      // real `disabled` swallows the click and gives no feedback.
+      b.setAttribute("aria-disabled", "true");
+      b.title = "View-only access — changes are disabled";
+      b.style.cursor = "not-allowed";
+      b.style.opacity = "0.55";
+    };
+    root.querySelectorAll("form").forEach(function (f) {
+      if ((f.getAttribute("method") || "get").toLowerCase() !== "post") return;
+      if (f.getAttribute("data-read") !== null) return;
+      var action = f.getAttribute("action") || w.location.pathname;
+      if (_VO_SAFE.test(action)) return;
+      if (!f.getAttribute("data-vo")) {
+        f.setAttribute("data-vo", "1");
+        f.addEventListener("submit", function (ev) {   // hard stop, even if a control slipped through
+          ev.preventDefault(); ev.stopPropagation();
+          if (B2B.toast) B2B.toast("View-only access — you can't make changes. Ask an admin for Editor access.",
+            { type: "error", title: "Read-only" });
+        }, true);
+      }
+      // submit controls INSIDE the form + any associated by the HTML form= attr
+      // (Discard / Save-for-Review-Later sit OUTSIDE their <form>).
+      var btns = [].slice.call(f.querySelectorAll("button, input[type=submit], input[type=image]"));
+      if (f.id) btns = btns.concat([].slice.call(d.querySelectorAll('[form="' + f.id + '"]')));
+      btns.forEach(function (b) {
+        var t = (b.getAttribute("type") || "submit").toLowerCase();
+        if (t === "button" || t === "reset") return;   // non-submit buttons untouched
+        mark(b);
+      });
+    });
+    root.querySelectorAll("[data-write]").forEach(mark);   // explicitly-tagged AJAX write buttons
+    root.querySelectorAll("[data-url]").forEach(function (b) {   // AJAX buttons/links to a write endpoint
+      var u = b.getAttribute("data-url");
+      if (u && !_VO_SAFE.test(u)) mark(b);
+    });
+  };
+
+  /* Capture-phase click guard: the belt to applyViewOnly's suspenders. Runs
+   * BEFORE any page handler (undecided-lock guard, email AJAX, form submit), so
+   * clicking ANY write control gives the ONE view-only toast — never the page's
+   * own intermediate UI. Catches: submit buttons (incl. external form= /
+   * formaction), data-url AJAX buttons, and [data-write]. Editors: no-op. */
+  function _voClickGuard(e) {
+    if (d.body.getAttribute("data-can-write") !== "0") return;
+    var el = e.target.closest && e.target.closest(
+      "button, input[type=submit], input[type=image], a[data-url], [data-write]");
+    if (!el) return;
+    var block = false;
+    if (el.hasAttribute("data-write")) block = true;
+    if (!block) {
+      var u = el.getAttribute("data-url");
+      if (u && !_VO_SAFE.test(u)) block = true;                 // AJAX write button/link
+    }
+    if (!block && el.matches("button, input[type=submit], input[type=image]")) {
+      var t = (el.getAttribute("type") || "submit").toLowerCase();
+      if (t !== "button" && t !== "reset") {
+        var f = el.form || (el.closest && el.closest("form"));
+        var act = el.getAttribute("formaction") || (f && f.getAttribute("action")) || w.location.pathname;
+        var method = (el.getAttribute("formmethod") || (f && f.getAttribute("method")) || "get").toLowerCase();
+        if (f && method === "post" && f.getAttribute("data-read") === null && !_VO_SAFE.test(act)) block = true;
+      }
+    }
+    if (block) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (B2B.toast) B2B.toast("View-only access — you can't make changes. Ask an admin for Editor access.",
+        { type: "error", title: "Read-only" });
+    }
+  }
+
   function init() {
     mountControls();
     adoptDjangoMessages();
     B2B.enhanceTables(d);
     B2B.countUp(d);
     B2B.revealBars(d);
+    B2B.applyViewOnly(d);
+    d.addEventListener("click", _voClickGuard, true);   // capture: block writes for Viewers
 
     // AJAX-loaded content (htmx swaps) gets the same treatment — tables, count-up
     // and bar-fills re-run on the swapped-in fragment so nothing lands "flat".
@@ -454,7 +540,7 @@
         if (!added) return;
         w.clearTimeout(deb);
         deb = w.setTimeout(function () {
-          B2B.enhanceTables(d); B2B.countUp(d); B2B.revealBars(d);
+          B2B.enhanceTables(d); B2B.countUp(d); B2B.revealBars(d); B2B.applyViewOnly(d);
           // Celebrate a big win the moment its success node appears — the Lock &
           // Record "done" card, or anything tagged [data-celebrate]. Once each.
           var win = d.querySelector(".ld-card:not([data-celebrated]), [data-celebrate]:not([data-celebrated])");

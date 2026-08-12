@@ -1,0 +1,125 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static %}
+{% block title %}Users & Roles — Order Management{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<style>
+  .ur-table{width:max-content;min-width:100%;}
+  .ur-table th,.ur-table td{white-space:nowrap;}
+  .ur-table td.email{color:var(--muted);max-width:220px;overflow:hidden;text-overflow:ellipsis;}
+  .ur-table td.when{color:var(--muted);}
+  .role-pill{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11.5px;font-weight:600;}
+  .rp-ed{background:color-mix(in srgb,#16a34a 16%,transparent);color:#16a34a;}
+  .rp-vw{background:color-mix(in srgb,var(--muted) 20%,transparent);color:var(--text-2);}
+  .rp-su{background:color-mix(in srgb,#7c3aed 16%,transparent);color:#7c3aed;}
+  .rp-on{background:color-mix(in srgb,#16a34a 16%,transparent);color:#16a34a;}
+  .rp-off{background:color-mix(in srgb,#e5484d 15%,transparent);color:#e5484d;}
+  .ur-act{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+  .ur-add{display:flex;flex-wrap:wrap;gap:12px;align-items:end;}
+  .ur-add label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+  .ur-add input,.ur-add select{padding:8px 11px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text);font-size:13.5px;min-width:170px;}
+  .ur-add input:focus,.ur-add select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent);}
+</style>{% endblock %}
+
+{% block breadcrumb %}
+  <a href="{% url 'departments' %}">Departments</a> <span>/ Users &amp; Roles</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap b2b-wide">
+  <div class="b2b-head">
+    <div>
+      <h1>Users &amp; Roles <span>· access</span></h1>
+      <p class="src"><b>Editors</b> can upload POs, record, and edit data. <b>Viewers</b> can only browse &amp; export — every write is blocked. Superusers are always Editors.</p>
+    </div>
+    <div class="head-actions"></div>
+  </div>
+
+  {% if messages %}{% for m in messages %}<div class="banner {% if m.tags == 'error' %}err{% else %}ok{% endif %}">{{ m }}</div>{% endfor %}{% endif %}
+
+  <div class="im-kpis reveal">
+    <div class="im-kpi k1"><span class="im-ic">{% include 'online_b2b/_icons.html' with i='store' %}</span>
+      <div><div class="n">{{ rows|length }}</div><div class="l">Users</div></div></div>
+    <div class="im-kpi k2"><span class="im-ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span>
+      <div><div class="n">{{ n_editors }}</div><div class="l">Editors</div></div></div>
+    <div class="im-kpi k4"><span class="im-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span>
+      <div><div class="n">{{ n_viewers }}</div><div class="l">Viewers</div></div></div>
+  </div>
+
+  <!-- Add a user -->
+  <div class="im-card reveal">
+    <h2>+ Add a user</h2>
+    <form class="ur-add" method="post" action="{% url 'user_create' %}">
+      {% csrf_token %}
+      <label>Username<input type="text" name="username" required autocomplete="off"></label>
+      <label>Password<input type="text" name="password" required autocomplete="off"></label>
+      <label>Role
+        <select name="role">
+          <option value="viewer">Viewer (read + export)</option>
+          <option value="editor">Editor (full write)</option>
+        </select>
+      </label>
+      <button type="submit" class="btn-primary" style="height:38px;">Create user</button>
+    </form>
+  </div>
+
+  <!-- All users -->
+  <div class="im-card reveal">
+    <div class="im-ovh"><h2>All users <span class="count">{{ rows|length }}</span></h2></div>
+    <div class="scroll im-tablewrap">
+    <table class="grid compact ur-table">
+      <thead><tr>
+        <th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Last login</th><th>Actions</th>
+      </tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td><b>{{ r.username }}</b>{% if r.full_name %}<div style="color:var(--muted);font-size:12px;">{{ r.full_name }}</div>{% endif %}</td>
+          <td class="email">{{ r.email|default:"—" }}</td>
+          <td>
+            {% if r.is_superuser %}<span class="role-pill rp-su">Superuser</span>
+            {% elif r.is_editor %}<span class="role-pill rp-ed">Editor</span>
+            {% else %}<span class="role-pill rp-vw">Viewer</span>{% endif %}
+          </td>
+          <td>{% if r.is_active %}<span class="role-pill rp-on">Active</span>{% else %}<span class="role-pill rp-off">Deactivated</span>{% endif %}</td>
+          <td class="when">{{ r.last_login|date:"d M Y · H:i"|default:"never" }}</td>
+          <td>
+            <div class="ur-act">
+              {% if not r.is_superuser %}
+                {% if r.is_editor %}
+                <form method="post" action="{% url 'user_set_role' r.id %}" style="display:inline;">{% csrf_token %}
+                  <input type="hidden" name="role" value="viewer"><button class="btn-clear" title="Make Viewer (read-only)">→ Viewer</button>
+                </form>
+                {% else %}
+                <form method="post" action="{% url 'user_set_role' r.id %}" style="display:inline;">{% csrf_token %}
+                  <input type="hidden" name="role" value="editor"><button class="btn-primary" title="Make Editor (full write)">→ Editor</button>
+                </form>
+                {% endif %}
+              {% endif %}
+              <button type="button" class="btn-clear" onclick="urPwd({{ r.id }}, '{{ r.username|escapejs }}')">Reset pwd</button>
+              {% if r.id != request.user.id and not r.is_superuser %}
+              <form method="post" action="{% url 'user_toggle_active' r.id %}" style="display:inline;">{% csrf_token %}
+                <button class="btn-clear" style="{% if r.is_active %}color:#e5484d;{% endif %}">{% if r.is_active %}Deactivate{% else %}Activate{% endif %}</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+
+<form id="pwdForm" method="post" style="display:none;">{% csrf_token %}<input type="hidden" name="password" id="pwdVal"></form>
+<script>
+  function urPwd(id, name){
+    var pw = window.prompt('New password for "' + name + '":');
+    if (pw === null || pw === '') return;
+    var f = document.getElementById('pwdForm');
+    f.action = '/users/' + id + '/password/';
+    document.getElementById('pwdVal').value = pw;
+    f.submit();
+  }
+</script>
+{% endblock %}
