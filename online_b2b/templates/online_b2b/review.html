@@ -120,7 +120,7 @@
   <form id="save-later-form" method="post" action="{% url 'b2b_save_review_later' token=token %}">{% csrf_token %}</form>
 
   {% if is_draft and not locked %}
-  <div style="margin:0 0 14px;padding:10px 14px;border-radius:10px;background:#fff8e6;
+  <div id="draftBanner" style="margin:0 0 14px;padding:10px 14px;border-radius:10px;background:#fff8e6;
        border:1px solid #f4d58a;color:#7a5b12;font-size:13.5px;">
     🕒 <b>Review-Later draft</b> — reopened &amp; re-validated against the current master
     (so any CP correction the team made is applied). Resolve the pending line(s), then
@@ -159,7 +159,7 @@
         {% if r.affected %}<button class="btn-ghost" id="emailIssueBtn" type="button"
                 data-url="{% url 'b2b_review_email_issue' token=token %}"
                 title="Email these {{ r.affected|length }} flagged CP-issue line(s) to the ecom team so they can resolve the price / SKU">✉ Email issue</button>{% endif %}
-        <button class="btn-primary" id="lockBtn" type="button">🔒 Lock &amp; Record</button>
+        <button class="btn-primary" id="lockBtn" type="button" data-write>🔒 Lock &amp; Record</button>
       {% endif %}
     </div>
   </div>
@@ -322,12 +322,12 @@
           <option value="OVERRIDE">Include (our CP)</option>
           <option value="EXCLUDE">Exclude (drop)</option>
         </select>
-        <button type="button" id="bulkApplyAct" class="btn-mini">Apply to selected</button>
+        <button type="button" id="bulkApplyAct" class="btn-mini" data-write>Apply to selected</button>
       </span>
       <span class="abk-sep">or</span>
       <span class="abk-grp">
         <input id="bulkEan" type="text" placeholder="Correct EAN / item no (same for all)" class="nim-input abk-ean" autocomplete="off">
-        <button type="button" id="bulkFillEan" class="btn-mini">Fill into selected</button>
+        <button type="button" id="bulkFillEan" class="btn-mini" data-write>Fill into selected</button>
         <span class="abk-hint">then “Apply &amp; re-validate” ↑</span>
       </span>
       <span id="affBulkMsg" class="abk-msg" hidden></span>
@@ -455,16 +455,18 @@
 </style>
 
 <!-- ── Lock progress overlay (AJAX; no page reload) ── -->
-<div id="lockOverlay" class="lock-overlay" aria-hidden="true">
+<div id="lockOverlay" class="lock-overlay" aria-hidden="true" data-total="{{ s.pos|default:0 }}" data-lines="{{ s.lines|default:0 }}">
   <div class="lo-card" role="status" aria-live="polite">
     <div class="lo-lock"><span class="lo-shackle"></span><span class="lo-body"><i class="lo-key"></i></span></div>
     <div class="lo-title">Locking &amp; recording…</div>
+    <div class="lo-sub" id="loSub" style="font-size:12.5px;color:#667085;margin:1px 0 11px;min-height:16px;font-variant-numeric:tabular-nums;"></div>
     <div class="lo-track"><div class="lo-fill" id="loFill"></div></div>
     <ul class="lo-steps">
       <li data-s="1"><span class="lo-dot"></span>Recording POs to the database</li>
       <li data-s="2"><span class="lo-dot"></span>Generating the D365 dump</li>
       <li data-s="3"><span class="lo-dot"></span>Finalizing &amp; saving</li>
     </ul>
+    <div class="lo-note" id="loNote" hidden style="font-size:12px;color:#8a6d1e;background:#fff8e6;border:1px solid #f4d58a;border-radius:8px;padding:6px 10px;margin-top:10px;">⏳ Large runs take a moment — please keep this tab open until it finishes.</div>
     <div class="lo-err" id="loErr"></div>
   </div>
 </div>
@@ -698,41 +700,78 @@
   var fill    = document.getElementById('loFill');
   var errBox  = document.getElementById('loErr');
   var steps   = ov ? ov.querySelectorAll('.lo-steps li') : [];
+  var subBox  = document.getElementById('loSub');
+  var noteBox = document.getElementById('loNote');
   var timers  = [];
+  // Total is known up-front (from the preview) — show it so the operator sees
+  // scale + an elapsed timer, instead of a blank bar that reads as "hung".
+  var LO_POS   = parseInt((ov && ov.getAttribute('data-total')) || '0', 10) || 0;
+  var LO_LINES = parseInt((ov && ov.getAttribute('data-lines')) || '0', 10) || 0;
+  var _animTimer = null, _elapTimer = null, _startT = 0, _curFill = 0;
 
-  function setFill(p) { if (fill) fill.style.width = p + '%'; }
-  function clearTimers() { timers.forEach(clearTimeout); timers = []; }
+  function setFill(p) { _curFill = p; if (fill) fill.style.width = p + '%'; }
+  function clearTimers() {
+    timers.forEach(clearTimeout); timers = [];
+    if (_animTimer) { clearInterval(_animTimer); _animTimer = null; }
+    if (_elapTimer) { clearInterval(_elapTimer); _elapTimer = null; }
+  }
+  function _fmtEl(ms) { var s = Math.floor(ms / 1000); return s < 60 ? (s + 's') : (Math.floor(s / 60) + 'm ' + (s % 60) + 's'); }
+  function _label(verb) {
+    return LO_POS ? (verb + ' ' + LO_POS + ' PO' + (LO_POS > 1 ? 's' : '') +
+      (LO_LINES ? (' · ' + LO_LINES + ' lines') : '')) : (verb + '…');
+  }
+  function _renderSub() {
+    if (subBox) subBox.textContent = _label('Recording') + '  ·  ' + _fmtEl(Date.now() - _startT);
+    if (noteBox && (Date.now() - _startT) > 8000) noteBox.hidden = false;   // reassure on long runs
+  }
 
   function startProgress() {
     ov.classList.remove('done', 'error');
     errBox.textContent = '';
+    if (noteBox) noteBox.hidden = true;
     steps.forEach(function (s) { s.classList.remove('active', 'done'); });
     ov.classList.add('show');
     document.body.classList.add('lo-open');
-    setFill(9);
-    var i = 0, marks = [34, 64, 88];
-    (function adv() {
-      if (i > 0) steps[i - 1].classList.add('done');
-      if (i < steps.length) {
-        steps[i].classList.add('active');
-        setFill(marks[i]);
-        i++;
-        timers.push(setTimeout(adv, 640));
+    _startT = Date.now();
+    setFill(8);
+    if (steps[0]) steps[0].classList.add('active');
+    _renderSub();
+    _elapTimer = setInterval(_renderSub, 1000);
+    // Asymptotic bar: eases toward a ceiling it NEVER reaches until the real
+    // server response lands (finishProgress). Always visibly moving, never lies
+    // about being done. The visual steps advance as the fill crosses thresholds,
+    // so they track real elapsed time — no fixed fake schedule.
+    _animTimer = setInterval(function () {
+      var ceil = 93, next = _curFill + (ceil - _curFill) * 0.045;
+      setFill(next > ceil ? ceil : next);
+      if (_curFill > 45 && steps[1] && !steps[1].classList.contains('active')) {
+        steps[0].classList.add('done'); steps[1].classList.add('active');
       }
-    })();
+      if (_curFill > 78 && steps[2] && !steps[2].classList.contains('active')) {
+        steps[1].classList.add('done'); steps[2].classList.add('active');
+      }
+    }, 220);
   }
 
   function finishProgress() {
     clearTimers();
     steps.forEach(function (s) { s.classList.remove('active'); s.classList.add('done'); });
     setFill(100);
+    if (subBox) subBox.textContent = _label('Recorded') + '  ·  ' + _fmtEl(Date.now() - _startT);
+    if (noteBox) noteBox.hidden = true;
     ov.classList.add('done');
   }
 
   function failProgress(msg) {
     clearTimers();
+    if (noteBox) noteBox.hidden = true;
+    var text = msg || 'Lock failed — nothing was recorded. Please try again.';
     ov.classList.add('error');
-    errBox.textContent = msg || 'Lock failed — nothing was recorded. Please try again.';
+    errBox.textContent = text;
+    // Persistent red toast too — the overlay error auto-dismisses in 2.4s, but
+    // the toast lingers so a rolled-back/atomic-failed lock can't be missed.
+    if (window.B2B && B2B.toast) B2B.toast(text, {
+      type: 'error', title: 'Not recorded — safe to retry', timeout: 10000 });
     timers.push(setTimeout(function () {
       ov.classList.remove('show', 'error');
       document.body.classList.remove('lo-open');
@@ -762,7 +801,14 @@
       }
     }
     document.querySelectorAll('.act-sel').forEach(function (s) { s.disabled = true; });
-    document.querySelectorAll('.act-ocp,.act-rem').forEach(function (x) { x.setAttribute('readonly', 'readonly'); });
+    document.querySelectorAll('.act-ocp,.act-rem,.nim-input').forEach(function (x) { x.setAttribute('readonly', 'readonly'); });
+    // Fully match the server's locked render — an in-place lock must leave NOTHING
+    // editable. The confirm-bar + action selects above were handled; also strip the
+    // draft banner, the bulk "apply to selected" bar, the EAN-fix bar, and every
+    // row checkbox — otherwise the page still LOOKS editable after recording.
+    var _db = document.getElementById('draftBanner'); if (_db) _db.remove();
+    document.querySelectorAll('#affBulk, .aff-eanbar').forEach(function (x) { x.remove(); });
+    document.querySelectorAll('#affAll, .aff-chk').forEach(function (x) { x.remove(); });
   }
 
   var HUB_URL = "{% url 'b2b_dashboard' %}";
