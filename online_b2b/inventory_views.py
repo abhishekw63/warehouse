@@ -64,6 +64,10 @@ def inventory(request):
     q = (request.GET.get('q') or '').strip()
 
     snaps = store.current_snapshots()
+    # Fetch EVERY current snapshot's per-bin audit in ONE query (not one round-trip
+    # per snapshot — each opens a fresh TLS connection to remote TiDB). Cards and
+    # new-bin alerts are then both derived from this single fetch.
+    audits = store.bin_audit_bulk([s['snapshot_id'] for s in snaps.values()])
     # order snapshots by our warehouse registry, then any extras
     snap_cards = []
     for w in store.WAREHOUSES:
@@ -72,7 +76,7 @@ def inventory(request):
         if s:
             # per-bin audit → split into what we COUNTED vs EXCLUDED vs NEW, so
             # the operator can see exactly which bins the sellable qty came from.
-            audit = store.bin_audit(s['snapshot_id'])
+            audit = audits.get(s['snapshot_id'], [])
             card['considered'] = [b for b in audit if b['decision'] == 'include']
             card['excluded'] = [b for b in audit if b['decision'] == 'exclude']
             card['new'] = [b for b in audit if b['decision'] == 'new']
@@ -86,10 +90,11 @@ def inventory(request):
                    if c.get('age_hours') is not None), default=None)
     extras = [c for k, c in snaps.items() if k not in store.WH_BY_CODE]
 
-    # new-bin alerts across current snapshots (needs classification)
+    # new-bin alerts across current snapshots — derived from the SAME bulk audit
+    # (no extra per-snapshot query).
     alerts = []
     for code, s in snaps.items():
-        nb = store.new_bins(s['snapshot_id'])
+        nb = [b for b in audits.get(s['snapshot_id'], []) if b['decision'] == 'new']
         if nb:
             alerts.append({'warehouse': code, 'name': store.wh_name(code),
                            'bins': nb, 'count': len(nb),

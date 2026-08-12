@@ -216,7 +216,19 @@ _SQLITE_DDL = [
 ]
 
 
+_TABLES_READY = False
+
+
 def ensure_tables() -> None:
+    # Run the CREATE / ALTER / seed DDL ONCE per process. It's idempotent, but on
+    # TiDB each DDL is a slow schema-change round-trip; this function is called by
+    # every read helper, so re-running the whole sweep on every call made the
+    # Inventory page (which fans out into ~8 helpers) take ~40s. Cache "ready" so
+    # only the FIRST call does DDL; the rest return instantly. Schema/seed don't
+    # change during a process's life. [[dev-health-observability]]
+    global _TABLES_READY
+    if _TABLES_READY:
+        return
     with _conn() as (cur, d):
         for ddl in (_MYSQL_DDL if d['kind'] == 'mysql' else _SQLITE_DDL):
             cur.execute(ddl)
@@ -257,6 +269,7 @@ def ensure_tables() -> None:
                 f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph})",
                 (pat, mt, dec, 'seed default', 'system', now))
         cur.connection.commit()
+    _TABLES_READY = True   # DDL done for this process — skip the sweep next time
 
 
 # ── bin classification ──────────────────────────────────────────────────────
@@ -496,7 +509,9 @@ def parse_bin_content(path) -> dict:
                         'item_no': key, 'ean': str(col(r, 'ean') or '').strip(),
                         'description': str(col(r, 'description') or '').strip(),
                         'uom': str(col(r, 'uom') or '').strip(), 'qty': 0.0}
-                s['qty'] += qty
+                # A negative bin qty (over-picked / correction row) must NOT drag a
+                # SKU's sellable stock down — treat negatives as 0 for availability.
+                s['qty'] += qty if qty > 0 else 0.0
                 if not s['ean']:
                     s['ean'] = str(col(r, 'ean') or '').strip()
                 if not s['description']:
@@ -614,8 +629,11 @@ def reclassify_snapshot(snapshot_id) -> dict:
                 cur.execute(f"UPDATE inventory_bin_line SET decision={ph} WHERE id={ph}",
                             (classify_bin(bc, compiled), lid))
 
-            # 3) rebuild sellable inventory_stock = Σ include-bin qty per item
-            cur.execute(f"SELECT item_no, SUM(qty) FROM inventory_bin_line "
+            # 3) rebuild sellable inventory_stock = Σ POSITIVE include-bin qty per
+            #    item — negative bins (over-pick / correction rows) count as 0,
+            #    never reducing sellable stock.
+            cur.execute(f"SELECT item_no, SUM(CASE WHEN qty > 0 THEN qty ELSE 0 END) "
+                        f"FROM inventory_bin_line "
                         f"WHERE snapshot_id={ph} AND decision='include' GROUP BY item_no",
                         (snapshot_id,))
             inc_items = {str(a).strip(): float(b or 0) for a, b in cur.fetchall()}
@@ -834,6 +852,29 @@ def bin_audit(snapshot_id) -> list[dict]:
 def new_bins(snapshot_id) -> list[dict]:
     """Unknown/new bins in a snapshot (need classification) — the alert list."""
     return [b for b in bin_audit(snapshot_id) if b['decision'] == 'new']
+
+
+def bin_audit_bulk(snapshot_ids) -> dict:
+    """``{snapshot_id: [audit rows]}`` for MANY snapshots in ONE query — avoids a
+    per-snapshot round-trip (each opens a fresh TLS connection to remote TiDB, so
+    the Inventory page's several snapshots cost several handshakes). Read-only."""
+    ensure_tables()
+    ids = [s for s in (snapshot_ids or []) if s is not None]
+    if not ids:
+        return {}
+    out: dict = {i: [] for i in ids}
+    with _conn() as (cur, d):
+        ph = d['ph']
+        marks = ','.join([ph] * len(ids))
+        cur.execute(
+            f"SELECT snapshot_id, bin_code, zone_code, decision, n_lines, qty "
+            f"FROM inventory_bin_audit WHERE snapshot_id IN ({marks}) "
+            f"ORDER BY (decision='new') DESC, qty DESC", tuple(ids))
+        for sid, bin_code, zone, decision, nlines, qty in cur.fetchall():
+            out.setdefault(sid, []).append(
+                {'bin_code': bin_code, 'zone_code': zone, 'decision': decision,
+                 'lines': nlines, 'qty': qty})
+    return out
 
 
 _DEC_WORD = {'include': 'INCLUDED', 'exclude': 'EXCLUDED', 'new': 'NEW'}
