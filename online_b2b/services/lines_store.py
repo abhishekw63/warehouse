@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import datetime as _dt
 
-from .order_db import _conn
+from .order_db import _conn, _conn_tx
 
 # 2-table split (scalable model): order_lines = immutable order FACTS;
 # order_line_validation = the computed validation + operator-decision layer
@@ -429,34 +429,97 @@ def record_run_headers(result, marketplace, warehouse, output_file='',
         'total_value': sum(float(o['order_value'] or 0) for o in rows),
     }
     with _conn() as (cur, d):
-        ph = d['ph']
-        cur.execute(
-            f"INSERT INTO runs (run_ts, mode, source, marketplaces, total_pos, "
-            f"total_items, total_qty, total_value, consolidated_path, "
-            f"tracker_path) VALUES ({ph},'MANUAL',{ph},{ph},{ph},{ph},{ph},{ph},"
-            f"'','')",
-            (run_ts, source, meta['marketplaces'], meta['total_pos'],
-             meta['total_items'], meta['total_qty'], meta['total_value']))
-        run_id = cur.lastrowid
-        hcols = ('run_id, run_ts, created_at, mode, segment, marketplace, '
-                 'marketplace_label, po, location, warehouse, po_date, exp_date, '
-                 'order_type, items, qty, order_value, output_file')
-        marks = ', '.join([ph] * 17)
-        for o in rows:
-            # date-guard: catch DD/MM-swapped source dates before they land
-            pod, exd = _to_date(o['po_date']), _to_date(o['exp_date'])
-            pod, exd, _note = sane_po_exp(o['marketplace_label'], pod, exd)
-            if _note:
-                _dlog.warning("date-guard: PO %s %s", o['po'], _note)
-            cur.execute(
-                f"INSERT INTO order_headers ({hcols}) VALUES ({marks})",
-                (run_id, run_ts, run_ts, 'MANUAL', o.get('segment', ORDER_SEGMENT),
-                 o['marketplace'], o['marketplace_label'], o['po'], o['location'],
-                 o['warehouse'], pod, exd,
-                 o['order_type'], o['items'], o['qty'], o['order_value'],
-                 o['output_file']))
+        run_id = _insert_run_and_headers(cur, d['ph'], run_ts, source, meta, rows)
         cur.connection.commit()
     return {'run_id': run_id, 'new_orders': len(rows)}
+
+
+def _insert_run_and_headers(cur, ph, run_ts, source, meta, rows):
+    """INSERT the ``runs`` row + all ``order_headers`` on an EXISTING cursor (NO
+    commit — the caller owns the transaction). Returns the new run_id."""
+    from online_po_processor.auto.history_db import ORDER_SEGMENT, _to_date
+    cur.execute(
+        f"INSERT INTO runs (run_ts, mode, source, marketplaces, total_pos, "
+        f"total_items, total_qty, total_value, consolidated_path, "
+        f"tracker_path) VALUES ({ph},'MANUAL',{ph},{ph},{ph},{ph},{ph},{ph},"
+        f"'','')",
+        (run_ts, source, meta['marketplaces'], meta['total_pos'],
+         meta['total_items'], meta['total_qty'], meta['total_value']))
+    run_id = cur.lastrowid
+    hcols = ('run_id, run_ts, created_at, mode, segment, marketplace, '
+             'marketplace_label, po, location, warehouse, po_date, exp_date, '
+             'order_type, items, qty, order_value, output_file')
+    marks = ', '.join([ph] * 17)
+    for o in rows:
+        # date-guard: catch DD/MM-swapped source dates before they land
+        pod, exd = _to_date(o['po_date']), _to_date(o['exp_date'])
+        pod, exd, _note = sane_po_exp(o['marketplace_label'], pod, exd)
+        if _note:
+            _dlog.warning("date-guard: PO %s %s", o['po'], _note)
+        cur.execute(
+            f"INSERT INTO order_headers ({hcols}) VALUES ({marks})",
+            (run_id, run_ts, run_ts, 'MANUAL', o.get('segment', ORDER_SEGMENT),
+             o['marketplace'], o['marketplace_label'], o['po'], o['location'],
+             o['warehouse'], pod, exd,
+             o['order_type'], o['items'], o['qty'], o['order_value'],
+             o['output_file']))
+    return run_id
+
+
+def _insert_line_rows(cur, ph, run_id, rows):
+    """INSERT ``order_lines`` + ``order_line_validation`` on an EXISTING cursor
+    (NO commit). Facts row-by-row to capture each line_id; validation rows are
+    bulk-inserted 1:1 by that line_id. Returns the count inserted."""
+    if not rows:
+        return 0
+    ins_f = (f"INSERT INTO order_lines ({', '.join(_FACT_COLS)}) "
+             f"VALUES ({', '.join([ph] * len(_FACT_COLS))})")
+    vcols = ['line_id'] + _VAL_COLS
+    ins_v = (f"INSERT INTO order_line_validation ({', '.join(vcols)}) "
+             f"VALUES ({', '.join([ph] * len(vcols))})")
+    val_payload = []
+    for r in rows:
+        cur.execute(ins_f, tuple(r.get(c) for c in _FACT_COLS))
+        lid = cur.lastrowid
+        val_payload.append((lid, *(r.get(c) for c in _VAL_COLS)))
+    if val_payload:
+        cur.executemany(ins_v, val_payload)
+    return len(rows)
+
+
+def record_run_atomic(result, marketplace, warehouse, output_file, line_rows,
+                      as_of=None) -> dict:
+    """Lock & Record as ONE transaction: ``runs`` + ``order_headers`` +
+    ``order_lines`` + ``order_line_validation`` are written together and
+    COMMITTED only after ALL succeed. Any error / interruption / crash rolls the
+    WHOLE thing back — the DB is 100%% written or completely untouched, never a
+    partial run. Returns ``{run_id, new_orders, lines_recorded}``; raises on
+    failure so the caller can report it (nothing was recorded)."""
+    import datetime as _dt2
+    import os as _os
+
+    from online_po_processor.auto.history_db import order_rows_from_result
+    rows = order_rows_from_result(result, marketplace, warehouse or '', output_file)
+    if not rows:
+        return {'run_id': None, 'new_orders': 0, 'lines_recorded': 0}
+    ensure_table()   # create order_lines/validation tables BEFORE the tx (DDL auto-commits)
+    run_ts = as_of or _dt2.datetime.now()
+    source = (f"MANUAL: {_os.path.basename(output_file)}" if output_file else 'MANUAL')
+    meta = {
+        'marketplaces': 1,
+        'total_pos': len({(o['marketplace'], o['po']) for o in rows}),
+        'total_items': len(getattr(result, 'rows', []) or []),
+        'total_qty': sum(int(o['qty'] or 0) for o in rows),
+        'total_value': sum(float(o['order_value'] or 0) for o in rows),
+    }
+    with _conn_tx() as (cur, d):
+        ph = d['ph']
+        run_id = _insert_run_and_headers(cur, ph, run_ts, source, meta, rows)
+        for r in (line_rows or []):      # stamp the just-created run_id onto each line
+            r['run_id'] = run_id
+        n = _insert_line_rows(cur, ph, run_id, line_rows or [])
+        # _conn_tx COMMITS on clean exit; ANY exception above → full ROLLBACK.
+    return {'run_id': run_id, 'new_orders': len(rows), 'lines_recorded': n}
 
 
 def apply_issue_ean_fix(line_id, correct_ean) -> dict:
@@ -624,23 +687,9 @@ def insert_lines(run_id, rows: list[dict]) -> dict:
         return {'recorded': 0}
     ensure_table()
     with _conn() as (cur, d):
-        ph = d['ph']
-        ins_f = (f"INSERT INTO order_lines ({', '.join(_FACT_COLS)}) "
-                 f"VALUES ({', '.join([ph] * len(_FACT_COLS))})")
-        vcols = ['line_id'] + _VAL_COLS
-        ins_v = (f"INSERT INTO order_line_validation ({', '.join(vcols)}) "
-                 f"VALUES ({', '.join([ph] * len(vcols))})")
-        # Insert facts row-by-row to capture each line_id, then bulk-insert the
-        # matching validation rows keyed by that line_id (1:1).
-        val_payload = []
-        for r in rows:
-            cur.execute(ins_f, tuple(r.get(c) for c in _FACT_COLS))
-            lid = cur.lastrowid
-            val_payload.append((lid, *(r.get(c) for c in _VAL_COLS)))
-        if val_payload:
-            cur.executemany(ins_v, val_payload)
+        n = _insert_line_rows(cur, d['ph'], run_id, rows)
         cur.connection.commit()
-    return {'recorded': len(rows)}
+    return {'recorded': n}
 
 
 def update_action(line_id, action, remark) -> dict:

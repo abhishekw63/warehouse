@@ -1583,52 +1583,49 @@ class Processor:
             'warnings': self.warnings,
             'summary': self._summary(lines, self._headers()),
         }
+        from . import lines_store
+        # ── CORE record: runs + order_headers + order_lines in ONE TRANSACTION ──
+        # All-or-nothing. If ANYTHING fails (or the process is interrupted), the
+        # whole thing rolls back — the DB is 100% written or completely untouched,
+        # never a partial run. On failure we report cleanly (nothing recorded).
         try:
-            from . import lines_store
-            # Web-owned write of runs + order_headers (replaces the engine's
-            # record_manual → no engine history store, so order_issue_lines is
-            # never recreated). Byte-identical to the old path (parity-verified).
-            # ``as_of`` back-dates the whole record to a finalized draft's park day.
-            rec = lines_store.record_run_headers(
+            # Build the line rows first — the run_id is stamped inside the atomic
+            # write. _lines() applies EAN fixes (correct ean + received_ean audit).
+            rows = self._lines(output_file=str(output_path), actions=actions,
+                               as_of=as_of)
+            rec = lines_store.record_run_atomic(
                 self.result, self.marketplace, self.warehouse, str(output_path),
-                as_of=as_of)
+                rows, as_of=as_of)
             out['run_id'] = rec.get('run_id')
             out['new_orders'] = rec.get('new_orders', 0)
-            # via _lines() so EAN fixes are applied (correct ean on the line +
-            # received_ean stamped on the validation row).
-            rows = self._lines(run_id=out['run_id'],
-                               output_file=str(output_path), actions=actions,
-                               as_of=as_of)
-            out['lines_recorded'] = lines_store.insert_lines(
-                out['run_id'], rows).get('recorded', 0)
-            # Amount-less TO (Flipkart Branch): the engine recorded order_value=0
-            # (dump has no amount). Lock the inc-GST value we derived from our
-            # table onto the headers we just wrote.
+            out['lines_recorded'] = rec.get('lines_recorded', 0)
+        except Exception as e:  # noqa: BLE001 — rolled back; NOTHING was recorded
+            out['ok'] = False
+            out['error'] = (f"Nothing was recorded — the run was rolled back "
+                            f"({type(e).__name__}). No partial data was written; "
+                            f"please retry.")
+            return out
+        # ── post-record ENRICHMENT (best-effort) ──────────────────────────────
+        # These polish the ALREADY-COMMITTED run (backfill amount-less TO value,
+        # PDF po/exp dates, friendly location). A failure here must NOT flip the
+        # run to "not recorded" — the record is safe; just warn.
+        try:
             if self._amountless_to():
                 upd = lines_store.set_order_value(
                     out['run_id'], self._to_value_by_po(rows))
                 out['value_backfilled'] = upd.get('updated', 0)
-            # Tracker dates: PDF marketplaces (e.g. DMart) carry PO Date / validity
-            # in the PDF header but not as a row column, so the engine leaves
-            # po_date/exp_date blank → they'd never show on the TAT page. Backfill
-            # the real dates from the source (fills blanks only). See
-            # ``_source_dates_by_po`` (no-op for marketplaces the engine already
-            # dates via po_date_col).
             dts = self._source_dates_by_po()
             if dts and out.get('run_id'):
                 out['dates_backfilled'] = lines_store.set_po_dates(
                     out['run_id'], dts, force=self._dates_force).get('updated', 0)
-            # Tracker location: some marketplaces (Myntra) need the engine to read
-            # the RAW ship-to address for its own resolution, so we can't shorten
-            # what it reads — instead re-stamp the friendly short name (e.g.
-            # 'Mumbai') onto the recorded headers here. No-op for everyone else.
             locs = self._source_location_by_po()
             if locs and out.get('run_id'):
                 out['locations_relabelled'] = lines_store.set_location(
                     out['run_id'], locs).get('updated', 0)
-        except Exception as e:  # noqa: BLE001
-            out['ok'] = False
-            out['error'] = f"DB push failed: {type(e).__name__}: {e}"
+        except Exception as e:  # noqa: BLE001 — enrichment failure ≠ un-recorded run
+            self.warnings.append(
+                f"Run recorded OK, but a post-record backfill was skipped "
+                f"({type(e).__name__}).")
         return out
 
     #: When True, ``_source_dates_by_po`` OVERWRITES the engine's po_date/exp_date

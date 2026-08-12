@@ -66,6 +66,43 @@ def _conn():
             c.close()
 
 
+@contextmanager
+def _conn_tx():
+    """Like :func:`_conn` but a TRANSACTION: autocommit OFF, COMMIT once on a
+    clean exit, ROLLBACK on any exception. Use for multi-statement, all-or-nothing
+    writes (Lock & Record) so an interruption/crash can never leave a partial run —
+    it's 100%% written or nothing at all."""
+    kind, target = _backend()
+    if kind == 'mysql':
+        import pymysql
+        from online_po_processor.auto.history_db import mysql_ssl
+        c = pymysql.connect(
+            host=target.get('host', '127.0.0.1'),
+            port=int(target.get('port', 3306)),
+            user=target.get('user', 'root'),
+            password=target.get('password', ''),
+            database=target.get('database', 'renee_orders'),
+            charset='utf8mb4', autocommit=False,     # ← transaction, not per-statement
+            **mysql_ssl(target))
+        dialect = {'ph': '%s', 'orders': 'order_headers', 'kind': 'mysql'}
+    else:
+        c = sqlite3.connect(str(target))
+        c.isolation_level = 'DEFERRED'               # explicit transaction
+        dialect = {'ph': '?', 'orders': 'orders', 'kind': 'sqlite'}
+    cur = c.cursor()
+    try:
+        yield cur, dialect
+        c.commit()                                   # only reached if the body succeeded
+    except Exception:
+        try:
+            c.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        raise
+    finally:
+        c.close()
+
+
 def _rows(cur, cols: list[str]) -> list[dict]:
     return [dict(zip(cols, r)) for r in cur.fetchall()]
 
