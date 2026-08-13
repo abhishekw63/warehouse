@@ -434,17 +434,20 @@ def record_run_headers(result, marketplace, warehouse, output_file='',
     return {'run_id': run_id, 'new_orders': len(rows)}
 
 
-def _insert_run_and_headers(cur, ph, run_ts, source, meta, rows):
+def _insert_run_and_headers(cur, ph, run_ts, source, meta, rows, recorded_by=None):
     """INSERT the ``runs`` row + all ``order_headers`` on an EXISTING cursor (NO
-    commit — the caller owns the transaction). Returns the new run_id."""
+    commit — the caller owns the transaction). ``recorded_by`` = the user who
+    clicked Lock & Record (audit). Returns the new run_id."""
     from online_po_processor.auto.history_db import ORDER_SEGMENT, _to_date
     cur.execute(
         f"INSERT INTO runs (run_ts, mode, source, marketplaces, total_pos, "
         f"total_items, total_qty, total_value, consolidated_path, "
-        f"tracker_path) VALUES ({ph},'MANUAL',{ph},{ph},{ph},{ph},{ph},{ph},"
-        f"'','')",
+        f"tracker_path, recorded_by, recorded_at) VALUES ({ph},'MANUAL',{ph},{ph},"
+        f"{ph},{ph},{ph},{ph},'','',{ph},{ph})",
         (run_ts, source, meta['marketplaces'], meta['total_pos'],
-         meta['total_items'], meta['total_qty'], meta['total_value']))
+         meta['total_items'], meta['total_qty'], meta['total_value'],
+         (str(recorded_by)[:150] if recorded_by else None),
+         _dt.datetime.now()))                # recorded_at = ACTUAL record time
     run_id = cur.lastrowid
     hcols = ('run_id, run_ts, created_at, mode, segment, marketplace, '
              'marketplace_label, po, location, warehouse, po_date, exp_date, '
@@ -468,27 +471,77 @@ def _insert_run_and_headers(cur, ph, run_ts, source, meta, rows):
 
 def _insert_line_rows(cur, ph, run_id, rows):
     """INSERT ``order_lines`` + ``order_line_validation`` on an EXISTING cursor
-    (NO commit). Facts row-by-row to capture each line_id; validation rows are
-    bulk-inserted 1:1 by that line_id. Returns the count inserted."""
+    (NO commit — caller owns the transaction). Returns the count inserted.
+
+    BATCHED for speed: the old code inserted facts one row at a time to read each
+    ``lastrowid`` — that meant one network round-trip PER LINE, so a 3.4k-line run
+    took ~6 min over remote TiDB (89 ms/hop). Now facts go in via ``executemany``
+    (a few round-trips), then we read the new ``line_id``s back **in insertion
+    order** (``WHERE run_id AND line_id > prev_max ORDER BY line_id``) and pair the
+    1:1 validation rows POSITIONALLY. This never assumes auto-increment
+    contiguity, so it's safe on TiDB (cached, gap-prone IDs) and under concurrency
+    (the run_id filter isolates this run). A readback/row-count mismatch raises →
+    the whole transaction rolls back (atomic; never a mis-paired or partial write).
+    ~250x fewer round-trips → ~6 min becomes ~1-2 s."""
     if not rows:
         return 0
     ins_f = (f"INSERT INTO order_lines ({', '.join(_FACT_COLS)}) "
              f"VALUES ({', '.join([ph] * len(_FACT_COLS))})")
+    # remember the run's current high-water line_id so we read back ONLY the rows
+    # this call inserts (a backfill run may already have some).
+    cur.execute(f"SELECT COALESCE(MAX(line_id), 0) FROM order_lines WHERE run_id={ph}",
+                (run_id,))
+    prev_max = cur.fetchone()[0] or 0
+    cur.executemany(ins_f, [tuple(r.get(c) for c in _FACT_COLS) for r in rows])
+    # read back the freshly-inserted ids in insertion order
+    cur.execute(f"SELECT line_id FROM order_lines WHERE run_id={ph} AND line_id > {ph} "
+                f"ORDER BY line_id", (run_id, prev_max))
+    ids = [r[0] for r in cur.fetchall()]
+    if len(ids) != len(rows):
+        # never pair mismatched sets — bail so the transaction rolls back
+        raise RuntimeError(
+            f"order_lines id read-back mismatch: {len(ids)} new ids for "
+            f"{len(rows)} rows (run {run_id}) — rolling back.")
     vcols = ['line_id'] + _VAL_COLS
     ins_v = (f"INSERT INTO order_line_validation ({', '.join(vcols)}) "
              f"VALUES ({', '.join([ph] * len(vcols))})")
-    val_payload = []
-    for r in rows:
-        cur.execute(ins_f, tuple(r.get(c) for c in _FACT_COLS))
-        lid = cur.lastrowid
-        val_payload.append((lid, *(r.get(c) for c in _VAL_COLS)))
-    if val_payload:
-        cur.executemany(ins_v, val_payload)
+    cur.executemany(ins_v, [(ids[i], *(rows[i].get(c) for c in _VAL_COLS))
+                            for i in range(len(rows))])
     return len(rows)
 
 
+def insert_lines_for_run(run_id, run_ts, line_rows) -> int:
+    """Write order_lines (+ 1:1 validation) for a run whose HEADERS were recorded
+    elsewhere — used by the offline EKA path, which records headers via history_db
+    but not lines. Each row is a fact+validation dict; run_id/run_ts are stamped
+    in. Atomic (own transaction). Returns the count written."""
+    rows = [r for r in (line_rows or []) if r]
+    if run_id is None or not rows:
+        return 0
+    for r in rows:
+        r['run_id'] = run_id
+        if not r.get('run_ts'):
+            r['run_ts'] = run_ts
+    with _conn_tx() as (cur, d):
+        return _insert_line_rows(cur, d['ph'], run_id, rows)
+
+
+def _ensure_run_recorded_by(cur) -> None:
+    """Additive: make sure the ``runs`` table has the audit columns —
+    ``recorded_by`` (who clicked Lock & Record) and ``recorded_at`` (the ACTUAL
+    record time; ``run_ts`` is back-dated to the upload day, so it's not the real
+    moment). Idempotent — each ALTER is a no-op/ignored if it already exists. DDL,
+    so call OUTSIDE the atomic transaction (it auto-commits)."""
+    for ddl in ("ALTER TABLE runs ADD COLUMN recorded_by VARCHAR(150)",
+                "ALTER TABLE runs ADD COLUMN recorded_at DATETIME"):
+        try:
+            cur.execute(ddl)
+        except Exception:  # noqa: BLE001 — already present (or race) → fine
+            pass
+
+
 def record_run_atomic(result, marketplace, warehouse, output_file, line_rows,
-                      as_of=None) -> dict:
+                      as_of=None, recorded_by=None) -> dict:
     """Lock & Record as ONE transaction: ``runs`` + ``order_headers`` +
     ``order_lines`` + ``order_line_validation`` are written together and
     COMMITTED only after ALL succeed. Any error / interruption / crash rolls the
@@ -503,6 +556,8 @@ def record_run_atomic(result, marketplace, warehouse, output_file, line_rows,
     if not rows:
         return {'run_id': None, 'new_orders': 0, 'lines_recorded': 0}
     ensure_table()   # create order_lines/validation tables BEFORE the tx (DDL auto-commits)
+    with _conn() as (_cur, _d):          # ensure recorded_by col before the tx (DDL)
+        _ensure_run_recorded_by(_cur)
     run_ts = as_of or _dt2.datetime.now()
     source = (f"MANUAL: {_os.path.basename(output_file)}" if output_file else 'MANUAL')
     meta = {
@@ -514,7 +569,8 @@ def record_run_atomic(result, marketplace, warehouse, output_file, line_rows,
     }
     with _conn_tx() as (cur, d):
         ph = d['ph']
-        run_id = _insert_run_and_headers(cur, ph, run_ts, source, meta, rows)
+        run_id = _insert_run_and_headers(cur, ph, run_ts, source, meta, rows,
+                                         recorded_by=recorded_by)
         for r in (line_rows or []):      # stamp the just-created run_id onto each line
             r['run_id'] = run_id
         n = _insert_line_rows(cur, ph, run_id, line_rows or [])
