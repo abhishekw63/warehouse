@@ -102,7 +102,7 @@ class OutputRow:
                           (auto-filled from EKA_DATA in standalone mode)
         item_no        : Item No from Items_March, or product name if unresolved
         qty            : Quantity (order or tester)
-        unit_price     : Calculated cost price (PO) or ₹0.54 (testers)
+        unit_price     : Calculated cost price (PO) or ₹1 (testers)
         transfer_to    : Transfer-to Code / Location Code
                           (auto-filled from EKA_DATA)
         posting_group  : Gen. Bus. Posting Group
@@ -134,10 +134,10 @@ class LocationResult:
     """
     filename: str
     regular_orders: List[OutputRow] = field(default_factory=list)   # PO orders
-    tester_orders: List[OutputRow] = field(default_factory=list)    # Testers (₹0.54)
-    pwp_orders: List[OutputRow] = field(default_factory=list)       # PWP (₹0.54)
-    gwp_orders: List[OutputRow] = field(default_factory=list)       # GWP (₹0.54)
-    nonstock_orders: List[OutputRow] = field(default_factory=list)  # Non-stock (₹0.54)
+    tester_orders: List[OutputRow] = field(default_factory=list)    # Testers (₹1)
+    pwp_orders: List[OutputRow] = field(default_factory=list)       # PWP (₹1)
+    gwp_orders: List[OutputRow] = field(default_factory=list)       # GWP (₹1)
+    nonstock_orders: List[OutputRow] = field(default_factory=list)  # Non-stock (₹1)
     unmatched: List[Dict] = field(default_factory=list)             # EANs not in master
     logs: List[tuple] = field(default_factory=list)                 # (level, message)
 
@@ -153,7 +153,7 @@ class LocationResult:
 #     Landing Cost = MRP × 60%
 #     Cost Price   = Landing Cost ÷ (1 + GST rate)
 #
-# Testers / PWP / GWP / Non-Stock items: flat ₹0.54.
+# Testers / PWP / GWP / Non-Stock items: flat ₹1.
 #
 # PWP rules:
 #     'Stay With Me - Mini' → IGNORED
@@ -206,7 +206,7 @@ class POEngine:
     # │                                                                    │
     # │ Used for PWP items that aren't on the ignore list AND aren't the   │
     # │ 4-way Perfume split — i.e. one row in the PWP sheet → one EAN in   │
-    # │ Items_March, at flat ₹0.54.                                        │
+    # │ Items_March, at flat ₹1.                                        │
     # │                                                                    │
     # │ Lookup is whitespace-normalized: \xa0 (non-breaking space) and     │
     # │ multiple spaces are collapsed to single regular spaces before      │
@@ -287,19 +287,30 @@ class POEngine:
 
         return len(df)
 
+    # Landing multiplier — Landing = MRP × LANDING_PCT. Default 0.60 (the
+    # historical hardcoded value); the web sets it per-store from
+    # eka_data.margin_pct before each store's file is processed, so editing a
+    # margin on the EKA Data page changes the output with no code change.
+    LANDING_PCT = 0.60
+
+    # Tester / sample unit price — a flat ₹1 (standing rule, from 10-Aug-2026:
+    # testers go into the order at ₹1 each, a nominal sample price, not CP and not
+    # the old ₹0.54). Used for every tester-type row (TESTER / PWP / GWP / non-stock).
+    TESTER_PRICE = 1.0
+
     @staticmethod
     def calc_cost_price(mrp, gst_code: str) -> Optional[float]:
         """
         Calculate unit price for regular PO orders.
 
         Formula:
-            Landing = MRP × 0.60
+            Landing = MRP × LANDING_PCT (default 0.60)
             Cost    = Landing ÷ (1 + GST)
         """
         if mrp is None or pd.isna(mrp):
             return None
 
-        landing = float(mrp) * 0.60
+        landing = float(mrp) * POEngine.LANDING_PCT
         gst = str(gst_code).strip().upper()
 
         if gst in ('0-G', 'G-0', 'G-0-S', '0', '') or gst == 'NAN':
@@ -517,7 +528,7 @@ class POEngine:
             if tester_qty > 0:
                 testers.append(OutputRow(
                     item_no=item_no, qty=tester_qty,
-                    unit_price=0.54, source='TESTER',
+                    unit_price=POEngine.TESTER_PRICE, source='TESTER',
                     ean=ean, lookup_status=status,
                 ))
 
@@ -530,7 +541,7 @@ class POEngine:
         Resolution order for each non-Total row with qty > 0:
             1. Name in PWP_IGNORE  → skip (e.g. Stay With Me - Mini)
             2. 'perfume' substring → 4-way EAN split (PERFUME_EANS)
-            3. Name in PWP_EAN_MAP → single-EAN lookup at ₹0.54
+            3. Name in PWP_EAN_MAP → single-EAN lookup at ₹1
                                       (v1.5.8: new single-EAN layer)
             4. Otherwise           → fallback: emit row with name as
                                       item_no, status 'UNKNOWN' for
@@ -603,7 +614,7 @@ class POEngine:
                         logs.append(('warn', f"PWP: Perfume EAN {ean} not in master"))
 
                     rows.append(OutputRow(
-                        item_no=item_no, qty=eq, unit_price=0.54,
+                        item_no=item_no, qty=eq, unit_price=POEngine.TESTER_PRICE,
                         source='PWP', ean=ean,
                         product_name=f'Perfume ({ean})',
                         lookup_status='OK' if info else 'NOT_FOUND',
@@ -629,7 +640,7 @@ class POEngine:
                         f"EAN not in Items_March — outputting placeholder"))
 
                 rows.append(OutputRow(
-                    item_no=item_no, qty=qty, unit_price=0.54,
+                    item_no=item_no, qty=qty, unit_price=POEngine.TESTER_PRICE,
                     source='PWP', ean=ean, product_name=name_raw,
                     lookup_status=status,
                 ))
@@ -647,7 +658,7 @@ class POEngine:
             )
             logs.append(('warn', log_msg))
             rows.append(OutputRow(
-                item_no=name_raw, qty=qty, unit_price=0.54,
+                item_no=name_raw, qty=qty, unit_price=POEngine.TESTER_PRICE,
                 source='PWP', product_name=name_raw, lookup_status='UNKNOWN',
             ))
 
@@ -689,7 +700,7 @@ class POEngine:
                         f"GWP: EAN {ean} ({name_str}) not found → using name"))
 
                 rows.append(OutputRow(
-                    item_no=item_no, qty=qty, unit_price=0.54,
+                    item_no=item_no, qty=qty, unit_price=POEngine.TESTER_PRICE,
                     source='GWP', ean=ean, product_name=name_str,
                     lookup_status='OK' if info else 'NOT_FOUND',
                 ))
@@ -723,7 +734,7 @@ class POEngine:
                     f"Non-Stock: '{name}' qty={qty} → not in map, "
                     f"outputting name directly"))
                 rows.append(OutputRow(
-                    item_no=name, qty=qty, unit_price=0.54,
+                    item_no=name, qty=qty, unit_price=POEngine.TESTER_PRICE,
                     source='NON_STOCK', ean='', product_name=name,
                     lookup_status='NO_MAP',
                 ))
@@ -740,7 +751,7 @@ class POEngine:
                     f"Non-Stock: '{name}' code={ean} → not in master"))
 
             rows.append(OutputRow(
-                item_no=item_no, qty=qty, unit_price=0.54,
+                item_no=item_no, qty=qty, unit_price=POEngine.TESTER_PRICE,
                 source='NON_STOCK', ean=ean, product_name=name,
                 lookup_status=status,
             ))
@@ -1235,7 +1246,7 @@ class ExcelWriter:
             loc = res.filename.replace('.xlsx', '').replace('_NEW_PO', '').replace('_New_PO', '')
 
             # Regular doc = FG only (regular_orders). Tester doc carries
-            # every ₹0.54 line — testers, PWP, GWP, Non-Stock — so PWP now
+            # every ₹1 tester line — testers, PWP, GWP, Non-Stock — so PWP now
             # falls back into the Tester TO/SO column, not the regular one.
             to_regular = ''
             to_tester = ''
@@ -1872,7 +1883,7 @@ class SpecialOrderEngine:
                 if tester_qty > 0:
                     res.tester_orders.append(OutputRow(
                         to=to_tester,
-                        item_no=item_no, qty=tester_qty, unit_price=0.54,
+                        item_no=item_no, qty=tester_qty, unit_price=POEngine.TESTER_PRICE,
                         transfer_to=loc['transfer_code'],
                         posting_group=loc['posting_group'],
                         source='TESTER', ean=ean,
@@ -2451,3 +2462,35 @@ def build_eka_order_rows(results, output_file: str = '',
     for o in orders.values():
         o['order_value'] = round(o['order_value'], 2)
     return list(orders.values())
+
+
+def build_eka_line_rows(results, output_file: str = '', warehouse: str = 'AHD') -> list:
+    """One row per SKU (OutputRow) across all order types — the LINE-level
+    complement to :func:`build_eka_order_rows`. Shaped for ``order_lines`` (+ a
+    minimal 1:1 validation row) so EKA orders appear in Availability / Fulfilment
+    / SKU views like every other channel. ``po`` = the SO/TO number (matches the
+    header). ``unit_price`` is the per-unit price (regular = cost, tester = ₹1)."""
+    rows = []
+    for res in results:
+        for row in (res.regular_orders + res.tester_orders + res.pwp_orders
+                    + res.gwp_orders + res.nonstock_orders):
+            to = (row.to or '').strip()
+            if not to:
+                continue
+            up = float(row.unit_price or 0.0)
+            rows.append({
+                'marketplace': EKA_MARKETPLACE,
+                'po': to,
+                'location': row.transfer_to or '',
+                'item_no': str(row.item_no or '').strip(),
+                'ean': str(row.ean or '').strip(),
+                'description': str(row.product_name or '').strip(),
+                'qty': int(row.qty or 0),
+                'order_type': 'TO' if to.startswith('TO/') else 'SO',
+                'gst_code': '',
+                'unit_price': up,
+                'output_file': output_file or '',
+                # minimal validation (1:1) so the order_lines_full join surfaces it
+                'our_landing': up, 'our_cp': up, 'status': 'OK',
+            })
+    return rows

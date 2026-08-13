@@ -48,9 +48,9 @@ def _db_locations() -> List[Dict]:
     with _conn() as (cur, _d):
         cur.execute(
             "SELECT short_name, prefix, short_code, transfer_code, "
-            "location_code, kind, posting_group, bill_to, ship_to, status "
+            "location_code, kind, posting_group, bill_to, ship_to, status, margin_pct "
             "FROM eka_data")
-        for sn, pf, sc, tc, loc, kind, pg, bt, st, status in cur.fetchall():
+        for sn, pf, sc, tc, loc, kind, pg, bt, st, status, mrgn in cur.fetchall():
             if str(status or 'Active').strip().lower() == 'inactive':
                 continue
             if not str(sc or '').strip():
@@ -66,6 +66,7 @@ def _db_locations() -> List[Dict]:
                 'posting_group': clean(pg),
                 'bill_to': clean(bt),
                 'ship_to': clean(st),
+                'margin_pct': (float(mrgn) if mrgn is not None else None),
             })
     return locs
 
@@ -153,8 +154,14 @@ def process(paths: List[str], warehouse: str = 'AHD') -> Dict:
                                     'kind': 'error'})
                 continue
 
-            res = engine.process_file(path)
+            # Resolve the store FIRST so we can set its per-store margin before
+            # pricing. Landing = MRP × (margin_pct/100), from eka_data (editable on
+            # the EKA Data page); default 0.60 when blank — identical to the old
+            # hardcoded value. Sequential loop → setting the class attr is safe.
             eka_loc, suffix_idx = _lookup_location(path, locations)
+            _m = (eka_loc or {}).get('margin_pct')
+            eka_engine.POEngine.LANDING_PCT = (float(_m) / 100.0) if _m else 0.60
+            res = engine.process_file(path)
             if eka_loc:
                 has_regular = bool(res.regular_orders)
                 has_tester = bool(res.tester_orders or res.pwp_orders
@@ -264,23 +271,62 @@ def record(results, output_file: str = '', warehouse: str = 'AHD') -> Dict:
         new_rows = [r for r in rows
                     if (r['marketplace'], r['po']) not in existing]
         skipped = len(rows) - len(new_rows)
-        if not new_rows:
-            return {'recorded': False, 'reason': 'all orders already recorded',
-                    'skipped': skipped}
-        run_meta = {
-            'run_ts': datetime.now().isoformat(timespec='seconds'),
-            'mode': 'WEB',
-            'online_root': (f'OFFLINE EKA (web): {output_file}'
-                            if output_file else 'OFFLINE EKA (web)'),
-            'marketplaces': 1,
-            'total_pos': len(new_rows),
-            'total_items': sum(r['items'] for r in new_rows),
-            'total_qty': sum(r['qty'] for r in new_rows),
-            'total_value': sum(r['order_value'] for r in new_rows),
-            'consolidated_path': '', 'tracker_path': '',
-        }
-        res = H._record(new_rows, run_meta, db_path, skipped=skipped)
-        return {'recorded': True, 'skipped': skipped, **res}
+        run_ts = datetime.now().isoformat(timespec='seconds')
+        if new_rows:
+            run_meta = {
+                'run_ts': run_ts,
+                # runs.mode is ENUM('AUTO','MANUAL') on MySQL/TiDB — 'WEB' is
+                # rejected (err 1265). Web recordings are MANUAL like every other
+                # channel; the web origin is captured in online_root below.
+                'mode': 'MANUAL',
+                'online_root': (f'OFFLINE EKA (web): {output_file}'
+                                if output_file else 'OFFLINE EKA (web)'),
+                'marketplaces': 1,
+                'total_pos': len(new_rows),
+                'total_items': sum(r['items'] for r in new_rows),
+                'total_qty': sum(r['qty'] for r in new_rows),
+                'total_value': sum(r['order_value'] for r in new_rows),
+                'consolidated_path': '', 'tracker_path': '',
+            }
+            res = {'recorded': True, 'skipped': skipped,
+                   **H._record(new_rows, run_meta, db_path, skipped=skipped)}
+        else:
+            # All headers already exist — don't re-record them, but still (re)write
+            # any MISSING lines below so re-uploading fixes older header-only orders.
+            res = {'recorded': False, 'skipped': skipped,
+                   'reason': 'headers already recorded — backfilling lines'}
+        # ── Also write per-SKU order_lines so EKA orders show up in Availability /
+        #    Fulfilment / SKU views (history_db._record writes headers only). We
+        #    write lines for EVERY po in this batch that has no lines yet — so a
+        #    re-upload backfills older header-only EKA orders too, each tagged with
+        #    its OWN header's run_id. Best-effort; never breaks the header record.
+        try:
+            from online_b2b.services import lines_store
+            from online_b2b.services.order_db import _conn as _bconn
+            by_po = {}
+            for lr in eka_engine.build_eka_line_rows(results, output_file, warehouse):
+                by_po.setdefault(lr['po'], []).append(lr)
+            written = 0
+            for po, lrs in by_po.items():
+                with _bconn() as (cur, dd):
+                    ph = dd['ph']
+                    cur.execute(f"SELECT run_id FROM order_headers WHERE po={ph} "
+                                f"ORDER BY run_id DESC LIMIT 1", (po,))
+                    hr = cur.fetchone()
+                    if not hr:
+                        continue
+                    rid = hr[0]
+                    cur.execute(f"SELECT COUNT(*) FROM order_lines WHERE run_id={ph} "
+                                f"AND po={ph}", (rid, po))
+                    if cur.fetchone()[0] > 0:
+                        continue                       # already has lines
+                written += lines_store.insert_lines_for_run(rid, run_ts, lrs)
+            res['lines_recorded'] = written
+            if written and not res.get('recorded'):
+                res['recorded'] = True     # backfilled lines onto existing headers
+        except Exception as e:  # noqa: BLE001 — lines are additive; header stands
+            res['lines_error'] = f"{type(e).__name__}: {e}"
+        return res
     except Exception as e:  # noqa: BLE001
         return {'recorded': False, 'reason': f'DB error: {e}'}
 
