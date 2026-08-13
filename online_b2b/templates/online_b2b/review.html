@@ -384,7 +384,7 @@
             </select>
           </td>
           <td class="r"><input type="number" step="0.01" name="aff_override_cp" class="act-ocp"
-                value="{{ l.decision.override_cp|default:'' }}"
+                value="{% if l.decision.action == 'INCLUDE' %}{{ l.vendor_cp|default_if_none:'' }}{% elif l.decision.action == 'OVERRIDE' %}{% if l.decision.override_cp %}{{ l.decision.override_cp }}{% else %}{{ l.our_cp|default_if_none:'' }}{% endif %}{% else %}{{ l.decision.override_cp|default:'' }}{% endif %}"
                 data-ourcp="{{ l.our_cp|default_if_none:'' }}"
                 data-vendorcp="{{ l.vendor_cp|default_if_none:'' }}"
                 placeholder="—"
@@ -452,6 +452,20 @@
   .aff-tbl .desc{max-width:150px;}
   /* softer basis highlight so it reads as a tint, not a heavy band */
   .aff-tbl td.basis-on{box-shadow:none;background:color-mix(in srgb,var(--accent) 7%,var(--surface));}
+  /* ── Decision state (row-wide, so it reads at ANY horizontal scroll — the first
+     4 cols are sticky). Included = green, Excluded = grey + strikethrough. The
+     > td selector (specificity beats the sticky-cell background) tints frozen
+     cells too; a left accent bar sits on the always-visible checkbox column. */
+  .aff-tbl tr.dec-included > td{background:color-mix(in srgb,#16a34a 10%,var(--surface));}
+  .aff-tbl tr.dec-included > td.chk-col{box-shadow:inset 3px 0 0 #16a34a;}
+  .aff-tbl tr.dec-excluded > td{background:color-mix(in srgb,var(--muted) 14%,var(--surface));color:var(--muted);text-decoration:line-through;}
+  .aff-tbl tr.dec-excluded > td.chk-col{box-shadow:inset 3px 0 0 var(--muted);text-decoration:none;}
+  .aff-tbl tr.dec-excluded select,.aff-tbl tr.dec-excluded input{text-decoration:none;color:var(--text);}
+  /* Calm the STATUS badge once a line is DECIDED — red MISMATCH means "still open".
+     Included → green (resolved), Excluded → grey (dropped, inherits strikethrough).
+     So red only ever marks UNDECIDED lines that still need attention. */
+  .aff-tbl tr.dec-included .st{background:color-mix(in srgb,#16a34a 15%,transparent);color:#16a34a;}
+  .aff-tbl tr.dec-excluded .st{background:color-mix(in srgb,var(--muted) 18%,transparent);color:var(--muted);}
 </style>
 
 <!-- ── Lock progress overlay (AJAX; no page reload) ── -->
@@ -502,16 +516,22 @@
     var row = sel.closest('tr');                    // skip the bulk-bar select (not in a row)
     if (!row) return;
     var cp = row.querySelector('.act-ocp');
-    if (!cp) return;
+    function decorate() {                            // row-wide colour, visible at any scroll
+      row.classList.remove('dec-included', 'dec-excluded');
+      if (sel.value === 'INCLUDE' || sel.value === 'OVERRIDE') row.classList.add('dec-included');
+      else if (sel.value === 'EXCLUDE') row.classList.add('dec-excluded');
+    }
     function sync() {
-      if (sel.value === 'OVERRIDE') {               // Include (our CP)
-        cp.value = cp.getAttribute('data-ourcp') || '';
-      } else {
-        cp.value = '';
+      if (cp) {
+        if (sel.value === 'OVERRIDE') cp.value = cp.getAttribute('data-ourcp') || '';        // Include (our CP)
+        else if (sel.value === 'INCLUDE') cp.value = cp.getAttribute('data-vendorcp') || ''; // Include (their CP)
+        else cp.value = '';                         // Exclude / undecided → nothing applied
+        cp.setAttribute('readonly', 'readonly');    // read-only display of the applied CP
       }
-      cp.setAttribute('readonly', 'readonly');      // always read-only now
+      decorate();
     }
     sel.addEventListener('change', sync);
+    decorate();                                     // paint the already-saved state on load
   });
 
   // ── Per-line decision auto-save (decide each line, then lock) ──────────
@@ -618,10 +638,16 @@
       if (!setSelVal(sel, act)) { skipped++; return; }   // e.g. INCLUDE on a NOT_IN_MASTER row
       var rowOcp = tr.querySelector('.act-ocp');
       if (rowOcp) {
-        // "Include (our CP)" → each row's OWN our CP; other actions clear it.
-        rowOcp.value = (act === 'OVERRIDE') ? (rowOcp.getAttribute('data-ourcp') || '') : '';
+        // Applied CP: Include (our CP) → OUR CP · Include (their CP) → THEIR CP ·
+        // Exclude → cleared. Read-only display of what will actually be applied.
+        rowOcp.value = (act === 'OVERRIDE') ? (rowOcp.getAttribute('data-ourcp') || '')
+                     : (act === 'INCLUDE') ? (rowOcp.getAttribute('data-vendorcp') || '')
+                     : '';
         rowOcp.setAttribute('readonly', 'readonly');
       }
+      tr.classList.remove('dec-included', 'dec-excluded');   // row-wide decision colour
+      if (act === 'INCLUDE' || act === 'OVERRIDE') tr.classList.add('dec-included');
+      else if (act === 'EXCLUDE') tr.classList.add('dec-excluded');
       saveDecision(tr);
       applied++;
     });
