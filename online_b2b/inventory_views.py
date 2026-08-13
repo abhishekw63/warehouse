@@ -128,20 +128,24 @@ def inventory(request):
 @login_required
 @require_POST
 def inventory_upload(request):
-    """Stash an uploaded Bin Contents .xlsx under a token → preview. No DB write."""
-    f = request.FILES.get('bin_file')
-    if not f:
-        messages.error(request, "Choose a D365 'Bin Contents' Excel to upload.")
+    """Stash uploaded Bin Contents Excel file(s) under a token → preview. No DB
+    write. Accepts MULTIPLE files in one go (e.g. one per warehouse) — they're
+    parsed + merged by warehouse for a single preview/confirm."""
+    files = request.FILES.getlist('bin_file')
+    if not files:
+        messages.error(request, "Choose one or more D365 'Bin Contents' Excel file(s).")
         return redirect('b2b_inventory')
     token = uuid.uuid4().hex[:12]
     d = _INV_UPLOADS / token
     d.mkdir(parents=True, exist_ok=True)
-    dest = d / ('bin' + (Path(f.name).suffix or '.xlsx'))
-    with open(dest, 'wb') as out:
-        for chunk in f.chunks():
-            out.write(chunk)
-    (d / 'meta.json').write_text(json.dumps({'name': f.name, 'path': dest.name}),
-                                 encoding='utf-8')
+    saved = []
+    for i, f in enumerate(files):
+        dest = d / (f"bin_{i}" + (Path(f.name).suffix or '.xlsx'))
+        with open(dest, 'wb') as out:
+            for chunk in f.chunks():
+                out.write(chunk)
+        saved.append({'name': f.name, 'path': dest.name})
+    (d / 'meta.json').write_text(json.dumps({'files': saved}), encoding='utf-8')
     return redirect('b2b_inventory_preview', token=token)
 
 
@@ -149,26 +153,83 @@ def _staged(token):
     d = _INV_UPLOADS / token
     meta_f = d / 'meta.json'
     if not meta_f.exists():
-        return None, None, None
+        return None, None
     meta = json.loads(meta_f.read_text(encoding='utf-8'))
-    return d, meta, d / meta['path']
+    return d, meta
+
+
+def _staged_files(meta):
+    """Staged file list — supports the new multi-file meta ({'files':[…]}) and the
+    legacy single-file meta ({'name','path'})."""
+    if meta.get('files'):
+        return meta['files']
+    if meta.get('path'):
+        return [{'name': meta.get('name', ''), 'path': meta['path']}]
+    return []
+
+
+def _merge_wh(a, b):
+    """Merge parsed warehouse ``b`` into ``a`` when the SAME WH code appears in
+    more than one uploaded file — sum bins/stock/totals, concat lines. Rare (each
+    file is usually one warehouse); keeps multi-file uploads correct regardless."""
+    for k, v in (b.get('totals') or {}).items():
+        if isinstance(v, (int, float)):
+            a['totals'][k] = a['totals'].get(k, 0) + v
+    for bc, bd in (b.get('bins') or {}).items():
+        if bc in a['bins']:
+            a['bins'][bc]['lines'] += bd['lines']
+            a['bins'][bc]['qty'] += bd['qty']
+        else:
+            a['bins'][bc] = bd
+    for it, sd in (b.get('stock') or {}).items():
+        if it in a['stock']:
+            a['stock'][it]['qty'] += sd['qty']
+        else:
+            a['stock'][it] = sd
+    a['lines'].extend(b.get('lines') or [])
+    a['totals']['item_count'] = len(a['stock'])
+
+
+def _parse_all(d, meta):
+    """Parse EVERY staged file and merge their warehouses by code. Returns
+    (warehouses, file_rows, file_names, errors)."""
+    merged, file_rows, names, errors = {}, 0, [], []
+    for fe in _staged_files(meta):
+        p = d / fe['path']
+        names.append(fe.get('name', ''))
+        if not p.exists():
+            errors.append((fe.get('name', ''), 'file missing'))
+            continue
+        parsed = store.parse_bin_content(p)
+        if not parsed['ok']:
+            errors.append((fe.get('name', ''), parsed['error']))
+            continue
+        file_rows += parsed.get('file_rows', 0)
+        for code, w in parsed['warehouses'].items():
+            if code in merged:
+                _merge_wh(merged[code], w)
+            else:
+                merged[code] = w
+    return merged, file_rows, names, errors
 
 
 @login_required
 def inventory_preview(request, token):
-    """Parse the staged file and show the per-warehouse classification preview."""
-    d, meta, path = _staged(token)
-    if not path or not path.exists():
+    """Parse the staged file(s) and show the per-warehouse classification preview
+    (merged across all uploaded files)."""
+    d, meta = _staged(token)
+    if not meta:
         messages.error(request, "Upload expired — please re-upload.")
         return redirect('b2b_inventory')
-    parsed = store.parse_bin_content(path)
-    if not parsed['ok']:
-        messages.error(request, f"Couldn't read the file: {parsed['error']}")
+    warehouses, file_rows, names, errors = _parse_all(d, meta)
+    for nm, err in errors:
+        messages.error(request, f"Couldn't read '{nm}': {err}")
+    if not warehouses:
         return redirect('b2b_inventory')
 
     # shape per-WH cards for the template (+ flag unknown WH codes + new bins)
     cards = []
-    for code, w in parsed['warehouses'].items():
+    for code, w in warehouses.items():
         t = w['totals']
         newb = [b for b in w['bins'].values() if b['decision'] == 'new']
         cards.append({
@@ -180,30 +241,31 @@ def inventory_preview(request, token):
         })
     cards.sort(key=lambda c: (0 if c['known_wh'] else 1, c['code']))
     return render(request, 'online_b2b/inventory_preview.html', {
-        'token': token, 'file_name': meta['name'], 'cards': cards,
-        'file_rows': parsed['file_rows'],
+        'token': token, 'file_name': ', '.join(n for n in names if n),
+        'file_names': [n for n in names if n], 'cards': cards,
+        'file_rows': file_rows,
     })
 
 
 @login_required
 @require_POST
 def inventory_confirm(request, token):
-    """Save the staged file's warehouses as new current snapshots."""
-    d, meta, path = _staged(token)
-    if not path or not path.exists():
+    """Save ALL staged files' warehouses as new current snapshots."""
+    d, meta = _staged(token)
+    if not meta:
         messages.error(request, "Upload expired — please re-upload.")
         return redirect('b2b_inventory')
-    parsed = store.parse_bin_content(path)
-    if not parsed['ok']:
-        messages.error(request, f"Couldn't read the file: {parsed['error']}")
-        return redirect('b2b_inventory')
+    warehouses, _fr, names, errors = _parse_all(d, meta)
+    for nm, err in errors:
+        messages.error(request, f"Couldn't read '{nm}': {err}")
+    src = ', '.join(n for n in names if n)
     user = request.user.get_username()
     saved = []
-    for code, w in parsed['warehouses'].items():
-        res = store.save_snapshot(code, w, source_file=meta['name'], user=user)
+    for code, w in warehouses.items():
+        res = store.save_snapshot(code, w, source_file=src, user=user)
         if res.get('ok'):
             saved.append(f"{store.wh_short(code)} ({res['item_count']} items)")
-    # cleanup staged file
+    # cleanup staged files
     try:
         for p in d.iterdir():
             p.unlink()
@@ -213,13 +275,13 @@ def inventory_confirm(request, token):
     if saved:
         messages.success(request, "Stock snapshot saved for: " + ", ".join(saved) + ".")
     else:
-        messages.warning(request, "Nothing saved — no warehouse rows found in the file.")
+        messages.warning(request, "Nothing saved — no warehouse rows found in the file(s).")
     return redirect('b2b_inventory')
 
 
 @login_required
 def inventory_discard(request, token):
-    d, _, _ = _staged(token)
+    d, _ = _staged(token)
     if d and d.exists():
         try:
             for p in d.iterdir():

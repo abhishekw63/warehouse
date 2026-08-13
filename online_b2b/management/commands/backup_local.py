@@ -21,8 +21,32 @@ from django.core.management.base import BaseCommand
 class Command(BaseCommand):
     help = "Backup: copy ALL data from TiDB into the local MySQL profile (daily mirror)."
 
+    def add_arguments(self, parser):
+        # --if-due makes the command idempotent-per-day: it only backs up when the
+        # last successful backup is older than --min-hours. This is what lets a
+        # logon/daily scheduler fire it every time the laptop is opened without
+        # re-running a full backup more than once a day (and it auto-catches-up a
+        # day missed while the laptop was off).
+        parser.add_argument('--if-due', action='store_true',
+                            help='Skip if a successful backup ran within --min-hours.')
+        parser.add_argument('--min-hours', type=float, default=20.0,
+                            help='Freshness window for --if-due (default 20h).')
+
     def handle(self, *args, **options):
         from online_b2b.services import db_target
+        if options.get('if_due'):
+            lb = db_target.last_backup()
+            if lb and lb.get('at'):
+                try:
+                    last = datetime.datetime.strptime(str(lb['at'])[:19], '%Y-%m-%d %H:%M:%S')
+                    age_h = (datetime.datetime.now() - last).total_seconds() / 3600.0
+                    if age_h < options['min_hours']:
+                        self.stdout.write(
+                            f"Not due — last backup {age_h:.1f}h ago "
+                            f"(< {options['min_hours']:.0f}h). Skipping.")
+                        return
+                except (ValueError, TypeError):
+                    pass   # unparseable marker → treat as due, run the backup
         ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         self.stdout.write(f"[{ts}] TiDB -> local backup starting...")
         res = db_target.backup_tidb_to_local()

@@ -15,8 +15,8 @@
   <div class="b2b-head">
     <div>
       <h1>Inventory · Stock</h1>
-      <p class="src">Upload a D365 <b>Bin Contents</b> export per warehouse — a timestamped stock
-        snapshot. We count only sellable bins (<code>ON-</code>/<code>OFF-</code>/<code>PS2-</code>),
+      <p class="src">Upload D365 <b>Bin Contents</b> export(s) — <b>select all warehouses' files at once</b>
+        (AHD / BLR / North together) for one combined snapshot. We count only sellable bins (<code>ON-</code>/<code>OFF-</code>/<code>PS2-</code>),
         exclude virtual bins, and flag any new bin. This page shows <b>available stock</b>
         (qty on hand per SKU, per warehouse — AHD / BLR / North). Fill-rate &amp; tentative
         billing now live in the <b>Fulfilment Cockpit</b>.
@@ -26,8 +26,8 @@
           class="iv-upload" data-loading="Reading bin contents…">
       {% csrf_token %}
       <label class="iv-file">
-        <input type="file" name="bin_file" accept=".xlsx,.xls" required onchange="this.form.requestSubmit()">
-        <span>⬆ Upload Bin Contents</span>
+        <input type="file" name="bin_file" accept=".xlsx,.xls" multiple required onchange="this.form.requestSubmit()">
+        <span>⬆ Upload Bin Contents (one or more)</span>
       </label>
     </form>
   </div>
@@ -46,7 +46,7 @@
       (recommended every <b>{{ stale_hours }}h</b>).
     </div>
     <label class="iv-file iv-stale-btn">
-      <input type="file" form="ivStaleForm" name="bin_file" accept=".xlsx,.xls" required onchange="this.form.requestSubmit()">
+      <input type="file" form="ivStaleForm" name="bin_file" accept=".xlsx,.xls" multiple required onchange="this.form.requestSubmit()">
       <span>⬆ Refresh now</span>
     </label>
   </div>

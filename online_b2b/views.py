@@ -1876,7 +1876,8 @@ def confirm(request, token):
     res = engine_bridge.confirm(
         meta['marketplace'], paths, warehouse=meta['warehouse'],
         margin_pct=meta['margin_pct'] / 100.0, actions=actions,
-        ean_fixes=meta.get('ean_fixes'), as_of=as_of)
+        ean_fixes=meta.get('ean_fixes'), as_of=as_of,
+        recorded_by=(getattr(request.user, 'username', '') or 'system'))
 
     if not res.get('ok'):
         err = res.get('error', 'Push failed.')
@@ -3342,3 +3343,74 @@ class SetupView(LoginRequiredMixin, UserPassesTestMixin, View):
                 pass
         except Exception:  # noqa: BLE001
             pass
+
+
+# ── EKA Data (editable store registry: margin % · Type SO/TO · mappings) ──────
+# The EKA store registry (from EKA_DATA.xlsx) lives in the eka_data DB table. This
+# page lets the team edit margin %, Type (SO/TO), active status and the mapping
+# fields over time — the offline EKA flow reads margin_pct + kind from here.
+class EkaDataView(LoginRequiredMixin, TemplateView):
+    template_name = 'online_b2b/eka_data.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        from .services import eka_data
+        ctx['rows'] = eka_data.all_rows()
+        ctx['status'] = eka_data.status()
+        return ctx
+
+
+@login_required
+@require_POST
+def eka_data_update(request, row_id):
+    from .services import eka_data
+    data = {k: v for k, v in request.POST.items() if k != 'csrfmiddlewaretoken'}
+    res = eka_data.update_row(row_id, data)
+    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        return JsonResponse(res, status=200 if res.get('ok') else 400)
+    if res.get('ok'):
+        messages.success(request, 'EKA store updated.')
+    else:
+        messages.error(request, res.get('error', 'Update failed.'))
+    return redirect('b2b_eka_data')
+
+
+@login_required
+@require_POST
+def eka_data_add(request):
+    from .services import eka_data
+    data = {k: v for k, v in request.POST.items() if k != 'csrfmiddlewaretoken'}
+    res = eka_data.add_row(data)
+    if res.get('ok'):
+        messages.success(request, 'EKA store added.')
+    else:
+        messages.error(request, res.get('error', 'Add failed.'))
+    return redirect('b2b_eka_data')
+
+
+@login_required
+@require_POST
+def eka_data_upload(request):
+    """Upload EKA_DATA.xlsx → replace the eka_data table (mirror the sheet)."""
+    import os as _os
+    import tempfile
+    from .services import eka_data
+    f = request.FILES.get('eka_file')
+    if not f:
+        messages.error(request, 'Choose the EKA_DATA.xlsx file to upload.')
+        return redirect('b2b_eka_data')
+    tmp = _os.path.join(tempfile.gettempdir(), 'eka_upload_' + uuid.uuid4().hex[:8] + '.xlsx')
+    with open(tmp, 'wb') as out:
+        for chunk in f.chunks():
+            out.write(chunk)
+    try:
+        res = eka_data.load_from_excel(tmp, replace=True)
+        messages.success(request, f"Loaded {res['loaded']} EKA store row(s) from Excel (table replaced).")
+    except Exception as e:  # noqa: BLE001
+        messages.error(request, f"Couldn't read the Excel: {type(e).__name__}: {e}")
+    finally:
+        try:
+            _os.unlink(tmp)
+        except OSError:
+            pass
+    return redirect('b2b_eka_data')

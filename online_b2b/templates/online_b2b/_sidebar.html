@@ -44,6 +44,8 @@
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><span class="side-label">Item Master</span></a>
     <a href="{% url 'b2b_ship_to' %}" class="sn{% if '/ship-to' in request.path %} on{% endif %}" title="Ship-To Mapping">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='store' %}</span><span class="side-label">Ship-To Mapping</span></a>
+    <a href="{% url 'b2b_eka_data' %}" class="sn{% if '/eka-data' in request.path %} on{% endif %}" title="EKA Data — margin % · Type (SO/TO) · store registry">
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><span class="side-label">EKA Data</span></a>
     <a href="{% url 'b2b_issues' %}" class="sn{% if '/issues' in request.path %} on{% endif %}" title="Issues">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><span class="side-label">Issues</span></a>
     <a href="{% url 'b2b_tat' %}" class="sn{% if '/tat' in request.path %} on{% endif %}" title="TAT · SLA">
@@ -79,6 +81,8 @@
       {% endif %}
       <a href="{% url 'dev_dashboard' %}" class="sn sn-dim{% if '/dev/' in request.path %} on{% endif %}" title="Dev · Health">
         <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><span class="side-label">Dev · Health</span></a>
+      <a href="{% url 'audit_log' %}" class="sn sn-dim{% if '/audit' in request.path %} on{% endif %}" title="Audit Log — who did what">
+        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><span class="side-label">Audit Log</span></a>
       <a href="{% url 'b2b_ui_lab' %}" class="sn sn-dim{% if '/ui-lab' in request.path %} on{% endif %}" title="UI Lab (htmx · Alpine)">
         <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><span class="side-label">UI Lab</span></a>
     </div>
