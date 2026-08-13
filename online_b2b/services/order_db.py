@@ -1943,15 +1943,18 @@ def run_detail(run_id: int) -> dict:
     try:
         with _conn() as (cur, d):
             ot, ph = d['orders'], d['ph']
+            from .lines_store import _ensure_run_recorded_by
+            _ensure_run_recorded_by(cur)   # tolerate DBs that predate the column
             cur.execute(
                 f"SELECT run_id, run_ts, mode, marketplaces, total_pos, "
-                f"total_items, total_qty, total_value FROM runs "
-                f"WHERE run_id={ph}", (run_id,))
+                f"total_items, total_qty, total_value, recorded_by, recorded_at "
+                f"FROM runs WHERE run_id={ph}", (run_id,))
             r = cur.fetchone()
             if r:
                 out['run'] = dict(zip(
                     ['run_id', 'run_ts', 'mode', 'marketplaces', 'total_pos',
-                     'total_items', 'total_qty', 'total_value'], r))
+                     'total_items', 'total_qty', 'total_value', 'recorded_by',
+                     'recorded_at'], r))
 
             cur.execute(
                 f"SELECT marketplace_label, po, location, warehouse, po_date, "

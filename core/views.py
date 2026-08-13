@@ -274,3 +274,19 @@ class UserToggleActiveView(_AdminAction):
         state = 'active' if u.is_active else 'deactivated'
         return self._resp(request, {'ok': True, 'id': u.id, 'is_active': u.is_active},
                           f"{u.username} is now {state}.")
+
+
+class AuditLogView(_StaffOnly, TemplateView):
+    """Staff-only 'who did what, when' trail — every write is logged by the RBAC
+    middleware (core.audit). Read-only; filter by user / text."""
+    template_name = 'core/audit_log.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        from . import audit
+        u = (self.request.GET.get('user') or '').strip()
+        q = (self.request.GET.get('q') or '').strip()
+        ctx['rows'] = audit.recent(400, user=u, q=q)
+        ctx['f_user'] = u
+        ctx['f_q'] = q
+        return ctx

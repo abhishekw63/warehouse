@@ -13,7 +13,7 @@
   <div class="rd-head">
     <div>
       <h1>Run #{{ run_id }}</h1>
-      {% if d.run %}<p class="sub">{{ d.run.mode }} · {{ d.run.run_ts }}</p>{% endif %}
+      {% if d.run %}<p class="sub">{{ d.run.mode }} · {{ d.run.run_ts }}{% if d.run.recorded_by %} · recorded by <b>{{ d.run.recorded_by }}</b>{% endif %}{% if d.run.recorded_at %} on {{ d.run.recorded_at }}{% endif %}</p>{% endif %}
     </div>
     <div class="rd-actions">
     {% if has_file %}

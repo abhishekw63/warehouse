@@ -101,19 +101,42 @@ class WriteGuardMiddleware:
         if request.method not in _UNSAFE:
             return None
         user = getattr(request, 'user', None)
+        match = getattr(request, 'resolver_match', None)
+        name = match.url_name if match else None
         if is_editor(user):
+            self._audit(request, name, view_kwargs)   # record the editor's write
             return None
         # Django admin has its own permission system (staff/superuser) — leave it.
         if request.path.startswith('/admin/'):
             return None
-        match = getattr(request, 'resolver_match', None)
-        name = match.url_name if match else None
         if _post_is_read_only(name):
             return None
         # role-management endpoints: allow only for the admin (superuser)
         if name in _ADMIN_POST_NAMES and is_role_admin(user):
+            self._audit(request, name, view_kwargs)
             return None
         return self._deny(request)
+
+    @staticmethod
+    def _audit(request, name, view_kwargs):
+        """Log a real write to the audit trail (skip read-only POSTs like exports/
+        search). Best-effort — never affects the request. Captures who + what +
+        a compact target (token / row id / PO) + the action."""
+        if _post_is_read_only(name) or request.path.startswith('/admin/'):
+            return
+        try:
+            from core import audit
+            u = getattr(request.user, 'username', '') or 'system'
+            vk = view_kwargs or {}
+            tk = (vk.get('token') or vk.get('row_id') or vk.get('user_id')
+                  or vk.get('run_id') or '')
+            po = (request.POST.get('po') or request.POST.get('aff_key') or '')
+            target = ' · '.join(str(x) for x in (tk, po) if x)[:300]
+            detail = (request.POST.get('aff_action') or request.POST.get('action')
+                      or request.POST.get('role') or '')[:500]
+            audit.log(u, request.method, name or '', request.path, target, detail)
+        except Exception:  # noqa: BLE001 — audit must never break a request
+            pass
 
     @staticmethod
     def _deny(request):

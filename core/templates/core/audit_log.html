@@ -1,0 +1,58 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static %}
+{% block title %}Audit Log — Order Management{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<style>
+  .al-table{width:max-content;min-width:100%;}
+  .al-table th,.al-table td{white-space:nowrap;}
+  .al-table td.path,.al-table td.target{max-width:280px;overflow:hidden;text-overflow:ellipsis;color:var(--muted);}
+  .al-table td.detail{font-weight:600;}
+  .al-m{display:inline-block;padding:1px 7px;border-radius:20px;font-size:11px;font-weight:700;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);}
+  .al-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:14px;}
+  .al-filters input{padding:8px 11px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text);font-size:13.5px;min-width:170px;}
+  .al-filters label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+</style>{% endblock %}
+
+{% block breadcrumb %}<a href="{% url 'departments' %}">Departments</a> <span>/ Audit Log</span>{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap b2b-wide">
+  <div class="b2b-head">
+    <div>
+      <h1>Audit Log <span>· who did what</span></h1>
+      <p class="src">Every write (record a run, decide/exclude a line, edit a mapping, delete, change a role…) is logged with the user + time. Read-only. Newest first (last 400).</p>
+    </div>
+  </div>
+
+  <form class="al-filters" method="get">
+    <label>User<input type="text" name="user" value="{{ f_user }}" placeholder="username"></label>
+    <label>Search<input type="text" name="q" value="{{ f_q }}" placeholder="path / target / action"></label>
+    <button type="submit" class="btn-primary" style="height:38px;">Filter</button>
+    {% if f_user or f_q %}<a href="{% url 'audit_log' %}" class="btn-ghost" style="height:38px;display:inline-flex;align-items:center;">Clear</a>{% endif %}
+  </form>
+
+  <div class="im-card reveal">
+    <div class="im-ovh"><h2>Activity <span class="count">{{ rows|length }}</span></h2></div>
+    <div class="scroll im-tablewrap">
+    <table class="grid compact al-table">
+      <thead><tr><th>When</th><th>User</th><th>Method</th><th>Action</th><th>Target</th><th>Detail</th><th>Path</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        <tr>
+          <td class="when">{{ r.ts|date:"d M Y · H:i:s"|default:r.ts }}</td>
+          <td><b>{{ r.username }}</b></td>
+          <td><span class="al-m">{{ r.method }}</span></td>
+          <td>{{ r.url_name|default:"—" }}</td>
+          <td class="target">{{ r.target|default:"—" }}</td>
+          <td class="detail">{{ r.detail|default:"" }}</td>
+          <td class="path">{{ r.path }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px;">No audit entries yet.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

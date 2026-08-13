@@ -20,4 +20,6 @@ urlpatterns = [
     path('users/<int:user_id>/role/', views.UserSetRoleView.as_view(), name='user_set_role'),
     path('users/<int:user_id>/password/', views.UserSetPasswordView.as_view(), name='user_set_password'),
     path('users/<int:user_id>/toggle-active/', views.UserToggleActiveView.as_view(), name='user_toggle_active'),
+    # Audit trail (staff-only) — who did every write, when.
+    path('audit/', views.AuditLogView.as_view(), name='audit_log'),
 ]
