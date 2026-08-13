@@ -900,12 +900,20 @@ class Processor:
         import openpyxl
         wb = openpyxl.load_workbook(path)
         try:
-            if 'Lines (SO)' not in wb.sheetnames:
+            # Transfer-Order channels (Meesho-TO / Flipkart-TO) write a 'Lines (TO)'
+            # sheet with 'Item No.' + 'Transfer Price' columns — NOT 'Lines (SO)' /
+            # 'No.' / 'Unit Price'. Handle BOTH; otherwise EXCLUDE/OVERRIDE silently
+            # never dropped/repriced the TO lines (the excluded line stayed in the
+            # workbook + D365 dump). Document No. = the TO/order id = the decision po.
+            sheet = next((s for s in ('Lines (SO)', 'Lines (TO)')
+                          if s in wb.sheetnames), None)
+            if not sheet:
                 return
-            ws = wb['Lines (SO)']
+            ws = wb[sheet]
             hdr = {str(c.value).strip(): i for i, c in enumerate(ws[1], 1)}
-            c_po, c_item, c_up = (hdr.get('Document No.'), hdr.get('No.'),
-                                  hdr.get('Unit Price'))
+            c_po = hdr.get('Document No.')
+            c_item = hdr.get('No.') or hdr.get('Item No.')
+            c_up = hdr.get('Unit Price') or hdr.get('Transfer Price')
             if not c_po or not c_item:
                 return
             drop = []
@@ -1569,7 +1577,7 @@ class Processor:
         }
 
     # ── phase 2: confirm (push headers + lines) ─────────────────────────
-    def confirm(self, actions=None, as_of=None) -> dict:
+    def confirm(self, actions=None, as_of=None, recorded_by=None) -> dict:
         err = self._run()
         if err:
             return err
@@ -1595,7 +1603,7 @@ class Processor:
                                as_of=as_of)
             rec = lines_store.record_run_atomic(
                 self.result, self.marketplace, self.warehouse, str(output_path),
-                rows, as_of=as_of)
+                rows, as_of=as_of, recorded_by=recorded_by)
             out['run_id'] = rec.get('run_id')
             out['new_orders'] = rec.get('new_orders', 0)
             out['lines_recorded'] = rec.get('lines_recorded', 0)
@@ -1705,8 +1713,8 @@ class FlipkartProcessor(Processor):
                 h['marketplace_label'] = label
         return rows
 
-    def confirm(self, actions=None, as_of=None) -> dict:
-        out = super().confirm(actions, as_of=as_of)
+    def confirm(self, actions=None, as_of=None, recorded_by=None) -> dict:
+        out = super().confirm(actions, as_of=as_of, recorded_by=recorded_by)
         # The engine's record_manual wrote 'Flipkart Alpha'; re-stamp the
         # web-owned display column per PO from the (latest) tracker mapping.
         if out.get('ok') and out.get('run_id'):
@@ -2842,9 +2850,10 @@ def preview(marketplace: str, po_paths, warehouse=None, margin_pct=None,
 
 
 def confirm(marketplace: str, po_paths, warehouse=None, margin_pct=None,
-            actions=None, ean_fixes=None, as_of=None) -> dict:
+            actions=None, ean_fixes=None, as_of=None, recorded_by=None) -> dict:
     return processor_for(marketplace, po_paths, warehouse, margin_pct,
-                         ean_fixes).confirm(actions, as_of=as_of)
+                         ean_fixes).confirm(actions, as_of=as_of,
+                                            recorded_by=recorded_by)
 
 
 def generate_d365(marketplace: str, po_paths, out_path, warehouse=None,
