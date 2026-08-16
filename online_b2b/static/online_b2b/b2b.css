@@ -273,7 +273,7 @@ tr.rexcl td{background:#f6f7f9;color:#8b94a3;} tr.rexcl td.mono,tr.rexcl td.desc
 
 /* entrance animation (landing only — static blocks) */
 @keyframes fadeUp{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:none;}}
-.reveal{animation:fadeUp .5s ease both;}
+.reveal{animation:fadeUp .5s ease both;animation-delay:calc(var(--i,0)*.06s);}
 .kpis.reveal{animation:none;}
 .kpis.reveal .card{animation:fadeUp .45s ease both;}
 .kpis.reveal .card:nth-child(1){animation-delay:.04s}
@@ -373,7 +373,7 @@ tr.has-exc > td:first-child{box-shadow:inset 3px 0 0 var(--amber);}
 .qa svg{width:17px;height:17px;color:var(--accent);flex:none;}
 @media(max-width:560px){.hub-snap{grid-template-columns:repeat(2,1fr);}}
 /* recent-activity feed */
-.hub-recent{max-width:760px;margin:0 auto;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);overflow:hidden;}
+.dep-recent{max-width:760px;margin:0 auto;background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);overflow:hidden;}
 .ra-row{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--border-2);font-size:13px;text-decoration:none;color:inherit;transition:background .13s;}
 .ra-row:last-child{border-bottom:none;}
 .ra-row:hover{background:var(--surface-2);}

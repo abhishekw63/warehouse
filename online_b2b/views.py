@@ -1901,19 +1901,21 @@ def confirm(request, token):
         messages.info(request, msg)
         return redirect('b2b_dashboard')
 
-    # Build the D365 dump ONCE at lock time and keep it next to the run sidecar
-    # (web-owned, survives upload-temp cleanup) so it's retrievable later from
-    # Orders → Run #N even if the review tab is closed. Never blocks the lock.
-    d365_path = _persist_d365(
-        run_id, meta['marketplace'], paths,
-        meta['warehouse'], meta['margin_pct'] / 100.0, actions,
-        ean_fixes=meta.get('ean_fixes'))
+    # D365 dump is now built ON-DEMAND at download time (keeps the lock fast — no
+    # blocking Excel build here). We stash the inputs so it can be regenerated +
+    # cached the first time it's downloaded, even after the review tab is closed.
+    # The atomic DB record above is already committed; this changes nothing there.
     _save_run_index(run_id, {
         'output_path': res.get('output_path'),
         'marketplace': meta['marketplace'],
         'summary': res.get('summary'),
         'warnings': res.get('warnings'),
-        'd365_path': d365_path,
+        'd365_path': None,                       # built lazily on first download
+        'd365_inputs': {
+            'paths': paths, 'warehouse': meta['warehouse'],
+            'margin_pct': meta['margin_pct'] / 100.0,
+            'actions': actions, 'ean_fixes': meta.get('ean_fixes'),
+        },
     })
     # Lock the decisions on the token so the review page now offers Generate D365.
     was_draft = bool(meta.get('draft'))
@@ -1943,7 +1945,7 @@ def confirm(request, token):
         from django.urls import reverse
         return JsonResponse({
             'ok': True, 'run_id': run_id, 'pos': pos, 'lines': lines,
-            'has_d365': bool(d365_path),
+            'has_d365': False,                   # generated on demand at download
             'run_url': reverse('b2b_run_detail', args=[run_id]),
             'd365_url': reverse('b2b_generate_d365', args=[token]),
             'message': f"Locked & recorded {pos} PO(s), {lines} line(s).",
@@ -1974,6 +1976,19 @@ def generate_d365(request, token):
     if not res.get('ok') or not os.path.exists(res.get('d365_path', '')):
         messages.error(request, res.get('error', 'D365 generation failed.'))
         return redirect('b2b_review', token=token)
+    # Cache it as the run sidecar so Orders → Run #N can re-download instantly
+    # (the dump is built lazily now, so the first download here also persists it).
+    try:
+        rid = meta.get('run_id')
+        if rid:
+            _RUNS_INDEX.mkdir(parents=True, exist_ok=True)
+            side = _RUNS_INDEX / f"{rid}_d365.xlsx"
+            shutil.copyfile(res['d365_path'], side)
+            _idx = _load_run_index(rid)
+            _idx['d365_path'] = str(side)
+            _save_run_index(rid, _idx)
+    except Exception:  # noqa: BLE001 — caching is best-effort; download still works
+        pass
     return FileResponse(
         open(res['d365_path'], 'rb'), as_attachment=True,
         filename=f"{meta['marketplace']}_D365_import.xlsx")
@@ -2301,7 +2316,21 @@ def download_d365(request, run_id):
     idx = _load_run_index(run_id)
     path = idx.get('d365_path')
     if not path or not os.path.exists(path):
-        raise Http404("No D365 dump saved for this run.")
+        # Built lazily now — regenerate from the stored inputs on first download,
+        # then cache the sidecar so later downloads are instant.
+        inp = idx.get('d365_inputs') or {}
+        raw = inp.get('paths') or []
+        if raw and all(os.path.exists(p) for p in raw):
+            built = _persist_d365(
+                run_id, idx.get('marketplace', 'D365'), raw, inp.get('warehouse'),
+                inp.get('margin_pct'), inp.get('actions'), ean_fixes=inp.get('ean_fixes'))
+            if built:
+                path = built
+                idx['d365_path'] = built
+                _save_run_index(run_id, idx)
+    if not path or not os.path.exists(path):
+        raise Http404("D365 dump isn't available for this run — the source files "
+                      "may have expired. Re-open the review to regenerate it.")
     mkt = idx.get('marketplace', 'D365')
     return FileResponse(open(path, 'rb'), as_attachment=True,
                         filename=f"{mkt}_D365_import.xlsx")

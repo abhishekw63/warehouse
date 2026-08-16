@@ -328,9 +328,12 @@
     <div class="lo-sub" id="loSub" style="font-size:12.5px;color:#667085;margin:1px 0 11px;min-height:16px;font-variant-numeric:tabular-nums;"></div>
     <div class="lo-track"><div class="lo-fill" id="loFill"></div></div>
     <ul class="lo-steps">
-      <li data-s="1"><span class="lo-dot"></span>Recording POs to the database</li>
-      <li data-s="2"><span class="lo-dot"></span>Generating the D365 dump</li>
-      <li data-s="3"><span class="lo-dot"></span>Finalizing &amp; saving</li>
+      <li data-s="1"><span class="lo-dot"></span>Validating &amp; applying your decisions</li>
+      <li data-s="2"><span class="lo-dot"></span>Pricing lines · CP &amp; overrides</li>
+      <li data-s="3"><span class="lo-dot"></span>Writing PO headers to the database</li>
+      <li data-s="4"><span class="lo-dot"></span><span class="lo-lines">Writing line items</span></li>
+      <li data-s="5"><span class="lo-dot"></span>Generating the SO workbook</li>
+      <li data-s="6"><span class="lo-dot"></span>Finalizing &amp; saving</li>
     </ul>
     <div class="lo-note" id="loNote" hidden style="font-size:12px;color:#8a6d1e;background:#fff8e6;border:1px solid #f4d58a;border-radius:8px;padding:6px 10px;margin-top:10px;">⏳ Large runs take a moment — please keep this tab open until it finishes.</div>
     <div class="lo-err" id="loErr"></div>
@@ -420,14 +423,18 @@
     ov.classList.add('show'); document.body.classList.add('lo-open');
     _startT = Date.now(); setFill(8);
     if (steps[0]) steps[0].classList.add('active');
+    var lnEl = ov.querySelector('.lo-lines');
+    if (lnEl && LO_LINES) lnEl.textContent = 'Writing ' + LO_LINES.toLocaleString('en-IN') + ' line items';
     _renderSub();
     _elapTimer = setInterval(_renderSub, 1000);
     // Asymptotic bar: eases toward a ceiling it never reaches until finishProgress.
     _animTimer = setInterval(function (){
       var ceil = 93, next = _curFill + (ceil - _curFill) * 0.045;
       setFill(next > ceil ? ceil : next);
-      if (_curFill > 45 && steps[1] && !steps[1].classList.contains('active')){ steps[0].classList.add('done'); steps[1].classList.add('active'); }
-      if (_curFill > 78 && steps[2] && !steps[2].classList.contains('active')){ steps[1].classList.add('done'); steps[2].classList.add('active'); }
+      var _n = steps.length, _ceil = 93;
+      for (var _i = 1; _i < _n; _i++) {
+        if (_curFill > (_i / _n) * _ceil && steps[_i] && !steps[_i].classList.contains('active')){ steps[_i - 1].classList.add('done'); steps[_i].classList.add('active'); }
+      }
     }, 220);
   }
   function finishProgress(){

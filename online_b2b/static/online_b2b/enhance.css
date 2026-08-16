@@ -46,8 +46,9 @@
      .icon-badge  gradient rounded icon chip
      .hero-head   centred page title + eyebrow + subtitle block
      .pill        small uppercase status/eyebrow chip                              */
-.reveal{opacity:0;transform:translateY(14px);animation:rn-reveal .6s cubic-bezier(.22,1,.36,1) forwards;animation-delay:calc(var(--i,0)*.07s);}
-@keyframes rn-reveal{to{opacity:1;transform:none;}}
+/* NOTE: .reveal already exists in b2b.css (fadeUp) — reuse it; only add the
+   --i stagger hook there. Do NOT redefine .reveal here (it collided with
+   .kpis.reveal{animation:none} and hid the KPI cards). */
 .hover-lift{transition:transform .28s cubic-bezier(.22,1,.36,1),box-shadow .28s,border-color .28s;}
 .hover-lift:hover{transform:translateY(-4px);box-shadow:var(--lift,0 22px 48px -22px rgba(24,16,64,.34));}
 .grad-text{background:var(--brand-grad,linear-gradient(120deg,#4f46e5,#c026d3));-webkit-background-clip:text;background-clip:text;color:transparent;}
@@ -61,7 +62,6 @@
 .pill{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
   color:var(--accent);background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 18%,transparent);border-radius:999px;padding:6px 13px;}
 .pill .dot{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent);}
-@media (prefers-reduced-motion:reduce){.reveal{animation:none;opacity:1;transform:none;}}
 
 /* ---- 1. Dark theme -------------------------------------------------------
    Re-point the SAME design tokens b2b.css already uses, so every tokenised

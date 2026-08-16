@@ -43,11 +43,11 @@
       background:linear-gradient(125deg,#2c2870,#4c1d95 34%,#6d28d9 62%,#37115e);
       animation:spOut .7s cubic-bezier(.6,0,.35,1) 1.5s forwards;}
     @keyframes spOut{to{opacity:0;visibility:hidden;transform:scale(1.08);}}
-    .sp-smoke{position:absolute;inset:0;pointer-events:none;opacity:.6;filter:blur(34px);
+    .sp-smoke{position:absolute;inset:0;pointer-events:none;opacity:.7;filter:blur(34px);
       background:radial-gradient(38% 40% at 50% 54%,rgba(124,131,255,.6),transparent 70%),
                  radial-gradient(30% 32% at 62% 44%,rgba(232,121,249,.45),transparent 72%),
                  radial-gradient(28% 30% at 40% 60%,rgba(34,211,238,.4),transparent 72%);
-      opacity:.7;animation:spSmoke 4s ease-in-out infinite;}
+      animation:spSmoke 4s ease-in-out infinite;}
     @keyframes spSmoke{0%,100%{transform:scale(1) translate(0,0);}50%{transform:scale(1.18) translate(1.5%,-3%);}}
     .sp-burst{position:absolute;left:50%;top:50%;width:0;height:0;}
     .cf{position:absolute;left:0;top:0;width:12px;height:12px;opacity:0;

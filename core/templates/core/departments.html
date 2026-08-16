@@ -70,7 +70,7 @@
 
   {% if recent %}
   <div class="dept-sub reveal" style="--i:9;margin-top:38px;">Recent activity</div>
-  <div class="hub-recent reveal" style="--i:9">
+  <div class="dep-recent reveal" style="--i:9">
     {% for r in recent %}
     <a class="ra-row" href="{% url 'b2b_tracker' %}?q={{ r.po|urlencode }}">
       <span class="ra-dept {% if r.segment == 'Offline' %}off{% else %}on{% endif %}">{% if r.segment == 'Offline' %}OFF{% else %}B2B{% endif %}</span>
