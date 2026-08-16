@@ -28,6 +28,8 @@ urlpatterns = [
     path('inventory/rule/add/', _inv.inventory_rule_add, name='b2b_inventory_rule_add'),
     path('inventory/rule/<int:rule_id>/delete/', _inv.inventory_rule_delete,
          name='b2b_inventory_rule_delete'),
+    path('inventory/bin/set/', _inv.inventory_bin_set, name='b2b_inventory_bin_set'),
+    path('inventory/apply/', _inv.inventory_apply, name='b2b_inventory_apply'),
     path('inventory/<str:token>/', _inv.inventory_preview, name='b2b_inventory_preview'),
     path('inventory/<str:token>/confirm/', _inv.inventory_confirm,
          name='b2b_inventory_confirm'),

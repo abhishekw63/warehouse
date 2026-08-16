@@ -527,12 +527,17 @@ def _exc_ctx(request):
 
 def _geo_ctx(request):
     """Geography & Concentration tab context — demand by state/city + Pareto/ABC
-    SKU concentration. Reuses the SKU filter (marketplace + upload-date range;
-    defaults to last 30 days)."""
-    sf, st, smp = _sku_filters(request)
-    return {'geo': order_db.geography(sf, st, smp),
-            'pareto': order_db.value_concentration(sf, st, smp),
-            'sku_from': sf, 'sku_to': st, 'sku_mp': smp}
+    SKU concentration. Own filter: SEGMENT (All / Online B2B / Offline) + MULTI
+    marketplace (pipe-joined ``sku_mp``) + upload-date range (last 30 days)."""
+    sf, st, _ = _sku_filters(request)                 # reuse date parsing
+    seg = (request.GET.get('geo_seg') or '').strip()
+    if seg not in ('OnlineB2B', 'Offline'):
+        seg = ''
+    sel = [m for m in (request.GET.get('sku_mp') or '').split('|') if m.strip()]
+    return {'geo': order_db.geography(sf, st, sel, seg),
+            'pareto': order_db.value_concentration(sf, st, sel, seg),
+            'sku_from': sf, 'sku_to': st,
+            'sel_mps': sel, 'geo_seg': seg, 'sku_mp': '|'.join(sel)}
 
 
 def _otif_ctx(request):
@@ -2768,13 +2773,27 @@ def ship_to_preview(request, token):
         raise Http404("Upload not found or expired.")
     meta = json.loads(mp.read_text(encoding='utf-8'))
     from .services import mapping_store as ms
-    rows, stats, warnings = ms.build_rows(str(d / meta['path']))
+    path = str(d / meta['path'])
+    # D365 "Ship-to Address" export → additive diff (new / changed / unchanged);
+    # the curated Ship-To B2B upload keeps its full-replace preview.
+    if ms.is_d365_shipto(path):
+        rows, stats, warnings = ms.build_rows_d365(path)
+        if not rows:
+            messages.error(request, '; '.join(warnings) or "No rows parsed.")
+            return redirect('b2b_ship_to')
+        diff = ms.diff_against_current(rows)
+        return render(request, 'online_b2b/ship_to_preview.html', {
+            'token': token, 'meta': meta, 'mode': 'd365', 'stats': stats,
+            'warnings': warnings, 'diff': diff,
+            'sample_new': diff['new'][:15], 'sample_changed': diff['changed'][:15],
+        })
+    rows, stats, warnings = ms.build_rows(path)
     if not rows:
         messages.error(request, '; '.join(warnings) or "No rows parsed.")
         return redirect('b2b_ship_to')
     return render(request, 'online_b2b/ship_to_preview.html', {
-        'token': token, 'meta': meta, 'stats': stats, 'warnings': warnings,
-        'sample': rows[:15], 'current': ms.status(),
+        'token': token, 'meta': meta, 'mode': 'replace', 'stats': stats,
+        'warnings': warnings, 'sample': rows[:15], 'current': ms.status(),
     })
 
 
@@ -2788,15 +2807,25 @@ def ship_to_confirm(request, token):
         raise Http404("Upload not found or expired.")
     meta = json.loads(mp.read_text(encoding='utf-8'))
     from .services import mapping_store as ms
+    path = str(d / meta['path'])
     try:
-        rows, stats, _ = ms.build_rows(str(d / meta['path']))
-        res = ms.replace_mapping(rows)
+        if ms.is_d365_shipto(path):          # additive enrich — never wipes
+            rows, _, _ = ms.build_rows_d365(path)
+            res = ms.upsert_d365(rows)
+            msg = (f"✓ Ship-To enriched from D365 — {res['inserted']} new "
+                   f"address(es) added, {res['updated']} updated"
+                   + (f" ({res['skipped_manual']} manual preserved)"
+                      if res['skipped_manual'] else '') + ".")
+        else:
+            rows, stats, _ = ms.build_rows(path)
+            res = ms.replace_mapping(rows)
+            msg = (f"✓ Ship-To mapping replaced — {res['rows']} rows across "
+                   f"{stats['parties']} parties now live.")
     except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Replace failed: {type(e).__name__}: {e}")
+        messages.error(request, f"Apply failed: {type(e).__name__}: {e}")
         return redirect('b2b_ship_to_preview', token=token)
     shutil.rmtree(d, ignore_errors=True)
-    messages.success(request, f"✓ Ship-To mapping replaced — {res['rows']} rows "
-                     f"across {stats['parties']} parties now live.")
+    messages.success(request, msg)
     return redirect('b2b_ship_to')
 
 

@@ -62,6 +62,9 @@ class HomeView(LoginView):
         return ctx
 
     def form_valid(self, form):
+        # Remember me → persist 2 weeks; else expire when the browser closes.
+        self.request.session.set_expiry(
+            60 * 60 * 24 * 14 if self.request.POST.get('remember') else 0)
         messages.success(self.request, 'Login successful')
         return super().form_valid(form)
 

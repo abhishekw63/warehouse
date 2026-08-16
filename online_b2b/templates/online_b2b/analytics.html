@@ -95,6 +95,23 @@
   @media (prefers-reduced-motion: reduce){.an-pane{animation:none;}}
   .an-toolbar{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;margin-bottom:16px;}
   .an-scope .src{font-size:12.5px;}
+  /* Marketplace multi-select — checkbox dropdown (geo tab filter) */
+  .mpx{position:relative;display:inline-block;}
+  .mpx-btn{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid var(--border);border-radius:9px;
+    background:var(--surface);color:var(--text);font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;transition:border-color .13s,box-shadow .13s;white-space:nowrap;}
+  .mpx-btn:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));}
+  .mpx-car{font-size:9px;color:var(--muted);}
+  .mpx-panel{position:absolute;top:calc(100% + 6px);left:0;z-index:40;min-width:230px;max-height:320px;overflow:auto;
+    background:var(--surface);border:1px solid var(--border);border-radius:11px;box-shadow:var(--elev-2,0 12px 30px -12px rgba(15,23,42,.35));
+    padding:8px;animation:mpxIn .14s ease;}
+  @keyframes mpxIn{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:none;}}
+  .mpx-tools{display:flex;gap:6px;padding:2px 4px 8px;border-bottom:1px solid var(--border);margin-bottom:6px;}
+  .mpx-tools button{flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:7px;background:var(--surface-2);color:var(--text-2,var(--text));
+    font-size:11.5px;font-weight:700;cursor:pointer;transition:all .12s;}
+  .mpx-tools button:hover{border-color:var(--accent);color:var(--accent);}
+  .mpx-item{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:7px;font-size:12.5px;cursor:pointer;transition:background .12s;}
+  .mpx-item:hover{background:color-mix(in srgb,var(--accent) 8%,transparent);}
+  .mpx-item input{accent-color:var(--accent);width:15px;height:15px;flex:none;cursor:pointer;}
   .daily-controls{display:inline-flex;align-items:center;gap:12px;flex-wrap:wrap;}
   /* quick presets — segmented pill */
   .range-toggle{display:inline-flex;align-items:center;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:2px;gap:2px;}
@@ -339,6 +356,7 @@
       if (s.dataset.from) p.set('sku_from', s.dataset.from);
       if (s.dataset.to) p.set('sku_to', s.dataset.to);
     }
+    if (activeTab === 'geo' && s && s.dataset.seg) p.set('geo_seg', s.dataset.seg);   // segment filter
     history.replaceState(null, '', AN_URL + '?' + p.toString());
   }
 
@@ -627,21 +645,36 @@
     if (!root) return;
     wireSort(root);
     var form = root.querySelector('[data-geo-filter]');
+    var mpx = root.querySelector('[data-mpx]');
+    function boxes() { return mpx ? [].slice.call(mpx.querySelectorAll('input[type=checkbox]')) : []; }
+    function selMps() { return boxes().filter(function (b) { return b.checked; }).map(function (b) { return b.value; }).join('|'); }
+    function seg() { return form.querySelector('[name=geo_seg]').value; }
+
+    // marketplace multi-select dropdown (checkbox panel)
+    if (mpx) {
+      var btn = mpx.querySelector('[data-mpx-btn]'), panel = mpx.querySelector('[data-mpx-panel]'), label = mpx.querySelector('[data-mpx-label]');
+      function refresh() { var n = boxes().filter(function (b) { return b.checked; }).length; label.textContent = n ? (n + ' marketplace' + (n > 1 ? 's' : '')) : 'All marketplaces'; }
+      btn.addEventListener('click', function (e) { e.preventDefault(); panel.hidden = !panel.hidden; });
+      document.addEventListener('click', function (e) { if (!mpx.contains(e.target)) panel.hidden = true; });
+      mpx.querySelector('[data-mpx-all]').addEventListener('click', function (e) { e.preventDefault(); boxes().forEach(function (b) { b.checked = true; }); refresh(); });
+      mpx.querySelector('[data-mpx-none]').addEventListener('click', function (e) { e.preventDefault(); boxes().forEach(function (b) { b.checked = false; }); refresh(); });
+      mpx.addEventListener('change', refresh);
+    }
+
     function apply() {
-      loadGeo({
-        sku_mp: form.querySelector('[name=sku_mp]').value,
+      loadGeo({ geo_seg: seg(), sku_mp: selMps(),
         sku_from: form.querySelector('[name=sku_from]').value,
-        sku_to: form.querySelector('[name=sku_to]').value
-      });
+        sku_to: form.querySelector('[name=sku_to]').value });
     }
     if (form) form.addEventListener('submit', function (e) { e.preventDefault(); apply(); });
+    form.querySelector('[name=geo_seg]').addEventListener('change', apply);   // segment auto-applies
     root.querySelectorAll('[data-geo-preset]').forEach(function (b) {
       b.addEventListener('click', function (e) {
         e.preventDefault();
         var today = new Date().toISOString().slice(0, 10);
-        var mp = form.querySelector('[name=sku_mp]').value;
-        if (b.getAttribute('data-geo-preset') === 'today') loadGeo({ sku_mp: mp, sku_from: today, sku_to: today });
-        else loadGeo({ sku_mp: mp, sku_from: '', sku_to: '' });
+        var base = { geo_seg: seg(), sku_mp: selMps() };
+        if (b.getAttribute('data-geo-preset') === 'today') loadGeo(Object.assign(base, { sku_from: today, sku_to: today }));
+        else loadGeo(Object.assign(base, { sku_from: '', sku_to: '' }));
       });
     });
   }
@@ -713,7 +746,7 @@
     } else if (name === 'exc' && document.getElementById('pane-exc').dataset.loaded === '0') {
       loadExc({ sku_mp: q.get('sku_mp') || '', sku_from: q.get('sku_from') || undefined, sku_to: q.get('sku_to') || undefined });
     } else if (name === 'geo' && document.getElementById('pane-geo').dataset.loaded === '0') {
-      loadGeo({ sku_mp: q.get('sku_mp') || '', sku_from: q.get('sku_from') || undefined, sku_to: q.get('sku_to') || undefined });
+      loadGeo({ sku_mp: q.get('sku_mp') || '', geo_seg: q.get('geo_seg') || '', sku_from: q.get('sku_from') || undefined, sku_to: q.get('sku_to') || undefined });
     } else if (name === 'otif' && document.getElementById('pane-otif').dataset.loaded === '0') {
       loadOtif({ sku_mp: q.get('sku_mp') || '', horizon: q.get('horizon') || 0 });
     } else if (name === 'dos' && document.getElementById('pane-dos').dataset.loaded === '0') {

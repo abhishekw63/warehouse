@@ -86,13 +86,25 @@
   .trk-btn.primary:hover{filter:brightness(1.06);}
   .trk-btn.ghost:hover{border-color:var(--accent);color:var(--accent);}
   .trk-kpis{display:flex;gap:14px;margin:0 0 16px;flex-wrap:wrap;}
-  .trk-kpi{display:flex;align-items:center;gap:14px;border:1px solid var(--border);border-radius:16px;background:var(--surface);padding:14px 22px 14px 16px;box-shadow:0 4px 18px -12px rgba(15,23,42,.35);min-width:180px;position:relative;overflow:hidden;}
+  .trk-kpi{flex:1 1 220px;display:flex;align-items:center;gap:14px;border:1px solid var(--border);border-radius:16px;background:var(--surface);padding:14px 22px 14px 16px;box-shadow:0 4px 18px -12px rgba(15,23,42,.35);min-width:180px;position:relative;overflow:hidden;}
   .trk-kpi::before{content:'';position:absolute;left:0;top:0;bottom:0;width:5px;}
   .trk-kpi.k1::before{background:#6366f1;} .trk-kpi.k2::before{background:#0ea5e9;} .trk-kpi.k3::before{background:#0a9d6e;}
   .trk-kpi .k-ic{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:#fff;flex:none;}
   .trk-kpi.k1 .k-ic{background:linear-gradient(135deg,#6366f1,#4f46e5);} .trk-kpi.k2 .k-ic{background:linear-gradient(135deg,#38bdf8,#0ea5e9);} .trk-kpi.k3 .k-ic{background:linear-gradient(135deg,#10b981,#0a9d6e);}
   .trk-kpi .k-n{font-size:23px;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums;color:var(--text);}
   .trk-kpi .k-l{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-top:3px;}
+  /* Facility-wise quick filter chips (AHD / BLR / North) */
+  .trk-facs{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 16px;}
+  .trk-facs-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-right:2px;}
+  .trk-fac{display:inline-flex;align-items:center;gap:7px;padding:6px 13px;border:1px solid var(--border);border-radius:999px;
+    background:var(--surface);color:var(--text-2,var(--text));font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;
+    transition:border-color .15s,background .15s,color .15s,box-shadow .15s,transform .08s;}
+  .trk-fac:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));background:color-mix(in srgb,var(--accent) 7%,var(--surface));}
+  .trk-fac:active{transform:scale(.97);}
+  .trk-fac .fc{font-size:11px;font-weight:800;font-variant-numeric:tabular-nums;padding:1px 7px;border-radius:999px;
+    background:color-mix(in srgb,var(--muted) 16%,transparent);color:var(--text-2,var(--muted));transition:background .15s,color .15s;}
+  .trk-fac.on{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 4px 14px -6px color-mix(in srgb,var(--accent) 70%,transparent);}
+  .trk-fac.on .fc{background:rgba(255,255,255,.22);color:#fff;}
   .trk-filter{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 14px;padding:12px 14px;border:1px solid var(--border);border-radius:14px;background:var(--surface-2);}
   .trk-filter select,.trk-filter input[type=search]{padding:8px 11px;border:1px solid var(--border);border-radius:9px;font-size:12.5px;background:#fff;color:var(--text);font-family:inherit;}
   .trk-filter input[name=q]{min-width:230px;} #trkQuick{margin-left:auto;min-width:210px;border-color:color-mix(in srgb,var(--accent) 40%,var(--border));}
@@ -199,6 +211,16 @@
   // filter events (no reload)
   filter.querySelectorAll('select').forEach(function (s) { s.addEventListener('change', loadBody); });
   filter.addEventListener('submit', function (e) { e.preventDefault(); loadBody(); });
+
+  // Facility chips live INSIDE the re-rendered body → delegate on the persistent
+  // container: a click sets the warehouse filter and reloads (one filter path).
+  body.addEventListener('click', function (e) {
+    var chip = e.target.closest && e.target.closest('.trk-fac');
+    if (!chip) return;
+    var whSel = filter.querySelector('[name="warehouse"]');
+    if (whSel) whSel.value = chip.getAttribute('data-fac') || '';
+    loadBody();
+  });
   var qEl = filter.querySelector('[name=q]'), qT;
   if (qEl) qEl.addEventListener('input', function () { clearTimeout(qT); qT = setTimeout(loadBody, 400); });
   if (clearBtn) clearBtn.addEventListener('click', function (e) {

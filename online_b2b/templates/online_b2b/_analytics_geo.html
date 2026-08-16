@@ -4,14 +4,30 @@
   via ship-to mapping; unresolved locations shown as an honest (Unmapped) bucket)
   and HOW concentrated the SKU book is (Pareto / ABC). Lazy-loaded (?partial=geo).
 {% endcomment %}
-<div class="an-geo" data-mp="{{ sku_mp }}" data-from="{{ sku_from }}" data-to="{{ sku_to }}">
+<div class="an-geo" data-mp="{{ sku_mp }}" data-seg="{{ geo_seg }}" data-from="{{ sku_from }}" data-to="{{ sku_to }}">
 
   <div class="an-toolbar">
     <form class="sku-filter" data-geo-filter onsubmit="return false;">
-      <select name="sku_mp">
-        <option value="">All marketplaces</option>
-        {% for m in geo.marketplaces %}<option value="{{ m }}" {% if m == sku_mp %}selected{% endif %}>{{ m }}</option>{% endfor %}
+      <select name="geo_seg" title="Segment">
+        <option value="">All departments</option>
+        <option value="OnlineB2B" {% if geo_seg == 'OnlineB2B' %}selected{% endif %}>Online B2B</option>
+        <option value="Offline" {% if geo_seg == 'Offline' %}selected{% endif %}>Offline</option>
       </select>
+      {# Multi-select marketplace — checkbox dropdown (values pipe-joined into sku_mp) #}
+      <div class="mpx" data-mpx>
+        <button type="button" class="mpx-btn" data-mpx-btn>
+          <span data-mpx-label>{% if sel_mps %}{{ sel_mps|length }} marketplace{{ sel_mps|length|pluralize }}{% else %}All marketplaces{% endif %}</span>
+          <span class="mpx-car">▾</span>
+        </button>
+        <div class="mpx-panel" data-mpx-panel hidden>
+          <div class="mpx-tools"><button type="button" data-mpx-all>Select all</button><button type="button" data-mpx-none>Clear</button></div>
+          <div class="mpx-list">
+            {% for m in geo.marketplaces %}
+            <label class="mpx-item"><input type="checkbox" value="{{ m }}" {% if m in sel_mps %}checked{% endif %}><span>{{ m }}</span></label>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
       <label>From <input type="date" name="sku_from" value="{{ sku_from }}"></label>
       <label>To <input type="date" name="sku_to" value="{{ sku_to }}"></label>
       <button type="submit" class="btn-primary">Apply</button>
@@ -21,7 +37,9 @@
   </div>
 
   <p class="sku-scope muted">
-    {% if sku_from or sku_to %}Upload date {{ sku_from|default:'…' }} → {{ sku_to|default:'…' }}{% else %}All uploads{% endif %}{% if sku_mp %} · {{ sku_mp }}{% endif %} ·
+    {% if sku_from or sku_to %}Upload date {{ sku_from|default:'…' }} → {{ sku_to|default:'…' }}{% else %}All uploads{% endif %}
+    {% if geo_seg == 'OnlineB2B' %} · Online B2B{% elif geo_seg == 'Offline' %} · Offline{% endif %}
+    {% if sel_mps %} · {{ sel_mps|join:", " }}{% endif %} ·
     {{ geo.total_value|inr_short }} total{% if geo.unmapped_pct %} · <span class="warn">{{ geo.unmapped_pct }}% unmapped location</span>{% endif %}.
   </p>
 

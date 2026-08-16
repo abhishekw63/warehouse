@@ -28,10 +28,40 @@
 :root{
   --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:22px; --sp-6:32px;
   --r-sm:8px; --r-md:12px; --r-lg:16px; --r-pill:20px;
+  /* Content-shell widths — ONE source of truth for every page container
+     (.b2b-wrap / .iss-wrap / .rd-wrap / .iv-wrap). Widen here to widen the
+     whole app uniformly; --shell-wide is the data-dense variant (b2b-wide). */
+  --shell:1560px; --shell-wide:1840px;
   --elev-1:0 1px 3px rgba(15,23,42,.06);
   --elev-2:0 8px 20px -12px rgba(15,23,42,.30);
   --elev-modal:0 30px 80px -20px rgba(15,23,42,.6);
 }
+
+/* ---- 0. Premium components (SHARED) -------------------------------------
+   The design language from the sign-in page, packaged as reusable classes so
+   every page inherits it — DON'T restyle per page, compose these. [[dry-skeleton-first]]
+     .reveal      entrance fade-up; stagger with inline style="--i:0|1|2…"
+     .hover-lift  lift + soft shadow on hover (cards, tiles)
+     .grad-text   brand-gradient text (headings, accents)
+     .icon-badge  gradient rounded icon chip
+     .hero-head   centred page title + eyebrow + subtitle block
+     .pill        small uppercase status/eyebrow chip                              */
+.reveal{opacity:0;transform:translateY(14px);animation:rn-reveal .6s cubic-bezier(.22,1,.36,1) forwards;animation-delay:calc(var(--i,0)*.07s);}
+@keyframes rn-reveal{to{opacity:1;transform:none;}}
+.hover-lift{transition:transform .28s cubic-bezier(.22,1,.36,1),box-shadow .28s,border-color .28s;}
+.hover-lift:hover{transform:translateY(-4px);box-shadow:var(--lift,0 22px 48px -22px rgba(24,16,64,.34));}
+.grad-text{background:var(--brand-grad,linear-gradient(120deg,#4f46e5,#c026d3));-webkit-background-clip:text;background-clip:text;color:transparent;}
+.icon-badge{width:46px;height:46px;border-radius:13px;display:grid;place-items:center;color:#fff;flex:none;
+  background:var(--accent-grad,linear-gradient(100deg,#6366f1,#a855f7));
+  box-shadow:0 12px 26px -12px color-mix(in srgb,var(--accent) 80%,transparent);}
+.icon-badge svg{width:22px;height:22px;}
+.hero-head{text-align:center;max-width:660px;margin:6px auto 34px;}
+.hero-head h1{font-size:clamp(26px,3vw,36px);font-weight:800;letter-spacing:-.025em;margin:12px 0 8px;line-height:1.1;text-wrap:balance;}
+.hero-head p{font-size:14.5px;line-height:1.6;color:var(--text-2);margin:0 auto;max-width:52ch;}
+.pill{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--accent);background:var(--accent-soft);border:1px solid color-mix(in srgb,var(--accent) 18%,transparent);border-radius:999px;padding:6px 13px;}
+.pill .dot{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent);}
+@media (prefers-reduced-motion:reduce){.reveal{animation:none;opacity:1;transform:none;}}
 
 /* ---- 1. Dark theme -------------------------------------------------------
    Re-point the SAME design tokens b2b.css already uses, so every tokenised
@@ -290,7 +320,7 @@ table.skux tbody{animation:skuxrows .45s ease both;} @keyframes skuxrows{from{op
    from inventory / inventory_bins / inventory_preview. Pages needing a
    narrower shell just override max-width locally.
    ───────────────────────────────────────────────────────────────────────── */
-.iv-wrap{max-width:1240px;margin:var(--sp-5) auto 64px;padding:0 20px;color:var(--text);}
+.iv-wrap{max-width:var(--shell,1560px);margin:var(--sp-5) auto 64px;padding:0 24px;color:var(--text);}
 .iv-wrap .b2b-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap;}
 .iv-wrap code{background:var(--surface-2);padding:1px 5px;border-radius:5px;font-size:12px;}
 

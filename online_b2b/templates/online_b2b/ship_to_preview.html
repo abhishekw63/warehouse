@@ -13,11 +13,84 @@
   <div class="b2b-head">
     <div>
       <h1>Ship-To Mapping <span>· Preview</span></h1>
-      <p class="src">{{ meta.name }} · nothing is written until you confirm. Manual rows are preserved on replace.</p>
+      <p class="src">{{ meta.name }} · nothing is written until you confirm.
+        {% if mode == 'd365' %}D365 Ship-to Address export — <b>additive</b>: new codes are added, existing rows enriched, manual + curated rows untouched.{% else %}Manual rows are preserved on replace.{% endif %}</p>
     </div>
     <a href="{% url 'b2b_ship_to' %}" class="back">← Ship-To Mapping</a>
   </div>
 
+  {% if mode == 'd365' %}
+  {# ── D365 additive import: what's NEW / CHANGED / UNCHANGED, review-style ── #}
+  <div class="hub-kpis reveal">
+    <div class="hk"><div class="n" style="color:#0f9d6b;">+{{ diff.new_count }}</div><div class="l">New addresses</div></div>
+    <div class="hk"><div class="n" style="color:#b45309;">{{ diff.changed_count }}</div><div class="l">Changed (existing)</div></div>
+    <div class="hk"><div class="n">{{ diff.unchanged }}</div><div class="l">Unchanged</div></div>
+    <div class="hk"><div class="n">{{ stats.with_pin }}</div><div class="l">Rows with pincode</div></div>
+  </div>
+
+  <form method="post" action="{% url 'b2b_ship_to_confirm' token=token %}">
+    {% csrf_token %}
+    <div class="confirm-bar">
+      <div class="cb-text">Add <b>{{ diff.new_count }}</b> new ship-to address(es) and enrich
+        <b>{% widthratio diff.changed_manual 1 -1 as skip %}{{ diff.changed_count|add:skip }}</b> existing row(s)
+        with pincode / state.{% if diff.changed_manual %} <span class="muted">({{ diff.changed_manual }} manual row(s) preserved, not overwritten.)</span>{% endif %}
+        Curated &amp; manual rows are never wiped.</div>
+      <div class="cb-actions">
+        <button class="btn-discard" type="submit" formaction="{% url 'b2b_ship_to_discard' token=token %}" formnovalidate>Discard</button>
+        <button class="btn-primary" type="submit">✓ Apply — add &amp; enrich</button>
+      </div>
+    </div>
+  </form>
+
+  {% if warnings %}
+  <div class="warnbox" style="margin-top:14px;">
+    <strong>{{ warnings|length }} note(s)</strong>
+    <ul>{% for w in warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+  </div>
+  {% endif %}
+
+  <div class="im-card reveal" style="margin-top:16px;">
+    <h2>New addresses <span class="count">first {{ sample_new|length }} of {{ diff.new_count }}</span></h2>
+    <div class="scroll">
+    <table class="grid compact">
+      <thead><tr><th>Ship-to</th><th>Cust No</th><th>Name</th><th>City</th><th>State</th><th>Postcode</th></tr></thead>
+      <tbody>
+        {% for r in sample_new %}
+        <tr>
+          <td class="mono">{{ r.ship_to }}</td>
+          <td class="mono">{{ r.cust_no|default:'—' }}</td>
+          <td class="desc" title="{{ r.name }}">{{ r.name|default:'—' }}</td>
+          <td>{{ r.city|default:'—' }}</td>
+          <td class="mono">{{ r.state|default:'—' }}</td>
+          <td class="mono">{{ r.postcode|default:'—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  {% if sample_changed %}
+  <div class="im-card reveal">
+    <h2>Changed existing rows <span class="count">first {{ sample_changed|length }} of {{ diff.changed_count }}</span></h2>
+    <div class="scroll">
+    <table class="grid compact">
+      <thead><tr><th>Ship-to</th><th>Field changes (old → new)</th><th>Source</th></tr></thead>
+      <tbody>
+        {% for c in sample_changed %}
+        <tr>
+          <td class="mono">{{ c.row.ship_to }}</td>
+          <td>{% for dd in c.diffs %}<span class="gst-chip"><b>{{ dd.field }}</b>: {{ dd.old|default:'∅' }} → {{ dd.new }}</span> {% endfor %}</td>
+          <td>{% if c.manual %}<span class="gst-chip" style="color:#b45309;">manual · preserved</span>{% else %}<span class="gst-chip" style="color:#0f9d6b;">will update</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% else %}
   <div class="hub-kpis reveal">
     <div class="hk"><div class="n">{{ stats.rows }}</div><div class="l">Rows parsed</div></div>
     <div class="hk"><div class="n">{{ stats.parties }}</div><div class="l">Parties</div></div>
@@ -70,5 +143,6 @@
     </table>
     </div>
   </div>
+  {% endif %}
 </div>
 {% endblock %}

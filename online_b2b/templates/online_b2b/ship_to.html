@@ -87,11 +87,12 @@
   <!-- Upload / replace -->
   <div class="im-card reveal">
     <h2>Upload / replace</h2>
-    <p class="im-sub">Upload the <b>Ship-To B2B</b> Excel (sheet <b>Ship-To B2B</b>: Party · Del Location · Cust No · Ship to). It <b>fully replaces</b> the Excel-sourced rows — your hand-added <b>manual</b> rows are preserved.</p>
+    <p class="im-sub">Upload the <b>Ship-To B2B</b> Excel (sheet <b>Ship-To B2B</b>: Party · Del Location · Cust No · Ship to) — <b>fully replaces</b> the Excel-sourced rows (manual rows kept).<br>
+      <b>Or</b> a raw <b>D365 “Ship-to Address”</b> export (Customer&nbsp;No · Code · Name · City · Post&nbsp;Code · State) — auto-detected and merged <b>additively</b> (new addresses added, pincodes filled; nothing wiped), with a New / Changed preview first.</p>
     <form method="post" action="{% url 'b2b_ship_to_upload' %}" enctype="multipart/form-data" class="im-up">
       {% csrf_token %}
       <label class="im-file">
-        <span class="imf-l">Ship-To B2B Excel</span>
+        <span class="imf-l">Ship-To B2B or D365 “Ship-to Address” Excel</span>
         <input type="file" name="mapping_file" accept=".xlsx,.xls" required>
         <span class="imf-h">Party · Del Location · Cust No · Ship to (+ address)</span>
       </label>

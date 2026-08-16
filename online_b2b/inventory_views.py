@@ -77,9 +77,17 @@ def inventory(request):
             # per-bin audit → split into what we COUNTED vs EXCLUDED vs NEW, so
             # the operator can see exactly which bins the sellable qty came from.
             audit = audits.get(s['snapshot_id'], [])
-            card['considered'] = [b for b in audit if b['decision'] == 'include']
-            card['excluded'] = [b for b in audit if b['decision'] == 'exclude']
-            card['new'] = [b for b in audit if b['decision'] == 'new']
+            inc = [b for b in audit if b['decision'] == 'include']
+            exc = [b for b in audit if b['decision'] == 'exclude']
+            new = [b for b in audit if b['decision'] == 'new']
+            for b in new:
+                b['is_new'] = True          # unrecognized → shown IN Excluded, flagged
+            card['considered'] = inc
+            # No 'skipped' bucket: unrecognized bins sit inside Excluded (highlighted)
+            # so nothing is held in limbo — the operator flips them In if sellable.
+            card['excluded'] = sorted(exc + new, key=lambda b: -(b.get('qty') or 0))
+            card['new'] = new               # kept only for the count / toast
+            card['new_count'] = len(new)
             age = _snap_age_hours(s.get('captured_at'))
             card['age_hours'] = round(age, 1) if age is not None else None
             card['stale'] = age is not None and age >= STALE_HOURS
@@ -121,6 +129,7 @@ def inventory(request):
         'stock_rows': stock_rows, 'q': q, 'item_count': len(stock_rows),
         'max_total': max_total, 'total_units': total_units,
         'stale_cards': stale, 'stale_hours': STALE_HOURS, 'max_age': max_age,
+        'new_total': sum(c.get('new_count', 0) for c in snap_cards),
     })
 
 
@@ -341,3 +350,38 @@ def inventory_rule_delete(request, rule_id):
         return JsonResponse({'ok': True})
     messages.success(request, "Bin rule removed.")
     return redirect('b2b_inventory_bins')
+
+
+@login_required
+@require_POST
+def inventory_bin_set(request):
+    """Per-bin include/exclude override — click a bin In/Out. Writes a DURABLE
+    exact-bin rule (per warehouse) so it also applies to future uploads. AJAX;
+    the change lands in stock on 'Lock & apply' (reclassify)."""
+    res = store.set_bin_decision(
+        request.POST.get('bin_code', ''), request.POST.get('warehouse', ''),
+        request.POST.get('decision', ''), user=request.user.get_username())
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse(res, status=200 if res.get('ok') else 400)
+    if res.get('ok'):
+        messages.success(request, f"Bin set to {res['decision']}.")
+    else:
+        messages.error(request, res.get('error', 'Could not set bin.'))
+    return redirect('b2b_inventory_bins')
+
+
+@login_required
+@require_POST
+def inventory_apply(request):
+    """Lock & apply — reclassify the current snapshot(s) with the latest rules so
+    available stock reflects your include/exclude choices (rules already persist
+    for future uploads). Optional ``warehouse`` limits it to one WH."""
+    res = store.reclassify_current(request.POST.get('warehouse', ''))
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse(res, status=200 if res.get('ok') else 400)
+    n = sum(1 for r in res.get('results', []) if r.get('ok'))
+    if n:
+        messages.success(request, f"Applied — {n} warehouse snapshot(s) reclassified.")
+    else:
+        messages.warning(request, "Nothing to apply.")
+    return redirect('b2b_inventory')

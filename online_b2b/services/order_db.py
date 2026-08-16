@@ -204,6 +204,63 @@ def _seg(ph: str, segment):
 
 _SEG_LABEL = {'OnlineB2B': 'Online B2B', 'Offline': 'Offline'}
 
+# ── Facility canonicalisation ────────────────────────────────────────────────
+# There are only THREE real fulfilment centres — AHD / BLR / North. D365 knows
+# them by its own warehouse CODES (PICK / DS_BL_OFF1 / NORTH WH-0), and rows in
+# order_headers.warehouse historically stored EITHER the friendly name OR the
+# D365 code. The tracker collapses both forms to the friendly facility on READ,
+# so the dropdown / chips / filter always show just AHD / BLR / North regardless
+# of which form a row happens to hold. No data is mutated — valid D365 codes
+# stay in the DB.
+#
+# The taxonomy is NOT hardcoded here — it's derived from the single warehouse
+# registry (``inventory_store.WAREHOUSES``: {code, name, short}), so adding a
+# facility there flows through automatically. Lazy + cached because
+# inventory_store imports THIS module (circular at import time).
+_FACILITY_MAPS = None
+
+
+def _facility_maps():
+    """(canon, aliases, order) built once from the WAREHOUSES registry:
+      • canon   {RAW.upper(): facility}  — code OR friendly name → facility short
+      • aliases {facility: [raw values]} — for the SQL filter's IN-list
+      • order   [facility, …]            — registry order (AHD, BLR, North)
+    Falls back to the built-in three if the registry can't be imported."""
+    global _FACILITY_MAPS
+    if _FACILITY_MAPS is not None:
+        return _FACILITY_MAPS
+    try:
+        from .inventory_store import WAREHOUSES as _REG
+        regs = list(_REG)
+    except Exception:  # noqa: BLE001
+        regs = [{'code': 'PICK', 'short': 'AHD'},
+                {'code': 'DS_BL_OFF1', 'short': 'BLR'},
+                {'code': 'NORTH WH-0', 'short': 'North'}]
+    canon, aliases, order = {}, {}, []
+    for w in regs:
+        code = str(w.get('code') or '').strip()
+        disp = str(w.get('short') or w.get('name') or code).strip()
+        if not disp:
+            continue
+        if disp not in order:
+            order.append(disp)
+            aliases[disp] = []
+        for raw in (disp, code):
+            if raw:
+                canon[raw.upper()] = disp
+                if raw not in aliases[disp]:
+                    aliases[disp].append(raw)
+    _FACILITY_MAPS = (canon, aliases, order)
+    return _FACILITY_MAPS
+
+
+def _canon_fac(raw) -> str:
+    """Raw warehouse value (friendly name OR D365 code) → canonical facility
+    (AHD / BLR / North). Unknown values pass through unchanged so nothing is
+    silently hidden."""
+    s = str(raw or '').strip()
+    return _facility_maps()[0].get(s.upper(), s)
+
 
 def daily_intake(days: int = 30, start: str = '', end: str = '') -> dict:
     """Per-day order arrivals (by ``created_at``) split by segment — for the
@@ -543,7 +600,16 @@ _IN_ZONES = {
 }
 
 
-def geography(date_from='', date_to='', marketplace='') -> dict:
+def _mp_list(marketplace):
+    """Normalise a marketplace filter (str OR list/tuple) → clean list. Empty →
+    []. Powers the multi-select marketplace filter on the analytics geo tab."""
+    if isinstance(marketplace, (list, tuple, set)):
+        return [str(m).strip() for m in marketplace if str(m).strip()]
+    m = str(marketplace or '').strip()
+    return [m] if m else []
+
+
+def geography(date_from='', date_to='', marketplace='', segment='') -> dict:
     """Where demand lands — order value/qty/POs by **state → city**, resolved by
     joining ``order_headers.location`` to ``ship_to_mapping`` (del_location /
     ship_to / name). Locations that don't resolve fall into an honest
@@ -578,8 +644,12 @@ def geography(date_from='', date_to='', marketplace='') -> dict:
                 where.append(f"DATE(run_ts) >= {ph}"); args.append(date_from)
             if date_to:
                 where.append(f"DATE(run_ts) <= {ph}"); args.append(date_to)
-            if marketplace:
-                where.append(f"marketplace_label={ph}"); args.append(marketplace)
+            if segment and segment != 'all':
+                where.append(f"segment={ph}"); args.append(segment)
+            mps = _mp_list(marketplace)
+            if mps:
+                marks = ','.join([ph] * len(mps))
+                where.append(f"marketplace_label IN ({marks})"); args += mps
             wsql = ' AND '.join(where) if where else '1=1'
             cur.execute("SELECT location, COALESCE(SUM(order_value),0), "
                         "COALESCE(SUM(qty),0), COUNT(DISTINCT po) "
@@ -633,32 +703,39 @@ def geography(date_from='', date_to='', marketplace='') -> dict:
     return out
 
 
-def value_concentration(date_from='', date_to='', marketplace='') -> dict:
+def value_concentration(date_from='', date_to='', marketplace='', segment='') -> dict:
     """Pareto / ABC — how concentrated the order book is. Sorts SKUs by value,
     walks the cumulative share, and classes them A (to 80%), B (80–95%), C (rest).
     Also the classic 80/20 read: what share of value the top 20% of SKUs make.
-    Read-only; never raises."""
+    Joins order_headers (on po+run_id) so the segment + marketplace filter uses the
+    SAME vocabulary as :func:`geography`. Read-only; never raises."""
     out = {'ok': False, 'date_from': date_from, 'date_to': date_to,
            'marketplace': marketplace, 'marketplaces': [], 'classes': [],
            'top': [], 'skus': 0, 'value': 0.0, 'top20_share': 0.0, 'curve': []}
     try:
         with _conn() as (cur, d):
             ph = d['ph']
-            cur.execute("SELECT DISTINCT marketplace FROM order_lines_full "
-                        "WHERE marketplace IS NOT NULL AND marketplace<>'' "
-                        "ORDER BY marketplace")
+            cur.execute("SELECT DISTINCT marketplace_label FROM order_headers "
+                        "WHERE marketplace_label IS NOT NULL AND marketplace_label<>'' "
+                        "ORDER BY marketplace_label")
             out['marketplaces'] = [r[0] for r in cur.fetchall()]
             where, args = [], []
             if date_from:
-                where.append(f"DATE(run_ts) >= {ph}"); args.append(date_from)
+                where.append(f"DATE(l.run_ts) >= {ph}"); args.append(date_from)
             if date_to:
-                where.append(f"DATE(run_ts) <= {ph}"); args.append(date_to)
-            if marketplace:
-                where.append(f"marketplace={ph}"); args.append(marketplace)
+                where.append(f"DATE(l.run_ts) <= {ph}"); args.append(date_to)
+            if segment and segment != 'all':
+                where.append(f"h.segment={ph}"); args.append(segment)
+            mps = _mp_list(marketplace)
+            if mps:
+                marks = ','.join([ph] * len(mps))
+                where.append(f"h.marketplace_label IN ({marks})"); args += mps
             wsql = ' AND '.join(where) if where else '1=1'
-            cur.execute("SELECT item_no, MAX(description), "
-                        "SUM(qty*COALESCE(unit_price,0)) AS value "
-                        f"FROM order_lines_full WHERE {wsql} GROUP BY item_no", tuple(args))
+            cur.execute("SELECT l.item_no, MAX(l.description), "
+                        "SUM(l.qty*COALESCE(l.unit_price,0)) AS value "
+                        "FROM order_lines_full l JOIN order_headers h "
+                        "ON l.po=h.po AND l.run_id=h.run_id "
+                        f"WHERE {wsql} GROUP BY l.item_no", tuple(args))
             rows = [{'item_no': str(r[0] or ''), 'description': str(r[1] or ''),
                      'value': round(float(r[2] or 0), 2)} for r in cur.fetchall()]
             rows = [r for r in rows if r['value'] > 0]
@@ -706,7 +783,8 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
     import os as _os
     import re as _re
     out = {'ok': False, 'rows': [], 'segments': [], 'marketplaces': [],
-           'warehouses': [], 'total_value': 0.0, 'total_qty': 0}
+           'warehouses': [], 'facilities': [], 'facility_total': 0,
+           'total_value': 0.0, 'total_qty': 0}
 
     def nk(s):
         return _re.sub(r'[^a-z0-9]', '', str(s or '').lower())
@@ -724,17 +802,25 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
                     if kk:
                         loc2geo.setdefault(nk(kk), g)
 
-            where, args = [], []
+            # Base conditions (dept / marketplace / search) shared by the main
+            # query AND the facility breakdown; the warehouse condition is layered
+            # ONLY onto the main query so the facility chips stay switchable (each
+            # chip shows its count within the current dept/marketplace/search).
+            base_w, base_a = [], []
             if segment:
-                where.append(f"h.segment={ph}"); args.append(segment)
+                base_w.append(f"h.segment={ph}"); base_a.append(segment)
             if marketplace:
-                where.append(f"h.marketplace_label={ph}"); args.append(marketplace)
-            if warehouse:
-                where.append(f"h.warehouse={ph}"); args.append(warehouse)
+                base_w.append(f"h.marketplace_label={ph}"); base_a.append(marketplace)
             if q:
-                where.append(f"(h.po LIKE {ph} OR h.location LIKE {ph} OR "
-                             f"h.external_doc LIKE {ph} OR h.marketplace_label LIKE {ph})")
-                args += [f"%{q}%"] * 4
+                base_w.append(f"(h.po LIKE {ph} OR h.location LIKE {ph} OR "
+                              f"h.external_doc LIKE {ph} OR h.marketplace_label LIKE {ph})")
+                base_a += [f"%{q}%"] * 4
+            where, args = list(base_w), list(base_a)
+            if warehouse:
+                # 'AHD' must match rows stored as either 'AHD' or 'PICK', etc.
+                aliases = _facility_maps()[1].get(warehouse, [warehouse])
+                marks = ','.join([ph] * len(aliases))
+                where.append(f"h.warehouse IN ({marks})"); args += aliases
             wsql = (' AND ' + ' AND '.join(where)) if where else ''
 
             cur.execute(
@@ -761,7 +847,7 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
                 tv += val; tq += qty
                 rows.append({
                     'dept': _SEG_LABEL.get(m['segment'], m['segment'] or 'Other'),
-                    'wh': m['warehouse'] or '',
+                    'wh': _canon_fac(m['warehouse']),
                     'marketplace': m['marketplace_label'] or '',
                     'po': m['po'], 'external_doc': m['external_doc'] or '',
                     'location': m['location'] or '', 'pincode': pin, 'zone': zone,
@@ -782,7 +868,7 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
                         return False
                     if marketplace and mm['marketplace'] != marketplace:
                         return False
-                    if warehouse and mm['wh'] != warehouse:
+                    if warehouse and _canon_fac(mm.get('wh')) != warehouse:
                         return False
                     if q:
                         hay = ' '.join(str(mm.get(k, '')) for k in
@@ -792,6 +878,7 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
                     return True
                 manual = [mm for mm in tracker_store.list_manual() if _keep(mm)]
                 for mm in manual:
+                    mm['wh'] = _canon_fac(mm.get('wh'))
                     mm['order_value'] = round(float(mm.get('order_value') or 0), 2)
                     tv += mm['order_value']; tq += int(mm.get('qty') or 0)
                 rows = manual + rows
@@ -807,9 +894,49 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
                         "WHERE marketplace_label IS NOT NULL AND marketplace_label<>'' "
                         "ORDER BY marketplace_label")
             out['marketplaces'] = [x[0] for x in cur.fetchall()]
-            cur.execute("SELECT DISTINCT warehouse FROM order_headers "
-                        "WHERE warehouse IS NOT NULL AND warehouse<>'' ORDER BY warehouse")
-            out['warehouses'] = [x[0] for x in cur.fetchall()]
+            # Facility-wise breakdown — one entry per REAL fulfilment centre
+            # (AHD / BLR / North), collapsing D365 codes (PICK / DS_BL_OFF1 /
+            # NORTH WH-0) into their facility. Within the current dept/marketplace/
+            # search (NOT the warehouse pick, so every facility stays visible +
+            # clickable as a quick filter). [[facility-wise chips]]
+            fwsql = (' AND ' + ' AND '.join(base_w)) if base_w else ''
+            cur.execute(
+                "SELECT h.warehouse, COUNT(*) c FROM order_headers h JOIN ("
+                "  SELECT marketplace, po, MAX(run_ts) mx FROM order_headers "
+                "  GROUP BY marketplace, po) t ON h.marketplace=t.marketplace "
+                "AND h.po=t.po AND h.run_ts=t.mx "
+                "WHERE h.warehouse IS NOT NULL AND h.warehouse<>''"
+                f"{fwsql} GROUP BY h.warehouse ORDER BY c DESC", tuple(base_a))
+            facs = {}
+            for w, c in cur.fetchall():
+                facs[_canon_fac(w)] = facs.get(_canon_fac(w), 0) + int(c)
+            # fold in manual rows (they carry a wh too), honouring the same
+            # dept/marketplace/search filters but ignoring the warehouse pick.
+            try:
+                from . import tracker_store as _ts
+                _seg = _SEG_LABEL.get(segment, segment)
+                for mm in _ts.list_manual():
+                    if segment and mm.get('dept') != _seg:
+                        continue
+                    if marketplace and mm.get('marketplace') != marketplace:
+                        continue
+                    if q:
+                        hay = ' '.join(str(mm.get(k, '')) for k in
+                                       ('po', 'external_doc', 'location', 'marketplace')).lower()
+                        if q.lower() not in hay:
+                            continue
+                    w = _canon_fac(mm.get('wh'))
+                    if w:
+                        facs[w] = facs.get(w, 0) + 1
+            except Exception:  # noqa: BLE001
+                pass
+            # order by the registry (AHD, BLR, North), any stragglers after
+            fac_order = _facility_maps()[2]
+            ordered = [f for f in fac_order if f in facs] + \
+                      [f for f in facs if f not in fac_order]
+            out['facilities'] = [{'code': w, 'count': facs[w]} for w in ordered]
+            out['facility_total'] = sum(facs.values())
+            out['warehouses'] = ordered          # dropdown = real facilities only
             total_n = len(rows)          # KPIs/count cover ALL matching orders…
             out.update({'ok': True, 'rows': rows[:int(display_limit)],  # …table renders latest N
                         'total_value': round(tv, 2), 'total_qty': int(tq),

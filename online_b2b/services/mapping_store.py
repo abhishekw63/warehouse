@@ -317,6 +317,184 @@ def replace_mapping(rows: list) -> dict:
     return {'ok': True, 'rows': len(payload), 'batch_id': batch}
 
 
+# ── D365 "Ship-to Address" export → additive upsert + diff ──────────────────
+# A DIFFERENT source from the curated Ship-To B2B upload: the raw D365 customer
+# ship-to master (Customer No · Code · Name · Address · City · Post Code · State
+# · GST · Country). It is merged ADDITIVELY (upsert by Ship-to Code) so it only
+# ENRICHES the mapping — never wipes the curated 'excel' / 'manual' rows. This is
+# how missing pincodes get filled (incl. GT Mass, matched by ship-to Name).
+
+#: enrichment fields the D365 master updates on EXISTING rows (compared for the
+#: diff + upserted). Deliberately the geo/tax fields — the ones that actually add
+#: value (postcode → pincode, state → zone). Name/Address are NOT churned on
+#: existing curated rows (D365 merely splits them differently); NEW rows still
+#: get the full name/address on insert so name-matching works.
+_D365_FIELDS = ['postcode', 'state', 'city', 'gst_reg', 'country']
+
+
+def is_d365_shipto(xlsx_path: str) -> bool:
+    """True if the workbook is a D365 Ship-to Address export (has that sheet)."""
+    try:
+        xl = pd.ExcelFile(xlsx_path)
+        return any(str(s).strip().lower() == 'ship-to address'
+                   for s in xl.sheet_names)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def build_rows_d365(xlsx_path: str):
+    """Parse the D365 ``Ship-to Address`` sheet (title row + blank + header on
+    row 3) into mapping rows keyed by Ship-to Code. Writes NOTHING. Returns
+    ``(rows, stats, warnings)``. ``del_location`` is set to the Name so the
+    tracker's name-match resolves the pincode (GT Mass distributors included)."""
+    warnings: list[str] = []
+    try:
+        df = pd.read_excel(xlsx_path, sheet_name='Ship-to Address',
+                           header=2, dtype=str)
+    except Exception as e:  # noqa: BLE001
+        return [], {}, [f"Cannot read D365 Ship-to Address: {type(e).__name__}: {e}"]
+
+    cmap: dict = {}
+    for col in df.columns:
+        cl = str(col).strip().lower()
+        if cl in ('customer no.', 'customer no', 'cust no', 'cust no.'):
+            cmap['cust_no'] = col
+        elif cl == 'code':
+            cmap['ship_to'] = col
+        elif cl == 'name':
+            cmap['name'] = col
+        elif cl in ('address', 'address 1', 'address1'):
+            cmap['address'] = col
+        elif cl in ('address 2', 'address2'):
+            cmap['address2'] = col
+        elif cl == 'city':
+            cmap['city'] = col
+        elif cl in ('post code', 'postcode', 'pincode', 'pin code', 'zip'):
+            cmap['postcode'] = col
+        elif cl == 'state':
+            cmap['state'] = col
+        elif cl in ('gst registration no.', 'gst registration no', 'gst reg'):
+            cmap['gst_reg'] = col
+        elif cl in ('country/region code', 'country', 'country/region'):
+            cmap['country'] = col
+
+    if 'ship_to' not in cmap:
+        return [], {}, [f"D365 file missing the 'Code' (Ship-to) column. "
+                        f"Found: {list(df.columns)[:12]}…"]
+
+    def g(row, key):
+        return _s(row[cmap[key]]) if key in cmap else ''
+
+    rows, dropped, seen = [], 0, set()
+    for _, r in df.iterrows():
+        st = g(r, 'ship_to')
+        if not st or st in seen:            # skip blanks + duplicate codes
+            dropped += 1
+            continue
+        seen.add(st)
+        nm = g(r, 'name')
+        rows.append({
+            'party': '', 'del_location': nm[:500],
+            'cust_no': _cust(r[cmap['cust_no']])[:40] if 'cust_no' in cmap else '',
+            'ship_to': st[:60], 'name': nm[:255],
+            'address': g(r, 'address')[:500], 'address2': g(r, 'address2')[:500],
+            'postcode': g(r, 'postcode')[:20], 'city': g(r, 'city')[:120],
+            'state': g(r, 'state')[:60], 'gst_reg': g(r, 'gst_reg')[:60],
+            'country': g(r, 'country')[:60],
+        })
+
+    stats = {'rows': len(rows), 'dropped': dropped,
+             'with_pin': sum(1 for x in rows if x['postcode'])}
+    if dropped:
+        warnings.append(f"{dropped} row(s) skipped (blank/duplicate Ship-to Code).")
+    return rows, stats, warnings
+
+
+def diff_against_current(rows: list) -> dict:
+    """Classify parsed D365 rows vs the live mapping (keyed by Ship-to Code):
+    NEW (code absent), CHANGED (an owned field differs — only where D365 supplies
+    a value, so nothing is blanked), or UNCHANGED. Read-only."""
+    ensure_table()
+    cur_map: dict = {}
+    with _conn() as (cur, d):
+        cur.execute(
+            f"SELECT ship_to, name, address, address2, city, postcode, state, "
+            f"gst_reg, country, COALESCE(source,'excel') FROM {_MAP_TABLE} "
+            f"WHERE ship_to IS NOT NULL AND ship_to<>''")
+        for row in cur.fetchall():
+            st = str(row[0])
+            if st not in cur_map:           # first row per code is the comparator
+                cur_map[st] = {
+                    'name': row[1] or '', 'address': row[2] or '',
+                    'address2': row[3] or '', 'city': row[4] or '',
+                    'postcode': row[5] or '', 'state': row[6] or '',
+                    'gst_reg': row[7] or '', 'country': row[8] or '',
+                    'source': row[9] or 'excel'}
+
+    new, changed, unchanged = [], [], 0
+    for r in rows:
+        cur = cur_map.get(r['ship_to'])
+        if not cur:
+            new.append(r)
+            continue
+        diffs = []
+        for fld in _D365_FIELDS:
+            nv = (r.get(fld) or '').strip()
+            ov = (cur.get(fld) or '').strip()
+            if nv and nv != ov:             # only real, value-adding changes
+                diffs.append({'field': fld, 'old': ov, 'new': nv})
+        if diffs:
+            changed.append({'row': r, 'diffs': diffs,
+                            'manual': cur['source'] == 'manual'})
+        else:
+            unchanged += 1
+    return {'new': new, 'changed': changed, 'unchanged': unchanged,
+            'total': len(rows), 'new_count': len(new),
+            'changed_count': len(changed),
+            'changed_manual': sum(1 for c in changed if c['manual'])}
+
+
+def upsert_d365(rows: list) -> dict:
+    """Additively merge D365 rows: INSERT new Ship-to Codes (source='d365'),
+    UPDATE the owned fields on existing NON-manual rows (blank D365 values keep
+    the current value via COALESCE/NULLIF). Manual rows are never touched. One
+    batched transaction — safe over TiDB. Returns counts."""
+    ensure_table()
+    diff = diff_against_current(rows)
+    new_rows = diff['new']
+    changed_rows = [c['row'] for c in diff['changed'] if not c['manual']]
+    batch = _dt.datetime.now().strftime('%Y%m%d%H%M%S')
+    now = _dt.datetime.now()
+    ins_cols = ['party', 'del_location', 'cust_no', 'ship_to', 'name', 'address',
+                'address2', 'postcode', 'city', 'state', 'gst_reg', 'country',
+                'source', 'batch_id', 'updated_at']
+    with _conn() as (cur, d):
+        ph = d['ph']
+        if new_rows:
+            marks = ', '.join([ph] * len(ins_cols))
+            payload = [(
+                r['party'], r['del_location'], r['cust_no'], r['ship_to'],
+                r['name'], r['address'], r['address2'], r['postcode'], r['city'],
+                r['state'], r['gst_reg'], r['country'], 'd365', batch, now,
+            ) for r in new_rows]
+            cur.executemany(
+                f"INSERT INTO {_MAP_TABLE} ({', '.join(ins_cols)}) "
+                f"VALUES ({marks})", payload)
+        if changed_rows:
+            # blank new value → NULLIF makes it NULL → COALESCE keeps the current.
+            setexpr = ', '.join(
+                f"{fld}=COALESCE(NULLIF({ph},''), {fld})" for fld in _D365_FIELDS)
+            sql = (f"UPDATE {_MAP_TABLE} SET {setexpr}, updated_at={ph} "
+                   f"WHERE ship_to={ph} AND COALESCE(source,'excel')<>'manual'")
+            payload = [tuple([r.get(fld, '') for fld in _D365_FIELDS] +
+                             [now, r['ship_to']]) for r in changed_rows]
+            cur.executemany(sql, payload)
+        cur.connection.commit()
+    return {'ok': True, 'inserted': len(new_rows),
+            'updated': len(changed_rows), 'batch_id': batch,
+            'skipped_manual': diff['changed_manual']}
+
+
 # ── CRUD (single rows; UI-added rows are source='manual', survive re-uploads) ─
 
 _CRUD_FIELDS = ['party', 'del_location', 'cust_no', 'ship_to', 'name', 'address',

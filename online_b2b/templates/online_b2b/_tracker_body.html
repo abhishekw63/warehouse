@@ -7,6 +7,18 @@ change so the page never reloads. {% endcomment %}
   <div class="trk-kpi k3"><div class="k-ic">₹</div><div><div class="k-n">{{ t.total_value|inr_short }}</div><div class="k-l">Order Value</div></div></div>
 </div>
 
+{% if t.facilities %}
+<div class="trk-facs" role="group" aria-label="Filter by fulfilment centre">
+  <span class="trk-facs-lbl">Facility</span>
+  <button type="button" class="trk-fac{% if not f.warehouse %} on{% endif %}" data-fac="" title="All facilities">
+    All <span class="fc">{{ t.facility_total|compact }}</span></button>
+  {% for fc in t.facilities %}
+  <button type="button" class="trk-fac{% if f.warehouse == fc.code %} on{% endif %}" data-fac="{{ fc.code }}" title="Show {{ fc.code }} orders only">
+    {{ fc.code }} <span class="fc">{{ fc.count|compact }}</span></button>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% if t.rows %}
 <div class="trk-card">
   <div class="trk-scroll">

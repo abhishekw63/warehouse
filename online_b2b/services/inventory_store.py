@@ -305,14 +305,20 @@ def _ordered(rules: list[dict]):
 
 
 def _compile(rules: list[dict], warehouse: str = ''):
-    """Compile rules into the ordered match-list for ONE warehouse: that
-    warehouse's own rules FIRST (they win — e.g. QC=include in BLR beats the
-    global QC=exclude), then the global (blank-warehouse) rules. ``warehouse=''``
-    → global rules only."""
+    """Compile rules into the ordered match-list for ONE warehouse. Priority, high
+    → low: (1) EXACT per-bin overrides — the explicit "click a bin In/Out" choice
+    must beat any pattern rule, even a prefix-include; (2) pattern rules
+    (prefix/segment). Within each tier: that warehouse's own rules FIRST (e.g.
+    QC=include in BLR beats the global QC=exclude), then global (blank-warehouse)
+    rules, and include-before-exclude (the include-wins tiebreak). ``warehouse=''``
+    → global rules only. First match wins in :func:`classify_bin`."""
     wh = str(warehouse or '').strip()
     wh_rules = [r for r in rules if str(r.get('warehouse') or '').strip() == wh and wh]
     g_rules = [r for r in rules if not str(r.get('warehouse') or '').strip()]
-    return _ordered(wh_rules) + _ordered(g_rules)
+    ex = lambda rs: _ordered([r for r in rs if r.get('match_type') == 'exact'])
+    pat = lambda rs: _ordered([r for r in rs if r.get('match_type') != 'exact'])
+    # Exact overrides (wh, then global) win over all pattern rules (wh, then global).
+    return ex(wh_rules) + ex(g_rules) + pat(wh_rules) + pat(g_rules)
 
 
 def _match(bin_up: str, seg: str, pat: str, mt: str) -> bool:
@@ -604,16 +610,17 @@ def reclassify_snapshot(snapshot_id) -> dict:
             wh = row[0]
             compiled = _compile(load_rules(), wh)
 
-            # 1) per-bin audit → recompute decision + roll up counts (n_lines keeps
-            #    the original line counts, incl. zero-qty rows)
-            cur.execute(f"SELECT id, bin_code, n_lines, qty FROM inventory_bin_audit "
+            # 1) per-bin decision — computed in Python, applied SET-BASED (grouped
+            #    by decision, chunked IN) so a large snapshot doesn't do thousands
+            #    of per-row round-trips (the old per-row loop timed out on TiDB).
+            cur.execute(f"SELECT bin_code, n_lines, qty FROM inventory_bin_audit "
                         f"WHERE snapshot_id={ph}", (snapshot_id,))
+            by_dec = {'include': [], 'exclude': [], 'new': []}
             inc_l = exc_l = new_l = 0
             inc_q = exc_q = new_q = 0.0
-            for aid, bc, nl, q in cur.fetchall():
+            for bc, nl, q in cur.fetchall():
                 dec = classify_bin(bc, compiled)
-                cur.execute(f"UPDATE inventory_bin_audit SET decision={ph} WHERE id={ph}",
-                            (dec, aid))
+                by_dec[dec].append(bc)
                 nl = int(nl or 0); q = float(q or 0)
                 if dec == 'include':
                     inc_l += nl; inc_q += q
@@ -622,12 +629,20 @@ def reclassify_snapshot(snapshot_id) -> dict:
                 else:
                     new_l += nl; new_q += q
 
-            # 2) per item×bin line → recompute decision
-            cur.execute(f"SELECT id, bin_code FROM inventory_bin_line WHERE snapshot_id={ph}",
-                        (snapshot_id,))
-            for lid, bc in cur.fetchall():
-                cur.execute(f"UPDATE inventory_bin_line SET decision={ph} WHERE id={ph}",
-                            (classify_bin(bc, compiled), lid))
+            def _bulk_dec(table, dec, codes):
+                for i in range(0, len(codes), 400):
+                    ch = codes[i:i + 400]
+                    marks = ','.join([ph] * len(ch))
+                    cur.execute(
+                        f"UPDATE {table} SET decision={ph} WHERE snapshot_id={ph} "
+                        f"AND bin_code IN ({marks})", tuple([dec, snapshot_id] + ch))
+
+            # bin_audit has one row per bin_code; bin_line shares those bin_codes —
+            # update BOTH by bin_code, grouped by the new decision.
+            for dec, codes in by_dec.items():
+                if codes:
+                    _bulk_dec('inventory_bin_audit', dec, codes)
+                    _bulk_dec('inventory_bin_line', dec, codes)
 
             # 3) rebuild sellable inventory_stock = Σ POSITIVE include-bin qty per
             #    item — negative bins (over-pick / correction rows) count as 0,
@@ -664,6 +679,33 @@ def reclassify_snapshot(snapshot_id) -> dict:
     except Exception as e:  # noqa: BLE001
         out['error'] = f"{type(e).__name__}: {e}"
     return out
+
+
+def set_bin_decision(bin_code, warehouse, decision, user='') -> dict:
+    """Durable per-bin override: pin an EXACT bin to include/exclude for a
+    warehouse. Upserts an 'exact' rule (via add_rule) so it also applies to every
+    FUTURE upload — not just the current snapshot. Returns {ok, decision}."""
+    bc = str(bin_code or '').strip()
+    if not bc:
+        return {'ok': False, 'error': 'bin_code required'}
+    dec = 'include' if str(decision).lower() == 'include' else 'exclude'
+    res = add_rule(bc, 'exact', dec, note='per-bin override', user=user,
+                   warehouse=str(warehouse or '').strip())
+    return {'ok': bool(res.get('ok')), 'decision': dec, 'error': res.get('error')}
+
+
+def reclassify_current(warehouse='') -> dict:
+    """Lock & apply: re-apply the current rules to the CURRENT snapshot(s) — one
+    warehouse if given, else all. Uses the (now set-based) reclassify_snapshot."""
+    snaps = current_snapshots()
+    wh = str(warehouse or '').strip()
+    results = []
+    for code, s in snaps.items():
+        if wh and code != wh:
+            continue
+        results.append({'warehouse': code, **reclassify_snapshot(s['snapshot_id'])})
+    return {'ok': bool(results) and all(r.get('ok') for r in results),
+            'results': results}
 
 
 # ── reads ───────────────────────────────────────────────────────────────────
