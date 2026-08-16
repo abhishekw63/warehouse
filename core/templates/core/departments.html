@@ -1,5 +1,5 @@
 {% extends 'online_b2b/base_shell.html' %}
-{% load static %}
+{% load static b2b_extras %}
 
 {% block title %}Departments - RENEE Warehouse{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
@@ -12,12 +12,25 @@
 <div class="departments-container">
   <div class="hero-head reveal">
     <span class="pill"><span class="dot"></span>Workspace</span>
-    <h1>Select a <span class="grad-text">department</span></h1>
-    <p>Jump into the console for your team — PO processing, GRN reconciliation and more, all on one platform.</p>
+    <h1>Welcome back, <span class="grad-text">{{ user.first_name|default:user.username }}</span> 👋</h1>
+    <p>Your platform at a glance — here's what's flowing through the system today. Pick a department to dive in.</p>
   </div>
 
+  {# ── Live snapshot (counts up via B2B.countUp) ── #}
+  <div class="hub-snap">
+    <div class="snap reveal hover-lift" style="--i:1"><div class="n" data-countup>{{ stats.pos|default:0|floatformat:0 }}</div><div class="l">Orders tracked</div>
+      <svg viewBox="0 0 120 24" preserveAspectRatio="none"><polyline class="spk" points="0,20 18,16 36,18 54,11 72,13 90,7 108,9 120,5"/></svg></div>
+    <div class="snap reveal hover-lift" style="--i:2"><div class="n" data-countup>{{ stats.value_disp|default:"—" }}</div><div class="l">Order value</div>
+      <svg viewBox="0 0 120 24" preserveAspectRatio="none"><polyline class="spk" points="0,21 18,18 36,19 54,14 72,15 90,9 108,10 120,4"/></svg></div>
+    <div class="snap reveal hover-lift" style="--i:3"><div class="n" data-countup>{{ hub.week_pos|default:0 }}</div><div class="l">POs this week</div>
+      <svg viewBox="0 0 120 24" preserveAspectRatio="none"><polyline class="spk" points="0,17 18,18 36,13 54,15 72,9 90,11 108,8 120,6"/></svg></div>
+    <div class="snap reveal hover-lift" style="--i:4"><div class="n" data-countup>{{ stats.marketplaces|default:0 }}</div><div class="l">Marketplaces</div>
+      <svg viewBox="0 0 120 24" preserveAspectRatio="none"><polyline class="spk" points="0,19 18,15 36,16 54,12 72,13 90,8 108,10 120,7"/></svg></div>
+  </div>
+
+  <div class="dept-sub reveal" style="--i:4">Select a department</div>
   <div class="departments-grid">
-    <a href="{% url 'b2b_dashboard' %}" class="department-card hover-lift reveal" style="--i:1">
+    <a href="{% url 'b2b_dashboard' %}" class="department-card hover-lift reveal" style="--i:5">
       <div class="dc-ic">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
       </div>
@@ -26,7 +39,7 @@
       <span class="dc-go">Open workspace →</span>
     </a>
 
-    <a href="{% url 'grn_index' %}" class="department-card hover-lift reveal" style="--i:2">
+    <a href="{% url 'grn_index' %}" class="department-card hover-lift reveal" style="--i:6">
       <div class="dc-ic">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/></svg>
       </div>
@@ -35,7 +48,7 @@
       <span class="dc-go">Open workspace →</span>
     </a>
 
-    <div class="department-card coming-soon reveal" style="--i:3" aria-disabled="true">
+    <div class="department-card coming-soon reveal" style="--i:7" aria-disabled="true">
       <div class="dc-ic">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
       </div>
@@ -44,5 +57,30 @@
       <span class="dc-badge">Coming soon</span>
     </div>
   </div>
+
+  <div class="dept-sub reveal" style="--i:8;margin-top:38px;">Quick actions</div>
+  <div class="quick-actions reveal" style="--i:8">
+    <a class="qa" href="{% url 'b2b_upload' %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></svg>Upload PO</a>
+    <a class="qa" href="{% url 'b2b_tracker' %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>Consolidated Tracker</a>
+    <a class="qa" href="{% url 'b2b_analytics' %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="12" width="4" height="8" rx="1"/><rect x="10" y="6" width="4" height="14" rx="1"/><rect x="17" y="9" width="4" height="11" rx="1"/></svg>Analytics</a>
+    <a class="qa" href="{% url 'b2b_availability' %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Availability</a>
+    <a class="qa" href="{% url 'b2b_inventory' %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18M3 15h18M12 3v18"/><rect x="3" y="3" width="18" height="18" rx="2"/></svg>Inventory</a>
+    <a class="qa" href="{% url 'b2b_ship_to' %}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s-7-5.5-7-11a7 7 0 0 1 14 0c0 5.5-7 11-7 11Z"/><circle cx="12" cy="10" r="2.5"/></svg>Ship-To Mapping</a>
+  </div>
+
+  {% if recent %}
+  <div class="dept-sub reveal" style="--i:9;margin-top:38px;">Recent activity</div>
+  <div class="hub-recent reveal" style="--i:9">
+    {% for r in recent %}
+    <a class="ra-row" href="{% url 'b2b_tracker' %}?q={{ r.po|urlencode }}">
+      <span class="ra-dept {% if r.segment == 'Offline' %}off{% else %}on{% endif %}">{% if r.segment == 'Offline' %}OFF{% else %}B2B{% endif %}</span>
+      <span class="ra-mp">{{ r.marketplace }}</span>
+      <span class="ra-po">{{ r.po }}</span>
+      <span class="ra-val">{{ r.value|inr_short }}</span>
+      <span class="ra-when">{% if r.when %}{{ r.when|timesince }} ago{% else %}—{% endif %}</span>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

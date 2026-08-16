@@ -71,6 +71,18 @@ class HomeView(LoginView):
 class DepartmentsView(LoginRequiredMixin, TemplateView):
     template_name = 'core/departments.html'
 
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['stats'] = _home_stats()                 # live at-a-glance snapshot
+        try:
+            from online_b2b.services.order_db import hub_extra_kpis, recent_orders
+            ctx['hub'] = hub_extra_kpis()
+            ctx['recent'] = recent_orders(6)         # recent-activity feed
+        except Exception:  # noqa: BLE001 — never block the hub on the DB
+            ctx['hub'] = {}
+            ctx['recent'] = []
+        return ctx
+
 class SignUpView(CreateView):
     form_class = UserCreationForm
     template_name = 'core/signup.html'

@@ -97,12 +97,12 @@
     @keyframes shimmer{0%{background-position:0% 0;}100%{background-position:200% 0;}}
     .intro p{font-size:15.5px;line-height:1.6;margin:0;color:#ffffffcf;max-width:46ch;}
     .stats{display:flex;flex-wrap:wrap;gap:11px;margin-top:32px;}
-    .chip{position:relative;overflow:hidden;background:#ffffff17;border:1px solid #ffffff2b;border-radius:15px;padding:13px 16px;min-width:132px;backdrop-filter:blur(8px);
+    .chip{position:relative;overflow:hidden;background:#ffffff17;border:1px solid #ffffff2b;border-radius:15px;padding:13px 16px 22px;min-width:132px;backdrop-filter:blur(8px);
       transition:transform .25s cubic-bezier(.22,1,.36,1),background .25s;}
     .chip:hover{transform:translateY(-3px);background:#ffffff22;}
     .chip .n{font-size:22px;font-weight:800;letter-spacing:-.01em;font-variant-numeric:tabular-nums;color:#fff;position:relative;z-index:1;}
     .chip .l{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#ffffff9e;margin-top:2px;position:relative;z-index:1;}
-    .chip svg{position:absolute;left:0;right:0;bottom:0;width:100%;height:30px;}
+    .chip svg{position:absolute;left:0;right:0;bottom:0;width:100%;height:16px;z-index:0;}
     .chip .spk{fill:none;stroke:var(--cyan);stroke-width:2;stroke-linecap:round;stroke-linejoin:round;
       filter:drop-shadow(0 0 3px color-mix(in srgb,var(--cyan) 55%,transparent));
       stroke-dasharray:300;stroke-dashoffset:300;
