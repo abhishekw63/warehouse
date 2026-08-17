@@ -43,7 +43,6 @@
      .reveal      entrance fade-up; stagger with inline style="--i:0|1|2…"
      .hover-lift  lift + soft shadow on hover (cards, tiles)
      .grad-text   brand-gradient text (headings, accents)
-     .icon-badge  gradient rounded icon chip
      .hero-head   centred page title + eyebrow + subtitle block
      .pill        small uppercase status/eyebrow chip                              */
 /* NOTE: .reveal already exists in b2b.css (fadeUp) — reuse it; only add the
@@ -52,10 +51,6 @@
 .hover-lift{transition:transform .28s cubic-bezier(.22,1,.36,1),box-shadow .28s,border-color .28s;}
 .hover-lift:hover{transform:translateY(-4px);box-shadow:var(--lift,0 22px 48px -22px rgba(24,16,64,.34));}
 .grad-text{background:var(--brand-grad,linear-gradient(120deg,#4f46e5,#c026d3));-webkit-background-clip:text;background-clip:text;color:transparent;}
-.icon-badge{width:46px;height:46px;border-radius:13px;display:grid;place-items:center;color:#fff;flex:none;
-  background:var(--accent-grad,linear-gradient(100deg,#6366f1,#a855f7));
-  box-shadow:0 12px 26px -12px color-mix(in srgb,var(--accent) 80%,transparent);}
-.icon-badge svg{width:22px;height:22px;}
 .hero-head{text-align:center;max-width:660px;margin:6px auto 34px;}
 .hero-head h1{font-size:clamp(26px,3vw,36px);font-weight:800;letter-spacing:-.025em;margin:12px 0 8px;line-height:1.1;text-wrap:balance;}
 .hero-head p{font-size:14.5px;line-height:1.6;color:var(--text-2);margin:0 auto;max-width:52ch;}
@@ -192,7 +187,11 @@ html.enh-on #toast-container .toast{display:none !important;}
 .enh-cmdk-empty{padding:26px 12px;text-align:center;color:var(--muted,#9aa1b2);font-size:13px;}
 
 /* ---- 5. Progressive table upgrades (opt-in via .enh-table added by JS) --- */
-.enh-table thead th{position:sticky;top:0;z-index:2;background:var(--surface-2,#fafbfc);
+/* :where() keeps this at ZERO specificity for thead/th so a page's OWN header
+   styling (e.g. a navy header with white text) always wins — otherwise this
+   generic light sticky background would clobber it and leave white-on-light
+   (invisible) headers. Plain, un-styled tables still get these defaults. */
+.enh-table :where(thead th){position:sticky;top:0;z-index:2;background:var(--surface-2,#fafbfc);
   cursor:pointer;user-select:none;white-space:nowrap;}
 .enh-table thead th.enh-nosort{cursor:default;}
 .enh-table thead th.enh-nosort .enh-arrow{display:none;}
@@ -204,9 +203,6 @@ html.enh-on #toast-container .toast{display:none !important;}
 .enh-table tbody tr:hover{background:var(--accent-soft,#eef0fe);}
 :root[data-theme="dark"] .enh-table tbody tr:hover{background:#1d2130;}
 .enh-num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";}
-/* Density toggle (body.enh-dense) — tightens data tables app-wide */
-body.enh-dense .enh-table th,
-body.enh-dense .enh-table td{padding-top:6px !important;padding-bottom:6px !important;font-size:12.5px;}
 
 /* ---- 6. Global polish ---------------------------------------------------- */
 :where(a,button,input,select,textarea,[tabindex]):focus-visible{
@@ -220,13 +216,8 @@ body.enh-dense .enh-table td{padding-top:6px !important;padding-bottom:6px !impo
   border:3px solid transparent;background-clip:content-box;}
 ::-webkit-scrollbar-thumb:hover{background:var(--muted,#9aa1b2);background-clip:content-box;}
 
-/* Skeleton shimmer utility (for future loading states: <div class="enh-skel">) */
-.enh-skel{background:linear-gradient(90deg,var(--surface-2,#eef1f5) 25%,var(--border-2,#e3e7ee) 37%,var(--surface-2,#eef1f5) 63%);
-  background-size:400% 100%;animation:enhShimmer 1.4s ease infinite;border-radius:8px;min-height:14px;}
-@keyframes enhShimmer{0%{background-position:100% 0;}100%{background-position:-100% 0;}}
-
 @media (prefers-reduced-motion: reduce){
-  .enh-toast,.enh-cmdk,.enh-cmdk-panel,.enh-skel{animation:none !important;}
+  .enh-toast,.enh-cmdk,.enh-cmdk-panel{animation:none !important;}
   :root.enh-theming, :root.enh-theming *{transition:none !important;}
 }
 
@@ -449,8 +440,6 @@ table.skux tbody{animation:skuxrows .45s ease both;} @keyframes skuxrows{from{op
 .pill, .st, .chip, .fr-st, .dept-b, .zn, .seg-tag, .rk-b, .tr-chip, .tr-d,
 .basis-badge, .su-badge, .hk-tag, .tcount{
   transition:background-color .18s ease, color .18s ease, border-color .18s ease, transform .15s ease;}
-@keyframes enhChipIn{from{opacity:0;transform:scale(.82);}to{opacity:1;transform:none;}}
-.enh-chip-in{animation:enhChipIn .28s cubic-bezier(.2,.9,.3,1.2);}
 
 /* ===================================================================== *
  * Step C: MODAL / OVERLAY BACKDROPS — fade in instead of snapping.       *
@@ -463,7 +452,7 @@ table.skux tbody{animation:skuxrows .45s ease both;} @keyframes skuxrows{from{op
 
 @media (prefers-reduced-motion: reduce){
   .pill,.st,.chip,.fr-st,.dept-b,.zn,.seg-tag,.rk-b,.tr-chip,.tr-d,.basis-badge,.su-badge,.hk-tag,.tcount{transition:none;}
-  .enh-chip-in,.em-overlay:not([hidden]),.cpg-ov,.gt-modal-overlay:not([hidden]),.lock-overlay.show,.lock-done.show{animation:none;}}
+  .em-overlay:not([hidden]),.cpg-ov,.gt-modal-overlay:not([hidden]),.lock-overlay.show,.lock-done.show{animation:none;}}
 
 /* ===================================================================== *
  * Step D: DAILY-TASKS checkbox tick — the box pops and the ✓ draws in on  *
@@ -482,16 +471,6 @@ table.skux tbody{animation:skuxrows .45s ease both;} @keyframes skuxrows{from{op
 /* ===================================================================== *
  * Step F: misc polish                                                    *
  * - Exceptions inline-edit row (.edrow) slides in when opened            *
- * - Reusable .enh-empty (icon + fade) and .enh-skel-lines (skeleton)     *
  * ===================================================================== */
 .edrow{animation:enhRowIn .3s cubic-bezier(.2,.8,.3,1);}
-.enh-empty{animation:enhFadeUp .45s ease both;text-align:center;color:var(--muted,#94a3b8);padding:26px 16px;}
-.enh-empty .enh-empty-ic{font-size:30px;opacity:.7;display:block;margin-bottom:8px;}
-@keyframes enhFadeUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:none;}}
-.enh-skel-lines > i{display:block;height:12px;border-radius:6px;margin:9px 0;
-  background:linear-gradient(90deg,var(--surface-2,#eef1f6) 25%,var(--border,#e2e6ee) 37%,var(--surface-2,#eef1f6) 63%);
-  background-size:400% 100%;animation:enhShimmer 1.3s ease-in-out infinite;}
-.enh-skel-lines > i:nth-child(2){width:82%} .enh-skel-lines > i:nth-child(3){width:64%}
-@keyframes enhShimmer{0%{background-position:100% 0;}100%{background-position:-100% 0;}}
-@media (prefers-reduced-motion: reduce){
-  .edrow,.enh-empty{animation:none;} .enh-skel-lines > i{animation:none;}}
+@media (prefers-reduced-motion: reduce){ .edrow{animation:none;} }

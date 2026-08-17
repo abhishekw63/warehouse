@@ -53,9 +53,9 @@
     {% comment %}Sales Validation removed 2026-07-20 (superseded by Triangular).
     Full Validation link hidden — page/service stay (Triangular uses the service);
     reach it directly at /b2b/full-validation/ if ever needed.{% endcomment %}
-    {# STANDALONE Triangular Validation (removable) #}
-    <a href="{% url 'b2b_triangular' %}" class="sn{% if '/triangular' in request.path %} on{% endif %}" title="Triangular Validation">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='hash' %}</span><span class="side-label">Triangular</span></a>
+    {# STANDALONE Record Verification (removable) #}
+    <a href="{% url 'b2b_record_verify' %}" class="sn{% if '/record-verify' in request.path %} on{% endif %}" title="Record Verification — reconcile recorded data vs D365">
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='check' %}</span><span class="side-label">Record Verify</span></a>
 
     <div class="side-sep">Process</div>
     {# Process PO split into two flat links: Online (this app) + Offline (GT Mass · EKA · MT — Reliance Trends lives under MT — · GT Select, on the Offline dashboard). #}
@@ -116,5 +116,12 @@
       localStorage.setItem(AKEY, open ? '1' : '0');
     });
   }
+
+  // Enable sidebar transitions only AFTER the first paint, so the saved collapse /
+  // sub-nav state (applied synchronously above) never animates in on navigation —
+  // the shell just appears already in its state. User clicks then animate normally.
+  requestAnimationFrame(function () {
+    requestAnimationFrame(function () { document.documentElement.classList.add('b2b-lit'); });
+  });
 })();
 </script>

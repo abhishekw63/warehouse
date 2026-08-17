@@ -46,7 +46,7 @@ _SAFE_POST_NAMES = frozenset({
     'login', 'logout', 'signup', 'password_change', 'profile',
     # reconciliation tools — upload D365 files but write NOTHING to the business
     # DB (they only produce an Excel report). Allowed for Viewers by decision.
-    'b2b_full_validation_run', 'b2b_triangular_run',
+    'b2b_full_validation_run',
     # availability checker — read-only report
     'b2b_availability_check', 'b2b_availability_bins',
     # read-only data fetches that don't match a suffix

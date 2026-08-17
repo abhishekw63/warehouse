@@ -11,7 +11,7 @@ class CoreViewsTestCase(TestCase):
     def test_home_view(self):
         response = self.client.get(reverse('home'))
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, 'core/home.html')
+        self.assertTemplateUsed(response, 'core/landing.html')
 
     def test_departments_view(self):
         # login first

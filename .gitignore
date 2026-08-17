@@ -38,6 +38,9 @@ Output_*/
 # Django web app media (uploaded POs + generated workbooks — runtime, not source)
 media/
 
+# Runtime removal/backup dumps written during processing — data, not source.
+backups/
+
 # Secrets / host config — NEVER commit. Templates (.env.example,
 # db_config.example.json) ARE committed so a colleague knows what to fill.
 .env

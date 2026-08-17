@@ -1,20 +1,66 @@
 /* Smooth, polished page-to-page transitions (Hub ⇄ Online B2B ⇄ Process PO …).
-   Cross-document View Transitions — a subtle PAGE-TURN/FLIP: the old page hinges
-   out to the left, the new page swings in from the right. Supported browsers
-   animate; others just navigate normally (graceful no-op). */
+   Cross-document View Transitions. The SHELL stays planted — the left sidebar and
+   the top header are given their OWN transition names, so the browser treats them
+   as persistent elements and holds them in place (identical geometry ⇒ no move).
+   ONLY the #MainContent region animates (a soft rise + fade), so navigating swaps
+   the page — not the whole chrome. Unsupported browsers just navigate (no-op). */
 @view-transition { navigation: auto; }
-::view-transition-old(root){ animation: b2b-flip-out .36s ease-in both; transform-origin:left center; }
-::view-transition-new(root){ animation: b2b-flip-in .58s cubic-bezier(.2,.7,.2,1) both; transform-origin:left center; }
-@keyframes b2b-flip-out{
-  to{ opacity:0; transform:perspective(1400px) rotateY(-12deg) translateX(-26px); }
-}
-@keyframes b2b-flip-in{
-  from{ opacity:0; transform:perspective(1400px) rotateY(14deg) translateX(40px); }
-  to{ opacity:1; transform:none; }
-}
+
+/* Persistent shell — named so it snapshots on its own and does NOT flip/slide. */
+.b2b-side    { view-transition-name: b2b-shell-side; }
+.header      { view-transition-name: b2b-shell-head; }
+#MainContent { view-transition-name: b2b-main; }
+
+/* Hold the shell perfectly still: no group morph (no size/position interpolation),
+   and show ONLY the incoming snapshot instantly (drop the outgoing one) so there's
+   no cross-fade blend or 1-frame gap that reads as a flicker. Identical pixels ⇒
+   invisible; the only thing that can differ is the active-page highlight, which
+   simply updates. */
+::view-transition-group(b2b-shell-side),
+::view-transition-group(b2b-shell-head){ animation:none; }
+::view-transition-old(b2b-shell-side),
+::view-transition-old(b2b-shell-head){ animation:none; display:none; }
+::view-transition-new(b2b-shell-side),
+::view-transition-new(b2b-shell-head){ animation:none; }
+
+/* Anything not otherwise named (page background) — a quiet, quick cross-fade. */
+::view-transition-old(root){ animation: b2b-fade-out .16s ease both; }
+::view-transition-new(root){ animation: b2b-fade-in  .26s ease both; }
+
+/* The content region carries the motion — old lifts out, new rises in. */
+::view-transition-old(b2b-main){ animation: b2b-main-out .20s ease-in both; }
+::view-transition-new(b2b-main){ animation: b2b-main-in  .44s cubic-bezier(.2,.7,.2,1) both; }
+::view-transition-group(b2b-main){ animation-duration:.44s; }
+
+@keyframes b2b-fade-out{ to{ opacity:0; } }
+@keyframes b2b-fade-in { from{ opacity:0; } to{ opacity:1; } }
+@keyframes b2b-main-out{ to  { opacity:0; transform:translateY(-8px); } }
+@keyframes b2b-main-in { from{ opacity:0; transform:translateY(16px); } to{ opacity:1; transform:none; } }
+
 @media (prefers-reduced-motion: reduce){
-  ::view-transition-old(root), ::view-transition-new(root){ animation:none; }
+  ::view-transition-old(root), ::view-transition-new(root),
+  ::view-transition-old(b2b-main), ::view-transition-new(b2b-main){ animation:none; }
 }
+
+/* Keep the shell PLANTED across navigations. The global boot overlay (#pageBoot)
+   is a full-screen white cover shown on every page load — on b2b pages it sits on
+   top of the sidebar + header and fades, which reads as the shell "flashing". The
+   shell is fully styled from <head> CSS here, so it never needs that cover: hide
+   #pageBoot on b2b pages so the sidebar/header stay put. */
+body.b2b-app #pageBoot{ display:none !important; }
+
+/* The View Transition OWNS the page-change entrance, so #MainContent must stay
+   PAINTED — the global anti-FOUC opacity gate + the generic entrance animation
+   would otherwise make the transition snapshot a blank frame (a hard double-
+   reveal) and fight the VT. Critical CSS is in <head>, so no FOUC risk. Only the
+   ::view-transition-new(b2b-main) fade-rise animates the content. */
+body.b2b-app #MainContent{ opacity:1 !important; animation:none !important; }
+
+/* No sidebar transition may play on page LOAD — only on real user interaction.
+   Otherwise the collapse width / sub-nav open would animate in on every fresh
+   page, which reads as the sidebar "changing". The <html> gets `.b2b-lit` one
+   frame after load (see _sidebar.html), re-enabling interaction transitions. */
+html:not(.b2b-lit) .b2b-side, html:not(.b2b-lit) .b2b-side *{ transition:none !important; }
 
 /* ============================================================
    RENEE · Online B2B — clean & corporate design system
@@ -115,7 +161,6 @@ a.card:hover{box-shadow:var(--shadow-lg);transform:translateY(-2px);border-color
   padding:4px 11px;border-radius:6px;cursor:pointer;transition:all .15s;}
 .ctg.on{background:var(--accent);color:#fff;box-shadow:var(--shadow);}
 .mpspark{width:100%;height:18px;display:block;margin-top:5px;color:var(--accent-2);opacity:.75;}
-.chart2{height:90px;}
 .spark{width:100%;height:100%;display:block;overflow:visible;}
 .spark rect{cursor:crosshair;}
 .spark rect:hover{fill:rgba(79,70,229,.05);}
@@ -329,7 +374,7 @@ tr.has-exc > td:first-child{box-shadow:inset 3px 0 0 var(--amber);}
 /* departments hub --------------------------------------------- */
 .departments-container{max-width:1000px;margin:min(9vh,80px) auto;padding:0 24px;font-family:var(--font);}
 .departments-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(248px,1fr));gap:22px;}
-/* premium tile — composes shared .hover-lift + .icon-badge (enhance.css) */
+/* premium tile — composes shared .hover-lift (enhance.css) */
 .department-card{display:flex;flex-direction:column;align-items:flex-start;gap:14px;padding:26px 24px 22px;
   background:var(--surface);border:1px solid var(--border);border-radius:18px;box-shadow:var(--shadow);
   text-decoration:none;color:var(--text);position:relative;overflow:hidden;isolation:isolate;}
@@ -696,11 +741,6 @@ body.lo-open{overflow:hidden;}
 .ld-btn.ld-ghost{background:#fff;color:var(--muted);border-color:var(--border);}
 .ld-close{margin-top:12px;background:none;border:none;color:var(--muted);font-size:12px;cursor:pointer;
   text-decoration:underline;}
-.ld-confetti{position:fixed;inset:0;pointer-events:none;overflow:hidden;}
-.ld-confetti i{position:absolute;top:40%;width:9px;height:14px;border-radius:2px;opacity:0;
-  animation:confetti var(--d,1s) cubic-bezier(.2,.6,.4,1) forwards;}
-@keyframes confetti{0%{transform:translate(0,0) rotate(0);opacity:1}
-  100%{transform:translate(calc(var(--x) * 240px),62vh) rotate(var(--rot,360deg));opacity:0}}
 
 /* ── Item Master page ───────────────────────────────────────────────────── */
 .im-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
@@ -910,5 +950,4 @@ body.b2b-collapsed .side-build{display:none;}
 
 @media(prefers-reduced-motion:reduce){
   *{animation:none !important;transition:none !important;}
-  .ld-confetti{display:none;}
 }

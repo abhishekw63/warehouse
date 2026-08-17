@@ -1,0 +1,213 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static b2b_extras %}
+{% block title %}Record Verification · RENÉE{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+  <a href="{% url 'departments' %}">Departments</a>
+  <a href="{% url 'b2b_dashboard' %}"> / Order Management</a> <span>/ Record Verification</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap rv-wrap">
+
+  <div class="b2b-head">
+    <div>
+      <span class="pill" style="margin-bottom:10px;"><span class="dot"></span>Integrity</span>
+      <h1>Record Verification</h1>
+      <p class="src">Upload the D365 <b>Sales Orders (Headers)</b> + <b>Sales Lines</b> — we reconcile them
+        against our recorded data (<b>recorded + excluded</b>) per PO and flag any <b>mismatch</b> in
+        qty, value or ship-to pincode. Every checked PO is logged with its delta.</p>
+    </div>
+  </div>
+
+  {% if messages %}<div class="iv-msgs">{% for m in messages %}<div class="iv-msg {{ m.tags }}">{{ m }}</div>{% endfor %}</div>{% endif %}
+
+  {# ── Coverage ── #}
+  <div class="kpis reveal rv-cov">
+    <div class="card"><div><div class="n" data-countup>{{ coverage.total_pos }}</div><div class="l">Our POs</div></div></div>
+    <div class="card"><div><div class="n" style="color:var(--green)" data-countup>{{ coverage.ok }}</div><div class="l">Clean</div></div></div>
+    <div class="card"><div><div class="n" style="color:var(--red)" data-countup>{{ coverage.mismatch }}</div><div class="l">Mismatch</div></div></div>
+    <div class="card"><div><div class="n" style="color:var(--muted)" data-countup>{{ coverage.unchecked }}</div><div class="l">Not checked</div></div></div>
+    <div class="card"><div><div class="n" style="color:var(--accent)" data-countup>{{ coverage.external }}</div><div class="l">External (not ours)</div></div></div>
+  </div>
+
+  {# ── Upload ── #}
+  <div class="im-card reveal rv-upload">
+    <h2>Run a check</h2>
+    <form method="post" action="{% url 'b2b_record_verify_run' %}" enctype="multipart/form-data" data-loading="Reconciling against D365…" data-loading-steps="Reading D365 Headers &amp; Lines|Matching POs to our records|Netting excluded lines|Comparing qty · value · pincode|Logging deltas">
+      {% csrf_token %}
+      <div class="rv-files">
+        <label class="rv-file rv-file-both"><span class="rv-file-l">D365 Sales Orders + Sales Lines — drop both together</span>
+          <input type="file" name="rv_files" accept=".xlsx,.xls" multiple required></label>
+      </div>
+      <p class="rv-note">Upload both files at once — we detect which is Headers vs Lines automatically.</p>
+      <button type="submit" class="btn-primary">Verify against D365 →</button>
+    </form>
+  </div>
+
+  {# ── Results (last run) ── #}
+  {% if data %}
+  {# review → confirm: nothing is recorded until you confirm #}
+  <div class="rv-confirm {% if confirmed %}done{% endif %}">
+    {% if confirmed %}
+      <span class="rv-c-text">✓ <b>Verification recorded</b> — {{ data.verify_summary.checked }} PO(s) logged.</span>
+    {% else %}
+      <span class="rv-c-text">Reviewed <b>{{ data.verify_summary.checked }}</b> PO(s) — <b>nothing is recorded yet.</b>
+        Tick the rows to record; <b>External</b> orders (GT Select / Testers) are pushed by ticking them. Then confirm.</span>
+      <form method="post" action="{% url 'b2b_record_verify_confirm' token=token %}" style="margin:0;">{% csrf_token %}
+        <button type="submit" class="btn-primary">✓ Confirm &amp; record <span class="rv-selc">0</span></button>
+      </form>
+    {% endif %}
+  </div>
+
+  <div class="im-card reveal">
+    <div class="rv-res-head">
+      <h2>Result <span class="count">{{ data.verify_summary.checked }} PO(s) · {{ data.verify_summary.ok }} clean · {{ data.verify_summary.mismatch }} mismatch · {{ data.verify_summary.external }} external</span></h2>
+      <a class="btn-ghost" href="{% url 'b2b_record_verify_download' token=token %}" data-download-modal="Preparing the reconciliation Excel">⬇ Excel</a>
+    </div>
+    <div class="scroll">
+    <table class="grid compact sortable">
+      <thead><tr>
+        <th class="rv-chk-col"><input type="checkbox" id="rvAll" title="Select all"></th>
+        <th>PO</th><th>Marketplace</th><th class="r">Qty ours</th><th class="r">Qty D365</th>
+        <th class="r">Excl.</th><th class="r">Value ours</th><th class="r">Value D365</th><th class="r">Val Δ</th>
+        <th>Pincode</th><th>Status</th>
+      </tr></thead>
+      <tbody>
+        {% for r in data.headers %}{% include 'online_b2b/_rv_row.html' %}{% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% if data.excel_error %}<p class="rv-note">Excel note: {{ data.excel_error }}</p>{% endif %}
+  </div>
+  {% endif %}
+
+  {# ── Checked-PO log ── #}
+  <div class="im-card reveal">
+    <h2>Checked POs <span class="count">latest {{ log|length }} · what's been verified &amp; its delta</span></h2>
+    {% if log %}
+    <div class="scroll">
+    <table class="grid compact sortable">
+      <thead><tr>
+        <th>PO</th><th>Marketplace</th><th>Status</th><th class="r">Qty Δ</th><th class="r">Val Δ</th>
+        <th>Pincode</th><th>Fields</th><th>Checked by</th><th>When</th>
+      </tr></thead>
+      <tbody>
+        {% for r in log %}
+        <tr class="{% if r.status != 'OK' %}rv-bad{% endif %}">
+          <td class="mono strong">{{ r.po }}</td>
+          <td>{{ r.marketplace|default:'—' }}</td>
+          <td>{% if r.status == 'OK' %}<span class="rv-ok">✓ OK</span>{% else %}<span class="rv-mis">⚠ Mismatch</span>{% endif %}</td>
+          <td class="r">{{ r.qty_delta|default:0 }}</td>
+          <td class="r">{{ r.val_delta|default:0 }}</td>
+          <td class="mono">{% if r.pin_ok %}{{ r.d365_pin|default:'—' }}{% else %}<span class="rv-mis">{{ r.our_pin|default:'∅' }}≠{{ r.d365_pin|default:'∅' }}</span>{% endif %}</td>
+          <td>{{ r.mismatch_fields|default:'—' }}</td>
+          <td>{{ r.checked_by|default:'—' }}</td>
+          <td class="nowrap">{{ r.checked_at|date:'d M, H:i'|default:'—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}<p class="rv-note">No POs checked yet — run a verification above.</p>{% endif %}
+  </div>
+</div>
+
+<style>
+  .rv-cov{grid-template-columns:repeat(5,1fr);}
+  @media(max-width:820px){.rv-cov{grid-template-columns:repeat(2,1fr);}}
+  .rv-files{display:flex;gap:16px;flex-wrap:wrap;margin:6px 0 16px;}
+  .rv-file{flex:1;min-width:240px;display:flex;flex-direction:column;gap:7px;}
+  .rv-file-l{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-2);}
+  .rv-file input{font-size:13px;padding:9px;border:1px dashed var(--border);border-radius:10px;background:var(--surface-2);cursor:pointer;}
+  .rv-res-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .rv-ok{color:var(--green);font-weight:700;} .rv-mis{color:var(--red);font-weight:700;}
+  .rv-ext{color:var(--accent);font-weight:700;}
+  .rv-bad td{background:color-mix(in srgb,var(--red) 5%,transparent);}
+  .rv-ext-row td{background:color-mix(in srgb,var(--accent) 4%,transparent);}
+  .rv-note{font-size:12.5px;color:var(--muted);margin-top:10px;}
+  .rv-confirm{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+    margin:18px 0;padding:14px 18px;border-radius:14px;border:1px solid var(--border);
+    background:var(--accent-soft);box-shadow:var(--shadow);}
+  .rv-confirm.done{background:var(--green-soft);border-color:color-mix(in srgb,var(--green) 30%,var(--border));animation:rvPop .5s cubic-bezier(.34,1.5,.44,1);}
+  @keyframes rvPop{0%{transform:scale(.99);}55%{transform:scale(1.012);}100%{transform:scale(1);}}
+  .rv-c-text{font-size:13.5px;color:var(--text);}
+  .rv-spin{display:inline-block;width:14px;height:14px;border:2.5px solid #ffffff66;border-top-color:#fff;border-radius:50%;animation:rvSpin .7s linear infinite;vertical-align:-2px;margin-right:7px;}
+  @keyframes rvSpin{to{transform:rotate(360deg);}}
+  .rv-cov .card{transition:transform .25s cubic-bezier(.22,1,.36,1),box-shadow .25s;}
+  .rv-cov .card:hover{transform:translateY(-3px);box-shadow:var(--shadow-lg);}
+  .rv-file:hover input{border-color:var(--accent);}
+  .grid.compact tbody tr{transition:background .12s,opacity .12s;}
+  .rv-chk-col{width:34px;text-align:center;}
+  .rv-chk,#rvAll{width:15px;height:15px;cursor:pointer;accent-color:var(--accent);}
+  .rv-unpicked td:not(.rv-chk-col){opacity:.4;}
+  .rv-selc{display:inline-block;min-width:16px;padding:0 5px;margin-left:2px;border-radius:999px;
+    background:#ffffff2b;font-variant-numeric:tabular-nums;font-weight:800;}
+  .rv-confirm form button:disabled{opacity:.5;cursor:not-allowed;}
+</style>
+
+<script>
+(function () {
+  // ── review-page style tick selection ──────────────────────────────────────
+  var rows = Array.prototype.slice.call(document.querySelectorAll('.rv-chk'));
+  var all = document.getElementById('rvAll');
+  var selc = document.querySelector('.rv-selc');
+  var confirmBtn = document.querySelector('.rv-confirm form button');
+
+  function refresh() {
+    var n = rows.filter(function (c) { return c.checked; }).length;
+    if (selc) selc.textContent = n;
+    if (confirmBtn) confirmBtn.disabled = (n === 0);
+    if (all) {
+      all.checked = n > 0 && n === rows.length;
+      all.indeterminate = n > 0 && n < rows.length;
+    }
+    // dim rows that won't be recorded
+    rows.forEach(function (c) {
+      var tr = c.closest('tr'); if (tr) tr.classList.toggle('rv-unpicked', !c.checked);
+    });
+  }
+  rows.forEach(function (c) { c.addEventListener('change', refresh); });
+  if (all) all.addEventListener('change', function () {
+    rows.forEach(function (c) { c.checked = all.checked; }); refresh();
+  });
+  refresh();
+
+  // ── AJAX confirm (no page refresh) ────────────────────────────────────────
+  var form = document.querySelector('.rv-confirm form');
+  if (!form) return;
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var btn = form.querySelector('button'), bar = form.closest('.rv-confirm');
+    var picked = rows.filter(function (c) { return c.checked; });
+    if (!picked.length) {
+      if (window.B2B && B2B.toast) B2B.toast('Tick at least one PO to record.', { type: 'error' });
+      return;
+    }
+    var orig = btn.innerHTML;
+    btn.disabled = true; btn.innerHTML = '<span class="rv-spin"></span>Recording…';
+    var fd = new FormData(form);
+    picked.forEach(function (c) { fd.append('push_po', c.value); });
+    fetch(form.action, { method: 'POST', body: fd,
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.ok) {
+          bar.classList.add('done');
+          bar.innerHTML = '<span class="rv-c-text">✓ <b>Verification recorded</b> — ' + j.confirmed + ' PO(s) logged.</span>';
+          if (window.B2B && B2B.toast) B2B.toast(j.message, { type: 'success', title: 'Recorded' });
+          if (window.confetti) { try { confetti({ particleCount: 70, spread: 68, origin: { y: .55 } }); } catch (e) {} }
+        } else {
+          btn.disabled = false; btn.innerHTML = orig;
+          if (window.B2B && B2B.toast) B2B.toast((j && j.error) || 'Could not record.', { type: 'error' });
+        }
+      })
+      .catch(function () {
+        btn.disabled = false; btn.innerHTML = orig;
+        if (window.B2B && B2B.toast) B2B.toast('Network error — nothing recorded.', { type: 'error' });
+      });
+  });
+})();
+</script>
+{% endblock %}

@@ -1447,7 +1447,6 @@ def _preview_sig(meta) -> str:
     """Cache key for a token's processed preview — everything that changes the
     engine output. Notably includes ``ean_fixes`` so an EAN-fix re-validate
     busts the cache automatically."""
-    import hashlib
     key = json.dumps({
         'mp': meta.get('marketplace'), 'wh': meta.get('warehouse'),
         'mg': meta.get('margin_pct'), 'files': sorted(meta.get('files') or []),
@@ -2179,7 +2178,6 @@ def _completed_cache_put(d: Path, meta: dict, built_path: str) -> None:
     """Copy the freshly built completed workbook into the token dir + write the
     signature marker. Guarded — a failure just means no caching, never blocks."""
     try:
-        import shutil
         dest = d / os.path.basename(built_path)
         if os.path.abspath(built_path) != os.path.abspath(str(dest)):
             shutil.copy2(built_path, dest)
@@ -2588,47 +2586,6 @@ def _gts_token_dir(token: str) -> Path:
     if d != base and base not in d.parents:
         raise Http404()
     return d
-
-
-class OfflineProcessView(LoginRequiredMixin, TemplateView):
-    """Offline 'Process PO' — one entry that lists the Offline **parent**
-    marketplaces (and MT's **children**), each routing to that channel's
-    upload/import. Mirrors the online Process-PO marketplace picker so the two
-    segments feel the same; replaces the scattered per-channel links."""
-    template_name = 'online_b2b/offline_process.html'
-
-    def get_context_data(self, **kwargs):
-        from django.urls import reverse
-        ctx = super().get_context_data(**kwargs)
-        ctx['parents'] = [
-            {'key': 'MT', 'name': 'MT · Modern Trade', 'tag': 'live',
-             'desc': 'Retail chains — master-driven SO generation. Pick a child.',
-             'url': reverse('mt_flow_upload'),
-             'children': [
-                 {'key': 'SS', 'name': 'Shoppers Stop (SS)', 'tag': 'live',
-                  'url': reverse('mt_flow_upload')},
-                 {'key': 'HG', 'name': 'Health & Glow (HG)', 'tag': 'live',
-                  'url': reverse('mt_flow_upload')},
-                 {'key': 'NT', 'name': 'Naturals (NT)', 'tag': 'live',
-                  'url': reverse('mt_flow_upload')},
-                 {'key': 'LL', 'name': 'Lulu (LL)', 'tag': 'live',
-                  'url': reverse('mt_flow_upload')},
-                 {'key': 'BN', 'name': 'Apollo (BN)', 'tag': 'live',
-                  'url': reverse('mt_flow_upload')},
-                 {'key': 'HB', 'name': 'HB', 'tag': 'soon'},
-             ]},
-            {'key': 'GT Mass', 'name': 'GT Mass', 'tag': 'live',
-             'url': reverse('index'), 'desc': 'General trade mass — dump processing.',
-             'children': []},
-            {'key': 'GT Select', 'name': 'GT Select', 'tag': 'live',
-             'url': reverse('b2b_gt_select'),
-             'desc': 'D365-finalised — import Sales Orders + Lines.', 'children': []},
-            {'key': 'EKA', 'name': 'EKA', 'tag': 'soon', 'desc': 'Coming soon.',
-             'children': []},
-            {'key': 'CSD', 'name': 'CSD', 'tag': 'soon', 'desc': 'Coming soon.',
-             'children': []},
-        ]
-        return ctx
 
 
 class GtSelectView(LoginRequiredMixin, TemplateView):
@@ -3054,12 +3011,6 @@ def availability_bins(request):
                          'bins': bins})
 
 
-# ── Sales Validation — REMOVED 2026-07-20 (superseded by Triangular Validation).
-#    Its service (services/sales_validation.py) + template were deleted; the
-#    3 URL routes + sidebar link are gone. Full Validation stays (Triangular
-#    depends on its service); only its sidebar link is hidden.
-
-
 # ── UI Lab (learning surface: htmx · Alpine · animation) ────────────────────
 # Isolated, staff-facing page that demonstrates the newer front-end tech on
 # REAL data without touching any production flow. htmx/Alpine load ONLY here
@@ -3450,14 +3401,13 @@ def eka_data_add(request):
 @require_POST
 def eka_data_upload(request):
     """Upload EKA_DATA.xlsx → replace the eka_data table (mirror the sheet)."""
-    import os as _os
     import tempfile
     from .services import eka_data
     f = request.FILES.get('eka_file')
     if not f:
         messages.error(request, 'Choose the EKA_DATA.xlsx file to upload.')
         return redirect('b2b_eka_data')
-    tmp = _os.path.join(tempfile.gettempdir(), 'eka_upload_' + uuid.uuid4().hex[:8] + '.xlsx')
+    tmp = os.path.join(tempfile.gettempdir(), 'eka_upload_' + uuid.uuid4().hex[:8] + '.xlsx')
     with open(tmp, 'wb') as out:
         for chunk in f.chunks():
             out.write(chunk)
@@ -3468,7 +3418,7 @@ def eka_data_upload(request):
         messages.error(request, f"Couldn't read the Excel: {type(e).__name__}: {e}")
     finally:
         try:
-            _os.unlink(tmp)
+            os.unlink(tmp)
         except OSError:
             pass
     return redirect('b2b_eka_data')

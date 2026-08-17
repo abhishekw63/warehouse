@@ -3,8 +3,8 @@ online_b2b.inventory_views
 ==========================
 
 Views for the **Inventory — Fill-Rate cockpit** (standalone module, like
-``views_triangular`` / ``full_validation_views`` — delete these + the urls +
-service + templates + sidebar link to remove the whole feature).
+``full_validation_views`` — delete this + the urls + service + templates +
+sidebar link to remove the whole feature).
 
 Flow: upload a D365 *Bin Contents* export → preview the per-warehouse
 classification (sellable vs virtual bins, + any NEW/unknown bins) → confirm to

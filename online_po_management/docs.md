@@ -403,7 +403,10 @@ instead of a single number that lies for rule-based marketplaces.
   Amount (inc GST) value vs our system; saves `Triangular_Reconciliation_<date>.xlsx`; scopes
   D365 Lines to that day's SOs; skips Flipkart-TO. **Operator runs it daily; TO BE INTEGRATED
   as the web Sales Validation page** (thin view → this logic as a service → {ok,data,error};
-  upload the 2 D365 files). Also: offline **Mapping tab + UNMAPPED banner** (mt_flow exposes
+  upload the 2 D365 files). _[Retired 2026-08-17 — the standalone `tools/daily_triangular_check.py`
+  was removed; this reconciliation now lives in the web **Record Verification** (`/b2b/record-verify`)
+  page. The `triangular_validation._line_val` / `_is_dropped` helpers stay — Inventory + Summary use them.]_
+  Also: offline **Mapping tab + UNMAPPED banner** (mt_flow exposes
   ship_to → po_flow builds the report); MT NIM lines now recorded (Issues parity).
 - **2026-07-17** — **Offline parity (additive)**: shared `po_flow._sku_rows` + `_mark_clean`
   → SKU tab + CLEAN/AFFECTED on the offline review (MT/GT/Apollo…), no engine touch.

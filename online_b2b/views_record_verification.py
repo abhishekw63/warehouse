@@ -1,0 +1,157 @@
+"""Record Verification — STANDALONE, class-based views.
+
+Upload D365 Headers + Lines → reconcile against our recorded data (recorded +
+excluded) per PO → flag mismatches (qty / value / pincode) → persist a checked-PO
+log with per-PO deltas. Thin views; all logic lives in
+``services.record_verification`` (which reuses ``full_validation``).
+
+Self-contained + removable: this file + services/record_verification.py +
+templates/online_b2b/record_verification.html + the URL block + one nav link.
+Own media dir (``b2b_recordcheck``).
+"""
+from __future__ import annotations
+
+import json
+import uuid
+from pathlib import Path
+
+import pandas as pd
+from django.conf import settings
+from django.contrib import messages
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.http import FileResponse, Http404, JsonResponse
+from django.shortcuts import redirect
+from django.urls import reverse
+from django.views import View
+from django.views.generic import TemplateView
+
+from .services import record_verification as rv
+
+_UP = Path(settings.MEDIA_ROOT) / 'b2b_recordcheck'
+
+
+def _tok_dir(token: str) -> Path:
+    base = _UP.resolve()
+    d = (_UP / token).resolve()
+    if d != base and base not in d.parents:
+        raise Http404()
+    return d
+
+
+def _looks_like(path: str, needle: str) -> bool:
+    """True if the first row of the workbook has a column matching ``needle``."""
+    try:
+        cols = pd.read_excel(path, nrows=0).columns
+        return any(needle.lower() == str(c).lower() for c in cols)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+class RecordVerificationView(LoginRequiredMixin, TemplateView):
+    """Upload page + coverage + checked-PO log + the last run's result (``?token=``)."""
+    template_name = 'online_b2b/record_verification.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['coverage'] = rv.coverage()
+        ctx['log'] = rv.checked_log(limit=300)
+        token = self.request.GET.get('token', '')
+        ctx['token'] = token
+        if token:
+            rp = _tok_dir(token) / 'result.json'
+            if rp.exists():
+                res = json.loads(rp.read_text(encoding='utf-8'))
+                if res.get('ok'):
+                    ctx['data'] = res['data']
+                    ctx['confirmed'] = res.get('confirmed', False)
+        return ctx
+
+
+class RecordVerificationRunView(LoginRequiredMixin, View):
+    """POST Headers + Lines → verify → stash result + Excel → redirect with token.
+    Accepts the two named inputs, or a 2-file batch it auto-sorts by columns."""
+
+    def post(self, request):
+        token = uuid.uuid4().hex[:12]
+        d = _UP / token
+        fdir = d / 'files'
+        fdir.mkdir(parents=True, exist_ok=True)
+
+        # gather files: named inputs first, else a dropped batch
+        named = {k: request.FILES.get(k) for k in ('headers_file', 'lines_file')}
+        batch = [f for f in named.values() if f] or list(request.FILES.getlist('rv_files'))
+        if not batch:
+            messages.error(request, 'Upload the D365 Sales Orders (Headers) and Sales Lines files.')
+            return redirect('b2b_record_verify')
+
+        saved = []
+        for i, f in enumerate(batch):
+            p = fdir / f"{i}_{Path(f.name).name}"
+            with open(p, 'wb') as out:
+                for chunk in f.chunks():
+                    out.write(chunk)
+            saved.append(str(p))
+
+        # resolve which file is Headers vs Lines (by their signature columns)
+        headers = next((p for p in saved if _looks_like(p, 'External Document No.')), None)
+        lines = next((p for p in saved if _looks_like(p, 'Document No.') and p != headers), None)
+        if not headers or not lines:
+            messages.error(request, "Couldn't identify both files — need the D365 Sales "
+                            "Orders (has 'External Document No.') and Sales Lines (has 'Document No.').")
+            return redirect('b2b_record_verify')
+
+        # PHASE 1: preview only — nothing is written until Confirm.
+        res = rv.preview(headers, lines)
+        if res.get('ok'):
+            res['confirmed'] = False
+            try:
+                from .services import full_validation as _fv
+                _fv.build_workbook(res['data'], str(d / 'record_verification.xlsx'))
+            except Exception as e:  # noqa: BLE001 — Excel is a convenience
+                res['data']['excel_error'] = f'{type(e).__name__}: {e}'
+        (d / 'result.json').write_text(json.dumps(res, default=str), encoding='utf-8')
+        if not res.get('ok'):
+            messages.error(request, res.get('error', 'Verification failed.'))
+            return redirect('b2b_record_verify')
+        vs = res['data'].get('verify_summary', {})
+        messages.info(request, f"Reviewed {vs.get('checked', 0)} PO(s) — "
+                      f"{vs.get('ok', 0)} clean, {vs.get('mismatch', 0)} mismatch, "
+                      f"{vs.get('external', 0)} external. Review, then Confirm to record.")
+        return redirect(f"{reverse('b2b_record_verify')}?token={token}")
+
+
+class RecordVerificationConfirmView(LoginRequiredMixin, View):
+    """PHASE 2 — persist the reviewed verification to the checked-PO log."""
+
+    def post(self, request, token):
+        rp = _tok_dir(token) / 'result.json'
+        if not rp.exists():
+            raise Http404('Review not found or expired.')
+        res = json.loads(rp.read_text(encoding='utf-8'))
+        if not res.get('ok'):
+            messages.error(request, 'Nothing to confirm.')
+            return redirect('b2b_record_verify')
+        # review-page style: operator ticks which POs to record (EXTERNAL POs are
+        # "pushed" without a cross-check). No ticks posted → record all (back-compat).
+        picked = request.POST.getlist('push_po')
+        out = rv.confirm(res['data'].get('headers', []),
+                         checked_by=getattr(request.user, 'username', '') or 'system',
+                         only_pos=picked or None)
+        res['confirmed'] = True
+        rp.write_text(json.dumps(res, default=str), encoding='utf-8')
+        msg = f"✓ Verification recorded — {out.get('confirmed', 0)} PO(s) logged."
+        if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+            return JsonResponse({'ok': True, 'confirmed': out.get('confirmed', 0), 'message': msg})
+        messages.success(request, msg)
+        return redirect(f"{reverse('b2b_record_verify')}?token={token}")
+
+
+class RecordVerificationDownloadView(LoginRequiredMixin, View):
+    """Serve the reconciliation Excel for a run."""
+
+    def get(self, request, token):
+        xp = _tok_dir(token) / 'record_verification.xlsx'
+        if not xp.exists():
+            raise Http404('File not found or expired.')
+        return FileResponse(open(xp, 'rb'), as_attachment=True,
+                            filename='Record_Verification.xlsx')

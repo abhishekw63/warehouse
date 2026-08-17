@@ -2,7 +2,7 @@ from django.urls import path
 
 from . import views
 from . import full_validation_views as _fullval  # STANDALONE feature (removable)
-from . import views_triangular as _tri  # STANDALONE feature (removable)
+from . import views_record_verification as _rv  # STANDALONE feature (removable)
 from . import inventory_views as _inv  # STANDALONE feature (removable)
 from . import views_tables as _tbl  # STANDALONE feature (removable)
 
@@ -14,12 +14,13 @@ urlpatterns = [
     path('full-validation/run/', _fullval.full_validation_run, name='b2b_full_validation_run'),
     path('full-validation/<str:token>/download/', _fullval.full_validation_download,
          name='b2b_full_validation_download'),
-    # ── Triangular Validation (standalone; delete these 3 lines + the module/
+    # ── Record Verification (standalone; delete these lines + the module/
     #    template/service/nav link to remove the whole feature) ─────────────────
-    path('triangular/', _tri.triangular, name='b2b_triangular'),
-    path('triangular/run/', _tri.triangular_run, name='b2b_triangular_run'),
-    path('triangular/<str:token>/download/', _tri.triangular_download,
-         name='b2b_triangular_download'),
+    path('record-verify/', _rv.RecordVerificationView.as_view(), name='b2b_record_verify'),
+    path('record-verify/run/', _rv.RecordVerificationRunView.as_view(), name='b2b_record_verify_run'),
+    path('record-verify/<str:token>/confirm/', _rv.RecordVerificationConfirmView.as_view(), name='b2b_record_verify_confirm'),
+    path('record-verify/<str:token>/download/', _rv.RecordVerificationDownloadView.as_view(),
+         name='b2b_record_verify_download'),
     # ── Inventory — Fill-Rate cockpit (standalone; delete these lines + the
     #    module/service/templates/sidebar link to remove the whole feature) ────
     path('inventory/', _inv.inventory, name='b2b_inventory'),
@@ -148,7 +149,6 @@ urlpatterns = [
     path('ship-to/<str:token>/', views.ship_to_preview, name='b2b_ship_to_preview'),
     path('ship-to/<str:token>/confirm/', views.ship_to_confirm, name='b2b_ship_to_confirm'),
     path('ship-to/<str:token>/discard/', views.ship_to_discard, name='b2b_ship_to_discard'),
-    # Sales Validation removed 2026-07-20 (superseded by Triangular Validation).
     path('run/<int:run_id>/', views.run_detail, name='b2b_run_detail'),
     path('run/<int:run_id>/download/', views.download, name='b2b_download'),
     path('run/<int:run_id>/d365/', views.download_d365, name='b2b_download_d365'),
