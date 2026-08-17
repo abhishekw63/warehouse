@@ -4,38 +4,8 @@
 {% comment %}Same contextual boot label as the offline po_flow review -> uniform loader across online & offline (shared implementation in core/base.html).{% endcomment %}
 {% block page_boot_label %}Validating &amp; checking your PO — preparing the review…{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
-<style>
-  @keyframes cpShake{10%,90%{transform:translateX(-1px)}20%,80%{transform:translateX(2px)}
-    30%,50%,70%{transform:translateX(-5px)}40%,60%{transform:translateX(5px)}}
-  .cp-shake{animation:cpShake .5s;}
-  .po-clean{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10.5px;font-weight:800;
-    letter-spacing:.02em;background:#e7f6ec;color:#0a7d33;white-space:nowrap;}
-  .po-aff{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10.5px;font-weight:800;
-    letter-spacing:.02em;background:#fde7e7;color:#b91c1c;white-space:nowrap;}
-  @keyframes cpFlash{0%,100%{background:transparent}25%,60%{background:#fff2c2;box-shadow:inset 0 0 0 2px #f0b400;}}
-  .cp-flash>td{animation:cpFlash 1.3s ease 2;}
-  .cpg-ov{position:fixed;inset:0;background:rgba(16,22,38,.52);display:flex;align-items:center;
-    justify-content:center;z-index:9999;animation:cpgFade .18s ease;}
-  @keyframes cpgFade{from{opacity:0}to{opacity:1}}
-  .cpg-card{background:#fff;border-radius:16px;padding:24px 26px;max-width:460px;width:calc(100% - 40px);
-    box-shadow:0 24px 70px -22px rgba(0,0,0,.55);}
-  .cpg-card h3{margin:0 0 8px;font-size:18px;color:#b42318;font-weight:800;}
-  .cpg-card p{margin:0 0 18px;color:#475467;font-size:14px;line-height:1.6;}
-  .cpg-actions{display:flex;flex-direction:column;gap:9px;}
-  .cpg-btn{padding:12px 15px;border-radius:10px;border:1px solid #d0d5dd;font-weight:700;
-    font-size:13.5px;cursor:pointer;text-align:left;font-family:inherit;line-height:1.4;}
-  .cpg-later{background:#2f6feb;color:#fff;border-color:#2f6feb;}
-  .cpg-later:hover{background:#245ad0;}
-  .cpg-cancel{background:#f4f6f9;color:#344054;}
-  .cpg-cancel:hover{background:#eaeef3;}
-  .cpg-anyway{background:#fff;color:#b42318;border-color:#f2b8b0;}
-  .cpg-anyway:hover{background:#fdf2f1;}
-  .cpg-btn small{display:block;font-weight:500;font-size:12px;opacity:.85;margin-top:2px;}
-  /* Prominent "Continue working" — closes the popup; the download keeps running natively. */
-  .ld-continue{display:block;width:100%;margin-top:14px;padding:11px 14px;border-radius:10px;
-    background:#0a9d6e;color:#fff;border:1px solid #0a9d6e;font-weight:700;font-size:13.5px;cursor:pointer;}
-  .ld-continue:hover{filter:brightness(1.06);}
-</style>{% endblock %}
+
+<link rel="stylesheet" href="{% static 'online_b2b/pages/review.css' %}">{% endblock %}
 
 {% block breadcrumb %}
     <a href="{% url 'departments' %}">Departments</a>
@@ -83,15 +53,15 @@
 
   {% if r.unmapped %}
   <!-- Missing ship-to mapping — high-visibility, jumps to the Mapping tab -->
-  <div class="exc-poke" style="border-color:#dc2626;background:#fdecec;cursor:pointer;"
+  <div class="exc-poke" style="border-color:var(--red);background:#fdecec;cursor:pointer;"
        onclick="var t=document.querySelector('.tab[data-tab=mapping]');if(t){t.click();t.scrollIntoView({behavior:'smooth',block:'center'});}">
-    <span class="exc-poke-ic" style="color:#dc2626;">🗺️</span>
+    <span class="exc-poke-ic" style="color:var(--red);">🗺️</span>
     <div class="exc-poke-txt">
       <b>{{ r.unmapped|length }} delivery location(s) NOT found in Ship-To mapping.</b>
       Their orders were generated with <b>Cust No &amp; Ship-to blank</b> — open the
       <b>Mapping</b> tab to see which, and add them.
     </div>
-    <span class="exc-poke-link" style="color:#dc2626;">View Mapping →</span>
+    <span class="exc-poke-link" style="color:var(--red);">View Mapping →</span>
   </div>
   {% endif %}
 
@@ -182,7 +152,7 @@
     <button class="tab" data-tab="orders">Orders <span class="tcount">{{ r.headers|length }}</span></button>
     <button class="tab" data-tab="sku">SKU <span class="tcount">{{ r.sku_rows|length }}</span></button>
     <button class="tab" data-tab="affected">Affected line items <span class="tcount">{{ r.affected|length }}</span></button>
-    <button class="tab" data-tab="mapping" style="{% if r.unmapped %}color:#dc2626;{% endif %}">Mapping <span class="tcount" style="{% if r.unmapped %}background:#fdecec;color:#dc2626;{% endif %}">{{ r.unmapped|length }}</span></button>
+    <button class="tab" data-tab="mapping" style="{% if r.unmapped %}color:var(--red);{% endif %}">Mapping <span class="tcount" style="{% if r.unmapped %}background:#fdecec;color:var(--red);{% endif %}">{{ r.unmapped|length }}</span></button>
     <button class="tab" data-tab="skipped">Already uploaded <span class="tcount">{{ r.skipped|length }}</span></button>
   </div>
 
@@ -271,7 +241,7 @@
   <!-- Mapping: per-PO ship-to resolution (EXACT / FUZZY / UNMAPPED) -->
   <div class="tabpane" data-pane="mapping" style="display:none;">
     <p class="aff-hint">Every PO's delivery location and how it resolved to a Ship-To.
-      <b style="color:#0f9d6b;">● Exact</b> = safe · <b style="color:#b45309;">● Fuzzy</b> = matched by similarity, confirm &amp; promote to exact · <b style="color:#dc2626;">● Unmapped</b> = no match (Cust/Ship-to blank), add it. Fix any on the
+      <b style="color:var(--green);">● Exact</b> = safe · <b style="color:#b45309;">● Fuzzy</b> = matched by similarity, confirm &amp; promote to exact · <b style="color:var(--red);">● Unmapped</b> = no match (Cust/Ship-to blank), add it. Fix any on the
       <a href="{% url 'b2b_ship_to' %}" target="_blank">Ship-To Mapping</a> page.</p>
     {% if r.mapping_report %}
     <table class="grid">
@@ -283,11 +253,11 @@
           <td class="loc" title="{{ m.location }}">{{ m.location|default:'—' }}</td>
           <td style="color:var(--muted,#9aa1b2);">→</td>
           <td class="loc" title="{{ m.mapped_location }}">{{ m.mapped_location|default:'—' }}</td>
-          <td class="mono">{% if m.ship_to %}{{ m.cust_no }} · {{ m.ship_to }}{% else %}<span style="color:#dc2626;">— blank —</span>{% endif %}</td>
+          <td class="mono">{% if m.ship_to %}{{ m.cust_no }} · {{ m.ship_to }}{% else %}<span style="color:var(--red);">— blank —</span>{% endif %}</td>
           <td>
-            {% if m.match_type == 'EXACT' %}<span style="background:#e7f6ef;color:#0f9d6b;font-weight:800;font-size:11px;padding:2px 9px;border-radius:20px;">EXACT</span>
+            {% if m.match_type == 'EXACT' %}<span style="background:#e7f6ef;color:var(--green);font-weight:800;font-size:11px;padding:2px 9px;border-radius:20px;">EXACT</span>
             {% elif m.match_type == 'FUZZY' %}<span style="background:#fdf1e3;color:#b45309;font-weight:800;font-size:11px;padding:2px 9px;border-radius:20px;">FUZZY</span>
-            {% else %}<span style="background:#fdecec;color:#dc2626;font-weight:800;font-size:11px;padding:2px 9px;border-radius:20px;">UNMAPPED</span>{% endif %}
+            {% else %}<span style="background:#fdecec;color:var(--red);font-weight:800;font-size:11px;padding:2px 9px;border-radius:20px;">UNMAPPED</span>{% endif %}
           </td>
           <td style="font-size:12px;color:var(--text-2,#5b6478);">
             {{ m.remark }}
@@ -298,7 +268,7 @@
       </tbody>
     </table>
     {% else %}
-    <p class="aff-hint" style="color:#0f9d6b;">✓ No ship-to resolution to show for this run.</p>
+    <p class="aff-hint" style="color:var(--green);">✓ No ship-to resolution to show for this run.</p>
     {% endif %}
   </div>
 
@@ -419,54 +389,6 @@
   {% endif %}
 </div>
 
-<style>
-  .aff-hint{font-size:12.5px;color:var(--text-2);margin:0 0 12px;background:var(--surface-2);
-    border:1px solid var(--border);border-radius:8px;padding:9px 12px;}
-  .exc-poke{display:flex;align-items:center;gap:12px;margin:0 0 16px;padding:11px 16px;
-    background:#fff8ed;border:1px solid #ffd9a0;border-left:4px solid #f59e0b;border-radius:11px;
-    animation:fadeUp .4s ease both;}
-  .exc-poke-ic{font-size:18px;flex:none;}
-  .exc-poke-txt{font-size:13px;color:#7a4a06;flex:1;line-height:1.5;}
-  .exc-poke-txt b{color:#5b3700;}
-  .exc-poke-n{font-weight:800;color:#b45309;}
-  .exc-poke-link{margin-left:auto;font-size:12.5px;font-weight:700;color:#b45309;
-    text-decoration:none;white-space:nowrap;}
-  .exc-poke-link:hover{text-decoration:underline;}
-  .act-sel{padding:5px 8px;border:1px solid var(--border);border-radius:7px;font-size:12.5px;
-    background:#fff;color:var(--text);font-family:var(--font);}
-  .act-rem{padding:6px 9px;border:1px solid var(--border);border-radius:7px;font-size:12.5px;
-    width:160px;background:#fff;color:var(--text);font-family:var(--font);}
-  .act-ocp{padding:6px 8px;border:1px solid var(--border);border-radius:7px;font-size:12.5px;
-    width:96px;text-align:right;background:#fff;color:var(--text);font-family:var(--font);}
-  .act-ocp[readonly]{background:var(--bg);color:var(--muted);border-style:dashed;}
-  .act-sel:focus,.act-rem:focus,.act-ocp:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
-  /* Affected line-items table — freeze identity columns (chk · PO · Item ·
-     Description) so they stay visible while scrolling right to the decision
-     controls. Pure CSS/layout; no data or logic change. */
-  .aff-tbl th,.aff-tbl td{background-clip:padding-box;}
-  .aff-tbl th.chk-col,.aff-tbl td.chk-col{position:sticky;left:0;z-index:2;background:var(--surface);}
-  .aff-tbl th:nth-child(2),.aff-tbl td:nth-child(2){position:sticky;left:30px;z-index:2;min-width:88px;background:var(--surface);}
-  .aff-tbl th:nth-child(3),.aff-tbl td:nth-child(3){position:sticky;left:118px;z-index:2;min-width:64px;background:var(--surface);}
-  .aff-tbl th:nth-child(4),.aff-tbl td:nth-child(4){position:sticky;left:182px;z-index:2;min-width:150px;max-width:170px;background:var(--surface);box-shadow:2px 0 0 var(--border);}
-  .aff-tbl thead th.chk-col,.aff-tbl thead th:nth-child(2),.aff-tbl thead th:nth-child(3),.aff-tbl thead th:nth-child(4){z-index:3;background:var(--surface-2);}
-  .aff-tbl .desc{max-width:150px;}
-  /* softer basis highlight so it reads as a tint, not a heavy band */
-  .aff-tbl td.basis-on{box-shadow:none;background:color-mix(in srgb,var(--accent) 7%,var(--surface));}
-  /* ── Decision state (row-wide, so it reads at ANY horizontal scroll — the first
-     4 cols are sticky). Included = green, Excluded = grey + strikethrough. The
-     > td selector (specificity beats the sticky-cell background) tints frozen
-     cells too; a left accent bar sits on the always-visible checkbox column. */
-  .aff-tbl tr.dec-included > td{background:color-mix(in srgb,#16a34a 10%,var(--surface));}
-  .aff-tbl tr.dec-included > td.chk-col{box-shadow:inset 3px 0 0 #16a34a;}
-  .aff-tbl tr.dec-excluded > td{background:color-mix(in srgb,var(--muted) 14%,var(--surface));color:var(--muted);text-decoration:line-through;}
-  .aff-tbl tr.dec-excluded > td.chk-col{box-shadow:inset 3px 0 0 var(--muted);text-decoration:none;}
-  .aff-tbl tr.dec-excluded select,.aff-tbl tr.dec-excluded input{text-decoration:none;color:var(--text);}
-  /* Calm the STATUS badge once a line is DECIDED — red MISMATCH means "still open".
-     Included → green (resolved), Excluded → grey (dropped, inherits strikethrough).
-     So red only ever marks UNDECIDED lines that still need attention. */
-  .aff-tbl tr.dec-included .st{background:color-mix(in srgb,#16a34a 15%,transparent);color:#16a34a;}
-  .aff-tbl tr.dec-excluded .st{background:color-mix(in srgb,var(--muted) 18%,transparent);color:var(--muted);}
-</style>
 
 <!-- ── Lock progress overlay (AJAX; no page reload) ── -->
 <div id="lockOverlay" class="lock-overlay" aria-hidden="true" data-total="{{ s.pos|default:0 }}" data-lines="{{ s.lines|default:0 }}">

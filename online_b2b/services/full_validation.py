@@ -108,6 +108,8 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
         o = ourh.get(po); mp = (o or {}).get('mp', 'UNKNOWN'); R = roll[mp]
         excl_qty = sum(v['qty'] for (p, it), v in ourL.items()
                        if p == po and str(v['action']).upper() == 'EXCLUDE')
+        excl_val = sum(v['cp'] * v['qty'] for (p, it), v in ourL.items()
+                       if p == po and str(v['action']).upper() == 'EXCLUDE')
         R['pos'] += 1; R['qd'] += D['qty']; R['vd'] += D['val']
         qok = bool(o) and abs(D['qty'] - o['qty']) < 0.5
         q_expl = bool(o) and abs((o['qty'] - excl_qty) - D['qty']) < 0.5
@@ -122,6 +124,7 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
         verd = 'OK' if qok else (f'OK — {int(excl_qty)} excluded' if q_expl else 'QTY MISMATCH')
         hdr_rows.append({'mp': mp, 'po': po, 'our_qty': int(o['qty']) if o else None,
                          'd365_qty': int(D['qty']), 'excluded': int(excl_qty),
+                         'excl_val': round(excl_val, 2),
                          'final': int(o['qty'] - excl_qty) if o else None,
                          'qty_ok': bool(qok or q_expl),
                          'our_val': round(o['val'], 2) if o else None, 'd365_val': round(D['val'], 2),

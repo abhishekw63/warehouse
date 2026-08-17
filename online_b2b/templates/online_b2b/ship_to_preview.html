@@ -22,7 +22,7 @@
   {% if mode == 'd365' %}
   {# ── D365 additive import: what's NEW / CHANGED / UNCHANGED, review-style ── #}
   <div class="hub-kpis reveal">
-    <div class="hk"><div class="n" style="color:#0f9d6b;">+{{ diff.new_count }}</div><div class="l">New addresses</div></div>
+    <div class="hk"><div class="n" style="color:var(--green);">+{{ diff.new_count }}</div><div class="l">New addresses</div></div>
     <div class="hk"><div class="n" style="color:#b45309;">{{ diff.changed_count }}</div><div class="l">Changed (existing)</div></div>
     <div class="hk"><div class="n">{{ diff.unchanged }}</div><div class="l">Unchanged</div></div>
     <div class="hk"><div class="n">{{ stats.with_pin }}</div><div class="l">Rows with pincode</div></div>
@@ -81,7 +81,7 @@
         <tr>
           <td class="mono">{{ c.row.ship_to }}</td>
           <td>{% for dd in c.diffs %}<span class="gst-chip"><b>{{ dd.field }}</b>: {{ dd.old|default:'∅' }} → {{ dd.new }}</span> {% endfor %}</td>
-          <td>{% if c.manual %}<span class="gst-chip" style="color:#b45309;">manual · preserved</span>{% else %}<span class="gst-chip" style="color:#0f9d6b;">will update</span>{% endif %}</td>
+          <td>{% if c.manual %}<span class="gst-chip" style="color:#b45309;">manual · preserved</span>{% else %}<span class="gst-chip" style="color:var(--green);">will update</span>{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>

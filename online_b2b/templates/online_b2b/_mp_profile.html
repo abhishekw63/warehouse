@@ -297,7 +297,7 @@
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(560px,1fr));gap:18px;">
       {% for e in exc_cards %}
       <div style="border:1px solid var(--border);border-left:5px solid
-           {% if e.kind == 'behavioral' %}#6366f1{% elif e.kind == 'deal' %}#f59e0b{% else %}#10b981{% endif %};
+           {% if e.kind == 'behavioral' %}var(--accent-2){% elif e.kind == 'deal' %}#f59e0b{% else %}#10b981{% endif %};
            border-radius:14px;padding:20px 24px;background:#fff;box-shadow:0 2px 10px -6px rgba(30,41,59,.15);">
         <div style="font-weight:800;font-size:16px;color:var(--text);margin-bottom:6px;">{{ e.title }}
           <span style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--muted);

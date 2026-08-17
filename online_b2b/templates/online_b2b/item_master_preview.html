@@ -1,7 +1,8 @@
 {% extends 'online_b2b/base_b2b.html' %}
 {% load static b2b_extras %}
 {% block title %}Item Master — Preview{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<link rel="stylesheet" href="{% static 'online_b2b/pages/item_master_preview.css' %}">{% endblock %}
 
 {% block breadcrumb %}
     <a href="{% url 'departments' %}">Departments</a>
@@ -105,22 +106,6 @@
     {% endif %}
   </div>
 
-  <style>
-    /* nothing-to-update bar — green, no rebuild action */
-    .confirm-bar.im-uptodate{background:#f0fdf4;border-color:#bbf7d0;}
-    :root[data-theme="dark"] .confirm-bar.im-uptodate{background:color-mix(in srgb,#16a34a 14%,var(--surface));border-color:#166534;}
-    .confirm-bar.im-uptodate .cb-text{color:#0a7c4a;} :root[data-theme="dark"] .confirm-bar.im-uptodate .cb-text{color:#86efac;}
-    .im-nochange{font-size:13.5px;color:#0a7c4a;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;padding:12px 14px;margin:0;}
-    .chg-chips{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 6px;}
-    .chg-chip{font-size:12px;font-weight:700;border-radius:20px;padding:4px 11px;border:1px solid var(--border);}
-    .c-new{color:#1b7a3d;background:#e6f4ea;border-color:#a7e0bd;}
-    .c-mrp{color:#92600a;background:#fff3e0;border-color:#ffcc80;}
-    .c-rem{color:#b91c1c;background:#fee2e2;border-color:#fca5a5;}
-    .c-same{color:var(--muted);background:var(--surface-2);}
-    .chg-h{font-size:13px;margin:16px 0 8px;display:flex;align-items:center;gap:8px;}
-    .chg-h .count{font-size:11px;font-weight:800;background:var(--accent-soft);color:var(--accent);border-radius:20px;padding:1px 9px;}
-    td.old{color:var(--muted);text-decoration:line-through;} td.new{color:#0a7c4a;}
-  </style>
 
   <div class="im-card reveal" style="margin-top:16px;">
     <h2>GST spread</h2>

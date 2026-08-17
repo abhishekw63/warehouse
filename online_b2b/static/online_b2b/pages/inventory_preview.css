@@ -1,0 +1,27 @@
+/* online_b2b/inventory_preview.html — page styles (separated from template). Uses shared tokens. */
+/* .iv-wrap base → enhance.css §9; preview only needs a narrower shell: */
+  .iv-wrap{max-width:1000px;}
+  .iv-whtag{font-size:12px;font-weight:800;color:#fff;background:var(--accent);padding:2px 10px;border-radius:20px;}
+  .ivp-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:16px 18px;margin-top:16px;}
+  .ivp-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .ivp-code{font-family:Consolas,monospace;font-size:12px;color:var(--muted);margin-left:8px;}
+  .ivp-warn{color:#b45309;font-size:12px;font-weight:700;margin-left:8px;}
+  .ivp-items{font-size:14px;color:var(--muted);}
+  .ivp-bars{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px;}
+  @media (max-width:640px){.ivp-bars{grid-template-columns:1fr;}}
+  .ivp-bar{border-radius:12px;padding:12px 14px;border:1px solid var(--border);display:flex;flex-direction:column;gap:3px;}
+  .ivp-bar .l{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);}
+  .ivp-bar .v{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;}
+  .ivp-bar .n{font-size:11px;color:var(--muted);}
+  .ivp-bar.inc{background:#e7f6ef;border-color:#b6e3ce;} .ivp-bar.inc .v{color:#0a7d5a;}
+  .ivp-bar.exc{background:var(--surface-2);} .ivp-bar.exc .v{color:var(--muted);}
+  .ivp-bar.new{background:#fff7ed;border-color:#fed7aa;} .ivp-bar.new .v{color:#b45309;}
+  .ivp-bar.new.zero{opacity:.55;}
+  .ivp-new{margin-top:14px;padding:11px 14px;border-radius:10px;background:#fff7ed;border:1px solid #fed7aa;font-size:12.5px;color:#7c3a17;}
+  .ivp-new a{color:#9a3412;font-weight:700;}
+  .ivp-newlist{margin-top:6px;display:flex;flex-wrap:wrap;gap:6px;}
+  .ivp-newbin code{background:#ffedd5;color:#9a3412;}
+  .ivp-more{color:#9a3412;font-weight:700;font-size:12px;}
+  .ivp-actions{display:flex;align-items:center;gap:14px;margin-top:22px;flex-wrap:wrap;}
+  .ivp-actions form{margin:0;}
+  .ivp-hint{font-size:12px;color:var(--muted);}

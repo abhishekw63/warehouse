@@ -127,5 +127,8 @@
 <link rel="stylesheet" href="{% static 'online_b2b/enhance.css' %}">
 <script defer src="{% static 'online_b2b/enhance.js' %}"></script>
 {% block body_end %}{% endblock %}
+{% comment %}Per-page JS — separated into static/online_b2b/pages/<page>.js, loaded
+deferred AFTER enhance.js so window.B2B helpers are available.{% endcomment %}
+{% block extra_js %}{% endblock %}
 </body>
 </html>

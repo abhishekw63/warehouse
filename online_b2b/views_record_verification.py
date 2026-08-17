@@ -105,8 +105,7 @@ class RecordVerificationRunView(LoginRequiredMixin, View):
         if res.get('ok'):
             res['confirmed'] = False
             try:
-                from .services import full_validation as _fv
-                _fv.build_workbook(res['data'], str(d / 'record_verification.xlsx'))
+                rv.build_workbook(res['data'], str(d / 'record_verification.xlsx'))
             except Exception as e:  # noqa: BLE001 — Excel is a convenience
                 res['data']['excel_error'] = f'{type(e).__name__}: {e}'
         (d / 'result.json').write_text(json.dumps(res, default=str), encoding='utf-8')

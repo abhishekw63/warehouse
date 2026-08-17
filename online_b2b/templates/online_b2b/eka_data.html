@@ -2,21 +2,8 @@
 {% load static %}
 {% block title %}EKA Data — Order Management{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
-<style>
-  .eka-table{width:max-content;min-width:100%;}
-  .eka-table th,.eka-table td{white-space:nowrap;}
-  .eka-table input,.eka-table select{padding:5px 7px;border:1px solid var(--border);border-radius:7px;background:var(--card);color:var(--text);font-size:12.5px;}
-  .eka-table input:focus,.eka-table select:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px color-mix(in srgb,var(--accent) 18%,transparent);}
-  .eka-table input.mrg{width:56px;text-align:right;font-variant-numeric:tabular-nums;}
-  .mrgwrap{display:inline-flex;align-items:center;gap:3px;color:var(--muted);font-weight:600;}
-  .eka-add .mrgwrap input{min-width:80px;}
-  .eka-table input.pfx{width:60px;}
-  .eka-table input.sm{width:120px;}
-  .eka-table .ro{color:var(--muted);}
-  .eka-add{display:flex;flex-wrap:wrap;gap:10px;align-items:end;}
-  .eka-add label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
-  .eka-add input,.eka-add select{padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text);font-size:13px;min-width:130px;}
-</style>{% endblock %}
+
+<link rel="stylesheet" href="{% static 'online_b2b/pages/eka_data.css' %}">{% endblock %}
 
 {% block breadcrumb %}
   <a href="{% url 'departments' %}">Departments</a>
@@ -115,34 +102,6 @@
 {# One form per row (HTML5 form= association — inputs live in the table cells). #}
 {% for r in rows %}<form id="ekaf{{ r.id }}" method="post" action="{% url 'b2b_eka_data_update' r.id %}" style="display:none;">{% csrf_token %}</form>{% endfor %}
 
-<script>
-  // Save a row edit WITHOUT reloading — POST via fetch, toast + brief highlight.
-  // FormData(form) picks up the row's inputs even though they're associated via
-  // the HTML5 form= attribute (they're part of the form's entry list).
-  document.querySelectorAll('form[id^="ekaf"]').forEach(function (f) {
-    f.addEventListener('submit', function (e) {
-      e.preventDefault();
-      fetch(f.action, {
-        method: 'POST',
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        body: new FormData(f),
-        credentials: 'same-origin'
-      }).then(function (r) {
-        return r.json().then(function (j) { return { ok: r.ok, j: j }; });
-      }).then(function (res) {
-        var anchor = document.querySelector('[form="' + f.id + '"]');
-        var tr = anchor && anchor.closest('tr');
-        if (res.ok && res.j.ok) {
-          if (window.B2B && B2B.toast) B2B.toast('Saved.', { type: 'ok', title: 'EKA store updated', timeout: 2200 });
-          if (tr) { tr.style.transition = 'background .35s'; tr.style.background = 'color-mix(in srgb,#16a34a 16%,transparent)'; setTimeout(function () { tr.style.background = ''; }, 800); }
-        } else {
-          if (window.B2B && B2B.toast) B2B.toast((res.j && res.j.error) || 'Save failed.', { type: 'error', title: 'Not saved' });
-          if (tr) { tr.style.transition = 'background .35s'; tr.style.background = 'color-mix(in srgb,#e5484d 16%,transparent)'; setTimeout(function () { tr.style.background = ''; }, 900); }
-        }
-      }).catch(function () {
-        if (window.B2B && B2B.toast) B2B.toast('Network error — not saved.', { type: 'error', title: 'Not saved' });
-      });
-    });
-  });
-</script>
 {% endblock %}
+
+{% block extra_js %}<script defer data-page-js src="{% static 'online_b2b/pages/eka_data.js' %}"></script>{% endblock %}

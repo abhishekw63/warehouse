@@ -1,0 +1,3 @@
+/* online_b2b/bulk_review.html — page styles (separated from template). Uses shared tokens. */
+tr.rdup td{opacity:.5;}
+  /* .st status badge → canonical in enhance.css §11 */

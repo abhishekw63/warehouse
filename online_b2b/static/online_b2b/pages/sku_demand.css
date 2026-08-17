@@ -1,0 +1,6 @@
+/* online_b2b/sku_demand.html — page styles (separated from template). Uses shared tokens. */
+/* use (almost) the full screen — this is a single wide data table */
+  .b2b-wrap.b2b-wide{ max-width:min(2300px, 97vw); }
+  .sku-an{margin-bottom:4px;}
+  /* .skux table + .sku-filter styles CONSOLIDATED to enhance.css (§7). */
+  .scroll{max-height:70vh;overflow:auto;}

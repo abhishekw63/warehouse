@@ -1,0 +1,32 @@
+/* Record Verification (/b2b/record-verify) — page-specific styles.
+   Separated out of the template. Uses the shared design tokens (b2b.css :root). */
+.rv-cov{grid-template-columns:repeat(5,1fr);}
+@media(max-width:820px){.rv-cov{grid-template-columns:repeat(2,1fr);}}
+.rv-files{display:flex;gap:16px;flex-wrap:wrap;margin:6px 0 16px;}
+.rv-file{flex:1;min-width:240px;display:flex;flex-direction:column;gap:7px;}
+.rv-file-l{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--text-2);}
+.rv-file input{font-size:13px;padding:9px;border:1px dashed var(--border);border-radius:10px;background:var(--surface-2);cursor:pointer;}
+.rv-res-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+.rv-ok{color:var(--green);font-weight:700;} .rv-mis{color:var(--red);font-weight:700;}
+.rv-ext{color:var(--accent);font-weight:700;}
+.rv-bad td{background:color-mix(in srgb,var(--red) 5%,transparent);}
+.rv-ext-row td{background:color-mix(in srgb,var(--accent) 4%,transparent);}
+.rv-note{font-size:12.5px;color:var(--muted);margin-top:10px;}
+.rv-confirm{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  margin:18px 0;padding:14px 18px;border-radius:14px;border:1px solid var(--border);
+  background:var(--accent-soft);box-shadow:var(--shadow);}
+.rv-confirm.done{background:var(--green-soft);border-color:color-mix(in srgb,var(--green) 30%,var(--border));animation:rvPop .5s cubic-bezier(.34,1.5,.44,1);}
+@keyframes rvPop{0%{transform:scale(.99);}55%{transform:scale(1.012);}100%{transform:scale(1);}}
+.rv-c-text{font-size:13.5px;color:var(--text);}
+.rv-spin{display:inline-block;width:14px;height:14px;border:2.5px solid #ffffff66;border-top-color:#fff;border-radius:50%;animation:rvSpin .7s linear infinite;vertical-align:-2px;margin-right:7px;}
+@keyframes rvSpin{to{transform:rotate(360deg);}}
+.rv-cov .card{transition:transform .25s cubic-bezier(.22,1,.36,1),box-shadow .25s;}
+.rv-cov .card:hover{transform:translateY(-3px);box-shadow:var(--shadow-lg);}
+.rv-file:hover input{border-color:var(--accent);}
+.grid.compact tbody tr{transition:background .12s,opacity .12s;}
+.rv-chk-col{width:34px;text-align:center;}
+.rv-chk,#rvAll{width:15px;height:15px;cursor:pointer;accent-color:var(--accent);}
+.rv-unpicked td:not(.rv-chk-col){opacity:.4;}
+.rv-selc{display:inline-block;min-width:16px;padding:0 5px;margin-left:2px;border-radius:999px;
+  background:#ffffff2b;font-variant-numeric:tabular-nums;font-weight:800;}
+.rv-confirm form button:disabled{opacity:.5;cursor:not-allowed;}

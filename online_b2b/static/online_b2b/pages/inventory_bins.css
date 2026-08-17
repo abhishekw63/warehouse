@@ -1,0 +1,27 @@
+/* online_b2b/inventory_bins.html — page styles (separated from template). Uses shared tokens. */
+/* .iv-wrap container → canonical in enhance.css §9 */
+  .iv-msgs{margin:14px 0;} .iv-msg{padding:10px 14px;border-radius:10px;font-size:13px;margin-bottom:8px;border:1px solid var(--border);background:var(--surface);}
+  .iv-msg.success{background:#e7f6ef;color:#0a7d5a;} .iv-msg.error{background:#fdecea;color:#b3261e;}
+  .ivb-grid{display:grid;grid-template-columns:1fr 1.3fr;gap:16px;margin-top:6px;}
+  @media (max-width:1000px){.ivb-grid{grid-template-columns:1fr;}}
+  .iv-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);overflow:hidden;}
+  .iv-cardhead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 18px 10px;}
+  .iv-cardhead h2{margin:0;font-size:15px;font-weight:800;color:var(--text);}
+  .iv-sub{font-size:12px;color:var(--muted);}
+  .ivb-add{display:flex;gap:8px;padding:0 18px 12px;flex-wrap:wrap;}
+  .ivb-add input,.ivb-add select{padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2);color:var(--text);font-size:13px;}
+  .ivb-add input{flex:1;min-width:120px;}
+  .ivb-sum{display:flex;gap:12px;padding:0 18px 10px;font-size:12px;flex-wrap:wrap;}
+  .ivb-sum .s.inc{color:var(--green);font-weight:700;} .ivb-sum .s.exc{color:var(--muted);} .ivb-sum .s.new{color:#b45309;font-weight:700;}
+  .iv-tablewrap{overflow:auto;max-height:560px;}
+  .iv-table{border-collapse:separate;border-spacing:0;width:100%;font-size:12.5px;font-variant-numeric:tabular-nums;}
+  .iv-table th,.iv-table td{padding:9px 14px;text-align:left;white-space:nowrap;border-bottom:1px solid var(--border);}
+  .iv-table th{font-size:10px;font-weight:800;text-transform:uppercase;color:var(--muted);background:var(--surface-2);position:sticky;top:0;}
+  .iv-table th.r,.iv-table td.r{text-align:right;}
+  .iv-table td.mono{font-family:Consolas,monospace;font-size:11.5px;}
+  .iv-table tr.aff td{background:color-mix(in srgb,#f59e0b 8%,transparent);}
+  /* .pill badges → canonical token-based set in enhance.css §8 */
+  .mut{color:var(--muted);}
+  .ivb-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;}
+  .ivb-del:hover{color:var(--red,#b3261e);}
+  .iv-none{text-align:center;color:var(--muted);padding:16px;}

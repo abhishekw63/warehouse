@@ -1,0 +1,38 @@
+/* online_b2b/drafts.html — page styles (separated from template). Uses shared tokens. */
+.dl-wrap{max-width:1000px;margin:0 auto;padding:8px 4px 40px;}
+  .dl-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin:0 0 6px;}
+  .dl-head h1{font-size:22px;font-weight:800;margin:0;}
+  .dl-sub{color:#667085;font-size:14px;margin:0 0 18px;max-width:70ch;}
+  .dl-tbl{width:100%;border-collapse:separate;border-spacing:0;background:#fff;
+    border:1px solid #e6e8ef;border-radius:12px;overflow:hidden;font-size:13.5px;}
+  .dl-tbl th{background:var(--navy);color:#fff;text-align:left;padding:11px 14px;font-size:11.5px;
+    letter-spacing:.04em;text-transform:uppercase;font-weight:700;}
+  .dl-tbl th .enh-arrow{color:#c7d2fe;}   /* readable sort glyph on the navy header */
+  .dl-tbl td{padding:12px 14px;border-top:1px solid #eef0f5;vertical-align:middle;}
+  .dl-tbl tr:hover td{background:#f7f9ff;}
+  .mp{font-weight:700;color:var(--navy);}
+  .when{color:#667085;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .note{color:#475467;max-width:34ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  /* .pill badges → canonical token-based set in enhance.css §8 */
+  .ropen{display:inline-block;background:#2f6feb;color:#fff;text-decoration:none;font-weight:700;
+    font-size:12.5px;padding:7px 13px;border-radius:8px;}
+  .ropen:hover{background:#245ad0;}
+  .dl-email{background:#fff;color:#b45309;border:1px solid #f0c98a;font-weight:700;font-size:12.5px;
+    padding:7px 12px;border-radius:8px;cursor:pointer;margin-right:8px;}
+  .dl-email:hover{background:#fff8ed;}
+  .dl-email:disabled{opacity:.6;cursor:default;}
+  .empty{text-align:center;color:#98a2b3;padding:48px 20px;background:#fff;border:1px dashed #d7dbe6;border-radius:12px;}
+  .empty b{color:#475467;}
+  /* Reopen / re-validate loading overlay (full-page nav → slow server round-trip) */
+  .ro-overlay{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;
+    background:rgba(15,23,42,.55);backdrop-filter:blur(3px);}
+  .ro-overlay.on{display:flex;animation:rofade .18s ease both;}
+  @keyframes rofade{from{opacity:0;}to{opacity:1;}}
+  .ro-card{background:#fff;border-radius:16px;padding:30px 34px;box-shadow:0 20px 60px -20px rgba(15,23,42,.5);
+    text-align:center;max-width:380px;width:88%;}
+  .ro-spin{width:38px;height:38px;margin:0 auto 16px;border-radius:50%;
+    border:3px solid #dfe3ee;border-top-color:#2f6feb;animation:rospin .8s linear infinite;}
+  @keyframes rospin{to{transform:rotate(360deg);}}
+  .ro-msg{font-size:15px;font-weight:800;color:var(--navy);min-height:20px;transition:opacity .16s ease;}
+  .ro-sub{font-size:12.5px;color:#667085;margin-top:7px;line-height:1.5;}
+  @media (prefers-reduced-motion: reduce){.ro-spin{animation-duration:2.4s;}}

@@ -27,56 +27,8 @@ during the fetch), then the incoming page sweeps it to 100% and fades.{% endcomm
   .np.finish{transition:width .28s ease, opacity .3s ease .18s;}
   @media (prefers-reduced-motion:reduce){.np{display:none;}}
 </style>
-<script>
-(function () {
-  var bar = document.getElementById('navProgress');
-  if (!bar) return;
-  function creep() {
-    bar.className = 'np on creep'; bar.style.width = '0';
-    requestAnimationFrame(function () { bar.style.width = '90%'; });
-  }
-  function finish() {
-    bar.className = 'np on finish'; bar.style.width = '100%';
-    setTimeout(function () {
-      bar.style.opacity = '0';
-      setTimeout(function () { bar.className = 'np'; bar.style.width = '0'; bar.style.opacity = ''; }, 340);
-    }, 200);
-  }
-  // Start the bar when an in-app navigation begins (the outgoing page is still
-  // live while the next page loads, so the creep is visible). Skip new-tab /
-  // modified clicks, downloads, in-page anchors and cross-origin links.
-  document.addEventListener('click', function (e) {
-    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-    var a = e.target.closest('a[href]');
-    if (!a) return;
-    if ((a.target && a.target !== '_self') || a.hasAttribute('download')) return;
-    if (a.hasAttribute('data-download-modal') || a.hasAttribute('data-download-bg')) return;
-    var href = a.getAttribute('href') || '';
-    if (!href || href.charAt(0) === '#' || href.toLowerCase().indexOf('javascript:') === 0) return;
-    var url; try { url = new URL(a.href, location.href); } catch (_) { return; }
-    if (url.origin !== location.origin) return;
-    if (url.pathname === location.pathname && url.search === location.search) return; // same page
-    try { sessionStorage.setItem('b2bNav', '1'); } catch (_) {}
-    creep();
-  }, true);
-  // Full-page form posts that opt into the processing overlay: the overlay is the
-  // cue there — mark so the incoming page still sweeps the bar to done.
-  document.querySelectorAll('form[data-loading]').forEach(function (f) {
-    f.addEventListener('submit', function () {
-      if (f.checkValidity && !f.checkValidity()) return;
-      try { sessionStorage.setItem('b2bNav', '1'); } catch (_) {}
-    });
-  });
-  // On arrival, if we came from an in-app navigation, sweep to done.
-  var came; try { came = sessionStorage.getItem('b2bNav'); sessionStorage.removeItem('b2bNav'); } catch (_) {}
-  if (came) { bar.className = 'np on'; bar.style.width = '82%';
-    requestAnimationFrame(function () { setTimeout(finish, 90); }); }
-  // Reset cleanly when restored from the back/forward cache.
-  window.addEventListener('pageshow', function (ev) {
-    if (ev.persisted) { bar.className = 'np'; bar.style.width = '0'; bar.style.opacity = ''; }
-  });
-})();
-</script>
+{% comment %}#navProgress is driven by shell-nav.js during app-shell partial
+navigation (barStart/barDone) — no separate driver needed here.{% endcomment %}
 
 {# Reusable processing overlay — opt in per element with data-loading="message". #}
 <div id="b2b-load" aria-hidden="true">
@@ -158,25 +110,32 @@ during the fetch), then the incoming page sweeps it to 100% and fades.{% endcomm
     ov.classList.add('on'); ov.setAttribute('aria-hidden', 'false');
   }
   function hide() { clearSteps(); ov.classList.remove('on'); ov.setAttribute('aria-hidden', 'true'); }
-  // Forms that opt in: show overlay on submit, disable submit buttons (no double-post).
-  document.querySelectorAll('form[data-loading]').forEach(function (f) {
-    f.addEventListener('submit', function () {
-      if (f.checkValidity && !f.checkValidity()) return;     // let invalid forms surface errors
-      show(f.getAttribute('data-loading'), f.getAttribute('data-loading-steps'));
-      f.querySelectorAll('button[type=submit],input[type=submit]').forEach(function (b) {
-        b.disabled = true; b.classList.add('is-loading');
+  // Forms / buttons that opt in (show the overlay on submit / slow GET). Wrapped in
+  // an idempotent bindLoading(root) + exposed so app-shell partial navigation can
+  // re-bind forms swapped into #MainContent (they'd otherwise miss the handler).
+  function bindLoading(root) {
+    (root || document).querySelectorAll('form[data-loading]').forEach(function (f) {
+      if (f.dataset.loadingBound) return; f.dataset.loadingBound = '1';
+      f.addEventListener('submit', function () {
+        if (f.checkValidity && !f.checkValidity()) return;   // let invalid forms surface errors
+        show(f.getAttribute('data-loading'), f.getAttribute('data-loading-steps'));
+        f.querySelectorAll('button[type=submit],input[type=submit]').forEach(function (b) {
+          b.disabled = true; b.classList.add('is-loading');
+        });
       });
     });
-  });
-  // Buttons / links that opt in (slow GET navigations).
-  document.querySelectorAll('[data-loading-click]').forEach(function (el) {
-    el.addEventListener('click', function () {
-      show(el.getAttribute('data-loading-click'), el.getAttribute('data-loading-steps'));
+    (root || document).querySelectorAll('[data-loading-click]').forEach(function (el) {
+      if (el.dataset.loadingClickBound) return; el.dataset.loadingClickBound = '1';
+      el.addEventListener('click', function () {
+        show(el.getAttribute('data-loading-click'), el.getAttribute('data-loading-steps'));
+      });
     });
-  });
+  }
+  bindLoading(document);
   // Expose the overlay so any page can drive it (extend, don't duplicate).
   window.B2B = window.B2B || {};
   window.B2B.load = { show: show, hide: hide };
+  window.B2B.bindLoading = bindLoading;
 
   // Download links that opt in via data-download-modal="message": FETCH the file
   // as a blob so the modal reflects the REAL server build time, then save it and
@@ -257,4 +216,9 @@ during the fetch), then the incoming page sweeps it to 100% and fades.{% endcomm
   window.addEventListener('pageshow', function (e) { if (e.persisted) hide(); });
 })();
 </script>
+
+{% comment %}App-shell partial navigation — keeps the sidebar + header DOM 100%
+intact (never re-rendered); only #MainContent is swapped. Full-reload fallback on
+any error. Loaded AFTER enhance.js so window.B2B helpers exist.{% endcomment %}
+<script defer src="{% static 'online_b2b/shell-nav.js' %}"></script>
 {% endblock %}

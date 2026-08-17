@@ -1,0 +1,13 @@
+/* online_b2b/bulk_upload.html — page styles (separated from template). Uses shared tokens. */
+.up-wrap{max-width:660px;margin:28px auto 64px;padding:0 20px;color:var(--text);font-family:var(--font);}
+  .up-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);padding:24px;margin-top:20px;}
+  .fld{display:flex;flex-direction:column;gap:6px;margin-bottom:16px;}
+  .fld label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;}
+  .dropzone{display:flex;flex-direction:column;align-items:center;gap:6px;padding:30px;cursor:pointer;border:1.5px dashed var(--border);border-radius:12px;background:var(--surface-2);text-align:center;transition:all .15s;}
+  .dropzone:hover{border-color:var(--accent);background:var(--accent-soft);}
+  .dz-ic{width:38px;height:38px;display:flex;align-items:center;justify-content:center;border-radius:50%;background:var(--accent-soft);color:var(--accent);}
+  .dz-ic svg{width:18px;height:18px;}
+  .dz-main{font-weight:600;font-size:14px;color:var(--text);}
+  .dz-sub{font-size:12px;color:var(--muted);}
+  .dropzone input[type=file]{position:absolute;width:1px;height:1px;opacity:0;overflow:hidden;}
+  .up-actions{display:flex;align-items:center;gap:14px;margin-top:6px;}

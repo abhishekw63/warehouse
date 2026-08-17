@@ -4,13 +4,8 @@
 {% block extra_css %}
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
-<style>
-  /* keep the "Issues only" checkbox + label tight together (was spread out) */
-  .sku-chk{ display:inline-flex; align-items:center; gap:7px; white-space:nowrap;
-    font-size:12px; font-weight:600; color:var(--text-2); cursor:pointer; align-self:center; }
-  .sku-chk input{ width:16px; height:16px; margin:0; cursor:pointer; }
-</style>
-{% endblock %}
+
+<link rel="stylesheet" href="{% static 'online_b2b/pages/sku_summary.css' %}">{% endblock %}
 
 {% block breadcrumb %}
     <a href="{% url 'departments' %}">Departments</a>

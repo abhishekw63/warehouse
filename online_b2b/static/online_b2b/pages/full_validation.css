@@ -1,0 +1,22 @@
+/* online_b2b/full_validation.html — page styles (separated from template). Uses shared tokens. */
+/* #MainContent is a row-flex; force this page's content to stack full-width */
+  .b2b-app #MainContent{flex-direction:column;align-items:stretch;}
+  .fv-up{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+    padding:20px 22px;margin-bottom:20px;box-shadow:var(--shadow);}
+  .fv-up h2{font-size:15px;margin:0 0 4px;} .fv-up p{color:var(--text-2);font-size:13px;margin:0 0 14px;}
+  .fv-files{display:flex;gap:16px;flex-wrap:wrap;align-items:end;}
+  .fv-files label{display:block;font-size:12px;font-weight:700;color:var(--text-2);margin-bottom:5px;}
+  .fv-files input[type=file]{font-size:13px;}
+  .fv-tabs{display:flex;gap:6px;margin:18px 0 12px;}
+  .fv-tab{padding:8px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface);
+    cursor:pointer;font-size:13px;font-weight:600;color:var(--text-2);font-family:inherit;}
+  .fv-tab.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+  .fv-pane{display:none;} .fv-pane.on{display:block;}
+  table.fv{width:100%;border-collapse:collapse;font-size:12.5px;}
+  table.fv th{position:sticky;top:0;background:var(--surface-2);text-align:left;padding:8px 9px;
+    border-bottom:2px solid var(--border);white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-2);}
+  table.fv td{padding:6px 9px;border-bottom:1px solid var(--border-2);}
+  table.fv td.r{text-align:right;font-variant-numeric:tabular-nums;}
+  /* .st status badge → canonical token-based set in enhance.css §11 */
+  .v-clean{background:#e7f6ef;color:var(--green);} .v-review{background:#fdf1e3;color:#b45309;}
+  .fv-scroll{max-height:60vh;overflow:auto;border:1px solid var(--border);border-radius:10px;}

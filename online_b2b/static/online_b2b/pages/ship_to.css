@@ -1,0 +1,50 @@
+/* online_b2b/ship_to.html — page styles (separated from template). Uses shared tokens. */
+/* Ship-to mapping table — location (from PO) → resolves to ship-to + D365
+     address. Keep it uncongested: nowrap cells scroll horizontally; wide text
+     columns truncate with an ellipsis (full value on hover via title). */
+  .im-table{width:max-content;min-width:100%;}
+  .im-table th,.im-table td{white-space:nowrap;}
+  .im-table .stm-loc{max-width:240px;overflow:hidden;text-overflow:ellipsis;}
+  .im-table .name{max-width:210px;overflow:hidden;text-overflow:ellipsis;}
+  .im-table .address{max-width:360px;overflow:hidden;text-overflow:ellipsis;color:var(--muted);}
+  .im-table .stm-arrow{color:var(--muted);text-align:center;font-weight:700;padding-left:2px;padding-right:2px;}
+  .im-table .stm-ship{font-weight:700;color:var(--accent);}
+  .im-table td.city,.im-table td.state{color:var(--text);}
+  /* custom (personalization) columns */
+  .im-table th.cf-th{white-space:nowrap;}
+  .im-table th.cf-th span{border-bottom:2px dotted color-mix(in srgb,var(--accent) 55%,transparent);padding-bottom:1px;}
+  .im-table td.cf{max-width:200px;overflow:hidden;text-overflow:ellipsis;color:var(--text);}
+  .cf-del{border:0;background:none;color:var(--muted);cursor:pointer;font-size:11px;line-height:1;padding:0 2px;border-radius:4px;opacity:.55;transition:opacity .15s,color .15s,background .15s;}
+  .cf-del:hover{opacity:1;color:#e5484d;background:color-mix(in srgb,#e5484d 14%,transparent);}
+  /* add-a-column panel */
+  .stm-fieldpanel{display:none;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 0 14px;padding:12px 14px;border:1px dashed var(--border);border-radius:12px;background:color-mix(in srgb,var(--accent) 5%,var(--card));}
+  .stm-fieldpanel.open{display:flex;animation:sfpIn .18s ease;}
+  @keyframes sfpIn{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:none;}}
+  .stm-fieldpanel .sfp-l{font-weight:600;color:var(--text);font-size:13px;}
+  .stm-fieldpanel input{flex:1;min-width:200px;padding:8px 11px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text);font-size:13px;}
+  .stm-fieldpanel input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent);}
+  .stm-msg{font-size:12px;}
+  .stm-msg.ok{color:#2e7d32;}
+  .stm-msg.err{color:#e5484d;}
+  /* multi-select party filter (tick several MPs — no typing) */
+  .ms{position:relative;display:inline-block;}
+  .ms-btn{display:inline-flex;align-items:center;gap:8px;min-width:160px;justify-content:space-between;padding:8px 12px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text);font-size:13px;font-weight:500;cursor:pointer;transition:border-color .15s,box-shadow .15s;}
+  .ms-btn:hover{border-color:var(--accent);}
+  .ms.open .ms-btn{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent);}
+  #stm-party-lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;}
+  .ms-chev{flex:none;opacity:.6;transition:transform .18s;}
+  .ms.open .ms-chev{transform:rotate(180deg);}
+  .ms-pop{position:absolute;z-index:60;top:calc(100% + 6px);left:0;width:260px;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:0 14px 38px rgba(20,24,40,.18);padding:8px;animation:msIn .16s ease;}
+  .ms-pop[hidden]{display:none;}
+  @keyframes msIn{from{opacity:0;transform:translateY(-6px);}to{opacity:1;transform:none;}}
+  .ms-tools{display:flex;gap:6px;margin-bottom:6px;}
+  .ms-filter{flex:1;min-width:0;padding:6px 9px;border:1px solid var(--border);border-radius:7px;font-size:12px;background:var(--card);color:var(--text);}
+  .ms-filter:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 15%,transparent);}
+  .ms-all,.ms-none{border:1px solid var(--border);background:var(--card);color:var(--text-2);border-radius:7px;font-size:11px;font-weight:600;padding:0 10px;cursor:pointer;white-space:nowrap;transition:border-color .12s,color .12s;}
+  .ms-all:hover,.ms-none:hover{border-color:var(--accent);color:var(--accent);}
+  .ms-list{max-height:264px;overflow:auto;display:flex;flex-direction:column;gap:1px;}
+  .ms-item{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;transition:background .12s;}
+  .ms-item:hover{background:color-mix(in srgb,var(--accent) 8%,transparent);}
+  .ms-item input{accent-color:var(--accent);width:15px;height:15px;flex:none;cursor:pointer;}
+  .ms-item.hide{display:none;}
+  .ms-empty{padding:10px;text-align:center;color:var(--muted);font-size:12px;}

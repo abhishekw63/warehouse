@@ -83,20 +83,28 @@ def preview(headers_path, lines_path) -> dict:
     first, like the PO review page). :func:`confirm` persists it. Returns
     ``{ok, error, data}``; each header row gets status / delta / pincode / lines_ok.
 
-    VERIFIED (status OK) requires header **qty** AND line **items/qty** to match;
-    value & pincode differences are advisory (shown, don't block 'verified')."""
+    Ordered checks per PO — **SKU** (same SKU set on both sides) → **qty** (header +
+    per-line, EXCLUDED netted) → **value** (our value net of excluded vs D365, within
+    tolerance; only evaluated once SKU & qty align) → **pincode** (our ship-to vs
+    D365). Status is **OK** only when all applicable checks pass; otherwise MISMATCH,
+    and ``mismatch_fields`` names exactly which of SKU / qty / value / pincode failed."""
     base = _fv.validate(headers_path, lines_path, excel_out=None)
     if not base.get('ok'):
         return {'ok': False, 'error': base.get('error', 'Reconciliation failed.'), 'data': None}
 
     pin_map = _our_pin_map()
     rows = base.get('headers', [])          # per-PO rows from full_validation
-    # a PO's LINES match only if no line is missing / extra / qty-mismatched
-    # (EXCLUDED lines are intentional and don't count against it).
-    line_bad = set()
+    # Split line problems into SKU-set vs line-qty (EXCLUDED lines are intentional
+    # and never count against a PO):
+    #   • SKU mismatch  = a SKU is in ours-not-D365 or D365-not-ours (MISSING/EXTRA)
+    #   • line-qty      = same SKU on both sides but the quantity differs
+    sku_bad, lqty_bad = set(), set()
     for ln in base.get('lines', []):
-        if ln.get('status') in ('MISSING_IN_D365', 'EXTRA_IN_D365', 'QTY_MISMATCH'):
-            line_bad.add(ln.get('po'))
+        s = ln.get('status')
+        if s in ('MISSING_IN_D365', 'EXTRA_IN_D365'):
+            sku_bad.add(ln.get('po'))
+        elif s == 'QTY_MISMATCH':
+            lqty_bad.add(ln.get('po'))
 
     n_ok = n_mismatch = n_external = 0
     for r in rows:
@@ -112,20 +120,36 @@ def preview(headers_path, lines_path) -> dict:
 
         our_pin = pin_map.get(_nk(r.get('ship_our'))) or ''
         pin_ok = (not our_pin or not d365_pin) or (our_pin == d365_pin)
-        lines_ok = r['po'] not in line_bad
-        r['our_pin'] = our_pin; r['pin_ok'] = bool(pin_ok); r['lines_ok'] = lines_ok
+        sku_ok = r['po'] not in sku_bad                       # same SKU set on both sides
+        qty_ok = bool(r.get('qty_ok')) and r['po'] not in lqty_bad   # header + per-line qty
+        r['our_pin'] = our_pin; r['pin_ok'] = bool(pin_ok)
+        r['sku_ok'] = sku_ok; r['lines_ok'] = sku_ok and qty_ok
 
+        # VALUE against RAW, netted for excluded: our recorded value INCLUDES the
+        # EXCLUDED lines (never pushed to D365), so subtract them before comparing —
+        # else every PO with exclusions falsely flags a value mismatch. Compare the
+        # netted "ours" to D365 within tolerance; show the netted value side by side.
+        net_our_val = round((r.get('our_val') or 0) - (r.get('excl_val') or 0), 2)
+        r['our_val'] = net_our_val
+        r['val_diff'] = round((r.get('d365_val') or 0) - net_our_val, 2)
+        val_ok = _fv._vmatch(r.get('d365_val') or 0, net_our_val)
+        r['val_ok'] = bool(val_ok)
+
+        # Ordered checks: SKU match → qty match → (only then) value → pincode.
+        # Value is only meaningful once the SKU set + quantities line up, so it's
+        # flagged ONLY when SKU & qty are already OK (no noisy value flag on a PO
+        # whose SKUs/qty are wrong). OK requires all applicable checks to pass.
         mism = []
-        if not r.get('qty_ok'):
+        if not sku_ok:
+            mism.append('SKU')
+        if not qty_ok:
             mism.append('qty')
-        if not lines_ok:
-            mism.append('items')
-        if not r.get('val_ok'):
-            mism.append('value')       # advisory
+        if sku_ok and qty_ok and not val_ok:
+            mism.append('value')
         if not pin_ok:
-            mism.append('pincode')     # advisory
+            mism.append('pincode')
         r['mismatch_fields'] = mism
-        verified = bool(r.get('qty_ok')) and lines_ok
+        verified = not mism
         r['status'] = 'OK' if verified else 'MISMATCH'
         if verified:
             n_ok += 1
@@ -225,3 +249,55 @@ def coverage() -> dict:
     except Exception:  # noqa: BLE001
         pass
     return out
+
+
+def build_workbook(data, out_path) -> str:
+    """Write the side-by-side comparison Excel for a previewed run and return the
+    path. One row per PO: our (netted for excluded) vs D365 for qty / value /
+    pincode, the three-check status, and which fields mismatched. Row-tinted by
+    status (green OK · red MISMATCH · blue EXTERNAL)."""
+    import openpyxl
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Comparison'
+    cols = [
+        ('PO', 16), ('Marketplace', 14), ('Status', 12), ('Mismatch', 16),
+        ('Qty ours', 10), ('Qty D365', 10), ('Excl.', 8), ('Qty Δ', 9),
+        ('Value ours (net)', 15), ('Value D365', 14), ('Val Δ', 11),
+        ('Our pin', 10), ('D365 pin', 10), ('Pincode OK', 10),
+    ]
+    head_fill = PatternFill('solid', fgColor='1F2A5A')
+    head_font = Font(bold=True, color='FFFFFF', size=10)
+    ok_fill = PatternFill('solid', fgColor='E7F6EF')
+    bad_fill = PatternFill('solid', fgColor='FDECEC')
+    ext_fill = PatternFill('solid', fgColor='EEF0FE')
+    for c, (title, w) in enumerate(cols, 1):
+        cell = ws.cell(1, c, title)
+        cell.fill = head_fill; cell.font = head_font
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        ws.column_dimensions[cell.column_letter].width = w
+    ws.freeze_panes = 'A2'
+
+    for i, r in enumerate(data.get('headers', []), start=2):
+        st = r.get('status')
+        oq = r.get('our_qty'); dq = r.get('d365_qty')
+        qd = (int(dq) - int(r.get('final'))) if (r.get('final') is not None and dq is not None) else None
+        vals = [
+            r.get('po'), r.get('mp') or '', st,
+            ', '.join(r.get('mismatch_fields') or []) or ('not-uploaded-by-us' if st == 'EXTERNAL' else ''),
+            oq if oq is not None else '', dq, r.get('excluded') or 0, qd if qd is not None else '',
+            r.get('our_val') if r.get('our_val') is not None else '', r.get('d365_val'), r.get('val_diff'),
+            r.get('our_pin') or '', str(r.get('pin_d365') or ''),
+            ('' if st == 'EXTERNAL' else ('YES' if r.get('pin_ok') else 'NO')),
+        ]
+        fill = ext_fill if st == 'EXTERNAL' else (ok_fill if st == 'OK' else bad_fill)
+        for c, v in enumerate(vals, 1):
+            cell = ws.cell(i, c, v)
+            cell.fill = fill
+            if c >= 5:
+                cell.alignment = Alignment(horizontal='right')
+
+    wb.save(out_path)
+    return str(out_path)

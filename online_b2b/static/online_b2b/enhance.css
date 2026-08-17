@@ -50,7 +50,7 @@
    .kpis.reveal{animation:none} and hid the KPI cards). */
 .hover-lift{transition:transform .28s cubic-bezier(.22,1,.36,1),box-shadow .28s,border-color .28s;}
 .hover-lift:hover{transform:translateY(-4px);box-shadow:var(--lift,0 22px 48px -22px rgba(24,16,64,.34));}
-.grad-text{background:var(--brand-grad,linear-gradient(120deg,#4f46e5,#c026d3));-webkit-background-clip:text;background-clip:text;color:transparent;}
+.grad-text{background:var(--brand-grad,linear-gradient(120deg,var(--accent),#c026d3));-webkit-background-clip:text;background-clip:text;color:transparent;}
 .hero-head{text-align:center;max-width:660px;margin:6px auto 34px;}
 .hero-head h1{font-size:clamp(26px,3vw,36px);font-weight:800;letter-spacing:-.025em;margin:12px 0 8px;line-height:1.1;text-wrap:balance;}
 .hero-head p{font-size:14.5px;line-height:1.6;color:var(--text-2);margin:0 auto;max-width:52ch;}
@@ -284,7 +284,7 @@ table.skux th:nth-child(7),table.skux td:nth-child(7){width:11%;text-align:cente
 .rk-b.rk-1{background:#fde68a;color:#92600a;} .rk-b.rk-2{background:#e5e7eb;color:#4b5563;} .rk-b.rk-3{background:#fed7aa;color:#9a3412;}
 .skux th.srt{cursor:pointer;user-select:none;white-space:nowrap;} .skux th.srt:hover,.skux th.srt.on{color:var(--accent);}
 .skux td.barcell{position:relative;overflow:hidden;}
-.skux td.barcell .bar{position:absolute;left:50%;transform:translateX(-50%) scaleX(1);bottom:5px;top:auto;right:auto;height:3px;border-radius:3px;z-index:0;min-width:6px;max-width:calc(100% - 24px);background:linear-gradient(90deg,color-mix(in srgb,#10b981 55%,transparent),color-mix(in srgb,#0a9d6e 75%,transparent));transform-origin:center;animation:skuxbar .7s cubic-bezier(.2,.85,.25,1) both;}
+.skux td.barcell .bar{position:absolute;left:50%;transform:translateX(-50%) scaleX(1);bottom:5px;top:auto;right:auto;height:3px;border-radius:3px;z-index:0;min-width:6px;max-width:calc(100% - 24px);background:linear-gradient(90deg,color-mix(in srgb,#10b981 55%,transparent),color-mix(in srgb,var(--green) 75%,transparent));transform-origin:center;animation:skuxbar .7s cubic-bezier(.2,.85,.25,1) both;}
 @keyframes skuxbar{from{transform:translateX(-50%) scaleX(0);opacity:.3;}to{transform:translateX(-50%) scaleX(1);opacity:1;}}
 table.skux tbody{animation:skuxrows .45s ease both;} @keyframes skuxrows{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
 .skux td.barcell b{position:relative;z-index:1;}

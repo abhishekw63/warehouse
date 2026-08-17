@@ -5,35 +5,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
-<style>
-  /* uniform alignment across BOTH recent tables — every header + cell centered
-     (overrides the default .r right-align so columns look balanced full-width). */
-  .hub-recent th, .hub-recent td{ text-align:center !important; }
 
-  /* ── Hub time-range switch (windowed KPIs) ── */
-  .hub-range{display:inline-flex;gap:2px;margin:2px 0 16px;padding:3px;border-radius:11px;
-    background:var(--surface-2,#f1f5f9);border:1px solid var(--border,#e5e7eb);}
-  .hr-chip{appearance:none;border:0;background:transparent;cursor:pointer;
-    font:600 12.5px/1 inherit;font-family:inherit;color:var(--muted,#64748b);
-    padding:7px 13px;border-radius:8px;letter-spacing:.01em;
-    transition:background .15s,color .15s,box-shadow .15s;}
-  .hr-chip:hover{color:var(--text,#0f172a);}
-  .hr-chip.on{background:var(--surface,#fff);color:var(--accent,#4f46e5);
-    box-shadow:0 1px 3px -1px rgba(15,23,42,.28);}
-  .hr-chip:focus-visible{outline:2px solid var(--accent,#4f46e5);outline-offset:2px;}
-  .hub-range-note{color:var(--muted,#64748b);font-weight:500;}
-  .hub-range-note b{color:var(--text,#0f172a);font-weight:700;font-variant-numeric:tabular-nums;}
-  /* Cross-fade while a range swap is in flight (reuses the global transition feel). */
-  #hubWindowed{transition:opacity .18s ease;}
-  #hubWindowed.is-swapping{opacity:.35;pointer-events:none;}
-  /* Tiny tag marking the tiles that intentionally stay all-time. */
-  .hk-tag{display:inline-block;margin-left:5px;padding:1px 6px;border-radius:6px;
-    font-size:9.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
-    color:var(--muted,#64748b);background:color-mix(in srgb,var(--muted,#64748b) 14%,transparent);
-    vertical-align:middle;}
-  .hub-kpis .n{font-variant-numeric:tabular-nums;}
-</style>
-{% endblock %}
+<link rel="stylesheet" href="{% static 'online_b2b/pages/central.css' %}">{% endblock %}
 
 {% block breadcrumb %}
     <a href="{% url 'departments' %}">Departments</a> <span>/ Order Management</span>
@@ -75,14 +48,6 @@
       {% if im_status.when %}Last updated {{ im_status.when }} ({{ im_status.days }} day{{ im_status.days|pluralize }} ago) — the 15-day window has passed.{% else %}No item-master update on record yet.{% endif %}</span>
     <span class="imr-go">Update now →</span>
   </a>
-  <style>
-    .im-reminder{display:flex;align-items:center;gap:12px;margin:0 0 16px;padding:12px 16px;text-decoration:none;
-      background:#fff8ed;border:1px solid #ffd9a0;border-left:4px solid #f59e0b;border-radius:11px;transition:transform .15s,box-shadow .15s;}
-    .im-reminder:hover{transform:translateY(-1px);box-shadow:0 6px 18px -8px #f59e0b;}
-    .imr-ic{font-size:20px;}
-    .imr-txt{flex:1;font-size:13px;color:#7a4a06;line-height:1.5;} .imr-txt b{color:#5b3700;}
-    .imr-go{font-size:12.5px;font-weight:800;color:#b45309;white-space:nowrap;}
-  </style>
   {% endif %}
 
   {% if not ok %}
@@ -138,53 +103,6 @@
   {% endif %}
 </div>
 
-<script>
-// Hub range switch — fetch the windowed KPI block and swap it in, no page reload.
-// Vanilla, no libraries. Request-id guard drops stale responses; history.replaceState
-// keeps the range on refresh; subtitle + active chip update in lockstep.
-(function () {
-  var bar = document.getElementById('hubRange');
-  var slot = document.getElementById('hubWindowed');
-  if (!bar || !slot) return;
-  var LABELS = {today:'today','7d':'last 7 days','30d':'last 30 days',mtd:'this month',all:'all-time'};
-  var reqId = 0;
-
-  function setActive(range) {
-    bar.querySelectorAll('.hr-chip').forEach(function (c) {
-      var on = c.getAttribute('data-range') === range;
-      c.classList.toggle('on', on);
-      c.setAttribute('aria-selected', on ? 'true' : 'false');
-    });
-    var lab = document.getElementById('hubRangeLabel');
-    if (lab) lab.textContent = LABELS[range] || range;
-  }
-
-  function load(range) {
-    var mine = ++reqId;
-    slot.classList.add('is-swapping');
-    fetch('?range=' + encodeURIComponent(range) + '&partial=1',
-          {credentials:'same-origin', headers:{'X-Requested-With':'XMLHttpRequest'}})
-      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-      .then(function (html) {
-        if (mine !== reqId) return;                 // a newer click won — ignore
-        slot.innerHTML = html;
-        slot.classList.remove('is-swapping');
-        setActive(range);
-        var u = new URL(window.location.href);
-        u.searchParams.set('range', range);
-        u.searchParams.delete('partial');
-        history.replaceState(null, '', u);
-      })
-      .catch(function () {
-        if (mine === reqId) slot.classList.remove('is-swapping');
-      });
-  }
-
-  bar.addEventListener('click', function (ev) {
-    var chip = ev.target.closest('.hr-chip');
-    if (!chip || chip.classList.contains('on')) return;
-    load(chip.getAttribute('data-range'));
-  });
-})();
-</script>
 {% endblock %}
+
+{% block extra_js %}<script defer data-page-js src="{% static 'online_b2b/pages/central.js' %}"></script>{% endblock %}

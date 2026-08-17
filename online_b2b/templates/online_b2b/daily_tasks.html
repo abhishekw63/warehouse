@@ -1,7 +1,8 @@
 {% extends 'online_b2b/base_b2b.html' %}
 {% load static %}
 {% block title %}Daily Tasks{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<link rel="stylesheet" href="{% static 'online_b2b/pages/daily_tasks.css' %}">{% endblock %}
 
 {% block breadcrumb %}
   <a href="{% url 'departments' %}">Departments</a>
@@ -166,143 +167,6 @@
   </div>
 </div>
 
-<style>
-  .dt-wrap .b2b-head{align-items:flex-start;}
-  .dt-daynav{display:flex;gap:8px;align-items:center;}
-  .dt-overall{display:flex;align-items:center;gap:14px;margin:6px 0 18px;}
-  .dt-ovbar{flex:1;height:12px;border-radius:8px;background:var(--surface-2);overflow:hidden;max-width:520px;}
-  .dt-ovbar span{display:block;height:100%;border-radius:8px;background:linear-gradient(90deg,#10b981,#0a9d6e);transition:width .3s;}
-  .dt-ovlbl{font-size:13px;color:var(--text-2);}
-  .dt-carry{background:#fff7e6;border:1px solid #f5c86b;color:#8a5a00;border-radius:10px;padding:10px 14px;font-size:13px;margin-bottom:16px;}
-  .dt-carry a{margin-left:8px;font-weight:700;color:var(--accent);}
-  .dt-seg{margin:0 0 22px;}
-  .dt-seg-h{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--accent);margin:0 0 8px;}
-  .dt-scroll{overflow:auto;border:1px solid var(--border);border-radius:12px;background:var(--surface);}
-  table.dt-table{width:100%;border-collapse:collapse;}
-  .dt-table th{font-size:10.5px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted);padding:10px 12px;text-align:center;background:var(--surface-2);border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:0;}
-  .dt-table td{padding:9px 12px;border-bottom:1px solid color-mix(in srgb,var(--border) 55%,transparent);text-align:center;vertical-align:middle;}
-  .dt-table th.dt-ch,.dt-table td.dt-ch{text-align:left;min-width:200px;font-weight:600;font-size:13px;color:var(--text);}
-  .dt-table tbody tr:hover td{background:color-mix(in srgb,var(--accent) 4%,transparent);}
-  tr.dt-done td.dt-ch{color:#0a9d6e;}
-  .dt-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#d1d5db;margin-right:8px;vertical-align:middle;}
-  .dt-dot.part{background:#f59e0b;} .dt-dot.ok{background:#10b981;}
-  .dt-soon{font-size:9.5px;font-weight:700;text-transform:uppercase;color:#9ca3af;border:1px solid #e5e7eb;border-radius:6px;padding:1px 5px;margin-left:4px;}
-  .dt-cell{min-width:96px;}
-  .dt-box{position:relative;display:inline-flex;cursor:pointer;}
-  .dt-box input{position:absolute;opacity:0;width:0;height:0;}
-  .dt-mark{width:20px;height:20px;border:2px solid #cbd5e1;border-radius:6px;display:inline-block;transition:.15s;background:#fff;}
-  .dt-box input:checked ~ .dt-mark{background:#10b981;border-color:#10b981;}
-  .dt-box input:checked ~ .dt-mark::after{content:'✓';color:#fff;font-size:14px;font-weight:800;position:absolute;left:4px;top:-1px;}
-  .dt-box.auto .dt-mark{background:#3b82f6;border-color:#3b82f6;}
-  .dt-box.auto input:checked ~ .dt-mark::after{content:'✓';}
-  .dt-box input:disabled ~ .dt-mark{cursor:not-allowed;opacity:.9;}
-  .dt-time{display:block;font-size:10px;color:var(--muted);margin-top:3px;min-height:12px;}
-  .dt-prog{min-width:90px;} .dt-pbar{height:7px;border-radius:5px;background:var(--surface-2);overflow:hidden;}
-  .dt-pbar span{display:block;height:100%;background:linear-gradient(90deg,#10b981,#0a9d6e);transition:width .3s;}
-  /* "no PO today" — handled without ticking the work steps */
-  .dt-nopo-t{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:var(--muted);margin-left:10px;cursor:pointer;user-select:none;}
-  .dt-nopo-t input{width:13px;height:13px;cursor:pointer;}
-  .dt-dot.nopo{background:#94a3b8;}
-  tr.dt-nopo{background:#f8fafc;}
-  tr.dt-nopo .dt-name{text-decoration:line-through;color:var(--muted);}
-  a.dt-name-link{color:var(--text);text-decoration:none;border-bottom:1px dashed transparent;transition:color .14s ease,border-color .14s ease;}
-  a.dt-name-link:hover{color:var(--accent);border-bottom-color:var(--accent);}
-  a.dt-name-link .dt-go{font-size:10px;color:var(--muted);opacity:0;transition:opacity .14s ease;}
-  a.dt-name-link:hover .dt-go{opacity:1;color:var(--accent);}
-  tr.dt-nopo .dt-box{opacity:.35;pointer-events:none;}
-  .dt-nopo-lbl{font-size:11px;color:var(--muted);font-style:italic;}
-  /* "On hold" — parked (e.g. a CP issue), not chased/counted as pending */
-  .dt-hold-t{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:#b45309;margin-left:8px;cursor:pointer;user-select:none;}
-  .dt-hold-t input{width:13px;height:13px;cursor:pointer;}
-  .dt-dot.hold{background:#f59e0b;}
-  .dt-hold-badge{font-size:9.5px;font-weight:800;letter-spacing:.4px;color:#fff;background:#f59e0b;padding:2px 7px;border-radius:20px;margin-left:8px;vertical-align:middle;}
-  .dt-hold-lbl{font-size:11px;color:#b45309;font-weight:700;font-style:italic;}
-  /* inline hold-reason field — minimal, mirrors the My Tasks adder input */
-  .dt-hold-rin{display:block;margin-top:3px;width:100%;max-width:240px;
-               font:inherit;font-size:11px;color:#92400e;background:transparent;
-               border:0;border-bottom:1px dashed #f0c98a;padding:1px 0;}
-  .dt-hold-rin::placeholder{color:#c8922f;opacity:.8;}
-  .dt-hold-rin:focus{outline:none;border-bottom-color:#d97706;background:#fffdf7;}
-  .dt-hold-rin.saved{border-bottom-color:transparent;color:#7c4a06;font-weight:600;}
-  /* date picker / day nav */
-  .dt-datepick{display:inline-flex;align-items:center;gap:2px;border:1px solid var(--line,#e2e8f0);
-               border-radius:9px;padding:2px 4px;background:var(--card,#fff);}
-  .dt-datepick input[type=date]{border:0;background:none;font:inherit;font-size:12.5px;
-               color:var(--text);padding:3px 4px;cursor:pointer;font-weight:700;}
-  .dt-datepick input[type=date]:focus{outline:none;}
-  .dt-arrow{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;
-            border-radius:6px;font-size:17px;line-height:1;color:var(--accent);text-decoration:none;
-            font-weight:800;}
-  .dt-arrow:hover{background:color-mix(in srgb,var(--accent) 12%,transparent);}
-  .dt-arrow.disabled{color:var(--muted);opacity:.4;pointer-events:none;}
-  tr.dt-hold{background:#fffaf0;}
-  tr.dt-hold .dt-box{opacity:.35;pointer-events:none;}
-  /* Expandable MT-Select parent (container) row + its nested children */
-  tr.dt-parent{cursor:pointer;background:color-mix(in srgb,var(--accent) 6%,transparent);}
-  tr.dt-parent:hover td{background:color-mix(in srgb,var(--accent) 9%,transparent);}
-  tr.dt-parent td.dt-ch{font-weight:800;}
-  .dt-caret{border:0;background:none;cursor:pointer;font-size:12px;color:var(--accent);
-            margin-right:6px;padding:0;transition:transform .2s ease;display:inline-block;
-            transform:rotate(0deg);vertical-align:middle;}
-  tr.dt-parent[aria-expanded="true"] .dt-caret{transform:rotate(90deg);}
-  .dt-parent-count{font-size:11px;font-weight:700;color:var(--muted);margin-left:10px;}
-  .dt-parent-count b{color:#0a9d6e;}
-  .dt-parent-hint{text-align:left !important;}
-  .dt-parent-sub{font-size:11px;color:var(--muted);font-style:italic;}
-  .dt-pbar span.dt-parent-bar{background:linear-gradient(90deg,#6366f1,#4f46e5);}
-  tr.dt-child td.dt-ch{padding-left:34px;position:relative;}
-  tr.dt-child td.dt-ch::before{content:'';position:absolute;left:18px;top:0;bottom:0;
-            width:2px;background:color-mix(in srgb,var(--accent) 22%,transparent);}
-  tr.dt-child td.dt-ch .dt-name{font-weight:600;}
-  /* slide open/closed — animate the child rows collapsing */
-  tr.dt-child.dt-collapsing td{padding-top:0;padding-bottom:0;}
-  /* custom-flow channels (e.g. GT Select) — own steps inline, spanning the columns */
-  .dt-customcell{text-align:left !important;}
-  .dt-cstep{display:inline-flex;align-items:center;gap:6px;margin:0 18px 0 0;font-size:12px;}
-  .dt-cstep .dt-clabel{color:var(--text);}
-  .dt-cstep .dt-time{display:inline;margin:0 0 0 2px;}
-  /* ── My Tasks (personal ad-hoc list) ── */
-  .dt-adhoc{margin-top:26px;}
-  .dt-ad-sub{display:block;font-size:11px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--muted);margin-top:4px;}
-  .dt-ad-card{border:1px solid var(--border);border-radius:12px;background:var(--surface);padding:14px 16px;}
-  .dt-ad-add{display:flex;gap:8px;margin-bottom:12px;}
-  .dt-ad-in{flex:1;padding:9px 12px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2);color:var(--text);font-size:13px;}
-  .dt-ad-in:focus{outline:none;border-color:var(--accent);background:var(--surface);}
-  .dt-ad-due{padding:8px 10px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2);color:var(--text);font-size:12px;}
-  .dt-ad-btn{padding:9px 16px;border:0;border-radius:9px;background:var(--accent);color:#fff;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap;transition:.15s;}
-  .dt-ad-btn:hover{filter:brightness(1.06);}
-  .dt-ad-list{display:flex;flex-direction:column;gap:2px;}
-  .dt-ad-row{display:flex;align-items:flex-start;gap:11px;padding:9px 8px;border-radius:8px;transition:background .12s;}
-  .dt-ad-row:hover{background:color-mix(in srgb,var(--accent) 4%,transparent);}
-  .dt-ad-row:hover .dt-ad-del{opacity:.6;}
-  .dt-ad-row.od{background:color-mix(in srgb,#ef4444 6%,transparent);}
-  .dt-ad-chk{position:relative;display:inline-flex;cursor:pointer;flex:none;margin-top:1px;}
-  .dt-ad-chk input{position:absolute;opacity:0;width:0;height:0;}
-  .dt-ad-mark{width:19px;height:19px;border:2px solid #cbd5e1;border-radius:6px;background:#fff;transition:.15s;}
-  .dt-ad-chk input:checked ~ .dt-ad-mark{background:#10b981;border-color:#10b981;}
-  .dt-ad-chk input:checked ~ .dt-ad-mark::after{content:'✓';color:#fff;font-size:13px;font-weight:800;position:absolute;left:4px;top:0;}
-  .dt-ad-body{flex:1;min-width:0;}
-  .dt-ad-t{font-size:13.5px;color:var(--text);line-height:1.35;word-break:break-word;}
-  .dt-ad-meta{display:flex;flex-wrap:wrap;gap:10px;margin-top:3px;font-size:10.5px;color:var(--muted);}
-  .dt-ad-due-b{font-weight:700;color:var(--accent);}
-  .dt-ad-due-b.od{color:#ef4444;}
-  .dt-ad-row.done .dt-ad-t{text-decoration:line-through;color:var(--muted);}
-  .dt-ad-del{border:0;background:none;color:#ef4444;font-size:13px;cursor:pointer;opacity:0;padding:2px 5px;flex:none;transition:opacity .12s;line-height:1;}
-  .dt-ad-del:hover{opacity:1 !important;}
-  .dt-ad-empty{font-size:12.5px;color:var(--muted);font-style:italic;padding:10px 8px;}
-  .dt-ad-done-wrap{margin-top:10px;border-top:1px dashed var(--border);padding-top:8px;}
-  .dt-ad-done-wrap summary{font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;text-transform:uppercase;letter-spacing:.04em;list-style:none;}
-  .dt-ad-done-wrap summary::-webkit-details-marker{display:none;}
-  .dt-ad-done-wrap summary::before{content:'▸ ';color:var(--accent);}
-  .dt-ad-done-wrap[open] summary::before{content:'▾ ';}
-  .dt-ad-donelist{margin-top:6px;}
-  /* ── Email senior button + reusable email modal (skeleton) ── */
-  .dt-email{height:36px;display:inline-flex;align-items:center;gap:7px;padding:0 15px;
-    background:#1A237E;color:#fff;border:none;border-radius:8px;font-weight:600;
-    white-space:nowrap;cursor:pointer;box-shadow:0 7px 15px -7px rgba(26,35,126,.6);transition:.15s;}
-  .dt-email:hover{background:#283593;transform:translateY(-1px);}
-  /* Email-preview modal (.em-overlay/.em-modal + parts) -> enhance.css §12 */
-</style>
 <script>
 (function () {
   var csrf = document.getElementById('dt-csrf').value;

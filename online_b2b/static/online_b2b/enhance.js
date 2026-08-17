@@ -297,6 +297,32 @@
     });
   };
 
+  /* ---- Reusable "select-all + live count" for tick tables ----------------- *
+   * Review-page style row selection: a master checkbox drives N item checkboxes
+   * (with the indeterminate state), and onChange(count,total) fires on every
+   * change (initial included). Shared so record-verify / review / ship-to don't
+   * each re-implement it. Returns { items, checked(), sync() }.
+   *   B2B.checkAll({ items:'.rv-chk', master:'#rvAll', onChange(n,total){…} })  */
+  B2B.checkAll = function (opts) {
+    opts = opts || {};
+    var items = typeof opts.items === "string"
+      ? [].slice.call((opts.root || d).querySelectorAll(opts.items))
+      : [].slice.call(opts.items || []);
+    var master = typeof opts.master === "string" ? $(opts.master) : opts.master;
+    function checked() { return items.filter(function (c) { return c.checked; }); }
+    function sync() {
+      var n = checked().length;
+      if (master) { master.checked = n > 0 && n === items.length; master.indeterminate = n > 0 && n < items.length; }
+      if (opts.onChange) opts.onChange(n, items.length);
+    }
+    items.forEach(function (c) { c.addEventListener("change", sync); });
+    if (master) master.addEventListener("change", function () {
+      items.forEach(function (c) { c.checked = master.checked; }); sync();
+    });
+    sync();
+    return { items: items, checked: checked, sync: sync };
+  };
+
   /* ===================================================================== *
    * 5. HEADER CONTROLS + GLOBAL WIRING                                    *
    * ===================================================================== */

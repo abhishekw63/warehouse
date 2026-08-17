@@ -6,29 +6,8 @@ Self-contained; remove with the module + service + urls + sidebar link.
 {% endcomment %}
 {% block title %}Full Validation — D365 reconciliation{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
-<style>
-  /* #MainContent is a row-flex; force this page's content to stack full-width */
-  .b2b-app #MainContent{flex-direction:column;align-items:stretch;}
-  .fv-up{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
-    padding:20px 22px;margin-bottom:20px;box-shadow:var(--shadow);}
-  .fv-up h2{font-size:15px;margin:0 0 4px;} .fv-up p{color:var(--text-2);font-size:13px;margin:0 0 14px;}
-  .fv-files{display:flex;gap:16px;flex-wrap:wrap;align-items:end;}
-  .fv-files label{display:block;font-size:12px;font-weight:700;color:var(--text-2);margin-bottom:5px;}
-  .fv-files input[type=file]{font-size:13px;}
-  .fv-tabs{display:flex;gap:6px;margin:18px 0 12px;}
-  .fv-tab{padding:8px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface);
-    cursor:pointer;font-size:13px;font-weight:600;color:var(--text-2);font-family:inherit;}
-  .fv-tab.on{background:var(--accent);color:#fff;border-color:var(--accent);}
-  .fv-pane{display:none;} .fv-pane.on{display:block;}
-  table.fv{width:100%;border-collapse:collapse;font-size:12.5px;}
-  table.fv th{position:sticky;top:0;background:var(--surface-2);text-align:left;padding:8px 9px;
-    border-bottom:2px solid var(--border);white-space:nowrap;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-2);}
-  table.fv td{padding:6px 9px;border-bottom:1px solid var(--border-2);}
-  table.fv td.r{text-align:right;font-variant-numeric:tabular-nums;}
-  /* .st status badge → canonical token-based set in enhance.css §11 */
-  .v-clean{background:#e7f6ef;color:#0f9d6b;} .v-review{background:#fdf1e3;color:#b45309;}
-  .fv-scroll{max-height:60vh;overflow:auto;border:1px solid var(--border);border-radius:10px;}
-</style>{% endblock %}
+
+<link rel="stylesheet" href="{% static 'online_b2b/pages/full_validation.css' %}">{% endblock %}
 
 {% block breadcrumb %}<a href="{% url 'b2b_dashboard' %}">Hub</a> <span>/</span> <b>Full Validation</b>{% endblock %}
 
@@ -52,17 +31,17 @@ Self-contained; remove with the module + service + urls + sidebar link.
 </form>
 
 {% if result and not result.ok %}
-  <div class="fv-up" style="border-color:#dc2626;background:#fdecec;color:#7a1c1c;">⚠ {{ result.error }}</div>
+  <div class="fv-up" style="border-color:var(--red);background:#fdecec;color:#7a1c1c;">⚠ {{ result.error }}</div>
 {% elif result.ok %}{% with s=result.summary %}
   <div class="kpis" style="grid-template-columns:repeat(8,1fr);">
     <div class="card"><div><div class="n">{{ s.marketplaces }}</div><div class="l">Marketplaces</div></div></div>
     <div class="card"><div><div class="n">{{ s.pos }}</div><div class="l">POs</div></div></div>
     <div class="card"><div><div class="n">{{ s.lines }}</div><div class="l">Lines</div></div></div>
-    <div class="card"><div><div class="n" style="color:#0f9d6b;">{{ s.line_ok }}</div><div class="l">Line OK</div></div></div>
+    <div class="card"><div><div class="n" style="color:var(--green);">{{ s.line_ok }}</div><div class="l">Line OK</div></div></div>
     <div class="card"><div><div class="n" style="color:#b45309;">{{ s.excluded }}</div><div class="l">CP-excluded</div></div></div>
-    <div class="card"><div><div class="n" style="color:{% if s.missing %}#dc2626{% else %}#0f9d6b{% endif %};">{{ s.missing }}</div><div class="l">Missing</div></div></div>
-    <div class="card"><div><div class="n" style="color:{% if s.extra %}#dc2626{% else %}#0f9d6b{% endif %};">{{ s.extra }}</div><div class="l">Extra</div></div></div>
-    <div class="card"><div><div class="n" style="color:{% if s.qty_mismatch %}#dc2626{% else %}#0f9d6b{% endif %};">{{ s.qty_mismatch }}</div><div class="l">Qty mismatch</div></div></div>
+    <div class="card"><div><div class="n" style="color:{% if s.missing %}var(--red){% else %}var(--green){% endif %};">{{ s.missing }}</div><div class="l">Missing</div></div></div>
+    <div class="card"><div><div class="n" style="color:{% if s.extra %}var(--red){% else %}var(--green){% endif %};">{{ s.extra }}</div><div class="l">Extra</div></div></div>
+    <div class="card"><div><div class="n" style="color:{% if s.qty_mismatch %}var(--red){% else %}var(--green){% endif %};">{{ s.qty_mismatch }}</div><div class="l">Qty mismatch</div></div></div>
   </div>
 
   <div style="display:flex;align-items:center;gap:14px;margin:14px 0;">
@@ -114,15 +93,6 @@ Self-contained; remove with the module + service + urls + sidebar link.
   </table></div></div>
 {% endwith %}{% endif %}
 
-<script>
-  document.querySelectorAll('.fv-tab').forEach(function(t){
-    t.addEventListener('click',function(){
-      document.querySelectorAll('.fv-tab').forEach(function(x){x.classList.remove('on');});
-      document.querySelectorAll('.fv-pane').forEach(function(x){x.classList.remove('on');});
-      t.classList.add('on');
-      var p=document.querySelector('.fv-pane[data-fvpane="'+t.getAttribute('data-fvtab')+'"]');
-      if(p)p.classList.add('on');
-    });
-  });
-</script>
 {% endblock %}
+
+{% block extra_js %}<script defer data-page-js src="{% static 'online_b2b/pages/full_validation.js' %}"></script>{% endblock %}

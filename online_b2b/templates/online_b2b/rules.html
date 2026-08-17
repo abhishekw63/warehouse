@@ -5,49 +5,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
-<style>
-  .gst-by{ display:inline-block; margin-top:2px; font-size:10px; font-weight:700; letter-spacing:.3px;
-    color:#e65100; background:#fff3e0; border:1px solid #ffcc80; border-radius:5px; padding:1px 6px; cursor:help; }
-  /* keep the card compact — scroll the deal list inside the card */
-  .deal-list{ margin-top:8px; border-top:1px solid #eee; max-height:150px; overflow-y:auto;
-    padding-right:4px; }
-  .deal-list::-webkit-scrollbar{ width:6px; }
-  .deal-list::-webkit-scrollbar-thumb{ background:#d4d4dc; border-radius:3px; }
-  .deal-row{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding:6px 0; border-bottom:1px solid #f1f1f4; font-size:12px; }
-  .deal-name{ font-weight:600; color:#222; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1; }
-  .deal-px{ white-space:nowrap; font-variant-numeric:tabular-nums; color:#1b7a3d; font-weight:600; }
-  .deal-more{ font-size:11px; color:#888; padding-top:6px; }
-  /* per-marketplace file-format cards */
-  .fmt-card{ border:1px solid var(--border); border-radius:10px; padding:13px 16px; margin-top:12px; background:var(--surface-2); }
-  .fmt-head{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
-  .fmt-name{ font-weight:700; font-size:14px; color:var(--text); }
-  .fmt-type{ font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase;
-    color:var(--accent); background:var(--accent-soft); border-radius:20px; padding:3px 11px; white-space:nowrap; }
-  .fmt-note{ font-size:12.5px; color:var(--text-2); margin:7px 0 10px; line-height:1.5; }
-  .fmt-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px 16px; }
-  @media (max-width:680px){ .fmt-grid{ grid-template-columns:1fr 1fr; } }
-  .fmt-grid > div{ display:flex; flex-direction:column; gap:2px; min-width:0; }
-  .fmt-k{ font-size:9.5px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
-  .fmt-v{ font-size:12.5px; color:var(--text); font-family:ui-monospace,Menlo,Consolas,monospace; overflow:hidden; text-overflow:ellipsis; }
-  .fmt-foot{ margin-top:11px; padding-top:10px; border-top:1px dashed var(--border); display:flex; justify-content:flex-end; }
-  .fmt-tpl{ display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:700; color:var(--accent);
-    text-decoration:none; padding:5px 11px; border-radius:8px; border:1px solid var(--accent-soft); background:var(--accent-soft);
-    transition:transform .18s ease, box-shadow .18s ease, gap .18s ease; }
-  .fmt-tpl:hover{ transform:translateY(-1px); box-shadow:0 4px 14px -6px var(--accent); gap:9px; }
-  .fmt-tpl .arw{ transition:transform .18s ease; }
-  .fmt-tpl:hover .arw{ transform:translateX(3px); }
-  /* Reliance identifier card — Site-code chips */
-  .sc-chip{ display:inline-block; font-family:ui-monospace,Menlo,Consolas,monospace; font-weight:800;
-    font-size:11.5px; letter-spacing:.02em; color:var(--text-2); background:var(--surface-2);
-    border:1px solid var(--border); border-radius:6px; padding:2px 8px; }
-  .sc-chip.on{ color:#0d6b34; background:#e6f6ec; border-color:#a8dcbc; }
-  :root[data-theme="dark"] .sc-chip.on{ color:#8fe3b0; background:rgba(45,140,90,.18); border-color:rgba(120,200,150,.4); }
-  .rel-tbl td{ vertical-align:middle; }
-  .rel-tbl tr.rel-on td{ background:var(--accent-soft); }
-  .rel-tbl .muted{ font-size:11px; }
-  .rc-no.rc-rel{ background:linear-gradient(135deg,#0a7d3c,#0d6b34); }
-</style>
-{% endblock %}
+
+<link rel="stylesheet" href="{% static 'online_b2b/pages/rules.css' %}">{% endblock %}
 
 {% block breadcrumb %}
     <a href="{% url 'departments' %}">Departments</a>
@@ -461,96 +420,6 @@
 
 </div>
 
-<style>
-  .seg-tabs{display:flex;gap:8px;margin:0 0 18px;}
-  .seg-tab{font-size:13.5px;font-weight:700;padding:9px 18px;border:1px solid var(--border);background:var(--surface);
-    border-radius:10px;cursor:pointer;color:var(--text-2);transition:all .14s;}
-  .seg-tab:hover{border-color:var(--accent);color:var(--accent);}
-  .seg-tab.on{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 4px 14px -6px var(--accent);}
-  .rc-no.off{background:#f59e0b;}
-  /* Operator SOP — big, animated checklist */
-  .sop-card{background:linear-gradient(135deg,color-mix(in srgb,var(--accent) 9%,var(--surface)),var(--surface));
-    border:1.5px solid color-mix(in srgb,var(--accent) 40%,transparent);box-shadow:0 6px 22px -14px var(--accent);}
-  .rc-no.sop{background:#10b981;}
-  .sop-phase{font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--accent);
-    margin:20px 0 10px;opacity:0;animation:sopIn .5s ease forwards;}
-  .sop-step{display:flex;gap:16px;align-items:flex-start;padding:15px 18px;margin:10px 0;
-    background:var(--surface);border:1px solid var(--border);border-radius:14px;
-    opacity:0;transform:translateX(-16px);animation:sopIn .55s cubic-bezier(.2,.8,.2,1) forwards;
-    animation-delay:calc(var(--d,0) * 90ms);transition:box-shadow .18s,transform .18s;}
-  .sop-step:hover{box-shadow:0 8px 24px -12px var(--accent);transform:translateX(2px);}
-  .sop-step .sn{flex:none;width:38px;height:38px;border-radius:50%;background:var(--accent);color:#fff;
-    font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center;
-    box-shadow:0 6px 14px -5px var(--accent);}
-  .sop-step .tx{font-size:15.5px;line-height:1.65;color:var(--text);}
-  .sop-step .tx b{color:var(--text);font-weight:800;}
-  @keyframes sopIn{to{opacity:1;transform:none;}}
-  @media (prefers-reduced-motion: reduce){.sop-step,.sop-phase{animation:none;opacity:1;transform:none;}}
-  .off-h{font-size:13px;margin:18px 0 9px;font-weight:700;}
-  .rule-tbl td.err{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:#b91c1c;background:#fef2f2;}
-  .rule-tbl td.warn{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11.5px;color:#92600a;background:#fff8ed;}
-  .off-meta{font-size:12.5px;color:var(--text-2);background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:9px 12px;}
-  .off-note{margin-top:14px;font-size:12.5px;color:#7a4a06;background:#fff8ed;border:1px solid #ffd9a0;border-left:4px solid #f59e0b;border-radius:10px;padding:11px 14px;line-height:1.6;}
-
-  /* ── polished motion (scroll-reveal · pane transitions · micro-interactions) ── */
-  .js-reveal .rule-card.reveal{opacity:0;transform:translateY(24px) scale(.985);
-    transition:opacity .62s cubic-bezier(.2,.8,.25,1),transform .62s cubic-bezier(.2,.8,.25,1);will-change:opacity,transform;}
-  .js-reveal .rule-card.reveal.in{opacity:1;transform:none;}
-  .rule-card{transition:box-shadow .24s ease,transform .24s ease,border-color .24s ease;}
-  .rule-card:hover{transform:translateY(-3px);box-shadow:0 20px 46px -24px var(--accent,#4f46e5);}
-  .seg-pane.on{animation:paneIn .42s cubic-bezier(.2,.8,.25,1);}
-  @keyframes paneIn{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:none;}}
-  .seg-tab{position:relative;}
-  .seg-tab:active{transform:scale(.96);}
-  .rc-no{transition:transform .32s cubic-bezier(.2,.8,.25,1);}
-  .rule-card:hover .rc-no{transform:rotate(-7deg) scale(1.09);}
-  .rule-tbl tbody tr{transition:background .16s;}
-  .rule-tbl tbody tr:hover{background:color-mix(in srgb,var(--accent,#4f46e5) 6%,transparent);}
-  @media (prefers-reduced-motion: reduce){
-    .js-reveal .rule-card.reveal{opacity:1;transform:none;transition:none;}
-    .seg-pane.on{animation:none;} .rule-card:hover{transform:none;} .rule-card:hover .rc-no{transform:none;}}
-</style>
-<script>
-(function () {
-  var tabs = document.querySelectorAll('.seg-tab');
-  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-  function stagger(cards) {
-    cards.forEach(function (c, i) {
-      c.classList.remove('in');
-      if (reduce) { c.classList.add('in'); return; }
-      // clear then re-add with a small per-card delay for a cascading reveal
-      setTimeout(function () { c.classList.add('in'); }, 60 + i * 70);
-    });
-  }
-
-  // Scroll-reveal the visible pane's cards as they enter the viewport.
-  if (!reduce && 'IntersectionObserver' in window) {
-    document.documentElement.classList.add('js-reveal');
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (e) {
-        if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
-      });
-    }, { threshold: 0.12, rootMargin: '0px 0px -6% 0px' });
-    document.querySelectorAll('.seg-pane.on .rule-card.reveal').forEach(function (c) { io.observe(c); });
-  }
-
-  tabs.forEach(function (t) {
-    t.addEventListener('click', function () {
-      tabs.forEach(function (x) { x.classList.toggle('on', x === t); });
-      var seg = t.getAttribute('data-seg');
-      document.querySelectorAll('.seg-pane').forEach(function (p) {
-        var show = p.getAttribute('data-pane') === seg;
-        p.style.display = show ? '' : 'none';
-        p.classList.toggle('on', show);
-        if (show) {
-          // re-trigger the pane fade + cascade its cards back in
-          p.style.animation = 'none'; void p.offsetWidth; p.style.animation = '';
-          stagger(p.querySelectorAll('.rule-card.reveal'));
-        }
-      });
-    });
-  });
-})();
-</script>
 {% endblock %}
+
+{% block extra_js %}<script defer data-page-js src="{% static 'online_b2b/pages/rules.js' %}"></script>{% endblock %}
