@@ -20,15 +20,13 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
+from .services import common
+
 _UP = Path(settings.MEDIA_ROOT) / 'b2b_full_validation'
 
 
 def _tok_dir(token: str) -> Path:
-    base = _UP.resolve()
-    d = (_UP / token).resolve()
-    if d != base and base not in d.parents:
-        raise Http404()
-    return d
+    return common.token_dir(_UP, token)
 
 
 @login_required

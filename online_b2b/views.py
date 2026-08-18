@@ -25,7 +25,7 @@ from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
 
 from .forms import UploadForm
-from .services import engine_bridge, erp_import, order_db
+from .services import common, engine_bridge, erp_import, order_db
 
 # ── Central hub + branch dashboards (class-based) ───────────────────────────
 # /b2b/ is the central Order-Management hub: compact overall KPIs + two group
@@ -1390,11 +1390,7 @@ _ERP = _MEDIA / 'b2b_erp'
 
 def _token_dir(token: str) -> Path:
     """Resolve a token folder, guarding against path traversal."""
-    base = _UPLOADS.resolve()
-    d = (_UPLOADS / token).resolve()
-    if d != base and base not in d.parents:
-        raise Http404()
-    return d
+    return common.token_dir(_UPLOADS, token)
 
 
 def _load_meta(token: str):
@@ -2241,10 +2237,7 @@ def review_download_completed(request, token):
 # ── Bulk import (ERP Sales Orders) ──────────────────────────────────────
 
 def _erp_file(token: str):
-    base = _ERP.resolve()
-    d = (_ERP / token).resolve()
-    if d != base and base not in d.parents:
-        raise Http404()
+    d = common.token_dir(_ERP, token)
     nm = d / 'name.txt'
     if not nm.exists():
         return None
@@ -2404,11 +2397,7 @@ _IM_UPLOADS = _MEDIA / 'b2b_item_master'
 
 
 def _im_token_dir(token: str) -> Path:
-    base = _IM_UPLOADS.resolve()
-    d = (_IM_UPLOADS / token).resolve()
-    if d != base and base not in d.parents:
-        raise Http404()
-    return d
+    return common.token_dir(_IM_UPLOADS, token)
 
 
 class ItemMasterView(LoginRequiredMixin, TemplateView):
@@ -2586,11 +2575,7 @@ _GTS_UPLOADS = _MEDIA / 'b2b_gt_select'
 
 
 def _gts_token_dir(token: str) -> Path:
-    base = _GTS_UPLOADS.resolve()
-    d = (_GTS_UPLOADS / token).resolve()
-    if d != base and base not in d.parents:
-        raise Http404()
-    return d
+    return common.token_dir(_GTS_UPLOADS, token)
 
 
 class GtSelectView(LoginRequiredMixin, TemplateView):
@@ -2714,11 +2699,7 @@ _STM_UPLOADS = _MEDIA / 'b2b_ship_to'
 
 
 def _stm_token_dir(token: str) -> Path:
-    base = _STM_UPLOADS.resolve()
-    d = (_STM_UPLOADS / token).resolve()
-    if d != base and base not in d.parents:
-        raise Http404()
-    return d
+    return common.token_dir(_STM_UPLOADS, token)
 
 
 class ShipToView(LoginRequiredMixin, TemplateView):

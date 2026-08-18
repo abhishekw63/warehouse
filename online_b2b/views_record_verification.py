@@ -25,17 +25,14 @@ from django.urls import reverse
 from django.views import View
 from django.views.generic import TemplateView
 
+from .services import common
 from .services import record_verification as rv
 
 _UP = Path(settings.MEDIA_ROOT) / 'b2b_recordcheck'
 
 
 def _tok_dir(token: str) -> Path:
-    base = _UP.resolve()
-    d = (_UP / token).resolve()
-    if d != base and base not in d.parents:
-        raise Http404()
-    return d
+    return common.token_dir(_UP, token)
 
 
 def _looks_like(path: str, needle: str) -> bool:
