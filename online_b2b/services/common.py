@@ -47,6 +47,29 @@ def post_dict(request) -> dict:
     return {k: v for k, v in request.POST.items() if k != 'csrfmiddlewaretoken'}
 
 
+def valid_date(v) -> str:
+    """The ISO date string if ``v`` parses as a YYYY-MM-DD date, else '' — the
+    guard used by the SKU / daily / trends filters (identical to their local _ok)."""
+    import datetime as _dt
+    v = (v or '').strip()
+    if not v:
+        return ''
+    try:
+        _dt.date.fromisoformat(v)
+        return v
+    except ValueError:
+        return ''
+
+
+def clamp_days(v, allowed=(7, 30, 90), default=30) -> int:
+    """Coerce a ``?days=`` value to one of the allowed presets, else ``default``."""
+    try:
+        d = int(v)
+    except (TypeError, ValueError):
+        return default
+    return d if d in allowed else default
+
+
 def xlsx_response(sheet_title, columns, rows, filename,
                   width_cap=48, str_cols=(), freeze=False):
     """Build a downloadable .xlsx HttpResponse with the app's standard export

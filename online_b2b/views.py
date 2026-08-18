@@ -431,15 +431,7 @@ def _sku_filters(request):
         st = _dt.date.today().isoformat()
         sf = (_dt.date.today() - _dt.timedelta(days=29)).isoformat()
 
-    def _ok(v):
-        v = (v or '').strip()
-        if not v:
-            return ''
-        try:
-            _dt.date.fromisoformat(v)
-            return v
-        except ValueError:
-            return ''
+    _ok = common.valid_date
     return _ok(sf), _ok(st), smp
 
 
@@ -450,21 +442,13 @@ def _daily_ctx(request):
     spotlights that bar on the chart. Defaults to the last 30 days."""
     import datetime as _dt
 
-    def _ok(v):
-        v = (v or '').strip()
-        if not v:
-            return ''
-        try:
-            _dt.date.fromisoformat(v)
-            return v
-        except ValueError:
-            return ''
+    _ok = common.valid_date
 
     try:
         days = int(request.GET.get('days') or 30)
     except (TypeError, ValueError):
         days = 30
-    days = days if days in (7, 30, 90) else 30
+    days = common.clamp_days(days)
     start, end = _ok(request.GET.get('start')), _ok(request.GET.get('end'))
     date = _ok(request.GET.get('date'))
     if date and not (start and end):                 # legacy single-date → range of one
@@ -502,7 +486,7 @@ def _trends_ctx(request):
         days = int(request.GET.get('days') or 30)
     except (TypeError, ValueError):
         days = 30
-    days = days if days in (7, 30, 90) else 30
+    days = common.clamp_days(days)
     return {'days': days, 'trends': order_db.intake_trends(days)}
 
 
@@ -563,7 +547,7 @@ def _dos_ctx(request):
         days = int(request.GET.get('days') or 30)
     except (TypeError, ValueError):
         days = 30
-    days = days if days in (7, 30, 90) else 30
+    days = common.clamp_days(days)
     return {'dos': inventory_store.days_of_supply(days, smp),
             'days': days, 'sku_mp': smp}
 
