@@ -26,14 +26,11 @@
     });
   });
 
-  var csrf = B2B.csrf();
   document.querySelectorAll('.dl-email').forEach(function (btn) {
     btn.addEventListener('click', function () {
       if (btn.disabled) return;
       var orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = '✉ Sending…';
-      fetch(btn.dataset.url, { method: 'POST', credentials: 'same-origin',
-        headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest' } })
-        .then(function (r) { return r.json(); })
+      B2B.postForm(btn.dataset.url)
         .then(function (j) {
           btn.disabled = false;
           if (j.ok) {

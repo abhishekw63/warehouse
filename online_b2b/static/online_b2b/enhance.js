@@ -320,10 +320,17 @@
   B2B.postForm = function (url, body) {
     var headers = { "X-CSRFToken": B2B.csrf(), "X-Requested-With": "XMLHttpRequest" };
     var b = body;
-    if (body && typeof body === "object" && !(body instanceof FormData)) {
+    if (body instanceof FormData) {
+      // leave b as the FormData — the browser sets the multipart Content-Type.
+    } else if (body instanceof URLSearchParams) {
+      b = body.toString();
+      headers["Content-Type"] = "application/x-www-form-urlencoded";
+    } else if (body && typeof body === "object") {
       var p = new URLSearchParams();
       for (var k in body) if (Object.prototype.hasOwnProperty.call(body, k)) p.set(k, body[k]);
       b = p.toString();
+      headers["Content-Type"] = "application/x-www-form-urlencoded";
+    } else if (typeof body === "string") {
       headers["Content-Type"] = "application/x-www-form-urlencoded";
     }
     return fetch(url, { method: "POST", credentials: "same-origin", headers: headers, body: b })

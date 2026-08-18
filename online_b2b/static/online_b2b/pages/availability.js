@@ -134,8 +134,7 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
     saveState();
     btn.disabled = true; statusEl.textContent = 'Checking…';
     var body = new URLSearchParams(); body.set('orders', orders); body.set('warehouse', whSel.value);
-    fetch(checkUrl, { method: 'POST', headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() })
-      .then(function (r) { return r.json(); })
+    B2B.postForm(checkUrl, body)
       .then(function (j) {
         btn.disabled = false;
         if (!j.ok) { statusEl.textContent = j.error || 'Failed.'; return; }

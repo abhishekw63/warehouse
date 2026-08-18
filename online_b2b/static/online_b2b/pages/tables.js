@@ -1,8 +1,7 @@
 /* online_b2b/tables.html — page script (separated from template). */
 (function(){
-  const CSRF = B2B.csrf();
   const $=s=>document.querySelector(s);
-  const api=(url,body)=>fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},body:JSON.stringify(body||{})}).then(r=>r.json());
+  const api=(url,body)=>B2B.postJSON(url,body);
   const toast=(m,k)=>{ if(window.B2B&&B2B.toast) B2B.toast(m,k||'ok'); };
 
   let TABLE = JSON.parse($('#ct-table').textContent||'null');

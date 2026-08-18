@@ -1,6 +1,6 @@
 /* online_b2b/tat.html — page script (separated from template).
-   Server-rendered values (URLs) come from the #tat-cfg JSON block; CSRF from the
-   hidden input. No Django tags here so it lives as a static file. */
+   Server-rendered values (URLs) come from the #tat-cfg JSON block; POST + CSRF go
+   through B2B.postForm. No Django tags here so it lives as a static file. */
 (function () {
   var form = document.getElementById('tat-filters'); if (!form) return;
   var results = document.getElementById('tat-results');
@@ -9,8 +9,6 @@
   var CFG = JSON.parse(cfgEl.textContent);
   var base = CFG.base, saveUrl = CFG.save;
   var exportLink = document.getElementById('tat-export'), exportBase = CFG.export;
-  var csrf = B2B.csrf();
-  var hdrs = { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded' };
   var timer = null, ctrl = null;
 
   function params() {
@@ -35,12 +33,11 @@
   function save(order) {
     var sel = results.querySelector('.tat-reason[data-order="' + order + '"]');
     var note = results.querySelector('.tat-note[data-order="' + order + '"]');
-    var body = new URLSearchParams();
-    body.set('order_id', order);
-    body.set('reason_code', sel ? sel.value : '');
-    body.set('note', note ? note.value : '');
-    fetch(saveUrl, { method: 'POST', body: body.toString(), headers: hdrs })
-      .then(function (r) { return r.json(); })
+    B2B.postForm(saveUrl, {
+      order_id: order,
+      reason_code: sel ? sel.value : '',
+      note: note ? note.value : ''
+    })
       .then(function (j) {
         if (!j.ok) return;
         // if filtering by pending and a reason was just set, refresh so it leaves the view
