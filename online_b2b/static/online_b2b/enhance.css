@@ -392,11 +392,12 @@ table.skux tbody{animation:skuxrows .45s ease both;} @keyframes skuxrows{from{op
  * ===================================================================== */
 .tabs .tab{transition:transform .12s ease, background .18s ease, color .18s ease, border-color .18s ease;}
 .tabs .tab:active{transform:scale(.96);}
-/* Tab switch: content-only opacity fade — NO position shift and it starts
-   already-visible (opacity .4) so there's no blank flash between panes. Only the
-   swapped pane fades; the header/KPIs/tabs stay perfectly still. */
-.enh-panefade{animation:enhPaneIn .2s ease;}
-@keyframes enhPaneIn{from{opacity:.4;}to{opacity:1;}}
+/* Tab switch: a barely-there content-only opacity settle — NO position shift and
+   it starts almost fully visible (opacity .88) so there's no perceptible blink
+   between panes. Only the swapped pane settles; header/KPIs/tabs stay perfectly
+   still (the page scrollbar gutter is reserved in b2b.css so nothing shifts). */
+.enh-panefade{animation:enhPaneIn .14s ease;}
+@keyframes enhPaneIn{from{opacity:.88;}to{opacity:1;}}
 
 /* ===================================================================== *
  * Step 5: TABLE ROWS — first 12 rows fade/stagger in (rest instant →     *

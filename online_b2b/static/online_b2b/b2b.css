@@ -49,6 +49,12 @@
    #pageBoot on b2b pages so the sidebar/header stay put. */
 body.b2b-app #pageBoot{ display:none !important; }
 
+/* Reserve the scrollbar gutter so a vertical scrollbar appearing/disappearing
+   (e.g. switching to a taller/shorter tab pane, or between pages) never shifts the
+   layout sideways — the "slight movement" on tab switch. The shell stays rock-steady;
+   only the pane's own content changes height. */
+html{ scrollbar-gutter: stable; }
+
 /* The View Transition OWNS the page-change entrance, so #MainContent must stay
    PAINTED — the global anti-FOUC opacity gate + the generic entrance animation
    would otherwise make the transition snapshot a blank frame (a hard double-
