@@ -3,6 +3,7 @@ from django.urls import path
 from . import views
 from . import full_validation_views as _fullval  # STANDALONE feature (removable)
 from . import views_record_verification as _rv  # STANDALONE feature (removable)
+from . import views_batch as _batch  # STANDALONE feature (removable) — Batch Run Phase 0/1
 from . import inventory_views as _inv  # STANDALONE feature (removable)
 from . import views_tables as _tbl  # STANDALONE feature (removable)
 
@@ -21,6 +22,12 @@ urlpatterns = [
     path('record-verify/<str:token>/confirm/', _rv.RecordVerificationConfirmView.as_view(), name='b2b_record_verify_confirm'),
     path('record-verify/<str:token>/download/', _rv.RecordVerificationDownloadView.as_view(),
          name='b2b_record_verify_download'),
+    # ── Batch Run — Phase 0/1: read-only file→MP detect + confirm grid (records
+    #    NOTHING). Delete these 3 lines + views_batch.py + services/batch_flow.py +
+    #    the batch_detect templates + the nav link to remove the whole feature. ───
+    path('batch/', _batch.BatchDetectView.as_view(), name='b2b_batch'),
+    path('batch/detect/', _batch.BatchDetectRunView.as_view(), name='b2b_batch_detect'),
+    path('batch/<str:token>/confirm/', _batch.BatchConfirmView.as_view(), name='b2b_batch_confirm'),
     # ── Inventory — Fill-Rate cockpit (standalone; delete these lines + the
     #    module/service/templates/sidebar link to remove the whole feature) ────
     path('inventory/', _inv.inventory, name='b2b_inventory'),

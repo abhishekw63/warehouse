@@ -63,6 +63,9 @@
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='store' %}</span><span class="side-label">Online</span></a>
     <a href="{% url 'offline_dashboard' %}" class="sn{% if '/offline/' in request.path %} on{% endif %}" title="Offline — GT Mass · EKA · MT · GT Select">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><span class="side-label">Offline</span></a>
+    {# STANDALONE Batch Detect (removable) — Phase 0/1 read-only file→MP detector #}
+    <a href="{% url 'b2b_batch' %}" class="sn{% if '/batch' in request.path %} on{% endif %}" title="Batch — detect which marketplace each file is (read-only)">
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='search' %}</span><span class="side-label">Batch Detect</span></a>
     <a href="{% url 'b2b_drafts' %}" class="sn{% if '/drafts' in request.path %} on{% endif %}" title="Review Later">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='clock' %}</span><span class="side-label">Review Later</span></a>
   </nav>

@@ -203,3 +203,9 @@ def detect(paths) -> list:
     """Detect the MP for each file. Pure/read-only — the operator confirms every
     row before anything is ever processed. Returns one dict per file."""
     return [detect_one(p) for p in paths]
+
+
+def detectable_marketplaces() -> list:
+    """Sorted list of the marketplaces the detector knows (the override dropdown's
+    options) — straight from the engine's MARKETPLACE_CONFIGS."""
+    return sorted(signatures().keys())

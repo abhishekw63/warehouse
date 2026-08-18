@@ -1,0 +1,85 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static b2b_extras %}
+{% block title %}Batch Detect · RENÉE{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<link rel="stylesheet" href="{% static 'online_b2b/pages/batch.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+  <a href="{% url 'departments' %}">Departments</a>
+  <a href="{% url 'b2b_dashboard' %}"> / Order Management</a> <span>/ Batch Detect</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap bd-wrap">
+
+  <div class="b2b-head">
+    <div>
+      <span class="pill" style="margin-bottom:10px;"><span class="dot"></span>Batch · Phase 1 (beta)</span>
+      <h1>Batch — file → marketplace</h1>
+      <p class="src">Drop <b>all</b> your marketplace PO files at once. We detect which marketplace each one is
+        (from its columns + filename) so you can <b>confirm or correct every file</b> in one grid.
+        This is strictly <b>read-only</b> — nothing is processed, mapped, priced, or recorded here.</p>
+    </div>
+  </div>
+
+  {% if messages %}<div class="bd-msgs">{% for m in messages %}<div class="bd-msg {{ m.tags }}">{{ m }}</div>{% endfor %}</div>{% endif %}
+
+  {# ── Upload ── #}
+  <div class="im-card reveal bd-upload">
+    <h2>Detect files</h2>
+    <form method="post" action="{% url 'b2b_batch_detect' %}" enctype="multipart/form-data" data-loading="Detecting marketplaces…">
+      {% csrf_token %}
+      <label class="bd-file"><span class="bd-file-l">Marketplace PO files — drop them all together (.xlsx / .xls / .csv / .pdf)</span>
+        <input type="file" name="batch_files" accept=".xlsx,.xls,.xlsb,.csv,.pdf" multiple required></label>
+      <div class="bd-actions"><button type="submit" class="bd-btn">Detect →</button>
+        <span class="bd-hint2">Records nothing. You confirm each file→marketplace before any processing exists.</span></div>
+    </form>
+  </div>
+
+  {# ── Detection + confirm grid ── #}
+  {% if rows %}
+  <form method="post" action="{% url 'b2b_batch_confirm' token=token %}" class="im-card reveal bd-grid-card">
+    {% csrf_token %}
+    <div class="bd-grid-head">
+      <h2>Confirm file → marketplace <span class="bd-count">{{ rows|length }}</span></h2>
+      {% if confirmed %}<span class="bd-done">✓ Confirmed — mapping saved (nothing processed)</span>{% endif %}
+    </div>
+    <div class="bd-scroll">
+      <table class="bd-table">
+        <thead><tr>
+          <th>File</th><th>Type</th><th>Detected</th><th>Confidence</th>
+          <th>Marketplace — confirm</th><th>Why</th>
+        </tr></thead>
+        <tbody>
+          {% for r in rows %}
+          <tr class="bd-row bd-c-{{ r.confidence }}">
+            <td class="bd-fn" title="{{ r.file }}">{{ r.file }}</td>
+            <td class="bd-ext">{{ r.ext }}</td>
+            <td>{% if r.guess %}<b>{{ r.guess }}</b>{% else %}<span class="muted">—</span>{% endif %}</td>
+            <td><span class="bd-badge bd-b-{{ r.confidence }}">{{ r.confidence }}</span></td>
+            <td>
+              <select name="mp_{{ r.idx }}" class="bd-sel{% if not r.guess or r.confidence == 'low' or r.confidence == 'unknown' %} bd-sel-warn{% endif %}">
+                <option value="">— pick —</option>
+                {% for mp in marketplaces %}<option value="{{ mp }}"{% if mp == r.guess %} selected{% endif %}>{{ mp }}</option>{% endfor %}
+              </select>
+            </td>
+            <td class="bd-why">
+              {% if r.evidence %}<span class="bd-ev" title="header columns matched">{{ r.evidence|join:", " }}</span>{% endif %}
+              {% if r.filename_hint %}<span class="bd-hint">name → {{ r.filename_hint }}</span>{% endif %}
+              {% if r.alternatives %}<span class="bd-alt">alt: {% for a in r.alternatives %}{{ a.mp }}{% if not forloop.last %}, {% endif %}{% endfor %}</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="bd-actions">
+      <button type="submit" class="bd-btn">Confirm mapping</button>
+      <span class="bd-hint2">Green rows are pre-filled from a confident match; <b>amber / red need your check</b>.
+        Every file must have a marketplace before you can confirm.</span>
+    </div>
+  </form>
+  {% endif %}
+
+</div>
+{% endblock %}
