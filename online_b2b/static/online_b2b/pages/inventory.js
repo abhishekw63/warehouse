@@ -106,8 +106,7 @@ var CFG = JSON.parse(document.getElementById("inventory-cfg").textContent);
 /* ── Bin coverage: click-to-toggle Include/Exclude (durable) + Lock & apply ── */
 (function () {
   var d = document;
-  var tok = d.querySelector('[name=csrfmiddlewaretoken]');
-  var csrf = tok ? tok.value : '';
+  var csrf = B2B.csrf();
   function toast(msg, type) {
     if (window.B2B && B2B.toast) { B2B.toast(msg, {type: type || 'ok'}); }
   }

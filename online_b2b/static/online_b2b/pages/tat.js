@@ -9,7 +9,7 @@
   var CFG = JSON.parse(cfgEl.textContent);
   var base = CFG.base, saveUrl = CFG.save;
   var exportLink = document.getElementById('tat-export'), exportBase = CFG.export;
-  var csrf = document.getElementById('tat-csrf').value;
+  var csrf = B2B.csrf();
   var hdrs = { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded' };
   var timer = null, ctrl = null;
 

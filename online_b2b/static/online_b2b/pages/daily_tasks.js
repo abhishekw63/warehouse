@@ -1,7 +1,7 @@
 /* online_b2b/daily_tasks.html — page script (separated). Server values via #daily_tasks-cfg. */
 var CFG = JSON.parse(document.getElementById("daily_tasks-cfg").textContent);
 (function () {
-  var csrf = document.getElementById('dt-csrf').value;
+  var csrf = B2B.csrf();
   var day = document.getElementById('dt-day').value;
   var toggleUrl = CFG.toggle;
   // Calendar: jump to the picked date (query-param nav, no future dates).

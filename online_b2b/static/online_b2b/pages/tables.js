@@ -1,7 +1,6 @@
 /* online_b2b/tables.html — page script (separated from template). */
 (function(){
-  const CSRF=(document.cookie.match(/csrftoken=([^;]+)/)||[])[1]
-    || (document.querySelector('[name=csrfmiddlewaretoken]')||{}).value||'';
+  const CSRF = B2B.csrf();
   const $=s=>document.querySelector(s);
   const api=(url,body)=>fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-CSRFToken':CSRF},body:JSON.stringify(body||{})}).then(r=>r.json());
   const toast=(m,k)=>{ if(window.B2B&&B2B.toast) B2B.toast(m,k||'ok'); };

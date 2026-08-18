@@ -1,7 +1,7 @@
 /* online_b2b/exceptions.html — page script (separated from template). */
 (function () {
   var xc = document.querySelector('.xc');
-  var csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '';
+  var csrf = B2B.csrf();
   function post(url, body) {
     return fetch(url, { method: 'POST', credentials: 'same-origin',
       headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest',

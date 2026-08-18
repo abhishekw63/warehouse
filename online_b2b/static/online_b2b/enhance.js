@@ -304,6 +304,40 @@
     });
   };
 
+  /* ---- Reusable AJAX helpers (CSRF + fetch) ------------------------------- *
+   * One CSRF getter (cookie → hidden input → meta) and two POST helpers so pages
+   * stop hand-rolling the fetch envelope. B2B.postForm sends form-encoded (accepts
+   * a plain object, a query string, or FormData); B2B.postJSON sends JSON. Both add
+   * the CSRF + XHR headers and resolve to the parsed JSON.                        */
+  B2B.csrf = function () {
+    var m = d.cookie.match(/csrftoken=([^;]+)/);
+    if (m) return m[1];
+    var inp = d.querySelector("input[name=csrfmiddlewaretoken]");
+    if (inp) return inp.value;
+    var meta = d.querySelector("meta[name=csrf-token]");
+    return meta ? meta.getAttribute("content") : "";
+  };
+  B2B.postForm = function (url, body) {
+    var headers = { "X-CSRFToken": B2B.csrf(), "X-Requested-With": "XMLHttpRequest" };
+    var b = body;
+    if (body && typeof body === "object" && !(body instanceof FormData)) {
+      var p = new URLSearchParams();
+      for (var k in body) if (Object.prototype.hasOwnProperty.call(body, k)) p.set(k, body[k]);
+      b = p.toString();
+      headers["Content-Type"] = "application/x-www-form-urlencoded";
+    }
+    return fetch(url, { method: "POST", credentials: "same-origin", headers: headers, body: b })
+      .then(function (r) { return r.json(); });
+  };
+  B2B.postJSON = function (url, obj) {
+    return fetch(url, {
+      method: "POST", credentials: "same-origin",
+      headers: { "X-CSRFToken": B2B.csrf(), "X-Requested-With": "XMLHttpRequest",
+                 "Content-Type": "application/json" },
+      body: JSON.stringify(obj || {})
+    }).then(function (r) { return r.json(); });
+  };
+
   /* ---- Reusable "select-all + live count" for tick tables ----------------- *
    * Review-page style row selection: a master checkbox drives N item checkboxes
    * (with the indeterminate state), and onChange(count,total) fires on every

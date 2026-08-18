@@ -152,7 +152,7 @@ function emScope(seg, day) {
 })();
 
 (function () {
-  var csrf = (document.getElementById('em-csrf') || {}).value || '';
+  var csrf = B2B.csrf();
   var $ = function (id) { return document.getElementById(id); };
   var modal = $('em-modal'), frame = $('em-frame');
   var reviewBtn = $('em-review'), sendBtn = $('em-send');

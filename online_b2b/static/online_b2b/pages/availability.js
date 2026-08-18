@@ -1,7 +1,7 @@
 /* online_b2b/online_b2b/availability.html — page script (separated). Server values via #availability-cfg JSON. */
 var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
 (function () {
-  var csrf = document.getElementById('av-csrf').value;
+  var csrf = B2B.csrf();
   var ta = document.getElementById('av-orders'), whSel = document.getElementById('av-wh');
   var btn = document.getElementById('av-check'), statusEl = document.getElementById('av-status');
   var results = document.getElementById('av-results');

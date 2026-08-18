@@ -1,7 +1,7 @@
 /* online_b2b/online_b2b/ship_to.html — page script (separated). Server values via #ship_to-cfg JSON. */
 var CFG = JSON.parse(document.getElementById("ship_to-cfg").textContent);
 (function () {
-  var csrf = document.getElementById('stm-csrf').value;
+  var csrf = B2B.csrf();
   var hdrs = { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded' };
   var tbody = document.getElementById('stm-tbody');
   var msWrap = document.getElementById('stm-party-ms');

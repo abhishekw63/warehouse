@@ -9,7 +9,7 @@ var CFG = JSON.parse(document.getElementById("issues-cfg").textContent);
   var saveUrl = CFG["b2b_issues_save"];
   var bulkUrl = CFG["b2b_issues_save_bulk"];
   var fixUrl  = CFG["b2b_issues_fix_ean"];
-  var csrf = document.getElementById('iss-csrf').value;
+  var csrf = B2B.csrf();
   var hdrs = { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest',
                'Content-Type': 'application/x-www-form-urlencoded' };
   var timer = null, ctrl = null;

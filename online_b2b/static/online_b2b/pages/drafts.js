@@ -26,7 +26,7 @@
     });
   });
 
-  var csrf = (document.cookie.match(/csrftoken=([^;]+)/) || [])[1] || '';
+  var csrf = B2B.csrf();
   document.querySelectorAll('.dl-email').forEach(function (btn) {
     btn.addEventListener('click', function () {
       if (btn.disabled) return;
