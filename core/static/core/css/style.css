@@ -98,6 +98,32 @@ html, body {
     margin: 0;
 }
 
+/* Scoped to the header form so it beats the later, equal-specificity base
+   `.button` (which is solid black) — that source-order clash is why Log Out
+   rendered black. Refined light pill with a subtle red sign-out hover. */
+.header__logout-form .button--logout {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background-color: #fff;
+    color: #4a5266;
+    border: 1px solid #e3e6ef;
+    padding: 8px 15px;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 9px;
+    box-shadow: 0 1px 2px rgba(16, 22, 45, .04);
+    transition: background-color .15s, color .15s, border-color .15s, box-shadow .15s;
+}
+.header__logout-form .button--logout:hover {
+    background-color: #fff5f5;
+    color: #dc2626;
+    border-color: #f3c6c6;
+    box-shadow: 0 3px 10px -4px rgba(220, 38, 38, .35);
+}
+.header__logout-form .button--logout svg { width: 15px; height: 15px; }
+
+/* legacy base kept for any non-header usages */
 .button--logout {
     background-color: transparent;
     color: #333;

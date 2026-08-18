@@ -57,24 +57,15 @@
     get: function () {
       return d.documentElement.getAttribute("data-theme") || "light";
     },
-    set: function (mode, animate) {
-      if (animate !== false) {
-        d.documentElement.classList.add("enh-theming");
-        w.setTimeout(function () { d.documentElement.classList.remove("enh-theming"); }, 320);
-      }
-      d.documentElement.setAttribute("data-theme", mode);
-      try { localStorage.setItem(THEME_KEY, mode); } catch (e) {}
-      var btn = $("#enh-theme-btn");
-      if (btn) btn.innerHTML = mode === "dark" ? ICON.sun : ICON.moon;
-    },
-    toggle: function () { this.set(this.get() === "dark" ? "light" : "dark"); }
+    // Day/night removed — the app is light-only. set()/toggle() are kept as
+    // light-locked no-ops so any lingering caller can never force dark.
+    set: function () { d.documentElement.setAttribute("data-theme", "light"); },
+    toggle: function () { this.set("light"); }
   };
-  // Apply saved/OS theme immediately (before paint where possible)
+  // Force light and drop any previously-stored 'dark' choice so it can't linger.
   (function () {
-    var saved;
-    try { saved = localStorage.getItem(THEME_KEY); } catch (e) {}
-    if (!saved && w.matchMedia && w.matchMedia("(prefers-color-scheme: dark)").matches) saved = "dark";
-    if (saved) d.documentElement.setAttribute("data-theme", saved);
+    try { localStorage.removeItem(THEME_KEY); } catch (e) {}
+    d.documentElement.setAttribute("data-theme", "light");
   })();
 
   /* ===================================================================== *
@@ -386,16 +377,12 @@
    * ===================================================================== */
   function mountControls() {
     var host = $(".header__right");
-    if (!host || $("#enh-theme-btn")) return;
+    if (!host || $("#enh-cmd-btn")) return;
     var cmd = el("button", "enh-ctl");
     cmd.type = "button"; cmd.id = "enh-cmd-btn"; cmd.title = "Search (Ctrl-K)";
     cmd.innerHTML = ICON.search + '<span class="enh-kbd">Ctrl K</span>';
     cmd.addEventListener("click", function () { B2B.palette.open(); });
-    var theme = el("button", "enh-ctl");
-    theme.type = "button"; theme.id = "enh-theme-btn"; theme.title = "Toggle theme";
-    theme.innerHTML = B2B.theme.get() === "dark" ? ICON.sun : ICON.moon;
-    theme.addEventListener("click", function () { B2B.theme.toggle(); });
-    host.insertBefore(theme, host.firstChild);
+    // Day/night toggle removed — app is light-only.
     host.insertBefore(cmd, host.firstChild);
   }
 
