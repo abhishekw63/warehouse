@@ -1,8 +1,6 @@
 /* online_b2b/online_b2b/ship_to.html — page script (separated). Server values via #ship_to-cfg JSON. */
 var CFG = JSON.parse(document.getElementById("ship_to-cfg").textContent);
 (function () {
-  var csrf = B2B.csrf();
-  var hdrs = { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded' };
   var tbody = document.getElementById('stm-tbody');
   var msWrap = document.getElementById('stm-party-ms');
   var msBtn = document.getElementById('stm-party-btn');
@@ -85,8 +83,7 @@ var CFG = JSON.parse(document.getElementById("ship_to-cfg").textContent);
     var body = new URLSearchParams();
     panel.querySelectorAll('input[name]').forEach(function (i) { body.set(i.name, i.value); });
     var msg = document.getElementById('stm-addmsg');
-    fetch(addUrl, { method: 'POST', headers: hdrs, body: body.toString() })
-      .then(function (r) { return r.json(); })
+    B2B.postForm(addUrl, body)
       .then(function (j) {
         if (!j.ok) { msg.textContent = j.error || 'failed'; msg.className = 'stm-msg err'; return; }
         msg.textContent = '✓ added'; msg.className = 'stm-msg ok';
@@ -113,8 +110,7 @@ var CFG = JSON.parse(document.getElementById("ship_to-cfg").textContent);
     var label = (fieldName.value || '').trim();
     if (!label) { fieldMsg.textContent = 'Enter a field name.'; fieldMsg.className = 'stm-msg err'; return; }
     var body = new URLSearchParams(); body.set('label', label);
-    fetch(fieldAddUrl, { method: 'POST', headers: hdrs, body: body.toString() })
-      .then(function (r) { return r.json(); })
+    B2B.postForm(fieldAddUrl, body)
       .then(function (j) {
         if (!j.ok) { fieldMsg.textContent = j.error || 'failed'; fieldMsg.className = 'stm-msg err'; return; }
         fieldMsg.textContent = '✓ added — reloading…'; fieldMsg.className = 'stm-msg ok';
@@ -128,8 +124,7 @@ var CFG = JSON.parse(document.getElementById("ship_to-cfg").textContent);
       var name = b.getAttribute('data-cf');
       if (!confirm('Remove the "' + name + '" column? Saved values are kept and restored if you re-add it.')) return;
       var body = new URLSearchParams(); body.set('name', name);
-      fetch(fieldDelUrl, { method: 'POST', headers: hdrs, body: body.toString() })
-        .then(function (r) { return r.json(); })
+      B2B.postForm(fieldDelUrl, body)
         .then(function (j) { if (j.ok) location.reload(); });
     });
   });
@@ -138,8 +133,7 @@ var CFG = JSON.parse(document.getElementById("ship_to-cfg").textContent);
     tbody.querySelectorAll('.stm-del').forEach(function (b) {
       b.addEventListener('click', function () {
         var tr = b.closest('tr'); if (!confirm('Delete this mapping row?')) return;
-        fetch('/b2b/ship-to/' + tr.getAttribute('data-id') + '/delete/', { method: 'POST', headers: hdrs })
-          .then(function (r) { return r.json(); })
+        B2B.postForm('/b2b/ship-to/' + tr.getAttribute('data-id') + '/delete/')
           .then(function (j) { if (j.ok) { tr.remove(); } });
       });
     });
@@ -168,8 +162,7 @@ var CFG = JSON.parse(document.getElementById("ship_to-cfg").textContent);
     act.querySelector('.stm-save').addEventListener('click', function () {
       var body = new URLSearchParams();
       tr.querySelectorAll('.stm-in').forEach(function (i) { body.set(i.getAttribute('data-f'), i.value); });
-      fetch('/b2b/ship-to/' + tr.getAttribute('data-id') + '/edit/', { method: 'POST', headers: hdrs, body: body.toString() })
-        .then(function (r) { return r.json(); })
+      B2B.postForm('/b2b/ship-to/' + tr.getAttribute('data-id') + '/edit/', body)
         .then(function (j) { if (j.ok) reload(); else alert(j.error || 'failed'); });
     });
   }
