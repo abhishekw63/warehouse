@@ -1,7 +1,6 @@
 /* online_b2b/daily_tasks.html — page script (separated). Server values via #daily_tasks-cfg. */
 var CFG = JSON.parse(document.getElementById("daily_tasks-cfg").textContent);
 (function () {
-  var csrf = B2B.csrf();
   var day = document.getElementById('dt-day').value;
   var toggleUrl = CFG.toggle;
   // Calendar: jump to the picked date (query-param nav, no future dates).
@@ -70,10 +69,7 @@ var CFG = JSON.parse(document.getElementById("daily_tasks-cfg").textContent);
     var body = new URLSearchParams({ day: day, channel: cb.dataset.channel,
       step: cb.dataset.step, checked: want ? '1' : '0' });
     if (extra) { Object.keys(extra).forEach(function (k) { body.set(k, extra[k]); }); }
-    fetch(toggleUrl, { method: 'POST', headers: { 'X-CSRFToken': csrf,
-      'X-Requested-With': 'XMLHttpRequest',
-      'Content-Type': 'application/x-www-form-urlencoded' }, body: body })
-      .then(function (r) { return r.json(); })
+    B2B.postForm(toggleUrl, body)
       .then(function (j) {
         cb.disabled = false;
         if (!j.ok) { cb.checked = !want; alert(j.error || 'Could not save.'); return; }
@@ -156,11 +152,7 @@ var CFG = JSON.parse(document.getElementById("daily_tasks-cfg").textContent);
     var val = rin.value.trim();
     if (val === rin.dataset.saved) return;          // unchanged → skip
     rin.dataset.saved = val;
-    fetch(holdReasonUrl, { method: 'POST', headers: { 'X-CSRFToken': csrf,
-      'X-Requested-With': 'XMLHttpRequest',
-      'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ day: day, channel: rin.dataset.channel, remark: val }) })
-      .then(function (r) { return r.json(); })
+    B2B.postForm(holdReasonUrl, new URLSearchParams({ day: day, channel: rin.dataset.channel, remark: val }))
       .then(function (j) {
         if (!j.ok) { alert(j.error || 'Could not save the reason.'); return; }
         rin.classList.toggle('saved', !!val);
@@ -219,10 +211,7 @@ var CFG = JSON.parse(document.getElementById("daily_tasks-cfg").textContent);
   var adDelUrl = CFG.ad_del;
 
   function adPost(url, data) {
-    return fetch(url, { method: 'POST', headers: { 'X-CSRFToken': csrf,
-      'X-Requested-With': 'XMLHttpRequest',
-      'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams(data) }).then(function (r) { return r.json(); });
+    return B2B.postForm(url, new URLSearchParams(data));
   }
   function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
   function adRefreshEmpty() {
@@ -355,10 +344,8 @@ var CFG = JSON.parse(document.getElementById("daily_tasks-cfg").textContent);
       $('em-send').disabled = true; setStatus('<span class="em-spin"></span>Sending…');
       var body = new URLSearchParams();
       body.set('to', toIn.value); body.set('cc', ccIn.value); body.set('note', noteIn.value);
-      fetch(modal.getAttribute('data-send-url') + '?' + dayParams().toString(), {
-        method: 'POST', body: body.toString(),
-        headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded' }
-      }).then(function (r) { return r.json(); }).then(function (j) {
+      B2B.postForm(modal.getAttribute('data-send-url') + '?' + dayParams().toString(), body)
+        .then(function (j) {
         if (j.ok) { setStatus('✓ Sent to your senior.', 'ok'); setTimeout(close, 1500); }
         else { setStatus(j.error || 'Send failed.', 'err'); $('em-send').disabled = false; }
       }).catch(function () { setStatus('Network error — please retry.', 'err'); $('em-send').disabled = false; });

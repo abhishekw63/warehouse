@@ -1,13 +1,7 @@
 /* online_b2b/exceptions.html — page script (separated from template). */
 (function () {
   var xc = document.querySelector('.xc');
-  var csrf = B2B.csrf();
-  function post(url, body) {
-    return fetch(url, { method: 'POST', credentials: 'same-origin',
-      headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest',
-                 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: body }).then(function (r) { return r.json(); });
-  }
+  var post = B2B.postForm;
   // Lens toggle (fade handled by CSS animation on .xview)
   var lensBtns = xc.querySelectorAll('.xlens button'), views = xc.querySelectorAll('.xview');
   lensBtns.forEach(function (b) { b.addEventListener('click', function () {
