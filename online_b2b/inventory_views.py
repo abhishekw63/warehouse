@@ -333,7 +333,7 @@ def inventory_rule_add(request):
         request.POST.get('decision', 'exclude'), request.POST.get('note', ''),
         user=request.user.get_username(),
         warehouse=request.POST.get('warehouse', ''))
-    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+    if common.is_ajax(request):
         return JsonResponse(res)
     if res.get('ok'):
         messages.success(request, "Bin rule saved.")
@@ -346,7 +346,7 @@ def inventory_rule_add(request):
 @require_POST
 def inventory_rule_delete(request, rule_id):
     store.delete_rule(rule_id)
-    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+    if common.is_ajax(request):
         return JsonResponse({'ok': True})
     messages.success(request, "Bin rule removed.")
     return redirect('b2b_inventory_bins')
@@ -361,7 +361,7 @@ def inventory_bin_set(request):
     res = store.set_bin_decision(
         request.POST.get('bin_code', ''), request.POST.get('warehouse', ''),
         request.POST.get('decision', ''), user=request.user.get_username())
-    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+    if common.is_ajax(request):
         return JsonResponse(res, status=200 if res.get('ok') else 400)
     if res.get('ok'):
         messages.success(request, f"Bin set to {res['decision']}.")
@@ -377,7 +377,7 @@ def inventory_apply(request):
     available stock reflects your include/exclude choices (rules already persist
     for future uploads). Optional ``warehouse`` limits it to one WH."""
     res = store.reclassify_current(request.POST.get('warehouse', ''))
-    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+    if common.is_ajax(request):
         return JsonResponse(res, status=200 if res.get('ok') else 400)
     n = sum(1 for r in res.get('results', []) if r.get('ok'))
     if n:

@@ -92,7 +92,7 @@ class CentralHubView(LoginRequiredMixin, TemplateView):
         context = self.get_context_data(**kwargs)
         # AJAX chip switch — swap just the KPI block, no full-page chrome.
         if request.GET.get('partial') or (
-                request.headers.get('x-requested-with') == 'XMLHttpRequest'):
+                common.is_ajax(request)):
             return render(request, 'online_b2b/_hub_kpis.html', context)
         return self.render_to_response(context)
 
@@ -790,8 +790,7 @@ def _filters(request):
 
 
 def _is_ajax(request):
-    return bool(request.GET.get('partial')) or request.headers.get(
-        'x-requested-with') == 'XMLHttpRequest'
+    return bool(request.GET.get('partial')) or common.is_ajax(request)
 
 
 @login_required
@@ -1744,7 +1743,7 @@ class SaveReviewLaterView(LoginRequiredMixin, View):
             pass
         # NOTE: the CP-issue email is sent MANUALLY (a button on the review page),
         # NOT automatically on park — see `draft_email_send`.
-        if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        if common.is_ajax(request):
             return JsonResponse({'ok': True, 'redirect': '/b2b/drafts/'})
         return redirect('b2b_drafts')
 
@@ -1807,7 +1806,7 @@ class DraftsView(LoginRequiredMixin, TemplateView):
     def get(self, request, *args, **kwargs):
         drafts = _collect_drafts()
         if (request.GET.get('format') == 'json'
-                or request.headers.get('x-requested-with') == 'XMLHttpRequest'):
+                or common.is_ajax(request)):
             return JsonResponse({'ok': True, 'data': drafts})
         return self.render_to_response({'drafts': drafts})
 
@@ -1820,7 +1819,7 @@ def confirm(request, token):
     Answers JSON when called via fetch (``X-Requested-With``) so the review page
     can lock in place with a progress bar — no full reload. Falls back to the
     classic redirect flow when JS is off."""
-    ajax = request.headers.get('x-requested-with') == 'XMLHttpRequest'
+    ajax = common.is_ajax(request)
     meta, d = _load_meta(token)
     if not meta:
         raise Http404("Upload not found or expired.")
@@ -2830,7 +2829,7 @@ def ship_to_add(request):
     """Add ONE mapping row (durable manual). Passes every posted field through so
     custom ``cf_*`` values are captured too."""
     from .services import mapping_store as ms
-    data = {k: v for k, v in request.POST.items() if k != 'csrfmiddlewaretoken'}
+    data = common.post_dict(request)
     res = ms.add_mapping(data)
     return JsonResponse(res, status=200 if res.get('ok') else 400)
 
@@ -2905,7 +2904,7 @@ def ship_to_edit(request, row_id):
     inline City/Postcode tweak never blanks the enriched Address. Custom ``cf_*``
     values ride along."""
     from .services import mapping_store as ms
-    data = {k: v for k, v in request.POST.items() if k != 'csrfmiddlewaretoken'}
+    data = common.post_dict(request)
     res = ms.update_mapping(row_id, data)
     return JsonResponse(res, status=200 if res.get('ok') else 400)
 
@@ -3349,9 +3348,9 @@ class EkaDataView(LoginRequiredMixin, TemplateView):
 @require_POST
 def eka_data_update(request, row_id):
     from .services import eka_data
-    data = {k: v for k, v in request.POST.items() if k != 'csrfmiddlewaretoken'}
+    data = common.post_dict(request)
     res = eka_data.update_row(row_id, data)
-    if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+    if common.is_ajax(request):
         return JsonResponse(res, status=200 if res.get('ok') else 400)
     if res.get('ok'):
         messages.success(request, 'EKA store updated.')
@@ -3364,7 +3363,7 @@ def eka_data_update(request, row_id):
 @require_POST
 def eka_data_add(request):
     from .services import eka_data
-    data = {k: v for k, v in request.POST.items() if k != 'csrfmiddlewaretoken'}
+    data = common.post_dict(request)
     res = eka_data.add_row(data)
     if res.get('ok'):
         messages.success(request, 'EKA store added.')

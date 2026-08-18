@@ -134,7 +134,7 @@ class RecordVerificationConfirmView(LoginRequiredMixin, View):
         res['confirmed'] = True
         rp.write_text(json.dumps(res, default=str), encoding='utf-8')
         msg = f"✓ Verification recorded — {out.get('confirmed', 0)} PO(s) logged."
-        if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+        if common.is_ajax(request):
             return JsonResponse({'ok': True, 'confirmed': out.get('confirmed', 0), 'message': msg})
         messages.success(request, msg)
         return redirect(f"{reverse('b2b_record_verify')}?token={token}")
