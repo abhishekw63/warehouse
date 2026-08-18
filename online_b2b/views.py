@@ -1497,9 +1497,7 @@ def upload(request):
             saved = []
             for f in form.cleaned_data['po_files']:
                 dest = up_dir / Path(f.name).name
-                with open(dest, 'wb') as out:
-                    for chunk in f.chunks():
-                        out.write(chunk)
+                common.save_upload(f, dest)
                 saved.append(dest.name)
             marketplace = form.cleaned_data['marketplace']
             # Blank margin → the marketplace's configured default landing rate
@@ -2253,9 +2251,7 @@ def bulk_upload(request):
         up.mkdir(parents=True, exist_ok=True)
         f = request.FILES['erp_file']
         dest = up / Path(f.name).name
-        with open(dest, 'wb') as out:
-            for chunk in f.chunks():
-                out.write(chunk)
+        common.save_upload(f, dest)
         (up / 'name.txt').write_text(dest.name, encoding='utf-8')
         return redirect('b2b_bulk_review', token=token)
     return render(request, 'online_b2b/bulk_upload.html')
@@ -2428,9 +2424,7 @@ def item_master_upload(request):
     items_path = d / ('items' + Path(items_f.name).suffix)
     mrp_path = d / ('mrp' + Path(mrp_f.name).suffix)
     for f, dest in ((items_f, items_path), (mrp_f, mrp_path)):
-        with open(dest, 'wb') as out:
-            for chunk in f.chunks():
-                out.write(chunk)
+        common.save_upload(f, dest)
     (d / 'meta.json').write_text(json.dumps({
         'items_name': items_f.name, 'mrp_name': mrp_f.name,
         'items_path': items_path.name, 'mrp_path': mrp_path.name,
@@ -2604,9 +2598,7 @@ def gt_select_upload(request):
     hp = d / ('headers' + Path(hf.name).suffix)
     lp = d / ('lines' + Path(lf.name).suffix)
     for f, dest in ((hf, hp), (lf, lp)):
-        with open(dest, 'wb') as out:
-            for chunk in f.chunks():
-                out.write(chunk)
+        common.save_upload(f, dest)
     (d / 'meta.json').write_text(json.dumps({
         'headers_name': hf.name, 'lines_name': lf.name,
         'headers_path': hp.name, 'lines_path': lp.name,
@@ -2728,9 +2720,7 @@ def ship_to_upload(request):
     d = _STM_UPLOADS / token
     d.mkdir(parents=True, exist_ok=True)
     dest = d / ('mapping' + Path(f.name).suffix)
-    with open(dest, 'wb') as out:
-        for chunk in f.chunks():
-            out.write(chunk)
+    common.save_upload(f, dest)
     (d / 'meta.json').write_text(json.dumps(
         {'name': f.name, 'path': dest.name}), encoding='utf-8')
     return redirect('b2b_ship_to_preview', token=token)
@@ -3394,9 +3384,7 @@ def eka_data_upload(request):
         messages.error(request, 'Choose the EKA_DATA.xlsx file to upload.')
         return redirect('b2b_eka_data')
     tmp = os.path.join(tempfile.gettempdir(), 'eka_upload_' + uuid.uuid4().hex[:8] + '.xlsx')
-    with open(tmp, 'wb') as out:
-        for chunk in f.chunks():
-            out.write(chunk)
+    common.save_upload(f, tmp)
     try:
         res = eka_data.load_from_excel(tmp, replace=True)
         messages.success(request, f"Loaded {res['loaded']} EKA store row(s) from Excel (table replaced).")

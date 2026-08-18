@@ -59,9 +59,7 @@ def full_validation_run(request):
     d.mkdir(parents=True, exist_ok=True)
     hp, lp = d / 'headers.xlsx', d / 'lines.xlsx'
     for f, p in ((hf, hp), (lf, lp)):
-        with open(p, 'wb') as out:
-            for chunk in f.chunks():
-                out.write(chunk)
+        common.save_upload(f, p)
     from .services import full_validation as fv
     res = fv.validate(str(hp), str(lp), excel_out=str(d / 'reconciliation.xlsx'))
     (d / 'result.json').write_text(json.dumps(res, default=str), encoding='utf-8')

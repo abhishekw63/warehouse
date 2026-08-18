@@ -84,9 +84,7 @@ class RecordVerificationRunView(LoginRequiredMixin, View):
         saved = []
         for i, f in enumerate(batch):
             p = fdir / f"{i}_{Path(f.name).name}"
-            with open(p, 'wb') as out:
-                for chunk in f.chunks():
-                    out.write(chunk)
+            common.save_upload(f, p)
             saved.append(str(p))
 
         # resolve which file is Headers vs Lines (by their signature columns)

@@ -24,6 +24,8 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.shortcuts import redirect, render
+
+from .services import common
 from django.views.decorators.http import require_POST
 
 from .services import inventory_store as store
@@ -150,9 +152,7 @@ def inventory_upload(request):
     saved = []
     for i, f in enumerate(files):
         dest = d / (f"bin_{i}" + (Path(f.name).suffix or '.xlsx'))
-        with open(dest, 'wb') as out:
-            for chunk in f.chunks():
-                out.write(chunk)
+        common.save_upload(f, dest)
         saved.append({'name': f.name, 'path': dest.name})
     (d / 'meta.json').write_text(json.dumps({'files': saved}), encoding='utf-8')
     return redirect('b2b_inventory_preview', token=token)
