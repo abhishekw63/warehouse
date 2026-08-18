@@ -82,8 +82,15 @@
    * ===================================================================== */
   var toastHost;
   B2B.toast = function (msg, opts) {
+    // Tolerant signature: a STRING 2nd arg is taken as the type (many call sites do
+    // B2B.toast(msg, 'ok'/'error')). Alias legacy/synonym names to the 4 real toast
+    // types (ok · error · warn · info) so styling is always correct — 'success'→'ok',
+    // 'err'/'danger'→'error', etc. Existing {type:'ok'|'error'|…} still pass through.
+    if (typeof opts === "string") opts = { type: opts };
     opts = opts || {};
-    var type = opts.type || "info";
+    var _TYPE = { success: "ok", ok: "ok", err: "error", error: "error", danger: "error",
+                  warning: "warn", warn: "warn", info: "info" };
+    var type = _TYPE[opts.type] || opts.type || "info";
     if (!toastHost) { toastHost = el("div", "enh-toasts"); d.body.appendChild(toastHost); }
     var t = el("div", "enh-toast " + type);
     var badge = el("span", "enh-tbadge");            // circular icon badge
