@@ -19,8 +19,61 @@ backend choice and credentials come from the engine's own ``load_db_config``
 
 from __future__ import annotations
 
+import os
 import sqlite3
+import threading
 from contextlib import contextmanager
+
+# ── Per-thread warm connection pool for the MySQL/TiDB hot path ───────────────
+# Remote TiDB's TLS handshake costs ~0.8s; the app opened a FRESH connection on
+# every _conn(), so pages doing several queries stacked seconds of pure connect
+# latency. We now keep ONE live connection per worker thread (waitress/gunicorn
+# are threaded) and revive it with ping(reconnect=True). Only the read/autocommit
+# path is pooled — _conn_tx() (Lock & Record) still opens a fresh connection, so
+# the all-or-nothing write path is unchanged. Kill switch: ORDERDB_NO_POOL=1.
+_local = threading.local()
+
+
+def _new_mysql(target):
+    """A fresh autocommit pymysql connection (identical kwargs to the original)."""
+    import pymysql
+    from online_po_processor.auto.history_db import mysql_ssl
+    return pymysql.connect(
+        host=target.get('host', '127.0.0.1'),
+        port=int(target.get('port', 3306)),
+        user=target.get('user', 'root'),
+        password=target.get('password', ''),
+        database=target.get('database', 'renee_orders'),
+        charset='utf8mb4', autocommit=True,
+        **mysql_ssl(target),
+    )
+
+
+def _pooled_mysql(target):
+    """Return a live thread-local connection, reconnecting if it dropped or the
+    target changed. Falls back to a brand-new connection on any pool hiccup."""
+    key = (target.get('host'), int(target.get('port', 3306)), target.get('database'))
+    c = getattr(_local, 'oc', None)
+    if c is not None and getattr(_local, 'ok', None) == key:
+        try:
+            c.ping(reconnect=True)      # revive an idle/closed socket
+            return c
+        except Exception:               # noqa: BLE001 — poisoned; rebuild below
+            _drop_pooled()
+    c = _new_mysql(target)
+    _local.oc, _local.ok = c, key
+    return c
+
+
+def _drop_pooled():
+    """Close + forget the thread's pooled connection (used on any DB error)."""
+    c = getattr(_local, 'oc', None)
+    if c is not None:
+        try:
+            c.close()
+        except Exception:  # noqa: BLE001
+            pass
+    _local.oc = None
 
 
 def _backend():
@@ -42,21 +95,26 @@ def _conn():
     kind, target = _backend()
     if kind == 'mysql':
         import pymysql
-        from online_po_processor.auto.history_db import mysql_ssl
-        c = pymysql.connect(
-            host=target.get('host', '127.0.0.1'),
-            port=int(target.get('port', 3306)),
-            user=target.get('user', 'root'),
-            password=target.get('password', ''),
-            database=target.get('database', 'renee_orders'),
-            charset='utf8mb4', autocommit=True,
-            **mysql_ssl(target),            # TiDB / any TLS host
-        )
         dialect = {'ph': '%s', 'orders': 'order_headers', 'kind': 'mysql'}
+        if os.environ.get('ORDERDB_NO_POOL'):        # kill switch → old behaviour
+            c = _new_mysql(target)
+            try:
+                yield c.cursor(), dialect
+            finally:
+                c.close()
+            return
+        c = _pooled_mysql(target)                    # warm, reused connection
+        cur = c.cursor()
         try:
-            yield c.cursor(), dialect
+            yield cur, dialect
+        except pymysql.Error:                        # DB-level error → conn may be
+            _drop_pooled()                           # unhealthy; discard so the next
+            raise                                    # call reconnects fresh
         finally:
-            c.close()
+            try:
+                cur.close()                          # release the cursor; keep the conn
+            except Exception:  # noqa: BLE001
+                pass
     else:
         c = sqlite3.connect(str(target))
         dialect = {'ph': '?', 'orders': 'orders', 'kind': 'sqlite'}
