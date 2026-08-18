@@ -9,9 +9,6 @@ var CFG = JSON.parse(document.getElementById("issues-cfg").textContent);
   var saveUrl = CFG["b2b_issues_save"];
   var bulkUrl = CFG["b2b_issues_save_bulk"];
   var fixUrl  = CFG["b2b_issues_fix_ean"];
-  var csrf = B2B.csrf();
-  var hdrs = { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest',
-               'Content-Type': 'application/x-www-form-urlencoded' };
   var timer = null, ctrl = null;
 
   var exportLink = document.getElementById('iss-export');
@@ -57,8 +54,7 @@ var CFG = JSON.parse(document.getElementById("issues-cfg").textContent);
     body.set('line_id', line);
     body.set('action', sel ? sel.value : '');
     body.set('remark', rem ? rem.value : '');
-    fetch(saveUrl, { method: 'POST', body: body.toString(), headers: hdrs })
-      .then(function (r) { return r.json(); })
+    B2B.postForm(saveUrl, body)
       .then(function (j) {
         if (!j.ok) return;
         if (reload) { load(); }                 // action changed → resolution may change → refresh
@@ -79,8 +75,7 @@ var CFG = JSON.parse(document.getElementById("issues-cfg").textContent);
     if (msg) { msg.textContent = 'resolving…'; msg.className = 'ef-msg'; }
     var body = new URLSearchParams();
     body.set('line_id', line); body.set('correct_ean', val);
-    fetch(fixUrl, { method: 'POST', body: body.toString(), headers: hdrs })
-      .then(function (r) { return r.json(); })
+    B2B.postForm(fixUrl, body)
       .then(function (j) {
         if (!j.ok) {
           btn.disabled = false; if (inp) inp.disabled = false;
@@ -109,8 +104,7 @@ var CFG = JSON.parse(document.getElementById("issues-cfg").textContent);
     body.set('line_id', line);
     body.set('action', 'EXCLUDE');
     body.set('remark', 'not a real SKU — dropped from PO');
-    fetch(saveUrl, { method: 'POST', body: body.toString(), headers: hdrs })
-      .then(function (r) { return r.json(); })
+    B2B.postForm(saveUrl, body)
       .then(function (j) {
         if (!j.ok) { btn.disabled = false; if (msg) { msg.textContent = j.error || 'failed'; msg.className = 'ef-msg err'; } return; }
         if (msg) { msg.textContent = '✓ excluded'; msg.className = 'ef-msg ok'; }
@@ -178,8 +172,7 @@ var CFG = JSON.parse(document.getElementById("issues-cfg").textContent);
     var body = new URLSearchParams();
     body.set('action', act); body.set('remark', rem);
     sels.forEach(function (s) { body.append('line_ids', s.getAttribute('data-line')); });
-    fetch(bulkUrl, { method: 'POST', body: body.toString(), headers: hdrs })
-      .then(function (r) { return r.json(); })
+    B2B.postForm(bulkUrl, body)
       .then(function (j) {
         if (!j.ok) return;
         msg.textContent = '✓ applied to ' + j.updated; msg.hidden = false;
@@ -198,8 +191,6 @@ var CFG = JSON.parse(document.getElementById("issues-cfg").textContent);
   var btn = document.getElementById('iss-email');
   var form = document.getElementById('iss-filters');
   if (!modal || !btn || !form) return;
-  var csrfEl = document.getElementById('iss-csrf');
-  var csrf = csrfEl ? csrfEl.value : '';
   var $ = function (id) { return document.getElementById(id); };
 
   var toIn = $('em-to-in'), ccIn = $('em-cc-in'), noteIn = $('em-note');
@@ -298,11 +289,8 @@ var CFG = JSON.parse(document.getElementById("issues-cfg").textContent);
     setStatus('<span class="em-spin"></span>Sending…');
     var body = new URLSearchParams();
     body.set('to', toIn.value); body.set('cc', ccIn.value); body.set('note', noteIn.value);
-    fetch(modal.getAttribute('data-send-url') + '?' + params().toString(), {
-      method: 'POST', body: body.toString(),
-      headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest',
-                 'Content-Type': 'application/x-www-form-urlencoded' }
-    }).then(function (r) { return r.json(); }).then(function (j) {
+    B2B.postForm(modal.getAttribute('data-send-url') + '?' + params().toString(), body)
+      .then(function (j) {
       if (j.ok) { setStatus('✓ Sent ' + (j.count || '') + ' line(s).', 'ok'); setTimeout(close, 1500); }
       else { setStatus(j.error || 'Send failed.', 'err'); $('em-send').disabled = false; }
     }).catch(function () { setStatus('Network error — please retry.', 'err'); $('em-send').disabled = false; });

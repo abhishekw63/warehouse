@@ -165,10 +165,8 @@ var CFG = JSON.parse(document.getElementById("inventory-cfg").textContent);
     body.append('warehouse', wh);
     body.append('decision', next);
     body.append('csrfmiddlewaretoken', csrf);
-    fetch(CFG.bin_set, {
-      method: 'POST', credentials: 'same-origin',
-      headers: {'X-Requested-With': 'XMLHttpRequest'}, body: body
-    }).then(function (r) { return r.json(); }).then(function (j) {
+    B2B.postForm(CFG.bin_set, body)
+      .then(function (j) {
       btn.classList.remove('saving');
       if (!j || !j.ok) { toast((j && j.error) || 'Could not update bin.', 'error'); return; }
       moveBin(btn, wh, next);
@@ -189,10 +187,8 @@ var CFG = JSON.parse(document.getElementById("inventory-cfg").textContent);
     var body = new FormData();
     body.append('warehouse', wh);
     body.append('csrfmiddlewaretoken', csrf);
-    fetch(CFG.apply, {
-      method: 'POST', credentials: 'same-origin',
-      headers: {'X-Requested-With': 'XMLHttpRequest'}, body: body
-    }).then(function (r) { return r.json(); }).then(function (j) {
+    B2B.postForm(CFG.apply, body)
+      .then(function (j) {
       if (j && j.ok) {
         toast('Locked & applied — available stock recalculated.', 'ok');
         setTimeout(function () { location.reload(); }, 750);
