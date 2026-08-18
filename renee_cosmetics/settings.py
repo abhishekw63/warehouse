@@ -107,6 +107,10 @@ INSTALLED_APPS = [
     "core",
     'offline',
     'online_b2b',
+    'returns',
+    'online_b2c',
+    'inventory',
+    'other',
     'grn',
 ]
 

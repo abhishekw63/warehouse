@@ -34,7 +34,13 @@ pdfminer.six==20251230
 pypdfium2==5.9.0
 pillow==12.2.0
 
-typing_extensions==4.15.0   # transitive dep (kept pinned)
+# ── API helpers ──
+django-ninja==1.6.2
+pydantic==2.13.4
+pydantic_core==2.46.4
+annotated-types==0.7.0
+typing_extensions==4.15.0
+typing-inspection==0.4.2
 
 # ── Dev / tooling (optional on the host) ──
 ruff==0.15.18
