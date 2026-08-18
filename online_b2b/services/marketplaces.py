@@ -57,10 +57,12 @@ CHANNELS: list[Channel] = [
     Channel('firstcry', 'First Cry', 'Online', 'Firstcry'),
     Channel('dmart', 'D Mart', 'Online', 'Dmart'),
     Channel('meesho', 'Meesho-SB', 'Online', 'Meesho-TO'),
-    # db_key='Blink RO': BlinkMP line items are recorded under marketplace
-    # 'Blink RO' (the header shows 'BlinkMP'); without this the board can't fold
-    # their qty/value → the row showed 0. Display stays 'BlinkMP'.
-    Channel('blinkmp', 'BlinkMP', 'Online', 'Blink RO', False),
+    # BlinkMP records with a SPLIT marketplace: order_LINES.marketplace='Blink RO'
+    # (so db_key='Blink RO' folds their qty/value on the line-based board), but
+    # order_HEADERS.marketplace/label='BlinkMP'. Daily-Tasks auto-detect reads the
+    # HEADER, so it also needs db_label='BlinkMP' to resolve — else the row never
+    # auto-ticks despite POs being recorded. Display stays 'BlinkMP'.
+    Channel('blinkmp', 'BlinkMP', 'Online', 'Blink RO', False, db_label='BlinkMP'),
     Channel('smytten', 'Smytten', 'Online', '', False),
     # ── Offline ──
     Channel('gt_mass', 'GT Mass', 'Offline', 'GT Mass'),
