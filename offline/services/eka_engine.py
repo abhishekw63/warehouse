@@ -1077,8 +1077,12 @@ class ExcelWriter:
                 if so_num and so_num.startswith('SO/') and so_num not in seen_so:
                     seen_so.add(so_num)
                     loc = loc_lookup.get(res.filename, {})
-                    bill_to = loc.get('bill_to', '')
-                    ship_to = loc.get('ship_to', '')
+                    # Web path (eka_bridge) keys stores differently and stamps the
+                    # resolved Sell-to/Ship-to onto the result as _so_bill_to/_so_ship_to.
+                    # Fall back to those on a loc_lookup miss so web-generated SO headers
+                    # aren't blank (desktop still wins via loc_lookup). [[eka-on-web]]
+                    bill_to = loc.get('bill_to', '') or getattr(res, '_so_bill_to', '')
+                    ship_to = loc.get('ship_to', '') or getattr(res, '_so_ship_to', '')
 
                     cls._data_cell(ws, r, 1, 'Order')
                     cls._data_cell(ws, r, 2, so_num)
