@@ -130,15 +130,26 @@
     .f-dot{fill:#a5f3fc;}
     .f-dot circle{animation:blip 2.4s ease-in-out infinite;}
     @keyframes blip{0%,100%{r:3;opacity:1;}50%{r:5;opacity:.55;}}
+    /* Registered custom prop so the conic gauge can ANIMATE its fill (0 → 98%). */
+    @property --v{syntax:'<number>';inherits:false;initial-value:0;}
     .f-kpi .ring{--v:98;width:56px;height:56px;border-radius:50%;margin:0 auto 8px;
-      background:conic-gradient(#34d399 calc(var(--v)*1%),rgba(255,255,255,.16) 0);display:grid;place-items:center;}
+      background:conic-gradient(#34d399 calc(var(--v)*1%),rgba(255,255,255,.16) 0);display:grid;place-items:center;
+      animation:gaugeFill 1.7s cubic-bezier(.22,1,.36,1) .9s both;}
+    @keyframes gaugeFill{from{--v:0;}to{--v:98;}}
     .f-kpi .ring i{width:42px;height:42px;border-radius:50%;background:rgba(30,20,60,.55);display:grid;place-items:center;color:#fff;font-weight:800;font-size:13px;font-style:normal;}
     .f-kpi .cap{color:#fff;text-align:center;font-size:11px;font-weight:700;text-shadow:0 1px 3px rgba(10,6,30,.35);}
     .f-kpi .cap small{display:block;color:#ffffffc4;font-weight:600;font-size:10px;letter-spacing:.06em;text-transform:uppercase;margin-top:2px;}
 
     /* ── Right: glass sign-in card ── */
-    .panel{display:flex;justify-content:center;perspective:1100px;}
-    .card{position:relative;width:100%;max-width:410px;border-radius:22px;overflow:hidden;
+    .panel{position:relative;display:flex;justify-content:center;perspective:1100px;}
+    /* Breathing aurora bloom behind the card — slow rotate + gentle pulse. */
+    .panel::before{content:"";position:absolute;top:50%;left:50%;width:min(430px,82%);aspect-ratio:1/1.16;
+      transform:translate(-50%,-50%);border-radius:34px;z-index:0;pointer-events:none;
+      background:conic-gradient(from 0deg,#22d3ee,#7c83ff,#e879f9,#fde047,#34d399,#22d3ee);
+      filter:blur(52px);opacity:.34;animation:auraSpin 15s linear infinite,auraBreathe 6s ease-in-out infinite;}
+    @keyframes auraSpin{to{transform:translate(-50%,-50%) rotate(360deg);}}
+    @keyframes auraBreathe{0%,100%{opacity:.28;}50%{opacity:.44;}}
+    .card{position:relative;z-index:1;width:100%;max-width:410px;border-radius:22px;overflow:hidden;
       background:var(--card);border:1px solid var(--card-brd);backdrop-filter:blur(26px) saturate(150%);
       box-shadow:0 44px 100px -34px rgba(24,16,64,.62),0 2px 0 0 #ffffff90 inset;
       padding:38px 36px 30px;animation:cardIn .75s cubic-bezier(.22,1,.36,1) .55s backwards;
@@ -238,6 +249,7 @@
       .rise,.card,.devnote{animation:none;opacity:1;transform:none;} .err{animation:none;}
       .f-line,.chip .spk{stroke-dashoffset:0;animation:none;}
       .chip .spk-dot{opacity:1;animation:none;}
+      .f-kpi .ring{--v:98;animation:none;} .panel::before{animation:none;}
       .dn-badge,.dn-badge::before,.dn-badge .spark,.dn-name,.dn-badge .twinkle{animation:none;}
       .flow-light{animation:none;-webkit-text-fill-color:#ffffffcc;color:#ffffffcc;}
     }
@@ -377,6 +389,12 @@
     // count-up on live stat chips — triggered once the page reveals (post-splash)
     window.__startCount=function(){
       if(REDUCE) return;
+      // OTIF gauge number ticks 0 → 98% in step with the conic fill (delay .9s, ~1.7s).
+      (function(){var g=document.querySelector('.f-kpi .ring i'); if(!g) return;
+        var tgt=parseInt((g.textContent.match(/\d+/)||[98])[0],10),dur=1700,t0=null;
+        setTimeout(function(){requestAnimationFrame(function s(ts){if(!t0)t0=ts;
+          var p=Math.min((ts-t0)/dur,1),e=1-Math.pow(1-p,3);g.textContent=Math.round(tgt*e)+'%';
+          if(p<1)requestAnimationFrame(s);else g.textContent=tgt+'%';});},900);})();
       var els=[].slice.call(document.querySelectorAll('.stats .n')); if(!els.length) return;
       function run(el){var raw=el.textContent.trim();var m=raw.match(/^([^\d]*)([\d,]+(?:\.\d+)?)(.*)$/);if(!m)return;
         var pre=m[1],numStr=m[2].replace(/,/g,''),suf=m[3];var target=parseFloat(numStr);if(isNaN(target))return;
