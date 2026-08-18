@@ -10,6 +10,7 @@ from django.http import Http404, HttpResponse
 from django.test import RequestFactory, SimpleTestCase
 
 from online_b2b.services import common
+from online_b2b.services import marketplaces as reg
 
 
 class TokenDirTests(SimpleTestCase):
@@ -108,3 +109,35 @@ class XlsxResponseTests(SimpleTestCase):
             freeze=True, str_cols=('ts',)))
         self.assertEqual(ws.freeze_panes, 'A2')
         self.assertEqual(ws.cell(2, 1).value, '20260818')  # coerced to str, not int
+
+
+class MarketplaceRegistryTests(SimpleTestCase):
+    """Locks the auto-detect resolution — incl. the BlinkMP header/line split fix."""
+
+    def _resolve(self, marketplace, label):
+        # mirrors daily_checklist._recorded_web: label (fine) first, then marketplace.
+        dl, dk = reg.db_label_to_channel(), reg.db_key_to_channel()
+        return dl.get(str(label or '')) or dk.get(str(marketplace))
+
+    def test_blinkmp_header_autodetects(self):
+        # BlinkMP records order_headers.marketplace/label='BlinkMP' → must resolve so
+        # Daily Tasks auto-ticks (the bug: it only had db_key='Blink RO').
+        self.assertEqual(self._resolve('BlinkMP', 'BlinkMP'), 'blinkmp')
+
+    def test_blinkmp_line_key_still_folds(self):
+        # order_lines record marketplace='Blink RO' — the board fold must still map it.
+        self.assertEqual(reg.db_key_to_channel().get('Blink RO'), 'blinkmp')
+
+    def test_blink_and_blinkmp_are_distinct(self):
+        self.assertEqual(reg.get('blink').db_key, 'Blink')
+        self.assertEqual(reg.get('blinkmp').db_key, 'Blink RO')
+        self.assertEqual(reg.get('blinkmp').db_label, 'BlinkMP')
+        self.assertEqual(self._resolve('Blink', 'Blink'), 'blink')  # not blinkmp
+
+    def test_channel_keys_are_unique(self):
+        keys = [c.key for c in reg.channels()]
+        self.assertEqual(len(keys), len(set(keys)))
+
+    def test_db_key_map_has_no_collisions(self):
+        db_keys = [c.db_key for c in reg.channels() if c.db_key]
+        self.assertEqual(len(db_keys), len(set(db_keys)))
