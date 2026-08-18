@@ -92,7 +92,7 @@
   form.order_type.addEventListener('change', function () { load(true); });
   form.date_from.addEventListener('change', function () { load(true); });
   form.date_to.addEventListener('change', function () { load(true); });
-  form.q.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(function () { load(true); }, 350); });
+  form.q.addEventListener('input', B2B.debounce(function () { load(true); }, 350));
   form.addEventListener('submit', function (e) { e.preventDefault(); load(true); });
   document.getElementById('b2b-reset').addEventListener('click', function (e) {
     e.preventDefault();

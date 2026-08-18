@@ -33,7 +33,7 @@ var CFG = JSON.parse(document.getElementById("sku_summary-cfg").textContent);
   form.from.addEventListener('change', load);
   form.to.addEventListener('change', load);
   form.issues.addEventListener('change', load);
-  form.q.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(load, 300); });
+  form.q.addEventListener('input', B2B.debounce(load, 300));
 
   // Qty ↔ Lines toggle (pure CSS via a body-ish class)
   document.querySelectorAll('.sk-tg').forEach(function (b) {

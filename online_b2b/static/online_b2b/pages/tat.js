@@ -55,7 +55,7 @@
   form.status.addEventListener('change', load);
   form.segment.addEventListener('change', load);
   form.run.addEventListener('change', load);
-  form.q.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(load, 300); });
+  form.q.addEventListener('input', B2B.debounce(load, 300));
   form.date_from.addEventListener('change', load);
   form.date_to.addEventListener('change', load);
   document.getElementById('tat-today').addEventListener('click', function () {

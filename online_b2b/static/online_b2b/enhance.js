@@ -344,6 +344,16 @@
       body: JSON.stringify(obj || {})
     }).then(function (r) { return r.json(); });
   };
+  // Trailing debounce — returns a wrapped fn that only runs ms after the last call
+  // (search inputs, resize handlers, etc.). Preserves this/args.
+  B2B.debounce = function (fn, ms) {
+    var t;
+    return function () {
+      var self = this, args = arguments;
+      clearTimeout(t);
+      t = setTimeout(function () { fn.apply(self, args); }, ms || 250);
+    };
+  };
 
   /* ---- Reusable "select-all + live count" for tick tables ----------------- *
    * Review-page style row selection: a master checkbox drives N item checkboxes

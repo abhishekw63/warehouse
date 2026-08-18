@@ -51,8 +51,8 @@ var CFG = JSON.parse(document.getElementById("lines-cfg").textContent);
   }
   form.marketplace.addEventListener('change', function () { load(true); });
   form.status.addEventListener('change', function () { load(true); });
-  form.po.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(function () { load(true); }, 350); });
-  form.q.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(function () { load(true); }, 350); });
+  form.po.addEventListener('input', B2B.debounce(function () { load(true); }, 350));
+  form.q.addEventListener('input', B2B.debounce(function () { load(true); }, 350));
   document.getElementById('ln-reset').addEventListener('click', function (e) {
     e.preventDefault(); form.marketplace.value = ''; form.status.value = ''; form.po.value = ''; form.q.value = ''; load(true);
   });

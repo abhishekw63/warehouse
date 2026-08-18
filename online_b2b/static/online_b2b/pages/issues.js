@@ -147,7 +147,7 @@ var CFG = JSON.parse(document.getElementById("issues-cfg").textContent);
 
   form.resolution.addEventListener('change', load);
   form.status.addEventListener('change', load);
-  form.q.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(load, 300); });
+  form.q.addEventListener('input', B2B.debounce(load, 300));
   form.date_from.addEventListener('change', load);
   form.date_to.addEventListener('change', load);
   document.getElementById('iss-today').addEventListener('click', function () {
