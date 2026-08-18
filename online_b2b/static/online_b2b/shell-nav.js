@@ -93,11 +93,31 @@
   function barStart() { if (bar) { bar.className = 'np on creep'; bar.style.width = '0'; requestAnimationFrame(function () { bar.style.width = '90%'; }); } }
   function barDone() { if (!bar) return; bar.className = 'np on finish'; bar.style.width = '100%'; setTimeout(function () { bar.style.opacity = '0'; setTimeout(function () { bar.className = 'np'; bar.style.width = '0'; bar.style.opacity = ''; }, 320); }, 180); }
 
+  // Fetch a shell page's HTML (with the same redirect/ok guard the nav uses).
+  function fetchText(url) {
+    return fetch(url, { credentials: 'same-origin', headers: { 'X-Requested-With': 'fetch' } })
+      .then(function (r) { if (!r.ok || (r.redirected && new URL(r.url).pathname !== new URL(url).pathname)) throw 0; return r.text(); });
+  }
+
+  // ── Hover/press PREFETCH ── the big perceived-speed win: warm the next page in
+  // the background while the pointer is still on the link, so the click swaps an
+  // already-fetched document instantly. Entries self-expire so nothing goes stale.
+  var pf = {};                                     // url -> { p: Promise<html> }
+  function prefetch(url) {
+    if (pf[url]) return;
+    var rec = { p: fetchText(url).catch(function () { if (pf[url] === rec) delete pf[url]; throw 0; }) };
+    pf[url] = rec;
+    w.setTimeout(function () { if (pf[url] === rec) delete pf[url]; }, 10000);
+  }
+  function grab(url) {                             // reuse a warm prefetch if we have one
+    var rec = pf[url]; if (rec) { delete pf[url]; return rec.p; }
+    return fetchText(url);
+  }
+
   function navigate(url, push) {
     var my = ++token;
     barStart();
-    fetch(url, { credentials: 'same-origin', headers: { 'X-Requested-With': 'fetch' } })
-      .then(function (r) { if (!r.ok || (r.redirected && new URL(r.url).pathname !== new URL(url).pathname)) throw 0; return r.text(); })
+    grab(url)
       .then(function (html) {
         if (my !== token) return;                       // a newer nav superseded us
         var doc = new DOMParser().parseFromString(html, 'text/html');
@@ -130,6 +150,23 @@
       })
       .catch(function () { fullNav(url); });
   }
+
+  // Prefetch on hover (after a tiny delay so a quick pass-over doesn't fire) and on
+  // press — whichever lands first warms the page before the click resolves.
+  var hoverT;
+  d.addEventListener('mouseover', function (e) {
+    var a = e.target.closest && e.target.closest('a[href]'); if (!a) return;
+    // Scope hover-prefetch to real navigation (sidebar), not arbitrary in-content links.
+    if (!(a.classList.contains('sn') || (a.closest && a.closest('.b2b-side')))) return;
+    var url = candidate(a); if (!url || url === location.href) return;
+    clearTimeout(hoverT); hoverT = w.setTimeout(function () { prefetch(url); }, 60);
+  });
+  d.addEventListener('mouseout', function () { clearTimeout(hoverT); });
+  d.addEventListener('mousedown', function (e) {
+    if (e.button !== 0) return;
+    var a = e.target.closest && e.target.closest('a[href]'); if (!a) return;
+    var url = candidate(a); if (url && url !== location.href) prefetch(url);
+  });
 
   d.addEventListener('click', function (e) {
     if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;

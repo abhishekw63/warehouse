@@ -142,13 +142,13 @@
 
     /* ── Right: glass sign-in card ── */
     .panel{position:relative;display:flex;justify-content:center;perspective:1100px;}
-    /* Breathing aurora bloom behind the card — slow rotate + gentle pulse. */
+    /* Static aurora bloom behind the card — only OPACITY breathes (compositor-cheap;
+       no rotation, so the large blurred layer is rasterised once, not every frame). */
     .panel::before{content:"";position:absolute;top:50%;left:50%;width:min(430px,82%);aspect-ratio:1/1.16;
-      transform:translate(-50%,-50%);border-radius:34px;z-index:0;pointer-events:none;
-      background:conic-gradient(from 0deg,#22d3ee,#7c83ff,#e879f9,#fde047,#34d399,#22d3ee);
-      filter:blur(52px);opacity:.34;animation:auraSpin 15s linear infinite,auraBreathe 6s ease-in-out infinite;}
-    @keyframes auraSpin{to{transform:translate(-50%,-50%) rotate(360deg);}}
-    @keyframes auraBreathe{0%,100%{opacity:.28;}50%{opacity:.44;}}
+      transform:translate(-50%,-50%);border-radius:34px;z-index:0;pointer-events:none;will-change:opacity;
+      background:conic-gradient(from 210deg,#22d3ee,#7c83ff,#e879f9,#fde047,#34d399,#22d3ee);
+      filter:blur(48px);opacity:.34;animation:auraBreathe 6s ease-in-out infinite;}
+    @keyframes auraBreathe{0%,100%{opacity:.26;}50%{opacity:.42;}}
     .card{position:relative;z-index:1;width:100%;max-width:410px;border-radius:22px;overflow:hidden;
       background:var(--card);border:1px solid var(--card-brd);backdrop-filter:blur(26px) saturate(150%);
       box-shadow:0 44px 100px -34px rgba(24,16,64,.62),0 2px 0 0 #ffffff90 inset;
