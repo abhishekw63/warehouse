@@ -152,7 +152,6 @@ function emScope(seg, day) {
 })();
 
 (function () {
-  var csrf = B2B.csrf();
   var $ = function (id) { return document.getElementById(id); };
   var modal = $('em-modal'), frame = $('em-frame');
   var reviewBtn = $('em-review'), sendBtn = $('em-send');
@@ -218,15 +217,9 @@ function emScope(seg, day) {
     var body = 'subject=' + encodeURIComponent(f.subject) +
       '&to=' + encodeURIComponent(f.to) + '&cc=' + encodeURIComponent(f.cc) +
       '&note=' + encodeURIComponent(f.note);
-    fetch(CFG.send + '?day=' + encodeURIComponent(f.day) +
-          '&seg=' + encodeURIComponent(f.seg), {
-      method: 'POST', credentials: 'same-origin',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest'
-      },
-      body: body
-    }).then(function (r) { return r.json(); }).then(function (j) {
+    B2B.postForm(CFG.send + '?day=' + encodeURIComponent(f.day) +
+          '&seg=' + encodeURIComponent(f.seg), body)
+      .then(function (j) {
       sending = false;
       if (j.ok) {
         setMsg('✓ Sent.', 'ok');
