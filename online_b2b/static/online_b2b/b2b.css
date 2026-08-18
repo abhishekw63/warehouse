@@ -254,6 +254,20 @@ table.grid tbody tr:hover td{background:var(--surface-2);}
 .muted{color:var(--muted);text-align:center;padding:18px;}
 .banner.err{background:var(--red-soft);border:1px solid #f7c6c6;padding:14px;border-radius:var(--radius-sm);color:#a23;}
 
+/* reusable tab component ---------------------------------------- */
+/* A page opts a tab strip into a look via a modifier. `.on` marks the active
+   tab (pages keep their own `.fv-tab`/`.av-tab` class as a JS hook — the styling
+   lives here). Base holds ONLY the props identical across looks; `font-family`
+   is pill-only on purpose (the underline look historically kept the UA button
+   font — do not hoist it into `.tab` or availability tabs change font). */
+.tab{padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;}
+.tab--pill{border-radius:9px;border:1px solid var(--border);background:var(--surface);
+  color:var(--text-2);font-family:inherit;}
+.tab--pill.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+.tab--underline{border:0;background:none;color:var(--muted);
+  border-bottom:2px solid transparent;margin-bottom:-1px;}
+.tab--underline.on{color:var(--accent);border-bottom-color:var(--accent);}
+
 /* issues page -------------------------------------------------- */
 .iss-kpis{display:flex;gap:14px;margin:20px 0;flex-wrap:wrap;}
 .ik{padding:16px 22px;border-radius:var(--radius);min-width:140px;background:var(--surface);

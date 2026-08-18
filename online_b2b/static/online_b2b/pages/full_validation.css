@@ -8,9 +8,7 @@
   .fv-files label{display:block;font-size:12px;font-weight:700;color:var(--text-2);margin-bottom:5px;}
   .fv-files input[type=file]{font-size:13px;}
   .fv-tabs{display:flex;gap:6px;margin:18px 0 12px;}
-  .fv-tab{padding:8px 14px;border-radius:9px;border:1px solid var(--border);background:var(--surface);
-    cursor:pointer;font-size:13px;font-weight:600;color:var(--text-2);font-family:inherit;}
-  .fv-tab.on{background:var(--accent);color:#fff;border-color:var(--accent);}
+  /* tab styling → shared `.tab.tab--pill` in b2b.css; `.fv-tab` stays as a JS hook only */
   .fv-pane{display:none;} .fv-pane.on{display:block;}
   table.fv{width:100%;border-collapse:collapse;font-size:12.5px;}
   table.fv th{position:sticky;top:0;background:var(--surface-2);text-align:left;padding:8px 9px;
