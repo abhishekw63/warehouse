@@ -24,7 +24,7 @@
 
     <div class="up-grid">
       <div class="fld">
-        <label>Marketplace</label>
+        <label>Marketplace <span id="mp-fmt-badge" class="mp-fmt-badge" hidden></span></label>
         {{ form.marketplace }}
         {% if form.marketplace.errors %}<span class="err-t">{{ form.marketplace.errors|striptags }}</span>{% endif %}
       </div>
@@ -43,6 +43,7 @@
          font-size:13px;line-height:1.5;"></div>
     {{ mp_hints|json_script:"mp-hints" }}
     {{ mp_templates|json_script:"mp-templates" }}
+    {{ mp_formats|json_script:"mp-formats" }}
 
     <div class="fld">
       <label>PO file(s)</label>

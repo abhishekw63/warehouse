@@ -16,10 +16,25 @@ var CFG = JSON.parse(document.getElementById("upload-cfg").textContent);
 
   // Per-marketplace file hint — show the picked marketplace's needs + a link to
   // its full template. Shown for EVERY marketplace (generic fallback if no note).
-  var HINTS = {}, TPLS = [];
+  var HINTS = {}, TPLS = [], FORMATS = {};
   try { HINTS = JSON.parse(document.getElementById('mp-hints').textContent || '{}'); } catch (e) {}
   try { TPLS = JSON.parse(document.getElementById('mp-templates').textContent || '[]'); } catch (e) {}
+  try { FORMATS = JSON.parse(document.getElementById('mp-formats').textContent || '{}'); } catch (e) {}
   var hintBox = document.getElementById('mp-hint');
+  var fmtBadge = document.getElementById('mp-fmt-badge');
+  // "expects XLSX / PDF" badge beside the picker — same file_type the profile shows.
+  function applyBadge() {
+    if (!fmtBadge || !mpSel) return;
+    // Collapse the accepted extensions to the primary type(s) — a quick
+    // "expects XLSX / PDF" cue that matches the profile card's badge.
+    var r = (FORMATS[mpSel.value] || '').toLowerCase();
+    var hasPdf = r.indexOf('pdf') !== -1, hasXls = r.indexOf('xls') !== -1, hasCsv = r.indexOf('csv') !== -1;
+    var label = (hasXls && hasPdf) ? 'XLSX / PDF'
+              : hasPdf ? 'PDF' : hasXls ? 'XLSX' : hasCsv ? 'CSV'
+              : r.replace(/\./g, '').toUpperCase().trim();
+    if (label) { fmtBadge.textContent = label; fmtBadge.hidden = false; }
+    else { fmtBadge.hidden = true; }
+  }
   if (mpSel && hintBox) {
     var applyHint = function () {
       var mp = mpSel.value;
@@ -29,9 +44,13 @@ var CFG = JSON.parse(document.getElementById("upload-cfg").textContent);
         : '';
       hintBox.innerHTML = '📎 <b>' + mp + ' needs:</b> ' + h + link;
       hintBox.style.display = 'block';
+      applyBadge();
     };
     applyHint();
     mpSel.addEventListener('change', applyHint);
+  } else {
+    applyBadge();
+    if (mpSel) mpSel.addEventListener('change', applyBadge);
   }
 
   var dz = document.getElementById('dz');

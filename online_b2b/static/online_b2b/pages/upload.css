@@ -170,3 +170,10 @@
   .proc-err .proc-stage{color:var(--red);}
   .proc-close{background:var(--red);color:#fff;border:none;border-radius:6px;
     padding:4px 12px;font-size:12px;font-weight:700;cursor:pointer;}
+
+/* Live "expects XLSX / PDF" badge beside the Marketplace picker (mirrors the
+   profile card's file-type badge; filled by upload.js on selection). */
+.mp-fmt-badge{display:inline-block;margin-left:8px;padding:2px 9px;border-radius:999px;
+  font-size:10.5px;font-weight:800;letter-spacing:.06em;vertical-align:middle;
+  color:var(--accent);background:var(--accent-soft);
+  border:1px solid color-mix(in srgb,var(--accent) 20%,transparent);}

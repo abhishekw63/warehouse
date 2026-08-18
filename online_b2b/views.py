@@ -1576,6 +1576,11 @@ def upload(request):
                    'mp_hints': json.dumps({
                        f['name']: f['note']
                        for f in engine_bridge.marketplace_formats() if f.get('note')}),
+                   # {marketplace: file_type} → the live "expects XLSX / PDF" badge
+                   # beside the Marketplace picker (same value the profile card shows).
+                   'mp_formats': json.dumps({
+                       f['name']: f.get('file_type', '')
+                       for f in engine_bridge.marketplace_formats()}),
                    # marketplaces that have a "See full template" page → the hint
                    # shows a "Full detail →" link only for those.
                    'mp_templates': json.dumps(
