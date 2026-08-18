@@ -894,10 +894,6 @@ def issues_export(request):
     """Download the currently-filtered issue lines as .xlsx (respects every
     filter, including the upload-date window). No row cap on the export."""
     import datetime as _dt
-    import io as _io
-
-    from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font, PatternFill
     data = order_db.issues(limit=0, **_issue_filters(request))
     rows = data.get('rows', []) if data.get('ok') else []
     cols = [('run_ts', 'Upload Date'), ('marketplace', 'Marketplace'),
@@ -909,32 +905,13 @@ def issues_export(request):
             ('diff', 'Diff'), ('status', 'Status'),
             ('exception_label', 'Exception'), ('action', 'Action'),
             ('remark', 'Remark')]
-    wb = Workbook(); ws = wb.active; ws.title = 'Issues'
-    hf = Font(bold=True, color='FFFFFF'); navy = PatternFill('solid', fgColor='1A237E')
-    for c, (_k, h) in enumerate(cols, 1):
-        cell = ws.cell(1, c, h)
-        cell.font = hf; cell.fill = navy
-        cell.alignment = Alignment(horizontal='center')
-    for r, row in enumerate(rows, 2):
-        for c, (k, _h) in enumerate(cols, 1):
-            v = row.get(k)
-            ws.cell(r, c, str(v) if k == 'run_ts' and v is not None else v)
-    for col in ws.columns:
-        L = col[0].column_letter
-        w = max((len(str(c.value or '')) for c in col), default=8)
-        ws.column_dimensions[L].width = min(w + 2, 48)
-    buf = _io.BytesIO(); wb.save(buf); buf.seek(0)
     f = _issue_filters(request)
     scope = f['date_from'] or 'all'
     if f['date_to'] and f['date_to'] != f['date_from']:
         scope = f"{f['date_from'] or 'start'}_to_{f['date_to']}"
     stamp = _dt.datetime.now().strftime('%Y%m%d_%H%M%S')
     fname = f"issues_{f['resolution']}_{scope}_{stamp}.xlsx"
-    resp = HttpResponse(
-        buf.getvalue(),
-        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    resp['Content-Disposition'] = f'attachment; filename="{fname}"'
-    return resp
+    return common.xlsx_response('Issues', cols, rows, fname, str_cols=('run_ts',))
 
 
 def _email_extras(request):
@@ -1284,10 +1261,6 @@ def tat_save(request):
 def tat_export(request):
     """Download the filtered TAT breaches as .xlsx (respects all filters)."""
     import datetime as _dt
-    import io as _io
-
-    from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font, PatternFill
 
     from .services import tat_store
     f = _tat_filters(request)
@@ -1299,27 +1272,10 @@ def tat_export(request):
             ('wd_late', 'Working days taken'), ('days_over', 'Days over TAT'),
             ('reason_code', 'Reason'), ('note', 'Note'),
             ('reason_by', 'By'), ('reason_at', 'Reason at')]
-    wb = Workbook(); ws = wb.active; ws.title = 'TAT breaches'
-    hf = Font(bold=True, color='FFFFFF'); navy = PatternFill('solid', fgColor='1A237E')
-    for c, (_k, h) in enumerate(cols, 1):
-        cell = ws.cell(1, c, h)
-        cell.font = hf; cell.fill = navy; cell.alignment = Alignment(horizontal='center')
-    for r, row in enumerate(rows, 2):
-        for c, (k, _h) in enumerate(cols, 1):
-            v = row.get(k)
-            ws.cell(r, c, str(v) if k in ('run_ts', 'po_date', 'reason_at') and v is not None else v)
-    for col in ws.columns:
-        L = col[0].column_letter
-        w = max((len(str(c.value or '')) for c in col), default=8)
-        ws.column_dimensions[L].width = min(w + 2, 48)
-    buf = _io.BytesIO(); wb.save(buf); buf.seek(0)
     stamp = _dt.datetime.now().strftime('%Y%m%d_%H%M%S')
     fname = f"tat_breaches_{f['status']}_{stamp}.xlsx"
-    resp = HttpResponse(
-        buf.getvalue(),
-        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    resp['Content-Disposition'] = f'attachment; filename="{fname}"'
-    return resp
+    return common.xlsx_response('TAT breaches', cols, rows, fname,
+                                str_cols=('run_ts', 'po_date', 'reason_at'))
 
 
 @login_required
@@ -2525,10 +2481,7 @@ def item_master_export(request):
     """Download the item master as .xlsx — ALL rows (no cap), honouring the same
     `?q=` search as the on-page browser. Read-only."""
     import datetime as _dt
-    import io as _io
 
-    from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font, PatternFill
     from .services import item_master_loader as iml
     q = (request.GET.get('q', '') or '').strip()
     rows = iml.export_rows(q)
@@ -2536,30 +2489,11 @@ def item_master_export(request):
             ('description', 'Description'), ('mrp', 'MRP'),
             ('gst_code', 'GST Code'), ('hsn', 'HSN'),
             ('mrp_start', 'MRP Start'), ('mrp_end', 'MRP End')]
-    wb = Workbook(); ws = wb.active; ws.title = 'Item Master'
-    hf = Font(bold=True, color='FFFFFF'); navy = PatternFill('solid', fgColor='1A237E')
-    for c, (_k, h) in enumerate(cols, 1):
-        cell = ws.cell(1, c, h)
-        cell.font = hf; cell.fill = navy
-        cell.alignment = Alignment(horizontal='center')
-    for r, row in enumerate(rows, 2):
-        for c, (k, _h) in enumerate(cols, 1):
-            v = row.get(k)
-            ws.cell(r, c, str(v) if k in ('mrp_start', 'mrp_end') and v is not None else v)
-    ws.freeze_panes = 'A2'
-    for col in ws.columns:
-        L = col[0].column_letter
-        w = max((len(str(c.value or '')) for c in col), default=8)
-        ws.column_dimensions[L].width = min(w + 2, 60)
-    buf = _io.BytesIO(); wb.save(buf); buf.seek(0)
     stamp = _dt.datetime.now().strftime('%Y%m%d_%H%M%S')
     scope = 'filtered' if q else 'all'
     fname = f"item_master_{scope}_{len(rows)}items_{stamp}.xlsx"
-    resp = HttpResponse(
-        buf.getvalue(),
-        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    resp['Content-Disposition'] = f'attachment; filename="{fname}"'
-    return resp
+    return common.xlsx_response('Item Master', cols, rows, fname,
+                                width_cap=60, str_cols=('mrp_start', 'mrp_end'), freeze=True)
 
 
 # ── GT Select (Offline parent — D365-finalised; import headers + lines) ─────
