@@ -110,6 +110,16 @@ def preview(headers_path, lines_path) -> dict:
         if ln.get('val_ok') == 'NO':
             lval_bad.add(ln.get('po'))
 
+    # Per-PO reconciled (kept, non-excluded) ex-GST line-value sums, both sides —
+    # used to build a CONSISTENT with-GST header comparison below.
+    line_val: dict = {}
+    for ln in base.get('lines', []):
+        if ln.get('status') == 'EXCLUDED':
+            continue
+        lv = line_val.setdefault(ln.get('po'), {'our': 0.0, 'd365': 0.0})
+        lv['our'] += ln.get('our_val') or 0
+        lv['d365'] += ln.get('d365_val') or 0
+
     n_ok = n_mismatch = n_external = 0
     for r in rows:
         d365_pin = str(r.get('pin_d365') or '').strip()
@@ -129,21 +139,25 @@ def preview(headers_path, lines_path) -> dict:
         r['our_pin'] = our_pin; r['pin_ok'] = bool(pin_ok)
         r['sku_ok'] = sku_ok; r['lines_ok'] = sku_ok and qty_ok
 
-        # VALUE — LINE-DRIVEN, not header-total. We still net the excluded lines and
-        # show the header VAL Δ side by side (informational), BUT the value VERDICT
-        # comes from the per-line reconcile: a PO's value only mismatches if a KEPT
-        # line's value actually differs from D365. Our header ``order_value`` is the
-        # marketplace's PO total (a GST-inclusive / MRP-ish basis ~20%% over cost),
-        # while D365's "Total Amount Incl. GST" = line-cost × GST — two different
-        # bases, so the header totals gap by ~2%% even when EVERY line ties out.
-        # Flagging that as a mismatch is a false positive; the lines are the truth.
-        net_our_val = round((r.get('our_val') or 0) - (r.get('excl_val') or 0), 2)
-        r['our_val'] = net_our_val
-        r['val_diff'] = round((r.get('d365_val') or 0) - net_our_val, 2)
+        # VALUE — compared WITH GST at the header, on a CONSISTENT basis so it's
+        # meaningful. D365's header = "Total Amount Incl. GST". Our header value =
+        # our reconciled (kept) COST lines grossed up by the SAME GST D365 applied
+        # (gst_factor = D365 incl ÷ D365 ex-VAT line sum). So both sides are
+        # cost-with-GST: they tie out (Δ≈0) when the lines reconcile, and only gap
+        # when an actual line value differs. We deliberately do NOT compare our raw
+        # ``order_value`` (Blinkit's PO total, ~20%% over cost) — that's a different
+        # basis and would show a phantom gap though every line matches.
+        lv = line_val.get(r['po'], {'our': 0.0, 'd365': 0.0})
+        d365_incl = r.get('d365_val') or 0
+        gst_factor = (d365_incl / lv['d365']) if lv['d365'] else 1.0
+        our_incl = round(lv['our'] * gst_factor, 2)
+        r['our_val'] = our_incl
+        r['d365_val'] = round(d365_incl, 2)
+        r['val_diff'] = round(d365_incl - our_incl, 2)
         line_val_bad = r['po'] in lval_bad
         val_ok = not line_val_bad
         r['val_ok'] = val_ok
-        r['val_basis_note'] = bool(not _fv._vmatch(r.get('d365_val') or 0, net_our_val) and not line_val_bad)
+        r['val_basis_note'] = False
 
         # Ordered checks: SKU match → qty match → (only then) value → pincode.
         # Value is only meaningful once the SKU set + quantities line up, so it's
