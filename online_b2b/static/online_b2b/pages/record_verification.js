@@ -89,6 +89,29 @@
   });
 })();
 
+/* ── Discard — delete this check (AJAX), then go to a clean page ── */
+(function () {
+  var btn = document.querySelector('.rv-discard');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var url = btn.getAttribute('data-url'); if (!url) return;
+    if (!window.confirm('Discard this check? It will be removed — nothing is recorded.')) return;
+    btn.disabled = true; btn.innerHTML = 'Discarding…';
+    B2B.postForm(url, {}).then(function (j) {
+      if (j && j.ok) {
+        if (window.B2B && B2B.toast) B2B.toast(j.message || 'Discarded.', { type: 'info' });
+        window.location.href = (j && j.redirect) || '/b2b/record-verify/';
+      } else {
+        btn.disabled = false; btn.innerHTML = '🗑 Discard';
+        if (window.B2B && B2B.toast) B2B.toast((j && j.error) || 'Could not discard.', { type: 'error' });
+      }
+    }).catch(function () {
+      btn.disabled = false; btn.innerHTML = '🗑 Discard';
+      if (window.B2B && B2B.toast) B2B.toast('Network error.', { type: 'error' });
+    });
+  });
+})();
+
 /* ── Save for Review Later — park the run (AJAX), nothing recorded ── */
 (function () {
   var btn = document.querySelector('.rv-savelater');

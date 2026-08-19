@@ -77,6 +77,7 @@
       <span class="rv-c-text">Reviewed <b>{{ data.verify_summary.checked }}</b> PO(s) — <b>nothing is recorded yet.</b>
         Tick the rows to record; <b>External</b> orders (GT Select / Testers) are pushed by ticking them. Then confirm.</span>
       <div class="rv-c-actions">
+        <button type="button" class="btn-ghost rv-discard" data-url="{% url 'b2b_record_verify_discard' token=token %}" title="Discard this check — deletes it, records nothing">🗑 Discard</button>
         <button type="button" class="btn-ghost rv-savelater" data-url="{% url 'b2b_record_verify_save_later' token=token %}" title="Park this check to resume later — nothing is recorded">🕒 Save for Review Later</button>
         <form method="post" action="{% url 'b2b_record_verify_confirm' token=token %}" style="margin:0;">{% csrf_token %}
           <button type="submit" class="btn-primary">✓ Confirm &amp; record <span class="rv-selc">0</span></button>

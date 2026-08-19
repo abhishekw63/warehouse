@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import shutil
 import uuid
 from pathlib import Path
 
@@ -228,6 +229,22 @@ class RecordVerificationSaveLaterView(LoginRequiredMixin, View):
         _save_result(rp, res)
         return _done(request, token,
                      '🕒 Saved for review later — resume it anytime from "Resume a saved check".')
+
+
+class RecordVerificationDiscardView(LoginRequiredMixin, View):
+    """Discard a check — delete its token dir (result + uploaded files). Nothing was
+    recorded (only Confirm records), so this is pure cleanup; returns to a clean page."""
+
+    def post(self, request, token):
+        d = _tok_dir(token)
+        if d.exists() and d.resolve() != _UP.resolve():
+            shutil.rmtree(d, ignore_errors=True)
+        msg = 'Discarded — the check was removed. Nothing was recorded.'
+        if common.is_ajax(request):
+            return JsonResponse({'ok': True, 'message': msg,
+                                 'redirect': reverse('b2b_record_verify')})
+        messages.info(request, msg)
+        return redirect('b2b_record_verify')
 
 
 class RecordVerificationDownloadView(LoginRequiredMixin, View):
