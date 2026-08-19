@@ -20,6 +20,9 @@
     {% if has_file %}
       <a href="{% url 'b2b_download' run_id=run_id %}" class="dl-btn">↓ Download SO workbook</a>
     {% endif %}
+    {% if has_completed %}
+      <a href="{% url 'b2b_download_completed' run_id=run_id %}" class="dl-btn completed" title="Completed SO Workbook — accepted lines only (Excludes dropped, Overrides repriced), identical to the review Completed download">↓ SO Workbook (Completed)</a>
+    {% endif %}
     {% if has_d365 %}
       <a href="{% url 'b2b_download_d365' run_id=run_id %}" class="dl-btn d365" title="The decided D365 dump saved when this run was locked">↓ D365 dump</a>
     {% endif %}

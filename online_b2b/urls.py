@@ -158,6 +158,7 @@ urlpatterns = [
     path('ship-to/<str:token>/discard/', views.ship_to_discard, name='b2b_ship_to_discard'),
     path('run/<int:run_id>/', views.run_detail, name='b2b_run_detail'),
     path('run/<int:run_id>/download/', views.download, name='b2b_download'),
+    path('run/<int:run_id>/download/completed/', views.download_completed, name='b2b_download_completed'),
     path('run/<int:run_id>/d365/', views.download_d365, name='b2b_download_d365'),
     path('run/<int:run_id>/delete/', views.run_delete, name='b2b_run_delete'),
     # Setup — switch the active DB target (local ↔ TiDB server). Staff only.

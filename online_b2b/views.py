@@ -750,6 +750,30 @@ def _persist_d365(run_id, marketplace, paths, warehouse, margin_pct, actions,
     return None
 
 
+def _persist_completed(run_id, marketplace, paths, warehouse, margin_pct, actions,
+                       ean_fixes=None):
+    """Build this run's COMPLETED SO workbook (accepted lines only, Overrides
+    repriced) and store it as a web-owned sidecar next to the run index. Returns
+    the saved path, or None on any failure. Reuses the SAME
+    ``export_decided_workbook`` builder as the review 'Download SO Workbook
+    (Completed)', so the output is byte-for-byte the same. Pure file output — no
+    DB connection is opened here."""
+    try:
+        _RUNS_INDEX.mkdir(parents=True, exist_ok=True)
+        res = engine_bridge.export_decided_workbook(
+            marketplace, paths, warehouse=warehouse, margin_pct=margin_pct,
+            actions=actions or {}, ean_fixes=ean_fixes,
+            exclude_uploaded_run_id=run_id)
+        src = res.get('path')
+        if res.get('ok') and src and os.path.exists(src):
+            out = _RUNS_INDEX / f"{run_id}_completed.xlsx"
+            shutil.copyfile(src, out)
+            return str(out)
+    except Exception:  # noqa: BLE001 — a build hiccup must never 500 the download
+        pass
+    return None
+
+
 def _int(request, name):
     try:
         return int(request.GET.get(name) or 0)
@@ -2233,9 +2257,16 @@ def run_detail(request, run_id):
     idx = _load_run_index(run_id)
     has_file = bool(idx.get('output_path') and os.path.exists(idx['output_path']))
     has_d365 = bool(idx.get('d365_path') and os.path.exists(idx['d365_path']))
+    # Completed workbook is downloadable if we have a cached copy OR the stored
+    # inputs to rebuild it (same source the D365 dump uses).
+    _inp = idx.get('d365_inputs') or {}
+    _raw = _inp.get('paths') or []
+    has_completed = bool(
+        (idx.get('completed_path') and os.path.exists(idx['completed_path']))
+        or (_raw and all(os.path.exists(p) for p in _raw)))
     return render(request, 'online_b2b/run_detail.html', {
         'run_id': run_id, 'd': data, 'idx': idx, 'has_file': has_file,
-        'has_d365': has_d365,
+        'has_d365': has_d365, 'has_completed': has_completed,
     })
 
 
@@ -2279,20 +2310,50 @@ def download(request, run_id):
                         filename=_full_name(os.path.basename(path)))
 
 
+@login_required
+def download_completed(request, run_id):
+    """Download this run's COMPLETED SO Workbook (accepted lines only, Overrides
+    repriced) — the run-page companion to the review 'Download SO Workbook
+    (Completed)'. Rebuilt on first request from the inputs stored at lock time
+    (exactly like the D365 dump above) and cached as a sidecar; reuses the SAME
+    ``export_decided_workbook`` builder, so the file is identical to the review
+    one. Reads nothing from / writes nothing to the business DB."""
+    idx = _load_run_index(run_id)
+    path = idx.get('completed_path')
+    if not path or not os.path.exists(path):
+        inp = idx.get('d365_inputs') or {}
+        raw = inp.get('paths') or []
+        if raw and all(os.path.exists(p) for p in raw):
+            built = _persist_completed(
+                run_id, idx.get('marketplace', 'SO'), raw, inp.get('warehouse'),
+                inp.get('margin_pct'), inp.get('actions'), ean_fixes=inp.get('ean_fixes'))
+            if built:
+                path = built
+                idx['completed_path'] = built
+                _save_run_index(run_id, idx)
+    if not path or not os.path.exists(path):
+        raise Http404("Completed workbook isn't available for this run — the source "
+                      "files may have expired. Re-open the review to regenerate it.")
+    mkt = idx.get('marketplace', 'SO')
+    return FileResponse(open(path, 'rb'), as_attachment=True,
+                        filename=_lot_name(mkt, path, 'completed'))
+
+
 def _delete_run_files(run_id) -> list:
     """Remove the web-owned file sidecars of a run (SO workbook, D365 dump, and
     the run-index json). Returns the list of paths actually removed. Best-effort:
     a missing/locked file never blocks the DB delete."""
     removed = []
     idx = _load_run_index(run_id)
-    for key in ('output_path', 'd365_path'):
+    for key in ('output_path', 'd365_path', 'completed_path'):
         p = idx.get(key)
         if p and os.path.exists(p):
             try:
                 os.remove(p); removed.append(p)
             except OSError:
                 pass
-    for sc in (_RUNS_INDEX / f"{run_id}.json", _RUNS_INDEX / f"{run_id}_d365.xlsx"):
+    for sc in (_RUNS_INDEX / f"{run_id}.json", _RUNS_INDEX / f"{run_id}_d365.xlsx",
+               _RUNS_INDEX / f"{run_id}_completed.xlsx"):
         if sc.exists():
             try:
                 sc.unlink(); removed.append(str(sc))
