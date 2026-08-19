@@ -54,8 +54,15 @@
     Full Validation link hidden — page/service stay (Triangular uses the service);
     reach it directly at /b2b/full-validation/ if ever needed.{% endcomment %}
     {# STANDALONE Record Verification (removable) #}
-    <a href="{% url 'b2b_record_verify' %}" class="sn{% if '/record-verify' in request.path %} on{% endif %}" title="Record Verification — reconcile recorded data vs D365">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='check' %}</span><span class="side-label">Record Verify</span></a>
+    {# Record Verify group — collapsible (Verify + History), like the Admin group #}
+    <button type="button" class="sn side-group" id="rvGroup" aria-controls="rvSub" title="Record Verification — reconcile recorded data vs D365">
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='check' %}</span><span class="side-label">Record Verify</span><span class="side-caret side-label">▸</span></button>
+    <div class="side-subnav{% if '/record-verify' in request.path %} open{% endif %}" id="rvSub">
+      <a href="{% url 'b2b_record_verify' %}" class="sn sn-dim{% if '/record-verify' in request.path and '/record-verify/log' not in request.path %} on{% endif %}" title="Verify against D365">
+        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='check' %}</span><span class="side-label">Verify</span></a>
+      <a href="{% url 'b2b_record_verify_log' %}" class="sn sn-dim{% if '/record-verify/log' in request.path %} on{% endif %}" title="Verification history — Verified / Mismatch / External">
+        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='clock' %}</span><span class="side-label">History</span></a>
+    </div>
 
     <div class="side-sep">Process</div>
     {# Process PO split into two flat links: Online (this app) + Offline (GT Mass · EKA · MT — Reliance Trends lives under MT — · GT Select, on the Offline dashboard). #}
@@ -105,20 +112,23 @@
     localStorage.setItem(KEY, c ? '1' : '0');
   });
 
-  // Admin group — click to expand/collapse (remembers state; auto-open when a
-  // child page is active, handled server-side via the .open class).
-  var ag = document.getElementById('adminGroup'), asub = document.getElementById('adminSub');
-  if (ag && asub) {
-    var AKEY = 'b2b_admin_open';
-    var initOpen = asub.classList.contains('open') || localStorage.getItem(AKEY) === '1';
-    asub.classList.toggle('open', initOpen);
-    ag.setAttribute('aria-expanded', initOpen ? 'true' : 'false');
-    ag.addEventListener('click', function () {
-      var open = asub.classList.toggle('open');
-      ag.setAttribute('aria-expanded', open ? 'true' : 'false');
-      localStorage.setItem(AKEY, open ? '1' : '0');
+  // Collapsible sidebar groups — click to expand/collapse (remembers state;
+  // auto-open when a child page is active, applied server-side via .open). One
+  // helper wires every group (Admin, Record Verify, …).
+  function wireGroup(btnId, subId, key) {
+    var g = document.getElementById(btnId), sub = document.getElementById(subId);
+    if (!g || !sub) return;
+    var open = sub.classList.contains('open') || localStorage.getItem(key) === '1';
+    sub.classList.toggle('open', open);
+    g.setAttribute('aria-expanded', open ? 'true' : 'false');
+    g.addEventListener('click', function () {
+      var o = sub.classList.toggle('open');
+      g.setAttribute('aria-expanded', o ? 'true' : 'false');
+      localStorage.setItem(key, o ? '1' : '0');
     });
   }
+  wireGroup('adminGroup', 'adminSub', 'b2b_admin_open');
+  wireGroup('rvGroup', 'rvSub', 'b2b_rv_open');
 
   // Enable sidebar transitions only AFTER the first paint, so the saved collapse /
   // sub-nav state (applied synchronously above) never animates in on navigation —
