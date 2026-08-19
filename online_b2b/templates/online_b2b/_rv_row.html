@@ -9,7 +9,7 @@
   <td class="r">{{ r.excluded|default:0 }}</td>
   <td class="r">{% if r.our_val != None %}{{ r.our_val|inr_short }}{% else %}—{% endif %}</td>
   <td class="r">{{ r.d365_val|inr_short }}</td>
-  <td class="r{% if r.val_basis_note %} rv-basis{% endif %}"{% if r.val_basis_note %} title="Header-total basis difference — our order-value is a GST/MRP-inclusive marketplace total vs D365's cost×GST. Every line reconciles, so this is not a real mismatch."{% endif %}>{{ r.val_diff|default:0 }}{% if r.val_basis_note %} <span class="rv-basis-tag">ⓘ basis</span>{% endif %}</td>
+  <td class="r">{{ r.val_diff|default:0 }}</td>
   <td class="mono">{% if r.pin_ok %}{{ r.pin_d365|default:'—' }}{% else %}<span class="rv-mis">{{ r.our_pin|default:'∅' }}≠{{ r.pin_d365|default:'∅' }}</span>{% endif %}</td>
   <td>{% if r.status == 'OK' %}<span class="rv-ok">✓ OK</span>{% elif r.status == 'EXTERNAL' %}<span class="rv-ext">↗ External</span>{% else %}<span class="rv-mis">⚠ {{ r.mismatch_fields|join:', ' }}</span>{% endif %}{% if r.bad_lines %} <span class="rv-badln" title="mismatched line items">{{ r.bad_lines }} line(s)</span>{% endif %}</td>
 </tr>

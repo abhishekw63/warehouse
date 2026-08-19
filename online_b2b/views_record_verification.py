@@ -36,6 +36,38 @@ def _tok_dir(token: str) -> Path:
     return common.token_dir(_UP, token)
 
 
+def _result_path(token: str) -> Path:
+    return _tok_dir(token) / 'result.json'
+
+
+def _load_result(token: str):
+    """(path, result-dict) for a run token, or Http404 if the run is gone/expired."""
+    rp = _result_path(token)
+    if not rp.exists():
+        raise Http404('Review not found or expired.')
+    return rp, json.loads(rp.read_text(encoding='utf-8'))
+
+
+def _save_result(rp: Path, res: dict) -> None:
+    rp.write_text(json.dumps(res, default=str), encoding='utf-8')
+
+
+def _token_url(token: str) -> str:
+    return f"{reverse('b2b_record_verify')}?token={token}"
+
+
+def _actor(request) -> str:
+    return getattr(request.user, 'username', '') or 'system'
+
+
+def _done(request, token: str, msg: str, **extra):
+    """Uniform success response: AJAX → JSON, otherwise flash + redirect to the run."""
+    if common.is_ajax(request):
+        return JsonResponse({'ok': True, 'message': msg, **extra})
+    messages.success(request, msg)
+    return redirect(_token_url(token))
+
+
 def _looks_like(path: str, needle: str) -> bool:
     """True if the first row of the workbook has a column matching ``needle``."""
     try:
@@ -103,13 +135,12 @@ class RecordVerificationView(LoginRequiredMixin, TemplateView):
         ctx['saved_runs'] = _saved_runs()
         token = self.request.GET.get('token', '')
         ctx['token'] = token
-        if token:
-            rp = _tok_dir(token) / 'result.json'
-            if rp.exists():
-                res = json.loads(rp.read_text(encoding='utf-8'))
-                if res.get('ok'):
-                    ctx['data'] = _augment(res['data'])
-                    ctx['confirmed'] = res.get('confirmed', False)
+        rp = _result_path(token) if token else None
+        if rp and rp.exists():
+            res = json.loads(rp.read_text(encoding='utf-8'))
+            if res.get('ok'):
+                ctx['data'] = _augment(res['data'])
+                ctx['confirmed'] = res.get('confirmed', False)
         return ctx
 
 
@@ -152,7 +183,7 @@ class RecordVerificationRunView(LoginRequiredMixin, View):
                 rv.build_workbook(res['data'], str(d / 'record_verification.xlsx'))
             except Exception as e:  # noqa: BLE001 — Excel is a convenience
                 res['data']['excel_error'] = f'{type(e).__name__}: {e}'
-        (d / 'result.json').write_text(json.dumps(res, default=str), encoding='utf-8')
+        _save_result(d / 'result.json', res)
         if not res.get('ok'):
             messages.error(request, res.get('error', 'Verification failed.'))
             return redirect('b2b_record_verify')
@@ -160,17 +191,14 @@ class RecordVerificationRunView(LoginRequiredMixin, View):
         messages.info(request, f"Reviewed {vs.get('checked', 0)} PO(s) — "
                       f"{vs.get('ok', 0)} clean, {vs.get('mismatch', 0)} mismatch, "
                       f"{vs.get('external', 0)} external. Review, then Confirm to record.")
-        return redirect(f"{reverse('b2b_record_verify')}?token={token}")
+        return redirect(_token_url(token))
 
 
 class RecordVerificationConfirmView(LoginRequiredMixin, View):
     """PHASE 2 — persist the reviewed verification to the checked-PO log."""
 
     def post(self, request, token):
-        rp = _tok_dir(token) / 'result.json'
-        if not rp.exists():
-            raise Http404('Review not found or expired.')
-        res = json.loads(rp.read_text(encoding='utf-8'))
+        rp, res = _load_result(token)
         if not res.get('ok'):
             messages.error(request, 'Nothing to confirm.')
             return redirect('b2b_record_verify')
@@ -178,15 +206,12 @@ class RecordVerificationConfirmView(LoginRequiredMixin, View):
         # "pushed" without a cross-check). No ticks posted → record all (back-compat).
         picked = request.POST.getlist('push_po')
         out = rv.confirm(res['data'].get('headers', []),
-                         checked_by=getattr(request.user, 'username', '') or 'system',
-                         only_pos=picked or None)
+                         checked_by=_actor(request), only_pos=picked or None)
         res['confirmed'] = True
-        rp.write_text(json.dumps(res, default=str), encoding='utf-8')
-        msg = f"✓ Verification recorded — {out.get('confirmed', 0)} PO(s) logged."
-        if common.is_ajax(request):
-            return JsonResponse({'ok': True, 'confirmed': out.get('confirmed', 0), 'message': msg})
-        messages.success(request, msg)
-        return redirect(f"{reverse('b2b_record_verify')}?token={token}")
+        _save_result(rp, res)
+        n = out.get('confirmed', 0)
+        return _done(request, token, f"✓ Verification recorded — {n} PO(s) logged.",
+                     confirmed=n)
 
 
 class RecordVerificationSaveLaterView(LoginRequiredMixin, View):
@@ -195,20 +220,14 @@ class RecordVerificationSaveLaterView(LoginRequiredMixin, View):
     in the 'Resume a saved check' list and can be reopened via its token URL."""
 
     def post(self, request, token):
-        rp = _tok_dir(token) / 'result.json'
-        if not rp.exists():
-            raise Http404('Review not found or expired.')
-        res = json.loads(rp.read_text(encoding='utf-8'))
+        rp, res = _load_result(token)
         res['draft'] = True
         res['saved_at'] = _dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        res['saved_by'] = getattr(request.user, 'username', '') or 'system'
+        res['saved_by'] = _actor(request)
         res['saved_note'] = (request.POST.get('note') or '').strip()[:200]
-        rp.write_text(json.dumps(res, default=str), encoding='utf-8')
-        msg = '🕒 Saved for review later — resume it anytime from "Resume a saved check".'
-        if common.is_ajax(request):
-            return JsonResponse({'ok': True, 'message': msg})
-        messages.success(request, msg)
-        return redirect(f"{reverse('b2b_record_verify')}?token={token}")
+        _save_result(rp, res)
+        return _done(request, token,
+                     '🕒 Saved for review later — resume it anytime from "Resume a saved check".')
 
 
 class RecordVerificationDownloadView(LoginRequiredMixin, View):

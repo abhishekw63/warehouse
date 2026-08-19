@@ -84,41 +84,40 @@ def preview(headers_path, lines_path) -> dict:
     ``{ok, error, data}``; each header row gets status / delta / pincode / lines_ok.
 
     Ordered checks per PO — **SKU** (same SKU set on both sides) → **qty** (header +
-    per-line, EXCLUDED netted) → **value** (our value net of excluded vs D365, within
-    tolerance; only evaluated once SKU & qty align) → **pincode** (our ship-to vs
-    D365). Status is **OK** only when all applicable checks pass; otherwise MISMATCH,
-    and ``mismatch_fields`` names exactly which of SKU / qty / value / pincode failed."""
+    per-line, EXCLUDED netted) → **value** → **pincode** (our ship-to vs D365).
+    Value is **line-driven**: a PO only fails value if a KEPT line's value actually
+    differs; the header shows a *consistent* with-GST comparison — Σ(unit price × qty)
+    grossed up by the SAME GST D365 applied — vs D365's Total Incl GST, so it ties out
+    when the lines reconcile (no phantom gap from our order_value's different basis).
+    Status is **OK** only when all applicable checks pass; otherwise MISMATCH, and
+    ``mismatch_fields`` names exactly which of SKU / qty / value / pincode failed."""
     base = _fv.validate(headers_path, lines_path, excel_out=None)
     if not base.get('ok'):
         return {'ok': False, 'error': base.get('error', 'Reconciliation failed.'), 'data': None}
 
     pin_map = _our_pin_map()
     rows = base.get('headers', [])          # per-PO rows from full_validation
-    # Split line problems into SKU-set vs line-qty (EXCLUDED lines are intentional
-    # and never count against a PO):
-    #   • SKU mismatch  = a SKU is in ours-not-D365 or D365-not-ours (MISSING/EXTRA)
-    #   • line-qty      = same SKU on both sides but the quantity differs
+    # ONE pass over the lines builds everything the per-PO checks need (EXCLUDED
+    # lines are intentional drops — they never count against a PO):
+    #   • sku_bad   — a SKU is in ours-not-D365 or D365-not-ours (MISSING/EXTRA)
+    #   • lqty_bad  — same SKU both sides but the quantity differs (QTY_MISMATCH)
+    #   • lval_bad  — a real per-line value gap (both sides present, values differ)
+    #   • line_val  — per-PO ex-GST line sums (both sides) for the with-GST header
+    #                 comparison, excluding the dropped lines
     sku_bad, lqty_bad, lval_bad = set(), set(), set()
-    for ln in base.get('lines', []):
-        s = ln.get('status')
-        if s in ('MISSING_IN_D365', 'EXTRA_IN_D365'):
-            sku_bad.add(ln.get('po'))
-        elif s == 'QTY_MISMATCH':
-            lqty_bad.add(ln.get('po'))
-        # a REAL per-line value gap (both sides present, values differ) — this, not
-        # the header-total, decides the value verdict below.
-        if ln.get('val_ok') == 'NO':
-            lval_bad.add(ln.get('po'))
-
-    # Per-PO reconciled (kept, non-excluded) ex-GST line-value sums, both sides —
-    # used to build a CONSISTENT with-GST header comparison below.
     line_val: dict = {}
     for ln in base.get('lines', []):
-        if ln.get('status') == 'EXCLUDED':
-            continue
-        lv = line_val.setdefault(ln.get('po'), {'our': 0.0, 'd365': 0.0})
-        lv['our'] += ln.get('our_val') or 0
-        lv['d365'] += ln.get('d365_val') or 0
+        po, s = ln.get('po'), ln.get('status')
+        if s in ('MISSING_IN_D365', 'EXTRA_IN_D365'):
+            sku_bad.add(po)
+        elif s == 'QTY_MISMATCH':
+            lqty_bad.add(po)
+        if ln.get('val_ok') == 'NO':
+            lval_bad.add(po)
+        if s != 'EXCLUDED':
+            lv = line_val.setdefault(po, {'our': 0.0, 'd365': 0.0})
+            lv['our'] += ln.get('our_val') or 0
+            lv['d365'] += ln.get('d365_val') or 0
 
     n_ok = n_mismatch = n_external = 0
     for r in rows:
@@ -155,9 +154,7 @@ def preview(headers_path, lines_path) -> dict:
         r['d365_val'] = round(d365_incl, 2)
         r['val_diff'] = round(d365_incl - our_incl, 2)
         line_val_bad = r['po'] in lval_bad
-        val_ok = not line_val_bad
-        r['val_ok'] = val_ok
-        r['val_basis_note'] = False
+        r['val_ok'] = not line_val_bad
 
         # Ordered checks: SKU match → qty match → (only then) value → pincode.
         # Value is only meaningful once the SKU set + quantities line up, so it's
