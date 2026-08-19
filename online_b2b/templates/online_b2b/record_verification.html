@@ -49,6 +49,24 @@
     </form>
   </div>
 
+  {# ── Resume a saved check (review-later drafts) ── #}
+  {% if saved_runs %}
+  <div class="im-card reveal rv-saved">
+    <h2>Resume a saved check <span class="count">{{ saved_runs|length }} parked · nothing recorded</span></h2>
+    <div class="rv-saved-list">
+      {% for s in saved_runs %}
+      <a class="rv-saved-item" href="{% url 'b2b_record_verify' %}?token={{ s.token }}">
+        <span class="rv-saved-when">🕒 {{ s.saved_at|default:'saved' }}</span>
+        <span class="rv-saved-sum"><b>{{ s.checked }}</b> PO(s) · <span style="color:var(--green)">{{ s.ok }} clean</span> · <span style="color:var(--red)">{{ s.mismatch }} mismatch</span> · {{ s.external }} external</span>
+        {% if s.note %}<span class="rv-saved-note">“{{ s.note }}”</span>{% endif %}
+        <span class="rv-saved-by">{{ s.saved_by|default:'' }}</span>
+        <span class="rv-saved-go">Resume →</span>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   {# ── Results (last run) ── #}
   {% if data %}
   {# review → confirm: nothing is recorded until you confirm #}
@@ -58,9 +76,12 @@
     {% else %}
       <span class="rv-c-text">Reviewed <b>{{ data.verify_summary.checked }}</b> PO(s) — <b>nothing is recorded yet.</b>
         Tick the rows to record; <b>External</b> orders (GT Select / Testers) are pushed by ticking them. Then confirm.</span>
-      <form method="post" action="{% url 'b2b_record_verify_confirm' token=token %}" style="margin:0;">{% csrf_token %}
-        <button type="submit" class="btn-primary">✓ Confirm &amp; record <span class="rv-selc">0</span></button>
-      </form>
+      <div class="rv-c-actions">
+        <button type="button" class="btn-ghost rv-savelater" data-url="{% url 'b2b_record_verify_save_later' token=token %}" title="Park this check to resume later — nothing is recorded">🕒 Save for Review Later</button>
+        <form method="post" action="{% url 'b2b_record_verify_confirm' token=token %}" style="margin:0;">{% csrf_token %}
+          <button type="submit" class="btn-primary">✓ Confirm &amp; record <span class="rv-selc">0</span></button>
+        </form>
+      </div>
     {% endif %}
   </div>
 

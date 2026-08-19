@@ -11,6 +11,7 @@ Own media dir (``b2b_recordcheck``).
 """
 from __future__ import annotations
 
+import datetime as _dt
 import json
 import uuid
 from pathlib import Path
@@ -69,6 +70,28 @@ def _augment(data: dict) -> dict:
     return data
 
 
+def _saved_runs(limit: int = 12) -> list:
+    """Verification runs parked as 'review later' drafts (not yet recorded), newest
+    first, for the resume list. Each run already persists under its token; this just
+    surfaces the ones flagged as saved."""
+    out: list = []
+    for rp in sorted(_UP.glob('*/result.json'),
+                     key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            res = json.loads(rp.read_text(encoding='utf-8'))
+        except Exception:  # noqa: BLE001
+            continue
+        if res.get('draft') and not res.get('confirmed'):
+            vs = (res.get('data') or {}).get('verify_summary', {})
+            out.append({'token': rp.parent.name, 'saved_at': res.get('saved_at'),
+                        'saved_by': res.get('saved_by'), 'note': res.get('saved_note'),
+                        'checked': vs.get('checked'), 'ok': vs.get('ok'),
+                        'mismatch': vs.get('mismatch'), 'external': vs.get('external')})
+            if len(out) >= limit:
+                break
+    return out
+
+
 class RecordVerificationView(LoginRequiredMixin, TemplateView):
     """Upload page + coverage + checked-PO log + the last run's result (``?token=``)."""
     template_name = 'online_b2b/record_verification.html'
@@ -77,6 +100,7 @@ class RecordVerificationView(LoginRequiredMixin, TemplateView):
         ctx = super().get_context_data(**kwargs)
         ctx['coverage'] = rv.coverage()
         ctx['log'] = rv.checked_log(limit=300)
+        ctx['saved_runs'] = _saved_runs()
         token = self.request.GET.get('token', '')
         ctx['token'] = token
         if token:
@@ -161,6 +185,28 @@ class RecordVerificationConfirmView(LoginRequiredMixin, View):
         msg = f"✓ Verification recorded — {out.get('confirmed', 0)} PO(s) logged."
         if common.is_ajax(request):
             return JsonResponse({'ok': True, 'confirmed': out.get('confirmed', 0), 'message': msg})
+        messages.success(request, msg)
+        return redirect(f"{reverse('b2b_record_verify')}?token={token}")
+
+
+class RecordVerificationSaveLaterView(LoginRequiredMixin, View):
+    """Park this verification as a **review-later draft** — nothing is recorded. The
+    run already persists under its token; this flags it + timestamps it so it shows
+    in the 'Resume a saved check' list and can be reopened via its token URL."""
+
+    def post(self, request, token):
+        rp = _tok_dir(token) / 'result.json'
+        if not rp.exists():
+            raise Http404('Review not found or expired.')
+        res = json.loads(rp.read_text(encoding='utf-8'))
+        res['draft'] = True
+        res['saved_at'] = _dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        res['saved_by'] = getattr(request.user, 'username', '') or 'system'
+        res['saved_note'] = (request.POST.get('note') or '').strip()[:200]
+        rp.write_text(json.dumps(res, default=str), encoding='utf-8')
+        msg = '🕒 Saved for review later — resume it anytime from "Resume a saved check".'
+        if common.is_ajax(request):
+            return JsonResponse({'ok': True, 'message': msg})
         messages.success(request, msg)
         return redirect(f"{reverse('b2b_record_verify')}?token={token}")
 

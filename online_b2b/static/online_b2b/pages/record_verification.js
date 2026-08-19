@@ -89,6 +89,28 @@
   });
 })();
 
+/* ── Save for Review Later — park the run (AJAX), nothing recorded ── */
+(function () {
+  var btn = document.querySelector('.rv-savelater');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var url = btn.getAttribute('data-url'); if (!url) return;
+    var orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = 'Saving…';
+    B2B.postForm(url, {}).then(function (j) {
+      if (j && j.ok) {
+        btn.innerHTML = '🕒 Saved for later';
+        if (window.B2B && B2B.toast) B2B.toast(j.message, { type: 'success', title: 'Saved for later' });
+      } else {
+        btn.disabled = false; btn.innerHTML = orig;
+        if (window.B2B && B2B.toast) B2B.toast((j && j.error) || 'Could not save.', { type: 'error' });
+      }
+    }).catch(function () {
+      btn.disabled = false; btn.innerHTML = orig;
+      if (window.B2B && B2B.toast) B2B.toast('Network error — not saved.', { type: 'error' });
+    });
+  });
+})();
+
 /* ── Upload dropzone — show picked filenames + a drag-over state ── */
 (function () {
   var drop = document.getElementById('rvDrop');
