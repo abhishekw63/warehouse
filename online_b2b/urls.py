@@ -28,6 +28,7 @@ urlpatterns = [
     path('batch/', _batch.BatchDetectView.as_view(), name='b2b_batch'),
     path('batch/detect/', _batch.BatchDetectRunView.as_view(), name='b2b_batch_detect'),
     path('batch/<str:token>/confirm/', _batch.BatchConfirmView.as_view(), name='b2b_batch_confirm'),
+    path('batch/<str:token>/preview/', _batch.BatchPreviewView.as_view(), name='b2b_batch_preview'),
     # ── Inventory — Fill-Rate cockpit (standalone; delete these lines + the
     #    module/service/templates/sidebar link to remove the whole feature) ────
     path('inventory/', _inv.inventory, name='b2b_inventory'),

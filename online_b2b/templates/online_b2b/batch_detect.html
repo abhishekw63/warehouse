@@ -79,6 +79,58 @@
         Every file must have a marketplace before you can confirm.</span>
     </div>
   </form>
+
+  {# ── After confirm: read-only combined PREVIEW (records nothing) ── #}
+  {% if confirmed %}
+  <div class="im-card reveal bd-proc-card">
+    <div class="bd-grid-head"><h2>Combined preview</h2>
+      <span class="bd-hint2">Runs each confirmed group through its existing processor — <b>read-only, records nothing</b>.</span></div>
+    <form method="post" action="{% url 'b2b_batch_preview' token=token %}" data-loading="Processing each marketplace…">
+      {% csrf_token %}
+      <div class="bd-actions">
+        <label class="bd-wh">Warehouse
+          <select name="warehouse" class="bd-sel">
+            {% for w in warehouses %}<option value="{{ w }}"{% if w == default_warehouse %} selected{% endif %}>{{ w }}</option>{% endfor %}
+          </select></label>
+        <button type="submit" class="bd-btn">Process (preview) →</button>
+      </div>
+    </form>
+
+    {% if preview %}
+    <div class="bd-kpis">
+      <div class="bd-kpi"><div class="n">{{ preview.totals.pos }}</div><div class="l">POs</div></div>
+      <div class="bd-kpi"><div class="n">{{ preview.totals.lines }}</div><div class="l">Lines</div></div>
+      <div class="bd-kpi"><div class="n">{{ preview.totals.qty }}</div><div class="l">Qty</div></div>
+      <div class="bd-kpi"><div class="n" style="color:var(--red)">{{ preview.totals.affected }}</div><div class="l">Affected</div></div>
+      <div class="bd-kpi"><div class="n" style="color:var(--muted)">{{ preview.totals.skipped }}</div><div class="l">Skipped</div></div>
+      <div class="bd-kpi"><div class="n">{{ preview.warehouse }}</div><div class="l">Warehouse</div></div>
+    </div>
+    <div class="bd-scroll">
+      <table class="bd-table">
+        <thead><tr><th>Marketplace</th><th>Files</th><th>POs</th><th>Lines</th><th>Qty</th><th>Value</th><th>Affected</th><th>Skipped</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for r in preview.per_mp %}
+          <tr class="bd-row">
+            <td><b>{{ r.mp }}</b></td><td>{{ r.files }}</td>
+            {% if r.ok %}
+              <td>{{ r.pos }}</td><td>{{ r.lines }}</td><td>{{ r.qty }}</td>
+              <td>{{ r.value|floatformat:0 }}</td>
+              <td>{% if r.affected %}<span style="color:var(--red);font-weight:700">{{ r.affected }}</span>{% else %}0{% endif %}</td>
+              <td>{{ r.skipped }}</td><td><span class="bd-badge bd-b-high">ok</span></td>
+            {% else %}
+              <td colspan="6" class="muted">—</td>
+              <td><span class="bd-badge bd-b-low" title="{{ r.error }}">failed</span></td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="bd-hint2" style="margin-top:12px;">This is a preview only — <b>nothing has been recorded or pushed to D365</b>.
+      Recording each group stays behind its own lock (a later step).</p>
+    {% endif %}
+  </div>
+  {% endif %}
   {% endif %}
 
 </div>

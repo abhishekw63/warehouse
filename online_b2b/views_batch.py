@@ -43,15 +43,22 @@ class BatchDetectView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx['marketplaces'] = bf.detectable_marketplaces()
+        from .services import engine_bridge as eb
+        ctx['warehouses'] = eb.warehouse_choices()
+        ctx['default_warehouse'] = eb.default_warehouse()
         token = self.request.GET.get('token', '')
         ctx['token'] = token
         if token:
-            rp = _tok_dir(token) / 'detect.json'
+            d = _tok_dir(token)
+            rp = d / 'detect.json'
             if rp.exists():
                 res = json.loads(rp.read_text(encoding='utf-8'))
                 ctx['rows'] = res.get('rows', [])
                 ctx['confirmed'] = res.get('confirmed', False)
                 ctx['plan'] = res.get('plan')
+            pp = d / 'preview.json'
+            if pp.exists():
+                ctx['preview'] = json.loads(pp.read_text(encoding='utf-8'))
         return ctx
 
 
@@ -122,4 +129,69 @@ class BatchConfirmView(LoginRequiredMixin, View):
         if common.is_ajax(request):
             return JsonResponse({'ok': True, 'plan': plan, 'message': msg})
         messages.success(request, msg)
+        return redirect(f"{reverse('b2b_batch')}?token={token}")
+
+
+class BatchPreviewView(LoginRequiredMixin, View):
+    """Run each CONFIRMED file-group through its EXISTING per-MP processor to build
+    ONE combined READ-ONLY preview (per-MP KPIs + master totals). Reuses
+    ``engine_bridge.preview`` verbatim — it parses/prices but writes NOTHING to the
+    business DB (that's ``confirm``, a separate later gate). Files are grouped by
+    the confirmed marketplace so multi-file MPs are processed together, exactly like
+    the single-MP flow."""
+
+    _AGG = ('pos', 'lines', 'qty', 'value', 'affected', 'skipped')
+
+    def post(self, request, token):
+        from collections import defaultdict
+        from .services import engine_bridge as eb
+
+        d = _tok_dir(token)
+        rp = d / 'detect.json'
+        if not rp.exists():
+            raise Http404('Detection not found or expired.')
+        res = json.loads(rp.read_text(encoding='utf-8'))
+        if not res.get('confirmed') or not res.get('plan'):
+            messages.error(request, 'Confirm the file→marketplace mapping first.')
+            return redirect(f"{reverse('b2b_batch')}?token={token}")
+
+        warehouse = (request.POST.get('warehouse') or '').strip() or eb.default_warehouse()
+        if warehouse not in set(eb.warehouse_choices()):
+            warehouse = eb.default_warehouse()
+
+        fdir = d / 'files'
+        groups: dict = defaultdict(list)
+        for item in res['plan']:
+            p = fdir / item['file']
+            if p.exists():
+                groups[item['marketplace']].append(str(p))
+
+        per_mp, totals = [], {k: 0 for k in self._AGG}
+        for mp, paths in groups.items():
+            try:
+                pv = eb.preview(mp, paths, warehouse=warehouse,
+                                margin_pct=eb.default_margin_pct(mp) / 100.0)
+            except Exception as e:  # noqa: BLE001 — one MP's failure never 500s the batch
+                per_mp.append({'mp': mp, 'files': len(paths), 'ok': False,
+                               'error': f'{type(e).__name__}: {e}'})
+                continue
+            if not pv.get('ok'):
+                per_mp.append({'mp': mp, 'files': len(paths), 'ok': False,
+                               'error': pv.get('error', 'preview failed')})
+                continue
+            s = pv.get('summary') or {}
+            row = {'mp': mp, 'files': len(paths), 'ok': True,
+                   'mismatch': s.get('mismatch', 0)}
+            for k in self._AGG:
+                row[k] = s.get(k, 0) or 0
+                totals[k] += row[k]
+            per_mp.append(row)
+
+        preview = {'warehouse': warehouse, 'per_mp': per_mp, 'totals': totals,
+                   'n_ok': sum(1 for r in per_mp if r['ok']),
+                   'n_fail': sum(1 for r in per_mp if not r['ok'])}
+        (d / 'preview.json').write_text(json.dumps(preview, default=str), encoding='utf-8')
+        messages.info(request, f"Previewed {len(per_mp)} marketplace group(s) — "
+                      f"{totals['pos']} PO(s), {totals['lines']} line(s), "
+                      f"{totals['affected']} affected. Nothing was recorded.")
         return redirect(f"{reverse('b2b_batch')}?token={token}")
