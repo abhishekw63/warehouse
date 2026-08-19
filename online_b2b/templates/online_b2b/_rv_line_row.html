@@ -1,0 +1,21 @@
+{% load b2b_extras %}
+{# One reconciled LINE (our record ↔ D365). Mismatches are highlighted red, excluded
+   lines muted. Used by the Line-items / Affected panes and the per-PO drill-down. #}
+<tr class="rv-lrow{% if ln.status == 'QTY_MISMATCH' or ln.status == 'MISSING_IN_D365' or ln.status == 'EXTRA_IN_D365' %} rv-lbad{% elif ln.status == 'EXCLUDED' %} rv-lexcl{% endif %}">
+  <td class="mono">{{ ln.po }}</td>
+  <td class="mono strong">{{ ln.item }}</td>
+  <td class="mono">{{ ln.ean|default:'—' }}</td>
+  <td class="rv-desc" title="{{ ln.desc }}">{{ ln.desc|default:'—' }}</td>
+  <td class="r{% if ln.status == 'QTY_MISMATCH' %} rv-mis{% endif %}">{% if ln.our_qty != None %}{{ ln.our_qty }}{% else %}—{% endif %}</td>
+  <td class="r{% if ln.status == 'QTY_MISMATCH' %} rv-mis{% endif %}">{% if ln.d365_qty != None %}{{ ln.d365_qty }}{% else %}—{% endif %}</td>
+  <td class="r">{% if ln.our_val != None %}{{ ln.our_val|inr_short }}{% else %}—{% endif %}</td>
+  <td class="r">{% if ln.d365_val != None %}{{ ln.d365_val|inr_short }}{% else %}—{% endif %}</td>
+  <td>
+    {% if ln.status == 'OK' %}<span class="rv-ok">✓ OK</span>
+    {% elif ln.status == 'EXCLUDED' %}<span class="rv-lchip excl">excluded</span>
+    {% elif ln.status == 'MISSING_IN_D365' %}<span class="rv-lchip miss">missing in D365</span>
+    {% elif ln.status == 'EXTRA_IN_D365' %}<span class="rv-lchip extra">extra in D365</span>
+    {% elif ln.status == 'QTY_MISMATCH' %}<span class="rv-lchip qty">qty {{ ln.our_qty }}≠{{ ln.d365_qty }}</span>
+    {% else %}<span class="rv-lchip">{{ ln.status }}</span>{% endif %}
+  </td>
+</tr>

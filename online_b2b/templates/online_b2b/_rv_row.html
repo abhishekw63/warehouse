@@ -1,6 +1,7 @@
 {% load b2b_extras %}
-<tr class="{% if r.status == 'MISMATCH' %}rv-bad{% elif r.status == 'EXTERNAL' %}rv-ext-row{% endif %}">
+<tr class="rv-orow {% if r.status == 'MISMATCH' %}rv-bad{% elif r.status == 'EXTERNAL' %}rv-ext-row{% endif %}" data-po="{{ r.po }}">
   <td class="rv-chk-col"><input type="checkbox" class="rv-chk" value="{{ r.po }}" {% if r.status != 'EXTERNAL' %}checked{% endif %} title="Tick to record on confirm"></td>
+  <td class="rv-caret-col"><button type="button" class="rv-caret" title="Show line items" aria-label="Show line items">▸</button></td>
   <td class="mono strong">{{ r.po }}</td>
   <td>{{ r.mp|default:'—' }}</td>
   <td class="r">{% if r.our_qty != None %}{{ r.our_qty }}{% else %}—{% endif %}</td>
@@ -10,5 +11,17 @@
   <td class="r">{{ r.d365_val|inr_short }}</td>
   <td class="r">{{ r.val_diff|default:0 }}</td>
   <td class="mono">{% if r.pin_ok %}{{ r.pin_d365|default:'—' }}{% else %}<span class="rv-mis">{{ r.our_pin|default:'∅' }}≠{{ r.pin_d365|default:'∅' }}</span>{% endif %}</td>
-  <td>{% if r.status == 'OK' %}<span class="rv-ok">✓ OK</span>{% elif r.status == 'EXTERNAL' %}<span class="rv-ext">↗ External</span>{% else %}<span class="rv-mis">⚠ {{ r.mismatch_fields|join:', ' }}</span>{% endif %}</td>
+  <td>{% if r.status == 'OK' %}<span class="rv-ok">✓ OK</span>{% elif r.status == 'EXTERNAL' %}<span class="rv-ext">↗ External</span>{% else %}<span class="rv-mis">⚠ {{ r.mismatch_fields|join:', ' }}</span>{% endif %}{% if r.bad_lines %} <span class="rv-badln" title="mismatched line items">{{ r.bad_lines }} line(s)</span>{% endif %}</td>
+</tr>
+<tr class="rv-detail" data-po="{{ r.po }}" hidden>
+  <td colspan="12">
+    <div class="rv-detail-wrap">
+      {% if r.lines %}
+      <table class="grid compact rv-ltable">
+        <thead><tr><th>PO</th><th>Item</th><th>EAN</th><th>Description</th><th class="r">Qty ours</th><th class="r">Qty D365</th><th class="r">Val ours</th><th class="r">Val D365</th><th>Line status</th></tr></thead>
+        <tbody>{% for ln in r.lines %}{% include 'online_b2b/_rv_line_row.html' %}{% endfor %}</tbody>
+      </table>
+      {% else %}<div class="rv-detail-none">No line items for this PO.</div>{% endif %}
+    </div>
+  </td>
 </tr>

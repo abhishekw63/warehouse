@@ -54,3 +54,55 @@
       });
   });
 })();
+
+/* ── Tabs — same behaviour as the review page (show one pane, hide the rest) ── */
+(function () {
+  var tabs = [].slice.call(document.querySelectorAll('.rv-tabs .tab'));
+  if (!tabs.length) return;
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () {
+      tabs.forEach(function (x) { x.classList.remove('on'); });
+      t.classList.add('on');
+      var name = t.getAttribute('data-tab');
+      document.querySelectorAll('.tabpane').forEach(function (p) {
+        p.style.display = (p.getAttribute('data-pane') === name) ? '' : 'none';
+      });
+    });
+  });
+})();
+
+/* ── Per-PO drill-down: click an Orders/Externals row (not its checkbox) to open
+      its line items and pinpoint the mismatch. Delegated → works after re-render. ── */
+(function () {
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest) return;
+    if (e.target.closest('.rv-chk-col')) return;         // let the checkbox toggle
+    var row = e.target.closest('.rv-orow');
+    if (!row) return;
+    var detail = row.nextElementSibling;
+    if (!detail || !detail.classList.contains('rv-detail')) return;
+    var opening = detail.hasAttribute('hidden');
+    if (opening) { detail.removeAttribute('hidden'); row.classList.add('rv-open'); }
+    else { detail.setAttribute('hidden', ''); row.classList.remove('rv-open'); }
+    var caret = row.querySelector('.rv-caret');
+    if (caret) caret.textContent = opening ? '▾' : '▸';
+  });
+})();
+
+/* ── Upload dropzone — show picked filenames + a drag-over state ── */
+(function () {
+  var drop = document.getElementById('rvDrop');
+  if (!drop) return;
+  var input = drop.querySelector('.rv-drop-input');
+  var out = document.getElementById('rvDropFiles');
+  if (input) input.addEventListener('change', function () {
+    var names = [].map.call(input.files, function (f) { return f.name; });
+    if (out) { out.hidden = !names.length; out.textContent = names.length ? '✓ ' + names.join('   ·   ') : ''; }
+  });
+  ['dragenter', 'dragover'].forEach(function (ev) {
+    drop.addEventListener(ev, function (e) { e.preventDefault(); drop.classList.add('rv-drop-over'); });
+  });
+  ['dragleave', 'drop'].forEach(function (ev) {
+    drop.addEventListener(ev, function () { drop.classList.remove('rv-drop-over'); });
+  });
+})();

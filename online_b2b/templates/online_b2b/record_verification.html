@@ -38,12 +38,14 @@
     <h2>Run a check</h2>
     <form method="post" action="{% url 'b2b_record_verify_run' %}" enctype="multipart/form-data" data-loading="Reconciling against D365…" data-loading-steps="Reading D365 Headers &amp; Lines|Matching POs to our records|Netting excluded lines|Comparing qty · value · pincode|Logging deltas">
       {% csrf_token %}
-      <div class="rv-files">
-        <label class="rv-file rv-file-both"><span class="rv-file-l">D365 Sales Orders + Sales Lines — drop both together</span>
-          <input type="file" name="rv_files" accept=".xlsx,.xls" multiple required></label>
-      </div>
-      <p class="rv-note">Upload both files at once — we detect which is Headers vs Lines automatically.</p>
-      <button type="submit" class="btn-primary">Verify against D365 →</button>
+      <label class="rv-drop" id="rvDrop">
+        <input type="file" name="rv_files" accept=".xlsx,.xls" multiple required class="rv-drop-input">
+        <span class="rv-drop-ic">⬆</span>
+        <span class="rv-drop-t">Drop the D365 <b>Sales Orders</b> + <b>Sales Lines</b> here</span>
+        <span class="rv-drop-h">or click to browse · .xlsx / .xls · drop both together — Headers vs Lines is auto-detected</span>
+        <span class="rv-drop-files" id="rvDropFiles" hidden></span>
+      </label>
+      <button type="submit" class="btn-primary rv-verify-btn">✓ Verify against D365 →</button>
     </form>
   </div>
 
@@ -62,24 +64,89 @@
     {% endif %}
   </div>
 
+  {# ── KPI tiles (review-page style) ── #}
+  <div class="iss-kpis rv-kpis reveal">
+    <div class="ik"><div class="n" data-countup>{{ data.verify_summary.checked }}</div><div class="l">POs</div></div>
+    <div class="ik"><div class="n" data-countup>{{ data.n_lines }}</div><div class="l">Line items</div></div>
+    <div class="ik"><div class="n" data-countup>{{ data.tot_qty }}</div><div class="l">Qty</div></div>
+    <div class="ik"><div class="n">{{ data.tot_val|inr_short }}</div><div class="l">Value (D365)</div></div>
+    <div class="ik res"><div class="n" style="color:var(--green)" data-countup>{{ data.verify_summary.ok }}</div><div class="l">Clean POs</div></div>
+    <div class="ik mis"><div class="n" style="color:var(--red)" data-countup>{{ data.verify_summary.mismatch }}</div><div class="l">Mismatch POs</div></div>
+    <div class="ik mis"><div class="n" style="color:var(--red)" data-countup>{{ data.n_affected_lines }}</div><div class="l">Affected lines</div></div>
+    <div class="ik"><div class="n" style="color:var(--accent)" data-countup>{{ data.verify_summary.external }}</div><div class="l">External</div></div>
+  </div>
+
   <div class="im-card reveal">
     <div class="rv-res-head">
-      <h2>Result <span class="count">{{ data.verify_summary.checked }} PO(s) · {{ data.verify_summary.ok }} clean · {{ data.verify_summary.mismatch }} mismatch · {{ data.verify_summary.external }} external</span></h2>
+      <h2>Result</h2>
       <a class="btn-ghost" href="{% url 'b2b_record_verify_download' token=token %}" data-download-modal="Preparing the reconciliation Excel">⬇ Excel</a>
     </div>
-    <div class="scroll">
-    <table class="grid compact sortable">
-      <thead><tr>
-        <th class="rv-chk-col"><input type="checkbox" id="rvAll" title="Select all"></th>
-        <th>PO</th><th>Marketplace</th><th class="r">Qty ours</th><th class="r">Qty D365</th>
-        <th class="r">Excl.</th><th class="r">Value ours (net)</th><th class="r">Value D365</th><th class="r">Val Δ</th>
-        <th>Pincode</th><th>Status</th>
-      </tr></thead>
-      <tbody>
-        {% for r in data.headers %}{% include 'online_b2b/_rv_row.html' %}{% endfor %}
-      </tbody>
-    </table>
+
+    {# ── Tabs (same mechanism as the review page) ── #}
+    <div class="tabs rv-tabs">
+      <button class="tab on" data-tab="orders">Orders <span class="tcount">{{ data.orders|length }}</span></button>
+      <button class="tab" data-tab="externals">Externals <span class="tcount">{{ data.externals|length }}</span></button>
+      <button class="tab" data-tab="lines">Line items <span class="tcount">{{ data.n_lines }}</span></button>
+      <button class="tab" data-tab="affected" style="{% if data.n_affected_lines %}color:var(--red);{% endif %}">Affected <span class="tcount" style="{% if data.n_affected_lines %}background:#fdecec;color:var(--red);{% endif %}">{{ data.n_affected_lines }}</span></button>
     </div>
+
+    {# Orders — per-PO; click a row to drill into its line items #}
+    <div class="tabpane on" data-pane="orders">
+      <p class="rv-tabhint">Reconciled POs — <b>click any row</b> to open its line items and pinpoint the mismatch.</p>
+      <div class="scroll">
+      <table class="grid compact rv-otable">
+        <thead><tr>
+          <th class="rv-chk-col"><input type="checkbox" id="rvAll" title="Select all"></th>
+          <th class="rv-caret-col"></th>
+          <th>PO</th><th>Marketplace</th><th class="r">Qty ours</th><th class="r">Qty D365</th>
+          <th class="r">Excl.</th><th class="r">Value ours (net)</th><th class="r">Value D365</th><th class="r">Val Δ</th>
+          <th>Pincode</th><th>Status</th>
+        </tr></thead>
+        <tbody>
+          {% for r in data.orders %}{% include 'online_b2b/_rv_row.html' %}{% empty %}<tr><td colspan="12" class="rv-tabhint">No reconciled POs.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    {# Externals — in D365 but not in our records (GT Select / Testers). Tick to push. #}
+    <div class="tabpane" data-pane="externals" style="display:none;">
+      <p class="rv-tabhint">In D365 but <b>not in our records</b> (GT Select / Testers, uploaded outside the app). Tick to record on confirm.</p>
+      <div class="scroll">
+      <table class="grid compact rv-otable">
+        <thead><tr>
+          <th class="rv-chk-col"></th><th class="rv-caret-col"></th>
+          <th>PO</th><th>Marketplace</th><th class="r">Qty ours</th><th class="r">Qty D365</th>
+          <th class="r">Excl.</th><th class="r">Value ours (net)</th><th class="r">Value D365</th><th class="r">Val Δ</th>
+          <th>Pincode</th><th>Status</th>
+        </tr></thead>
+        <tbody>
+          {% for r in data.externals %}{% include 'online_b2b/_rv_row.html' %}{% empty %}<tr><td colspan="12" class="rv-tabhint">No external POs.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    {# Line items — every reconciled line, mismatches highlighted #}
+    <div class="tabpane" data-pane="lines" style="display:none;">
+      <div class="scroll">
+      <table class="grid compact rv-ltable">
+        <thead><tr><th>PO</th><th>Item</th><th>EAN</th><th>Description</th><th class="r">Qty ours</th><th class="r">Qty D365</th><th class="r">Val ours</th><th class="r">Val D365</th><th>Line status</th></tr></thead>
+        <tbody>{% for ln in data.lines %}{% include 'online_b2b/_rv_line_row.html' %}{% endfor %}</tbody>
+      </table>
+      </div>
+    </div>
+
+    {# Affected — only the problem lines #}
+    <div class="tabpane" data-pane="affected" style="display:none;">
+      <div class="scroll">
+      <table class="grid compact rv-ltable">
+        <thead><tr><th>PO</th><th>Item</th><th>EAN</th><th>Description</th><th class="r">Qty ours</th><th class="r">Qty D365</th><th class="r">Val ours</th><th class="r">Val D365</th><th>Line status</th></tr></thead>
+        <tbody>{% for ln in data.affected_lines %}{% include 'online_b2b/_rv_line_row.html' %}{% empty %}<tr><td colspan="9" class="rv-tabhint">✓ No affected line items — every line reconciles.</td></tr>{% endfor %}</tbody>
+      </table>
+      </div>
+    </div>
+
     {% if data.excel_error %}<p class="rv-note">Excel note: {{ data.excel_error }}</p>{% endif %}
   </div>
   {% endif %}

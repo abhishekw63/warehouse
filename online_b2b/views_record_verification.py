@@ -44,6 +44,31 @@ def _looks_like(path: str, needle: str) -> bool:
         return False
 
 
+_LINE_PROBLEM = {'MISSING_IN_D365', 'EXTRA_IN_D365', 'QTY_MISMATCH'}
+
+
+def _augment(data: dict) -> dict:
+    """Add the review-page-style tab data on top of the reconcile result:
+    per-PO line drill-down, the Orders/Externals split, the affected-line list, and
+    KPI totals. Pure/derived — no new reconciliation, just reshaping for display."""
+    headers = data.get('headers', [])
+    lines = data.get('lines', [])
+    by_po: dict = {}
+    for ln in lines:
+        by_po.setdefault(ln.get('po'), []).append(ln)
+    for h in headers:
+        h['lines'] = by_po.get(h.get('po'), [])
+        h['bad_lines'] = sum(1 for ln in h['lines'] if ln.get('status') in _LINE_PROBLEM)
+    data['orders'] = [h for h in headers if h.get('status') != 'EXTERNAL']
+    data['externals'] = [h for h in headers if h.get('status') == 'EXTERNAL']
+    data['affected_lines'] = [ln for ln in lines if ln.get('status') in _LINE_PROBLEM]
+    data['n_lines'] = len(lines)
+    data['n_affected_lines'] = len(data['affected_lines'])
+    data['tot_qty'] = int(sum(ln.get('d365_qty') or 0 for ln in lines))
+    data['tot_val'] = round(sum(h.get('d365_val') or 0 for h in headers))
+    return data
+
+
 class RecordVerificationView(LoginRequiredMixin, TemplateView):
     """Upload page + coverage + checked-PO log + the last run's result (``?token=``)."""
     template_name = 'online_b2b/record_verification.html'
@@ -59,7 +84,7 @@ class RecordVerificationView(LoginRequiredMixin, TemplateView):
             if rp.exists():
                 res = json.loads(rp.read_text(encoding='utf-8'))
                 if res.get('ok'):
-                    ctx['data'] = res['data']
+                    ctx['data'] = _augment(res['data'])
                     ctx['confirmed'] = res.get('confirmed', False)
         return ctx
 
