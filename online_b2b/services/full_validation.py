@@ -68,13 +68,18 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
     ldesc = col(lf, 'Description')
 
     h = h[h[ext].notna() & (h[ext].astype(str).str.strip() != '')].copy()
-    h[ext] = h[ext].astype(str).str.strip()
+    # PO numbers are case-invariant identifiers, but D365 exports them UPPERCASE
+    # while some channels record them lowercase (e.g. Firstcry 'pin…' vs D365
+    # 'PIN…'). Fold BOTH sides to upper so the match is case-insensitive — else a
+    # recorded PO falsely reads EXTERNAL. Applied uniformly (D365 + our SQL + line
+    # keys), so same-case pairs are unaffected; only case-variant pairs now match.
+    h[ext] = h[ext].astype(str).str.strip().str.upper()
     d365h = h.groupby(ext).agg(
         qty=(hq, lambda s: sum(_num(x) for x in s)),
         val=(hv, lambda s: sum(_num(x) for x in s)),
         pin=(hpin, 'first'), st=(hst, 'first')).to_dict('index')
 
-    lf[docno] = lf[docno].astype(str).str.strip()
+    lf[docno] = lf[docno].astype(str).str.strip().str.upper()   # case-insensitive PO match
     d365L = defaultdict(lambda: {'qty': 0.0, 'amt': 0.0, 'ean': '', 'desc': ''})
     for _, r in lf.iterrows():
         k = (r[docno], str(r[lno]).strip())
@@ -89,12 +94,14 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
     from .order_db import _conn
     with _conn() as (cur, d):
         ph = ','.join([d['ph']] * len(pos))
-        cur.execute(f"SELECT po, marketplace_label, SUM(qty), SUM(order_value), MAX(location) "
-                    f"FROM order_headers WHERE po IN ({ph}) GROUP BY po, marketplace_label", pos)
+        # UPPER(po) both sides → the match is case-insensitive regardless of the
+        # column's collation (pos are already upper from d365h).
+        cur.execute(f"SELECT UPPER(po), marketplace_label, SUM(qty), SUM(order_value), MAX(location) "
+                    f"FROM order_headers WHERE UPPER(po) IN ({ph}) GROUP BY UPPER(po), marketplace_label", pos)
         ourh = {str(r[0]): {'mp': r[1], 'qty': float(r[2] or 0), 'val': float(r[3] or 0),
                             'loc': r[4]} for r in cur.fetchall()}
-        cur.execute(f"SELECT po,item_no,ean,description,qty,our_cp,status,action,exception_label "
-                    f"FROM order_lines_full WHERE po IN ({ph})", pos)
+        cur.execute(f"SELECT UPPER(po),item_no,ean,description,qty,our_cp,status,action,exception_label "
+                    f"FROM order_lines_full WHERE UPPER(po) IN ({ph})", pos)
         ourL = {}
         for po, it, ean, desc, qty, cp, st, act, exc in cur.fetchall():
             ourL[(str(po), str(it))] = {'ean': str(ean or ''), 'desc': str(desc or '')[:60],
