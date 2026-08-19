@@ -1,8 +1,4 @@
-{% load b2b_extras %}
-{# Per-warehouse bin coverage (Considered vs Excluded lists) — the heavy 2000+ row
-   detail, lazy-loaded when the operator opens the 'Bin coverage' panel so the
-   Inventory page's first paint stays fast. Bin-click Include/Exclude is delegated
-   on document, so it works on this injected content unchanged. #}
+{% load b2b_extras %}{% comment %}Per-warehouse bin coverage (Considered vs Excluded) — the heavy 2000+ row detail, lazy-loaded on 'Bin coverage' open so the Inventory first paint stays fast. Bin-click Include/Exclude is delegated on document, so it works on this injected content.{% endcomment %}
 {% for c in snap_cards %}{% if c.snap %}
 <div class="iv-cov-wh">
   <div class="iv-cov-whhead">

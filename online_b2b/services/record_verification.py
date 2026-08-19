@@ -98,13 +98,17 @@ def preview(headers_path, lines_path) -> dict:
     # and never count against a PO):
     #   • SKU mismatch  = a SKU is in ours-not-D365 or D365-not-ours (MISSING/EXTRA)
     #   • line-qty      = same SKU on both sides but the quantity differs
-    sku_bad, lqty_bad = set(), set()
+    sku_bad, lqty_bad, lval_bad = set(), set(), set()
     for ln in base.get('lines', []):
         s = ln.get('status')
         if s in ('MISSING_IN_D365', 'EXTRA_IN_D365'):
             sku_bad.add(ln.get('po'))
         elif s == 'QTY_MISMATCH':
             lqty_bad.add(ln.get('po'))
+        # a REAL per-line value gap (both sides present, values differ) — this, not
+        # the header-total, decides the value verdict below.
+        if ln.get('val_ok') == 'NO':
+            lval_bad.add(ln.get('po'))
 
     n_ok = n_mismatch = n_external = 0
     for r in rows:
@@ -125,15 +129,21 @@ def preview(headers_path, lines_path) -> dict:
         r['our_pin'] = our_pin; r['pin_ok'] = bool(pin_ok)
         r['sku_ok'] = sku_ok; r['lines_ok'] = sku_ok and qty_ok
 
-        # VALUE against RAW, netted for excluded: our recorded value INCLUDES the
-        # EXCLUDED lines (never pushed to D365), so subtract them before comparing —
-        # else every PO with exclusions falsely flags a value mismatch. Compare the
-        # netted "ours" to D365 within tolerance; show the netted value side by side.
+        # VALUE — LINE-DRIVEN, not header-total. We still net the excluded lines and
+        # show the header VAL Δ side by side (informational), BUT the value VERDICT
+        # comes from the per-line reconcile: a PO's value only mismatches if a KEPT
+        # line's value actually differs from D365. Our header ``order_value`` is the
+        # marketplace's PO total (a GST-inclusive / MRP-ish basis ~20%% over cost),
+        # while D365's "Total Amount Incl. GST" = line-cost × GST — two different
+        # bases, so the header totals gap by ~2%% even when EVERY line ties out.
+        # Flagging that as a mismatch is a false positive; the lines are the truth.
         net_our_val = round((r.get('our_val') or 0) - (r.get('excl_val') or 0), 2)
         r['our_val'] = net_our_val
         r['val_diff'] = round((r.get('d365_val') or 0) - net_our_val, 2)
-        val_ok = _fv._vmatch(r.get('d365_val') or 0, net_our_val)
-        r['val_ok'] = bool(val_ok)
+        line_val_bad = r['po'] in lval_bad
+        val_ok = not line_val_bad
+        r['val_ok'] = val_ok
+        r['val_basis_note'] = bool(not _fv._vmatch(r.get('d365_val') or 0, net_our_val) and not line_val_bad)
 
         # Ordered checks: SKU match → qty match → (only then) value → pincode.
         # Value is only meaningful once the SKU set + quantities line up, so it's
@@ -144,7 +154,7 @@ def preview(headers_path, lines_path) -> dict:
             mism.append('SKU')
         if not qty_ok:
             mism.append('qty')
-        if sku_ok and qty_ok and not val_ok:
+        if sku_ok and qty_ok and line_val_bad:
             mism.append('value')
         if not pin_ok:
             mism.append('pincode')

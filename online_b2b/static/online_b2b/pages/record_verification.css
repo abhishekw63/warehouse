@@ -64,7 +64,22 @@
 .rv-drop-t{font-size:14px;font-weight:700;color:var(--text);}
 .rv-drop-h{font-size:12px;color:var(--text-2);}
 .rv-drop-files{font-size:12.5px;font-weight:700;color:var(--green);margin-top:4px;}
-.rv-verify-btn{margin-top:14px;}
+.rv-verify-btn{margin-top:14px;font-size:14px;padding:11px 20px;}
+
+/* larger / less cramped result view (was too small) */
+.rv-wrap .grid.compact th,.rv-wrap .grid.compact td{padding:10px 13px;font-size:13.5px;}
+.rv-wrap .grid.compact th{font-size:11px;}
+.rv-otable td,.rv-otable th{white-space:nowrap;}
+.rv-ltable{font-size:12.5px;} .rv-ltable td{padding:6px 11px;}
+.rv-desc{max-width:320px;}
+.rv-kpis{gap:12px;margin:16px 0 6px;}
+.rv-kpis .ik{min-width:128px;padding:16px 20px;}
+.rv-kpis .ik .n{font-size:24px;} .rv-kpis .ik .l{font-size:11px;}
+.rv-tabs .tab{padding:9px 16px;font-size:13.5px;}
+.rv-res-head h2{font-size:17px;}
+/* VAL Δ basis note (header-total artifact; lines all reconcile) */
+.rv-basis{color:var(--text-2);}
+.rv-basis-tag{font-size:9.5px;font-weight:800;color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent);border-radius:5px;padding:1px 5px;margin-left:4px;white-space:nowrap;}
 .rv-selc{display:inline-block;min-width:16px;padding:0 5px;margin-left:2px;border-radius:999px;
   background:#ffffff2b;font-variant-numeric:tabular-nums;font-weight:800;}
 .rv-confirm form button:disabled{opacity:.5;cursor:not-allowed;}

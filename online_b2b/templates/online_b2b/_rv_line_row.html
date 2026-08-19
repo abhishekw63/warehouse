@@ -1,6 +1,4 @@
-{% load b2b_extras %}
-{# One reconciled LINE (our record ↔ D365). Mismatches are highlighted red, excluded
-   lines muted. Used by the Line-items / Affected panes and the per-PO drill-down. #}
+{% load b2b_extras %}{% comment %}One reconciled LINE (our record ↔ D365): mismatches highlighted red, excluded muted. Reused by the Line-items / Affected panes and the per-PO drill-down.{% endcomment %}
 <tr class="rv-lrow{% if ln.status == 'QTY_MISMATCH' or ln.status == 'MISSING_IN_D365' or ln.status == 'EXTRA_IN_D365' %} rv-lbad{% elif ln.status == 'EXCLUDED' %} rv-lexcl{% endif %}">
   <td class="mono">{{ ln.po }}</td>
   <td class="mono strong">{{ ln.item }}</td>

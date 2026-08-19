@@ -91,9 +91,7 @@
       <span class="iv-cov-t">🗂 Bin coverage — what we counted vs excluded</span>
       <span class="iv-cov-hint">click to see every bin that fed (or was held out of) the fill-rate</span>
     </summary>
-    {# Body is LAZY-LOADED on first open (the 2000+ bin rows are the page's heaviest
-       payload; deferring them keeps the first paint fast). Bin-click Include/Exclude
-       is delegated on document, so it works once this content is injected. #}
+    {% comment %}Body is LAZY-LOADED on first open (2000+ bin rows are the page's heaviest payload; deferring keeps the first paint fast). Bin-click Include/Exclude is delegated on document, so it works once injected.{% endcomment %}
     <div class="iv-cov-body" data-lazy-url="{% url 'b2b_inventory_bin_coverage' %}">
       <div class="iv-cov-loading">Loading bin coverage…</div>
     </div>
