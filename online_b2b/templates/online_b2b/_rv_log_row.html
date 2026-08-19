@@ -1,0 +1,12 @@
+{% load b2b_extras %}{% comment %}One checked-PO log row - reused by every tab on the history page.{% endcomment %}
+<tr class="{% if r.status == 'EXTERNAL' %}rv-ext-row{% elif r.status != 'OK' %}rv-bad{% endif %}">
+  <td class="mono strong">{{ r.po }}</td>
+  <td>{{ r.marketplace|default:'—' }}</td>
+  <td>{% if r.status == 'OK' %}<span class="rv-ok">✓ OK</span>{% elif r.status == 'EXTERNAL' %}<span class="rv-ext">↗ External</span>{% else %}<span class="rv-mis">⚠ Mismatch</span>{% endif %}</td>
+  <td class="r">{{ r.qty_delta|default:0 }}</td>
+  <td class="r">{{ r.val_delta|default:0 }}</td>
+  <td class="mono">{% if r.pin_ok %}{{ r.d365_pin|default:'—' }}{% else %}<span class="rv-mis">{{ r.our_pin|default:'∅' }}≠{{ r.d365_pin|default:'∅' }}</span>{% endif %}</td>
+  <td>{{ r.mismatch_fields|default:'—' }}</td>
+  <td>{{ r.checked_by|default:'—' }}</td>
+  <td class="nowrap">{{ r.checked_at|date:'d M, H:i'|default:'—' }}</td>
+</tr>

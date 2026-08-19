@@ -1,0 +1,81 @@
+{% extends 'online_b2b/base_b2b.html' %}
+{% load static b2b_extras %}
+{% block title %}Verification History · RENÉE{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<link rel="stylesheet" href="{% static 'online_b2b/pages/record_verification.css' %}">{% endblock %}
+
+{% block breadcrumb %}
+  <a href="{% url 'departments' %}">Departments</a>
+  <a href="{% url 'b2b_dashboard' %}"> / Order Management</a>
+  <a href="{% url 'b2b_record_verify' %}"> / Record Verification</a> <span>/ History</span>
+{% endblock %}
+
+{% block content %}
+<div class="b2b-wrap rv-wrap">
+
+  <div class="b2b-head">
+    <div>
+      <span class="pill" style="margin-bottom:10px;"><span class="dot"></span>History</span>
+      <h1>Checked POs</h1>
+      <p class="src">Every PO that's been verified &amp; recorded, with its delta - split into
+        <b>Verified</b>, <b>Mismatch</b> and <b>External</b>. Read-only.</p>
+    </div>
+    <a href="{% url 'b2b_record_verify' %}" class="btn-ghost">← Back to Record Verify</a>
+  </div>
+
+  {% if messages %}<div class="rv-msgs">{% for m in messages %}<div class="rv-msg {{ m.tags }}">{{ m }}</div>{% endfor %}</div>{% endif %}
+
+  {# ── Coverage tiles ── #}
+  <div class="iss-kpis rv-kpis reveal">
+    <div class="ik"><div class="n" data-countup>{{ coverage.checked }}</div><div class="l">Checked (logged)</div></div>
+    <div class="ik res"><div class="n" style="color:var(--green)" data-countup>{{ coverage.ok }}</div><div class="l">Verified · OK</div></div>
+    <div class="ik mis"><div class="n" style="color:var(--red)" data-countup>{{ coverage.mismatch }}</div><div class="l">Mismatch</div></div>
+    <div class="ik"><div class="n" style="color:var(--accent)" data-countup>{{ coverage.external }}</div><div class="l">External (not ours)</div></div>
+    <div class="ik"><div class="n" style="color:var(--muted)" data-countup>{{ coverage.unchecked }}</div><div class="l">Not checked yet</div></div>
+  </div>
+
+  <div class="im-card reveal">
+    <div class="rv-res-head">
+      <h2>Verification log</h2>
+      {% if log %}<button type="button" class="btn-ghost rv-clearlog" data-url="{% url 'b2b_record_verify_clear_log' %}" title="Delete every entry and start fresh">🗑 Clear history</button>{% endif %}
+    </div>
+
+    {% if log %}
+    <div class="tabs rv-tabs">
+      <button class="tab on" data-tab="all">All <span class="tcount">{{ log|length }}</span></button>
+      <button class="tab" data-tab="ok">Verified <span class="tcount">{{ ok|length }}</span></button>
+      <button class="tab" data-tab="mismatch" style="{% if mismatch %}color:var(--red);{% endif %}">Mismatch <span class="tcount" style="{% if mismatch %}background:#fdecec;color:var(--red);{% endif %}">{{ mismatch|length }}</span></button>
+      <button class="tab" data-tab="external">External <span class="tcount">{{ external|length }}</span></button>
+    </div>
+
+    <div class="tabpane on" data-pane="all">
+      <div class="scroll"><table class="grid compact">
+        <thead><tr><th>PO</th><th>Marketplace</th><th>Status</th><th class="r">Qty Δ</th><th class="r">Val Δ</th><th>Pincode</th><th>Fields</th><th>Checked by</th><th>When</th></tr></thead>
+        <tbody>{% for r in log %}{% include 'online_b2b/_rv_log_row.html' %}{% endfor %}</tbody>
+      </table></div>
+    </div>
+    <div class="tabpane" data-pane="ok" style="display:none;">
+      <div class="scroll"><table class="grid compact">
+        <thead><tr><th>PO</th><th>Marketplace</th><th>Status</th><th class="r">Qty Δ</th><th class="r">Val Δ</th><th>Pincode</th><th>Fields</th><th>Checked by</th><th>When</th></tr></thead>
+        <tbody>{% for r in ok %}{% include 'online_b2b/_rv_log_row.html' %}{% empty %}<tr><td colspan="9" class="rv-tabhint">No verified POs yet.</td></tr>{% endfor %}</tbody>
+      </table></div>
+    </div>
+    <div class="tabpane" data-pane="mismatch" style="display:none;">
+      <div class="scroll"><table class="grid compact">
+        <thead><tr><th>PO</th><th>Marketplace</th><th>Status</th><th class="r">Qty Δ</th><th class="r">Val Δ</th><th>Pincode</th><th>Fields</th><th>Checked by</th><th>When</th></tr></thead>
+        <tbody>{% for r in mismatch %}{% include 'online_b2b/_rv_log_row.html' %}{% empty %}<tr><td colspan="9" class="rv-tabhint">✓ No mismatches logged.</td></tr>{% endfor %}</tbody>
+      </table></div>
+    </div>
+    <div class="tabpane" data-pane="external" style="display:none;">
+      <div class="scroll"><table class="grid compact">
+        <thead><tr><th>PO</th><th>Marketplace</th><th>Status</th><th class="r">Qty Δ</th><th class="r">Val Δ</th><th>Pincode</th><th>Fields</th><th>Checked by</th><th>When</th></tr></thead>
+        <tbody>{% for r in external %}{% include 'online_b2b/_rv_log_row.html' %}{% empty %}<tr><td colspan="9" class="rv-tabhint">No external POs logged.</td></tr>{% endfor %}</tbody>
+      </table></div>
+    </div>
+    {% else %}<p class="rv-note">No POs checked yet — run a verification on the Record Verify page.</p>{% endif %}
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}<script defer data-page-js src="{% static 'online_b2b/pages/record_verification.js' %}"></script>{% endblock %}

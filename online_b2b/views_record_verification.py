@@ -132,8 +132,7 @@ class RecordVerificationView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx['coverage'] = rv.coverage()
-        ctx['log'] = rv.checked_log(limit=300)
-        ctx['saved_runs'] = _saved_runs()
+        ctx['saved_runs'] = _saved_runs()   # the checked-PO log now lives on its own page
         token = self.request.GET.get('token', '')
         ctx['token'] = token
         rp = _result_path(token) if token else None
@@ -229,6 +228,36 @@ class RecordVerificationSaveLaterView(LoginRequiredMixin, View):
         _save_result(rp, res)
         return _done(request, token,
                      '🕒 Saved for review later — resume it anytime from "Resume a saved check".')
+
+
+class RecordVerificationLogView(LoginRequiredMixin, TemplateView):
+    """Separate 'Checked POs' history page — the persisted verification log, split
+    into All / Verified / Mismatch / External tabs. Read-only; the main page keeps
+    just upload + the current run's result."""
+    template_name = 'online_b2b/record_verification_log.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        log = rv.checked_log(limit=3000)
+        ctx['log'] = log
+        ctx['coverage'] = rv.coverage()
+        ctx['ok'] = [r for r in log if r.get('status') == 'OK']
+        ctx['mismatch'] = [r for r in log if r.get('status') not in ('OK', 'EXTERNAL')]
+        ctx['external'] = [r for r in log if r.get('status') == 'EXTERNAL']
+        return ctx
+
+
+class RecordVerificationClearLogView(LoginRequiredMixin, View):
+    """Clear the whole checked-PO log (start fresh). Recorded orders are untouched."""
+
+    def post(self, request):
+        out = rv.clear_log()
+        msg = f"Cleared the verification log - {out.get('deleted', 0)} entry(ies) removed."
+        if common.is_ajax(request):
+            return JsonResponse({'ok': True, 'message': msg,
+                                 'redirect': reverse('b2b_record_verify_log')})
+        messages.info(request, msg)
+        return redirect('b2b_record_verify_log')
 
 
 class RecordVerificationDiscardView(LoginRequiredMixin, View):

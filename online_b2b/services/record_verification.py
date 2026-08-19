@@ -272,6 +272,27 @@ def coverage() -> dict:
     return out
 
 
+def clear_log() -> dict:
+    """Wipe the entire checked-PO log (start fresh). Touches only the verification
+    log — the recorded orders (order_headers/order_lines) are untouched."""
+    _ensure_table()
+    with _conn() as (cur, d):
+        cur.execute(f"DELETE FROM {_LOG_TABLE}")
+        n = cur.rowcount
+        cur.connection.commit()
+    return {'ok': True, 'deleted': n or 0}
+
+
+def delete_log_entry(po) -> dict:
+    """Remove ONE PO's row from the checked-PO log."""
+    _ensure_table()
+    with _conn() as (cur, d):
+        cur.execute(f"DELETE FROM {_LOG_TABLE} WHERE po={d['ph']}", (str(po),))
+        n = cur.rowcount
+        cur.connection.commit()
+    return {'ok': True, 'deleted': n or 0}
+
+
 def build_workbook(data, out_path) -> str:
     """Write the side-by-side comparison Excel for a previewed run and return the
     path. One row per PO: our (netted for excluded) vs D365 for qty / value /

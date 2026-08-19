@@ -173,35 +173,14 @@
   </div>
   {% endif %}
 
-  {# ── Checked-PO log ── #}
-  <div class="im-card reveal">
-    <h2>Checked POs <span class="count">latest {{ log|length }} · what's been verified &amp; its delta</span></h2>
-    {% if log %}
-    <div class="scroll">
-    <table class="grid compact sortable">
-      <thead><tr>
-        <th>PO</th><th>Marketplace</th><th>Status</th><th class="r">Qty Δ</th><th class="r">Val Δ</th>
-        <th>Pincode</th><th>Fields</th><th>Checked by</th><th>When</th>
-      </tr></thead>
-      <tbody>
-        {% for r in log %}
-        <tr class="{% if r.status != 'OK' %}rv-bad{% endif %}">
-          <td class="mono strong">{{ r.po }}</td>
-          <td>{{ r.marketplace|default:'—' }}</td>
-          <td>{% if r.status == 'OK' %}<span class="rv-ok">✓ OK</span>{% else %}<span class="rv-mis">⚠ Mismatch</span>{% endif %}</td>
-          <td class="r">{{ r.qty_delta|default:0 }}</td>
-          <td class="r">{{ r.val_delta|default:0 }}</td>
-          <td class="mono">{% if r.pin_ok %}{{ r.d365_pin|default:'—' }}{% else %}<span class="rv-mis">{{ r.our_pin|default:'∅' }}≠{{ r.d365_pin|default:'∅' }}</span>{% endif %}</td>
-          <td>{{ r.mismatch_fields|default:'—' }}</td>
-          <td>{{ r.checked_by|default:'—' }}</td>
-          <td class="nowrap">{{ r.checked_at|date:'d M, H:i'|default:'—' }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+  {# ── Verification history now lives on its own page (Verified / Mismatch / External tabs) ── #}
+  <a class="im-card reveal rv-histlink" href="{% url 'b2b_record_verify_log' %}">
+    <div>
+      <h2>Checked POs — verification history →</h2>
+      <p class="rv-note" style="margin:4px 0 0;">{{ coverage.checked }} logged · <span style="color:var(--green)">{{ coverage.ok }} verified</span> · <span style="color:var(--red)">{{ coverage.mismatch }} mismatch</span> · {{ coverage.external }} external. Open the full history with Verified / Mismatch / External tabs.</p>
     </div>
-    {% else %}<p class="rv-note">No POs checked yet — run a verification above.</p>{% endif %}
-  </div>
+    <span class="rv-hist-go">View history →</span>
+  </a>
 </div>
 
 {% endblock %}

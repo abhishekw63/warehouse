@@ -78,6 +78,18 @@
 .rv-tabs .tab{padding:9px 16px;font-size:13.5px;}
 .rv-res-head h2{font-size:17px;}
 
+/* verification-history link card (main page) */
+.rv-histlink{display:flex;align-items:center;justify-content:space-between;gap:16px;text-decoration:none;color:inherit;transition:border-color .12s,box-shadow .12s;}
+.rv-histlink:hover{border-color:var(--accent);box-shadow:var(--shadow-lg);}
+.rv-histlink h2{margin:0;font-size:16px;}
+.rv-hist-go{font-size:13px;font-weight:800;color:var(--accent);white-space:nowrap;}
+
+/* flash messages (history page) */
+.rv-msgs{display:flex;flex-direction:column;gap:8px;margin:12px 0;}
+.rv-msg{padding:10px 14px;border-radius:var(--radius-sm);font-size:13px;font-weight:600;background:var(--surface-2);border:1px solid var(--border);color:var(--text-2);}
+.rv-msg.success{background:var(--green-soft,#e7f7f0);border-color:#b7e6d3;color:#0a7d57;}
+.rv-msg.error{background:var(--red-soft,#fdecec);border-color:#f7c6c6;color:#a23;}
+
 /* save-for-review-later + resume list */
 .rv-c-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
 .rv-saved-list{display:flex;flex-direction:column;gap:8px;margin-top:6px;}

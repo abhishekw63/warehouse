@@ -18,6 +18,8 @@ urlpatterns = [
     # ── Record Verification (standalone; delete these lines + the module/
     #    template/service/nav link to remove the whole feature) ─────────────────
     path('record-verify/', _rv.RecordVerificationView.as_view(), name='b2b_record_verify'),
+    path('record-verify/log/', _rv.RecordVerificationLogView.as_view(), name='b2b_record_verify_log'),
+    path('record-verify/log/clear/', _rv.RecordVerificationClearLogView.as_view(), name='b2b_record_verify_clear_log'),
     path('record-verify/run/', _rv.RecordVerificationRunView.as_view(), name='b2b_record_verify_run'),
     path('record-verify/<str:token>/confirm/', _rv.RecordVerificationConfirmView.as_view(), name='b2b_record_verify_confirm'),
     path('record-verify/<str:token>/save-later/', _rv.RecordVerificationSaveLaterView.as_view(), name='b2b_record_verify_save_later'),

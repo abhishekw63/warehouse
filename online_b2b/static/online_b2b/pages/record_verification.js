@@ -89,6 +89,29 @@
   });
 })();
 
+/* ── Clear history — wipe the checked-PO log (AJAX) on the history page ── */
+(function () {
+  var btn = document.querySelector('.rv-clearlog');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var url = btn.getAttribute('data-url'); if (!url) return;
+    if (!window.confirm('Clear the entire verification history? Recorded orders are NOT affected.')) return;
+    btn.disabled = true; btn.innerHTML = 'Clearing…';
+    B2B.postForm(url, {}).then(function (j) {
+      if (j && j.ok) {
+        if (window.B2B && B2B.toast) B2B.toast(j.message || 'Cleared.', { type: 'info' });
+        window.location.href = (j && j.redirect) || '/b2b/record-verify/log/';
+      } else {
+        btn.disabled = false; btn.innerHTML = '🗑 Clear history';
+        if (window.B2B && B2B.toast) B2B.toast((j && j.error) || 'Could not clear.', { type: 'error' });
+      }
+    }).catch(function () {
+      btn.disabled = false; btn.innerHTML = '🗑 Clear history';
+      if (window.B2B && B2B.toast) B2B.toast('Network error.', { type: 'error' });
+    });
+  });
+})();
+
 /* ── Discard — delete this check (AJAX), then go to a clean page ── */
 (function () {
   var btn = document.querySelector('.rv-discard');
