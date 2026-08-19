@@ -86,16 +86,31 @@ var CFG = JSON.parse(document.getElementById("inventory-cfg").textContent);
   });
 })();
 
-/* Bin-coverage <details>: re-trigger the reveal animation on EVERY open (a CSS
-   animation on a persistent [open] selector only fires once — reflow resets it). */
+/* Bin-coverage <details>: LAZY-LOAD the 2000+ bin rows on first open (they're the
+   page's heaviest payload — deferring them keeps the first paint fast), then
+   re-trigger the reveal animation on every open. */
 (function () {
   var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduce) return;
   document.querySelectorAll('details.iv-cov').forEach(function (d) {
     var body = d.querySelector('.iv-cov-body');
     if (!body) return;
+    var url = body.getAttribute('data-lazy-url'), loaded = false, loading = false;
     d.addEventListener('toggle', function () {
       if (!d.open) return;
+      if (url && !loaded && !loading) {
+        loading = true;
+        fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+          .then(function (r) { return r.text(); })
+          .then(function (html) {
+            body.innerHTML = html; loaded = true; loading = false;
+            body.removeAttribute('data-lazy-url');
+          })
+          .catch(function () {
+            loading = false;
+            body.innerHTML = '<div class="iv-cov-none">Could not load bin coverage — reload the page.</div>';
+          });
+      }
+      if (reduce) return;
       body.style.animation = 'none';
       void body.offsetWidth;      // force reflow so the animation can restart
       body.style.animation = '';

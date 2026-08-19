@@ -91,40 +91,11 @@
       <span class="iv-cov-t">🗂 Bin coverage — what we counted vs excluded</span>
       <span class="iv-cov-hint">click to see every bin that fed (or was held out of) the fill-rate</span>
     </summary>
-    <div class="iv-cov-body">
-      {% for c in snap_cards %}{% if c.snap %}
-      <div class="iv-cov-wh">
-        <div class="iv-cov-whhead">
-          <span class="iv-whtag">{{ c.wh.short }}</span> <b>{{ c.wh.name }}</b>
-          <span class="iv-cov-asof">as per {{ c.snap.captured_at|date:"d M, H:i" }}</span>
-        </div>
-        <div class="iv-cov-cols two" data-wh="{{ c.wh.code }}">
-          {# CONSIDERED — click a bin to move it OUT #}
-          <div class="iv-cov-col considered" data-col="include">
-            <div class="iv-cov-colhead"><span class="ok">✓ Considered</span>
-              <span class="iv-cov-n"><b class="cnt">{{ c.considered|length }}</b> bins</span></div>
-            <div class="iv-cov-list">
-              {% for b in c.considered %}<button type="button" class="iv-cov-bin" data-write data-bin="{{ b.bin_code }}" data-wh="{{ c.wh.code }}" data-dec="include" title="Click to Exclude"><code>{{ b.bin_code }}</code>{% if b.zone_code %}<span class="z">{{ b.zone_code }}</span>{% endif %}<span class="q">{{ b.qty|indnum }}</span><span class="mv out">Exclude →</span></button>
-              {% empty %}<div class="iv-cov-none">No sellable bins.</div>{% endfor %}
-            </div>
-          </div>
-          {# EXCLUDED (unrecognised bins fold in here, highlighted) — click to move IN #}
-          <div class="iv-cov-col excluded" data-col="exclude">
-            <div class="iv-cov-colhead"><span class="mut">✕ Excluded</span>
-              <span class="iv-cov-n"><b class="cnt">{{ c.excluded|length }}</b> bins{% if c.new_count %} · <span class="newtag">⚠ {{ c.new_count }} new</span>{% endif %}</span></div>
-            <div class="iv-cov-list">
-              {% for b in c.excluded %}<button type="button" class="iv-cov-bin{% if b.is_new %} isnew{% endif %}" data-write data-bin="{{ b.bin_code }}" data-wh="{{ c.wh.code }}" data-dec="exclude" title="Click to Include">{% if b.is_new %}<span class="newdot" title="unrecognised bin — include it if it holds sellable stock">●</span>{% endif %}<code>{{ b.bin_code }}</code>{% if b.zone_code %}<span class="z">{{ b.zone_code }}</span>{% endif %}<span class="q">{{ b.qty|indnum }}</span><span class="mv in">← Include</span></button>
-              {% empty %}<div class="iv-cov-none">Nothing excluded.</div>{% endfor %}
-            </div>
-          </div>
-        </div>
-        <div class="iv-cov-foot">
-          <span class="iv-cov-rule">Click any bin to move it In / Out — <b>saved for future uploads too</b>. Unrecognised bins sit in Excluded until you include them. <a href="{% url 'b2b_inventory_bins' %}?wh={{ c.wh.code|urlencode }}">Edit rules →</a></span>
-          <span class="iv-cov-dirty" data-wh="{{ c.wh.code }}" hidden>● unsaved changes</span>
-          <button type="button" class="btn-primary iv-cov-apply" data-write data-wh="{{ c.wh.code }}" hidden>🔒 Lock &amp; apply</button>
-        </div>
-      </div>
-      {% endif %}{% endfor %}
+    {# Body is LAZY-LOADED on first open (the 2000+ bin rows are the page's heaviest
+       payload; deferring them keeps the first paint fast). Bin-click Include/Exclude
+       is delegated on document, so it works once this content is injected. #}
+    <div class="iv-cov-body" data-lazy-url="{% url 'b2b_inventory_bin_coverage' %}">
+      <div class="iv-cov-loading">Loading bin coverage…</div>
     </div>
   </details>
   {% endif %}

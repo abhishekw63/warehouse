@@ -66,30 +66,17 @@ def inventory(request):
     q = (request.GET.get('q') or '').strip()
 
     snaps = store.current_snapshots()
-    # Fetch EVERY current snapshot's per-bin audit in ONE query (not one round-trip
-    # per snapshot — each opens a fresh TLS connection to remote TiDB). Cards and
-    # new-bin alerts are then both derived from this single fetch.
-    audits = store.bin_audit_bulk([s['snapshot_id'] for s in snaps.values()])
-    # order snapshots by our warehouse registry, then any extras
+    # Cards + new-bin alerts come straight from the snapshot SUMMARY (included/
+    # excluded/new line counts + qty already live on the snapshot row) — no per-bin
+    # fetch. The heavy 2000+ row per-bin coverage lists lazy-load on demand
+    # (inventory_bin_coverage), so the first paint isn't paying for a big query +
+    # a ~900KB render the operator usually doesn't expand.
     snap_cards = []
     for w in store.WAREHOUSES:
         s = snaps.get(w['code'])
         card = {'wh': w, 'snap': s}
         if s:
-            # per-bin audit → split into what we COUNTED vs EXCLUDED vs NEW, so
-            # the operator can see exactly which bins the sellable qty came from.
-            audit = audits.get(s['snapshot_id'], [])
-            inc = [b for b in audit if b['decision'] == 'include']
-            exc = [b for b in audit if b['decision'] == 'exclude']
-            new = [b for b in audit if b['decision'] == 'new']
-            for b in new:
-                b['is_new'] = True          # unrecognized → shown IN Excluded, flagged
-            card['considered'] = inc
-            # No 'skipped' bucket: unrecognized bins sit inside Excluded (highlighted)
-            # so nothing is held in limbo — the operator flips them In if sellable.
-            card['excluded'] = sorted(exc + new, key=lambda b: -(b.get('qty') or 0))
-            card['new'] = new               # kept only for the count / toast
-            card['new_count'] = len(new)
+            card['new_count'] = int(s.get('new_lines') or 0)
             age = _snap_age_hours(s.get('captured_at'))
             card['age_hours'] = round(age, 1) if age is not None else None
             card['stale'] = age is not None and age >= STALE_HOURS
@@ -100,15 +87,14 @@ def inventory(request):
                    if c.get('age_hours') is not None), default=None)
     extras = [c for k, c in snaps.items() if k not in store.WH_BY_CODE]
 
-    # new-bin alerts across current snapshots — derived from the SAME bulk audit
-    # (no extra per-snapshot query).
+    # new-bin alerts — from the snapshot summary (count + qty), no per-bin query.
+    # The individual new bins are viewed/classified on the Manage-bins page.
     alerts = []
     for code, s in snaps.items():
-        nb = [b for b in audits.get(s['snapshot_id'], []) if b['decision'] == 'new']
+        nb = int(s.get('new_lines') or 0)
         if nb:
             alerts.append({'warehouse': code, 'name': store.wh_name(code),
-                           'bins': nb, 'count': len(nb),
-                           'qty': round(sum(b['qty'] for b in nb), 1)})
+                           'count': nb, 'qty': round(float(s.get('new_qty') or 0), 1)})
 
     # per-item available stock across the warehouses (AHD / BLR / North), one row
     # per SKU with a qty column per warehouse + total. Optional text filter.
@@ -133,6 +119,33 @@ def inventory(request):
         'stale_cards': stale, 'stale_hours': STALE_HOURS, 'max_age': max_age,
         'new_total': sum(c.get('new_count', 0) for c in snap_cards),
     })
+
+
+@login_required
+def inventory_bin_coverage(request):
+    """LAZY-loaded per-bin coverage (Considered vs Excluded lists) for the current
+    snapshots — the heavy 2000+ row detail, fetched only when the operator expands
+    the 'Bin coverage' panel on the Inventory page. Read-only; renders the same
+    partial the page used to inline. Keeps the main page's first paint fast."""
+    snaps = store.current_snapshots()
+    audits = store.bin_audit_bulk([s['snapshot_id'] for s in snaps.values()])
+    snap_cards = []
+    for w in store.WAREHOUSES:
+        s = snaps.get(w['code'])
+        card = {'wh': w, 'snap': s}
+        if s:
+            audit = audits.get(s['snapshot_id'], [])
+            inc = [b for b in audit if b['decision'] == 'include']
+            exc = [b for b in audit if b['decision'] == 'exclude']
+            new = [b for b in audit if b['decision'] == 'new']
+            for b in new:
+                b['is_new'] = True          # unrecognized → shown IN Excluded, flagged
+            card['considered'] = inc
+            card['excluded'] = sorted(exc + new, key=lambda b: -(b.get('qty') or 0))
+            card['new_count'] = len(new)
+        snap_cards.append(card)
+    return render(request, 'online_b2b/_inv_bin_coverage.html',
+                  {'snap_cards': snap_cards})
 
 
 # ── upload → preview → confirm ───────────────────────────────────────────────
