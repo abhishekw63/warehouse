@@ -5,7 +5,7 @@
   <td class="mono strong">{{ r.po }}</td>
   <td>{{ r.mp|default:'—' }}</td>
   <td class="r">{% if r.our_qty != None %}{{ r.our_qty }}{% else %}—{% endif %}</td>
-  <td class="r">{{ r.d365_qty }}</td>
+  <td class="r">{{ r.d365_qty }}{% if r.foc %} <span class="rv-foc" title="{{ r.foc }} free-of-charge unit(s) auto-added by D365 — excluded from the qty check">+{{ r.foc }} FOC</span>{% endif %}</td>
   <td class="r">{{ r.excluded|default:0 }}</td>
   <td class="r">{% if r.our_val != None %}{{ r.our_val|inr_short }}{% else %}—{% endif %}</td>
   <td class="r">{{ r.d365_val|inr_short }}</td>

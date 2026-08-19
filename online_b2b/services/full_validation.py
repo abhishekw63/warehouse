@@ -80,12 +80,30 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
         pin=(hpin, 'first'), st=(hst, 'first')).to_dict('index')
 
     lf[docno] = lf[docno].astype(str).str.strip().str.upper()   # case-insensitive PO match
-    d365L = defaultdict(lambda: {'qty': 0.0, 'amt': 0.0, 'ean': '', 'desc': ''})
+    d365L = defaultdict(lambda: {'qty': 0.0, 'amt': 0.0, 'foc': 0.0, 'ean': '', 'desc': ''})
+    foc_by_po = defaultdict(float)
     for _, r in lf.iterrows():
         k = (r[docno], str(r[lno]).strip())
         g = d365L[k]
-        g['qty'] += _num(r[lq]); g['amt'] += _num(r[lamt])
+        q = _num(r[lq]); amt = _num(r[lamt])
+        # FOC (Free Of Charge): a D365 line carrying quantity but a ZERO line amount
+        # = free units auto-added by a scheme (GT Mass). Our records hold only the
+        # PAID qty, so exclude the FOC qty from the compared quantity and track it —
+        # shown separately, never silently dropped ([[never-skip-silently]]).
+        if q > 0 and abs(amt) < 0.01:
+            g['foc'] += q
+            foc_by_po[r[docno]] += q
+        else:
+            g['qty'] += q
+            g['amt'] += amt
         g['ean'] = str(r.get(lgtin) or ''); g['desc'] = str(r.get(ldesc) or '')[:60]
+
+    # The D365 header 'Total Quantity' also includes the FOC free units — net them
+    # out so the header reconciles against our paid qty.
+    for _po, _foc in foc_by_po.items():
+        if _po in d365h:
+            d365h[_po]['foc'] = _foc
+            d365h[_po]['qty'] = d365h[_po]['qty'] - _foc
 
     pos = tuple(d365h.keys())
     if not pos:
@@ -131,6 +149,7 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
         verd = 'OK' if qok else (f'OK — {int(excl_qty)} excluded' if q_expl else 'QTY MISMATCH')
         hdr_rows.append({'mp': mp, 'po': po, 'our_qty': int(o['qty']) if o else None,
                          'd365_qty': int(D['qty']), 'excluded': int(excl_qty),
+                         'foc': int(D.get('foc', 0)),
                          'excl_val': round(excl_val, 2),
                          'final': int(o['qty'] - excl_qty) if o else None,
                          'qty_ok': bool(qok or q_expl),
@@ -147,8 +166,11 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
             oval = round(ov['cp'] * ov['qty'], 2) if ov else None
             dval = round(dv['amt'], 2) if dv else None
             ean = (ov or dv or {}).get('ean', ''); desc = (ov or dv or {}).get('desc', '')
+            foc = int(dv['foc']) if dv else 0
             if ov and dv:
                 status, reason = ('OK', '') if oq == dq else ('QTY_MISMATCH', f'our {oq} vs D365 {dq}')
+                if foc:
+                    reason = (reason + ' · ' if reason else '') + f'+{foc} FOC (free)'
             elif ov and not dv:
                 if str(ov['action']).upper() == 'EXCLUDE':
                     status, reason = 'EXCLUDED', f"CP-exclude ({ov['exc'] or 'MISMATCH'}) — intentional"
@@ -159,7 +181,7 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
             val_ok = ('YES' if (ov and dv and _vmatch(dval or 0, oval or 0))
                       else ('n/a' if status in ('EXCLUDED', 'MISSING_IN_D365', 'EXTRA_IN_D365') else 'NO'))
             line_rows.append({'mp': mp, 'po': po, 'item': it, 'ean': ean, 'desc': desc,
-                              'our_qty': oq, 'd365_qty': dq,
+                              'our_qty': oq, 'd365_qty': dq, 'foc': foc,
                               'qty_ok': ('YES' if (ov and dv and oq == dq) else ('n/a' if not (ov and dv) else 'NO')),
                               'our_val': oval, 'd365_val': dval, 'val_ok': val_ok,
                               'status': status, 'reason': reason})

@@ -77,6 +77,8 @@
 .rv-kpis .ik .n{font-size:24px;} .rv-kpis .ik .l{font-size:11px;}
 .rv-tabs .tab{padding:9px 16px;font-size:13.5px;}
 .rv-res-head h2{font-size:17px;}
+/* FOC (free-of-charge) marker — free units auto-added by D365, excluded from qty */
+.rv-foc{font-size:9.5px;font-weight:800;color:#0a7d57;background:color-mix(in srgb,var(--green) 14%,transparent);border-radius:5px;padding:1px 6px;white-space:nowrap;}
 
 /* verification-history link card (main page) */
 .rv-histlink{display:flex;align-items:center;justify-content:space-between;gap:16px;text-decoration:none;color:inherit;transition:border-color .12s,box-shadow .12s;}
