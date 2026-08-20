@@ -187,12 +187,26 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
         '<td class="num">' + nf(p.ord_qty) + '</td>' + curCell + cells +
         '<td><span class="sc-bestpill">' + esc(p.best_wh) + '</span></td>' + act + '</tr>';
     }).join('');
+    // OVERALL footer — whole-batch fill rate per WH (SKU-netted, from sc.overall),
+    // so the per-PO rows sum up to a single "which WH fills the most" answer.
+    var ovByShort = {}; ov.forEach(function (o) { ovByShort[o.wh_short] = o; });
+    var totQ = (sc.po_wise || []).reduce(function (s, p) { return s + (Number(p.ord_qty) || 0); }, 0);
+    var ovCells = whs.map(function (w) {
+      var o = ovByShort[w] || {};
+      return '<td class="num sc-cell' + (sc.best_wh === w ? ' sc-best' : '') + '" style="color:' + pctColor(o.fill_pct || 0) + ';font-weight:800;">' +
+        (o.fill_pct || 0) + '%' + (sc.best_wh === w ? ' <span class="sc-tick">✓</span>' : '') + '</td>';
+    }).join('');
+    var ovFoot = (sc.po_wise || []).length ? '<tfoot><tr class="sc-foot">' +
+      '<td colspan="2">OVERALL <span class="sc-foot-sub">· whole batch from one WH</span></td>' +
+      '<td class="num">' + nf(totQ) + '</td><td class="sc-foot-sub">' + nf(sc.n_skus) + ' SKUs</td>' +
+      ovCells + '<td><span class="sc-bestpill">' + esc(sc.best_wh) + '</span></td><td></td>' +
+      '</tr></tfoot>' : '';
     var poTable = '<h3 class="sc-h">PO-wise — fill rate if shipped from each warehouse' +
       (canWrite ? ' <span class="sc-hhint">· click any % (or “Shift”) to reassign an order</span>' : '') + '</h3>' +
       '<div class="av-lines"><table><thead><tr><th>Order No</th><th>MP</th><th class="num">Ord Qty</th><th>Current WH</th>' +
       whHead + '<th>Best</th><th></th></tr></thead><tbody>' +
       (poRows || '<tr><td colspan="' + (6 + whs.length) + '" class="av-empty">No orders.</td></tr>') +
-      '</tbody></table></div>';
+      '</tbody>' + ovFoot + '</table></div>';
     // SKU-wise matrix — available / fillable in each WH
     var skuRows = (sc.sku_wise || []).map(function (k) {
       var cells = whs.map(function (w) {
