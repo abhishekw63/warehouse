@@ -2937,6 +2937,30 @@ def availability_scenarios(request):
 
 @login_required
 @require_POST
+def availability_shift_wh(request):
+    """Shift ONE order to a different fulfilment warehouse (or revert to auto).
+    Writes to ``order_wh_override`` → takes effect across availability + inventory
+    fill-rate. Editor-only (the write-guard blocks Viewers, not allowlisted here).
+    POST po, warehouse (inventory code) [, orig_warehouse, note]; action=revert to
+    clear. Returns {ok, po, wh_short, ...}."""
+    from .services import inventory_store as inv
+    po = (request.POST.get('po') or '').strip()
+    if not po:
+        return JsonResponse({'ok': False, 'error': 'Missing order number.'})
+    actor = getattr(request.user, 'username', '') or ''
+    if (request.POST.get('action') or '').strip() == 'revert':
+        res = inv.clear_wh_override(po)
+        res['reverted'] = True
+        return JsonResponse(res)
+    res = inv.set_wh_override(
+        po, request.POST.get('warehouse', ''),
+        orig_warehouse=request.POST.get('orig_warehouse', ''),
+        actor=actor, note=(request.POST.get('note') or '')[:255])
+    return JsonResponse(res)
+
+
+@login_required
+@require_POST
 def availability_export(request):
     """Same check → styled multi-sheet .xlsx (Summary · PO Summary · By Order
     Lines · By SKU · Not Found). Qty AND value fill at every angle."""

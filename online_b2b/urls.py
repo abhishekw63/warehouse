@@ -53,6 +53,7 @@ urlpatterns = [
     path('availability/', views.AvailabilityView.as_view(), name='b2b_availability'),
     path('availability/check/', views.availability_check, name='b2b_availability_check'),
     path('availability/scenarios/', views.availability_scenarios, name='b2b_availability_scenarios'),
+    path('availability/shift/', views.availability_shift_wh, name='b2b_availability_shift'),
     path('availability/export/', views.availability_export, name='b2b_availability_export'),
     path('availability/bins/', views.availability_bins, name='b2b_availability_bins'),
     path('online/', views.dashboard, name='b2b_online'),

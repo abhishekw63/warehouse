@@ -81,6 +81,8 @@ def check_orders(order_nos, wh_override: str = '') -> dict:
 
     # Snapshot timestamps → "inventory as of …" per warehouse.
     _snaps = inv.current_snapshots()
+    # Manual per-PO warehouse overrides (loaded once; beat the auto map).
+    _ov = inv.wh_override_map()
 
     def snap_ts(wh: str) -> str:
         s = _snaps.get(wh)
@@ -105,7 +107,8 @@ def check_orders(order_nos, wh_override: str = '') -> dict:
                 not_found.append(po)
                 continue
             run_id, wh_raw, mp_label = hdr
-            wh_auto = inv.resolve_order_wh(wh_raw, mp_label, mp_label)
+            # auto map → manual per-PO override → page-level WH override (widest wins)
+            wh_auto = inv.effective_order_wh(po, wh_raw, mp_label, mp_label, _ov)
             wh = override_code or wh_auto
             sm = stock_for(wh)
 
@@ -267,6 +270,7 @@ def wh_scenarios(order_nos) -> dict:
     whs = inv.WAREHOUSES                       # [{code, name, short}, ...]
     stock = {w['code']: inv.current_stock_map(w['code']) for w in whs}
     snaps = inv.current_snapshots()
+    ovmap = inv.wh_override_map()              # per-PO manual shifts
 
     def _avail(code: str, item: str) -> float:
         v = float(stock[code].get(item, 0) or 0)
@@ -280,13 +284,13 @@ def wh_scenarios(order_nos) -> dict:
         ph, ot = d['ph'], d['orders']
         for po in order_nos:
             cur.execute(
-                f"SELECT run_id, marketplace_label FROM {ot} "
+                f"SELECT run_id, marketplace_label, warehouse FROM {ot} "
                 f"WHERE po={ph} ORDER BY run_ts DESC LIMIT 1", (po,))
             hdr = cur.fetchone()
             if not hdr:
                 not_found.append(po)
                 continue
-            run_id, mp_label = hdr
+            run_id, mp_label, wh_raw = hdr
             cur.execute(
                 f"SELECT item_no, ean, description, qty, unit_price, our_landing "
                 f"FROM order_lines_full WHERE po={ph} AND run_id={ph} ORDER BY item_no",
@@ -309,8 +313,16 @@ def wh_scenarios(order_nos) -> dict:
                     s['ean'] = str(ean)
                 if not s['desc'] and desc:
                     s['desc'] = str(desc)
-            po_demand.append({'po': po, 'mp': str(mp_label or ''), 'lines': lines,
-                              'ord_qty': oq, 'ord_val': ov})
+            cur_code = inv.effective_order_wh(po, wh_raw, mp_label, mp_label, ovmap)
+            ovr = ovmap.get(str(po))
+            po_demand.append({
+                'po': po, 'mp': str(mp_label or ''), 'lines': lines,
+                'ord_qty': oq, 'ord_val': ov,
+                'cur_code': cur_code, 'cur_short': inv.wh_short(cur_code),
+                'shifted': bool(ovr),
+                'orig_short': inv.wh_short(ovr['orig_warehouse']) if ovr and ovr.get('orig_warehouse') else '',
+                'shifted_by': ovr.get('actor', '') if ovr else '',
+                'shifted_at': ovr.get('updated_at', '') if ovr else ''})
 
     if not po_demand:
         return {'ok': False, 'error': 'None of those orders were found in recorded runs.',
@@ -365,7 +377,14 @@ def wh_scenarios(order_nos) -> dict:
             }
         bw = max(by, key=lambda k: by[k]['fill_pct']) if by else ''
         po_wise.append({'po': p['po'], 'mp': p['mp'], 'ord_qty': _q(p['ord_qty']),
-                        'ord_value': round(p['ord_val'], 2), 'by_wh': by, 'best_wh': bw})
+                        'ord_value': round(p['ord_val'], 2), 'by_wh': by, 'best_wh': bw,
+                        'cur_wh': p['cur_short'], 'cur_code': p['cur_code'],
+                        'shifted': p['shifted'], 'orig_wh': p['orig_short'],
+                        'shifted_by': p['shifted_by'], 'shifted_at': p['shifted_at'],
+                        # a shift is worth suggesting only if the best WH beats the
+                        # current one by a real margin (avoid noise on ties)
+                        'can_improve': bw != p['cur_short'] and by.get(bw, {}).get('fill_pct', 0)
+                                       > by.get(p['cur_short'], {}).get('fill_pct', -1) + 0.5})
 
     # ── SKU-wise: availability + fillable in each WH ──
     sku_wise: list[dict] = []
@@ -434,9 +453,10 @@ def fulfilment_risk(date_from='', date_to='', marketplace='') -> dict:
             wsql = ' AND '.join(where) if where else '1=1'
 
             # latest run per PO in the window → its lines' demand, grouped by
-            # (item, raw warehouse, marketplace) so WH resolution happens once.
+            # (item, PO, raw warehouse, marketplace). PO is in the key so a manual
+            # per-PO warehouse shift moves that order's demand to its new WH.
             cur.execute(
-                "SELECT l.item_no, MAX(l.description), hh.warehouse, "
+                "SELECT l.item_no, MAX(l.description), hh.po, hh.warehouse, "
                 "hh.marketplace_label, SUM(l.qty), "
                 "SUM(l.qty*COALESCE(NULLIF(l.our_landing,0), l.unit_price, 0)) "
                 "FROM order_lines_full l JOIN ("
@@ -445,17 +465,18 @@ def fulfilment_risk(date_from='', date_to='', marketplace='') -> dict:
                 f"    SELECT po, MAX(run_ts) mx FROM order_headers WHERE {wsql} GROUP BY po"
                 "  ) t ON hd.po=t.po AND hd.run_ts=t.mx"
                 ") hh ON l.po=hh.po AND l.run_id=hh.run_id "
-                "GROUP BY l.item_no, hh.warehouse, hh.marketplace_label",
+                "GROUP BY l.item_no, hh.po, hh.warehouse, hh.marketplace_label",
                 tuple(args))
             raw = cur.fetchall()
 
-        # aggregate demand per (resolved WH, item)
+        # aggregate demand per (resolved WH, item) — override wins per PO
+        _ov = inv.wh_override_map()
         agg: dict = {}
-        for item_no, desc, wh_raw, mp_label, qty, val in raw:
+        for item_no, desc, po, wh_raw, mp_label, qty, val in raw:
             item = str(item_no or '').strip()
             if not item:
                 continue
-            wh = inv.resolve_order_wh(wh_raw, mp_label, mp_label)
+            wh = inv.effective_order_wh(po, wh_raw, mp_label, mp_label, _ov)
             a = agg.get((wh, item))
             if a is None:
                 a = agg[(wh, item)] = {'item_no': item, 'description': str(desc or ''),
@@ -607,12 +628,13 @@ def fulfilment_readiness(marketplace='', horizon=0) -> dict:
                 f"  WHERE {wsql}"
                 ") hh ON l.po=hh.po AND l.run_id=hh.run_id", tuple(args))
 
+            _ov = inv.wh_override_map()
             orders: dict = {}
             for po, item, qty, status, wh_raw, mp, exp, loc in cur.fetchall():
                 o = orders.get(po)
                 if o is None:
                     o = orders[po] = {'mp': mp or 'Other',
-                                      'wh': inv.resolve_order_wh(wh_raw, mp, mp),
+                                      'wh': inv.effective_order_wh(po, wh_raw, mp, mp, _ov),
                                       'exp': exp, 'loc': loc, 'lines': [],
                                       'accurate': True}
                 o['lines'].append((str(item or '').strip(), float(qty or 0)))

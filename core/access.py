@@ -47,8 +47,9 @@ _SAFE_POST_NAMES = frozenset({
     # reconciliation tools — upload D365 files but write NOTHING to the business
     # DB (they only produce an Excel report). Allowed for Viewers by decision.
     'b2b_full_validation_run', 'b2b_triangular_run',
-    # availability checker — read-only report
-    'b2b_availability_check', 'b2b_availability_bins',
+    # availability checker — read-only reports (the best-WH comparison too;
+    # 'b2b_availability_shift' is deliberately NOT here — it writes, Editors only)
+    'b2b_availability_check', 'b2b_availability_bins', 'b2b_availability_scenarios',
     # read-only data fetches that don't match a suffix
     'b2b_cockpit_po_skus',
     # generating the ERP D365 dump is an export of an already-locked run (no DB

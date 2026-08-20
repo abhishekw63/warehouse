@@ -161,20 +161,37 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
         (o.as_of ? '<div class="sc-card-asof">🕒 ' + esc(o.as_of) + '</div>' : '') +
         '</div>';
     }).join('');
-    // PO-wise matrix — fill% of each PO in each WH
+    // PO-wise matrix — fill% of each PO in each WH. Each WH cell is a live control
+    // for editors: click it to SHIP that PO from that warehouse (persisted).
+    var canWrite = CFG["can_write"];
     var whHead = whs.map(function (w) { return '<th class="num">' + esc(w) + '</th>'; }).join('');
     var poRows = (sc.po_wise || []).map(function (p) {
       var cells = whs.map(function (w) {
-        var d = p.by_wh[w] || {}; return scCell(d.fill_pct || 0, p.best_wh === w);
+        var dd = p.by_wh[w] || {}, isBest = p.best_wh === w, isCur = p.cur_wh === w;
+        var shiftable = canWrite && !isCur;
+        var cls = 'num sc-cell' + (isBest ? ' sc-best' : '') + (isCur ? ' sc-cur' : '') + (shiftable ? ' sc-shiftable' : '');
+        var attrs = shiftable ? ' data-shift="' + esc(w) + '" data-po="' + esc(p.po) + '" data-cur="' + esc(p.cur_code) + '" title="Ship ' + esc(p.po) + ' from ' + esc(w) + ' → ' + (dd.fill_pct || 0) + '% fill"' : '';
+        return '<td class="' + cls + '"' + attrs + ' style="color:' + pctColor(dd.fill_pct || 0) + ';font-weight:700;">' +
+          (dd.fill_pct || 0) + '%' + (isCur ? ' <span class="sc-nowtag">now</span>' : '') + (isBest ? ' <span class="sc-tick">✓</span>' : '') + '</td>';
       }).join('');
+      var curCell = '<td class="sc-curcell"><b>' + esc(p.cur_wh) + '</b>' +
+        (p.shifted ? '<span class="sc-shifttag" title="shifted from ' + esc(p.orig_wh) + (p.shifted_by ? ' by ' + esc(p.shifted_by) : '') + (p.shifted_at ? ' · ' + esc(p.shifted_at) : '') + '">was ' + esc(p.orig_wh) + '</span>' : '') + '</td>';
+      var act = '<td class="sc-actcell">';
+      if (canWrite) {
+        if (p.can_improve) act += '<button type="button" class="sc-shiftbtn" data-shift="' + esc(p.best_wh) + '" data-po="' + esc(p.po) + '" data-cur="' + esc(p.cur_code) + '">Shift → ' + esc(p.best_wh) + '</button>';
+        else if (!p.shifted) act += '<span class="sc-optimal" title="already on its best-fill warehouse">✓ optimal</span>';
+        if (p.shifted) act += ' <button type="button" class="sc-revertbtn" data-revert="1" data-po="' + esc(p.po) + '" title="Revert to auto-mapped warehouse">↩ Revert</button>';
+      }
+      act += '</td>';
       return '<tr><td class="av-po2">' + esc(p.po) + '</td><td>' + esc(p.mp) + '</td>' +
-        '<td class="num">' + nf(p.ord_qty) + '</td>' + cells +
-        '<td><span class="sc-bestpill">' + esc(p.best_wh) + '</span></td></tr>';
+        '<td class="num">' + nf(p.ord_qty) + '</td>' + curCell + cells +
+        '<td><span class="sc-bestpill">' + esc(p.best_wh) + '</span></td>' + act + '</tr>';
     }).join('');
-    var poTable = '<h3 class="sc-h">PO-wise — fill rate if shipped from each warehouse</h3>' +
-      '<div class="av-lines"><table><thead><tr><th>Order No</th><th>MP</th><th class="num">Ord Qty</th>' +
-      whHead + '<th>Best</th></tr></thead><tbody>' +
-      (poRows || '<tr><td colspan="' + (4 + whs.length) + '" class="av-empty">No orders.</td></tr>') +
+    var poTable = '<h3 class="sc-h">PO-wise — fill rate if shipped from each warehouse' +
+      (canWrite ? ' <span class="sc-hhint">· click any % (or “Shift”) to reassign an order</span>' : '') + '</h3>' +
+      '<div class="av-lines"><table><thead><tr><th>Order No</th><th>MP</th><th class="num">Ord Qty</th><th>Current WH</th>' +
+      whHead + '<th>Best</th><th></th></tr></thead><tbody>' +
+      (poRows || '<tr><td colspan="' + (6 + whs.length) + '" class="av-empty">No orders.</td></tr>') +
       '</tbody></table></div>';
     // SKU-wise matrix — available / fillable in each WH
     var skuRows = (sc.sku_wise || []).map(function (k) {
@@ -205,6 +222,32 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
       .then(renderScenarios)
       .catch(function () { pane.innerHTML = '<div class="av-empty">Comparison failed — retry.</div>'; });
   }
+
+  // Shift a PO to another warehouse (persisted) — or revert to auto. Editor-only
+  // (the button/cells only render for can_write; the server re-checks the role).
+  var shiftUrl = CFG["b2b_availability_shift"];
+  function doShift(po, wh, cur, revert) {
+    if (revert) {
+      if (!confirm('Revert ' + po + ' to its auto-mapped warehouse?')) return;
+    } else if (!confirm('Ship order ' + po + ' from ' + wh + '?\nThis updates its fulfilment warehouse across availability and the inventory fill-rate.')) {
+      return;
+    }
+    var body = new URLSearchParams(); body.set('po', po);
+    if (revert) { body.set('action', 'revert'); }
+    else { body.set('warehouse', wh); if (cur) body.set('orig_warehouse', cur); }
+    B2B.postForm(shiftUrl, body)
+      .then(function (j) {
+        if (!j.ok) { if (window.B2B && B2B.toast) B2B.toast(j.error || 'Shift failed.', { type: 'error' }); return; }
+        if (window.B2B && B2B.toast) B2B.toast(revert ? (po + ' reverted to auto WH') : (po + ' now ships from ' + (j.wh_short || wh)), { type: 'success', title: 'Warehouse updated' });
+        run();   // refresh every tab so fill-rate + checks reflect the new WH
+      })
+      .catch(function () { if (window.B2B && B2B.toast) B2B.toast('Network error — retry.', { type: 'error' }); });
+  }
+  document.getElementById('pane-scenario').addEventListener('click', function (e) {
+    var s = e.target.closest('[data-shift]'), r = e.target.closest('[data-revert]');
+    if (s) doShift(s.getAttribute('data-po'), s.getAttribute('data-shift'), s.getAttribute('data-cur'), false);
+    else if (r) doShift(r.getAttribute('data-po'), null, null, true);
+  });
 
   function run() {
     var orders = ta.value.trim();

@@ -83,8 +83,10 @@ def fill_rate(date_from='', date_to='', marketplace='', warehouse='',
             # back to the default warehouse — losing the operator's WH choice. The
             # PO-only key rescues that; the exact key stays for any legacy caller.
             hmap = {}
+            _ov = store.wh_override_map()   # per-PO manual WH shifts win
             for mk, lbl, po, wh, sg in cur.fetchall():
-                rec = {'wh': store.resolve_order_wh(wh, mk, lbl), 'seg': str(sg or '')}
+                rec = {'wh': store.effective_order_wh(po, wh, mk, lbl, _ov),
+                       'seg': str(sg or '')}
                 hmap[str(po or '')] = rec
                 hmap[(str(mk or ''), str(po or ''))] = rec
 
@@ -257,8 +259,10 @@ def item_fill_ratios(date_from='', date_to='', marketplace='', warehouse='',
                 f"SELECT marketplace, marketplace_label, po, warehouse, segment "
                 f"FROM order_headers WHERE {' AND '.join(hwhere)}", tuple(hparams))
             hmap = {}
+            _ov = store.wh_override_map()   # per-PO manual WH shifts win
             for mk, lbl, po, wh, sg in cur.fetchall():
-                rec = {'wh': store.resolve_order_wh(wh, mk, lbl), 'seg': str(sg or '')}
+                rec = {'wh': store.effective_order_wh(po, wh, mk, lbl, _ov),
+                       'seg': str(sg or '')}
                 hmap[str(po or '')] = rec           # PO-unique key (MT child safe)
                 hmap[(str(mk or ''), str(po or ''))] = rec
             where = [f"DATE(run_ts) >= {ph}", f"DATE(run_ts) <= {ph}"]

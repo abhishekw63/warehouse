@@ -64,7 +64,7 @@
 
 <input type="hidden" id="av-csrf" value="{{ csrf_token }}">
 <script type="application/json" id="availability-cfg">
-{"b2b_availability_check": "{% url 'b2b_availability_check' %}", "b2b_availability_scenarios": "{% url 'b2b_availability_scenarios' %}", "b2b_availability_export": "{% url 'b2b_availability_export' %}", "b2b_availability_bins": "{% url 'b2b_availability_bins' %}"}
+{"b2b_availability_check": "{% url 'b2b_availability_check' %}", "b2b_availability_scenarios": "{% url 'b2b_availability_scenarios' %}", "b2b_availability_shift": "{% url 'b2b_availability_shift' %}", "b2b_availability_export": "{% url 'b2b_availability_export' %}", "b2b_availability_bins": "{% url 'b2b_availability_bins' %}", "can_write": {% if can_write %}true{% else %}false{% endif %}}
 </script>
 {% endblock %}
 

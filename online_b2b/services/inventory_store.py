@@ -95,6 +95,88 @@ def resolve_order_wh(warehouse_raw, marketplace='', label='') -> str:
     return wh_normalize(warehouse_raw)
 
 
+# ── per-PO manual warehouse override (operational reassignment) ──────────────
+# A user can SHIFT an order to a warehouse that fills it better (seen on the
+# Availability best-warehouse comparison). Persisted per-PO in ``order_wh_override``
+# and consulted by every fulfilment consumer via :func:`effective_order_wh`, so the
+# shift is real across the app (availability · inventory fill-rate). Reversible.
+
+def wh_override_map() -> dict:
+    """All manual PO→warehouse overrides as ``{po: {warehouse, orig_warehouse,
+    note, actor, updated_at}}``. One small query — load ONCE per request and pass
+    into per-order loops (never call inside a loop)."""
+    ensure_tables()
+    out: dict = {}
+    with _conn() as (cur, d):
+        cur.execute("SELECT po, warehouse, orig_warehouse, note, actor, updated_at "
+                    "FROM order_wh_override")
+        for po, wh, orig, note, actor, ts in cur.fetchall():
+            out[str(po)] = {'warehouse': str(wh or ''), 'orig_warehouse': str(orig or ''),
+                            'note': str(note or ''), 'actor': str(actor or ''),
+                            'updated_at': str(ts or '')}
+    return out
+
+
+def effective_order_wh(po, warehouse_raw, marketplace='', label='',
+                       overrides: dict | None = None) -> str:
+    """Fulfilment warehouse for an order, honouring a manual per-PO override FIRST
+    (beats the auto map incl. MP overrides), else :func:`resolve_order_wh`. Pass a
+    pre-loaded ``overrides`` map (from :func:`wh_override_map`) when resolving many
+    orders in a loop; omit it for a one-off (fetches its own)."""
+    ov = wh_override_map() if overrides is None else overrides
+    o = ov.get(str(po))
+    if o and o.get('warehouse'):
+        return o['warehouse']
+    return resolve_order_wh(warehouse_raw, marketplace, label)
+
+
+def set_wh_override(po, warehouse, orig_warehouse='', actor='', note='') -> dict:
+    """Shift a PO to ``warehouse`` (a canonical inventory code). Records the
+    original resolved WH + actor/timestamp for audit & revert. Upsert (one row/PO).
+    Returns ``{ok, po, warehouse, wh_short}`` or ``{ok:False, error}``."""
+    po = str(po or '').strip()
+    wh = wh_normalize(warehouse)
+    if not po:
+        return {'ok': False, 'error': 'Missing order number.'}
+    if wh not in WH_BY_CODE:
+        return {'ok': False, 'error': f'Unknown warehouse: {warehouse}'}
+    ensure_tables()
+    now = _dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    orig = wh_normalize(orig_warehouse) if orig_warehouse else ''
+    with _conn() as (cur, d):
+        ph = d['ph']
+        if d['kind'] == 'mysql':
+            cur.execute(
+                f"INSERT INTO order_wh_override "
+                f"(po, warehouse, orig_warehouse, note, actor, updated_at) "
+                f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph}) "
+                f"ON DUPLICATE KEY UPDATE warehouse=VALUES(warehouse), "
+                f"note=VALUES(note), actor=VALUES(actor), updated_at=VALUES(updated_at)",
+                (po, wh, orig, note, actor, now))
+        else:
+            cur.execute(
+                f"INSERT INTO order_wh_override "
+                f"(po, warehouse, orig_warehouse, note, actor, updated_at) "
+                f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph}) "
+                f"ON CONFLICT(po) DO UPDATE SET warehouse=excluded.warehouse, "
+                f"note=excluded.note, actor=excluded.actor, updated_at=excluded.updated_at",
+                (po, wh, orig, note, actor, now))
+    return {'ok': True, 'po': po, 'warehouse': wh, 'wh_short': wh_short(wh),
+            'orig_warehouse': orig, 'orig_short': wh_short(orig) if orig else ''}
+
+
+def clear_wh_override(po) -> dict:
+    """Revert a PO to its auto-mapped warehouse (delete the override row)."""
+    po = str(po or '').strip()
+    if not po:
+        return {'ok': False, 'error': 'Missing order number.'}
+    ensure_tables()
+    with _conn() as (cur, d):
+        ph = d['ph']
+        cur.execute(f"DELETE FROM order_wh_override WHERE po={ph}", (po,))
+    return {'ok': True, 'po': po}
+
+
 # ── default bin-classification rules (seeded once; editable on the page) ─────
 # match_type: 'prefix' = bin code starts with pattern (case-insensitive);
 #             'segment' = bin code's FIRST token (split on space / _ / - / .)
@@ -186,6 +268,20 @@ _MYSQL_DDL = [
         UNIQUE KEY uq_invrule (pattern, match_type, warehouse)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     """,
+    # Per-PO manual warehouse reassignment (operational decision, spans re-uploads,
+    # so keyed by PO not run). Keeps the ORIGINAL resolved WH + who/when for audit
+    # and revert. Beats the auto map (incl. MP overrides). One tiny table — a PO
+    # maps to at most one override. [[facility-taxonomy-canon]]
+    """
+    CREATE TABLE IF NOT EXISTS order_wh_override (
+        po              VARCHAR(120) PRIMARY KEY,
+        warehouse       VARCHAR(40),
+        orig_warehouse  VARCHAR(40),
+        note            VARCHAR(255),
+        actor           VARCHAR(80),
+        updated_at      DATETIME
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """,
 ]
 _SQLITE_DDL = [
     """CREATE TABLE IF NOT EXISTS inventory_snapshot (
@@ -213,6 +309,9 @@ _SQLITE_DDL = [
         decision TEXT DEFAULT 'exclude', warehouse TEXT DEFAULT '', note TEXT,
         updated_by TEXT, updated_at TEXT,
         UNIQUE (pattern, match_type, warehouse))""",
+    """CREATE TABLE IF NOT EXISTS order_wh_override (
+        po TEXT PRIMARY KEY, warehouse TEXT, orig_warehouse TEXT, note TEXT,
+        actor TEXT, updated_at TEXT)""",
 ]
 
 
