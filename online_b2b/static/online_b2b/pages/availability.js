@@ -176,11 +176,18 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
       }).join('');
       var curCell = '<td class="sc-curcell"><b>' + esc(p.cur_wh) + '</b>' +
         (p.shifted ? '<span class="sc-shifttag" title="shifted from ' + esc(p.orig_wh) + (p.shifted_by ? ' by ' + esc(p.shifted_by) : '') + (p.shifted_at ? ' · ' + esc(p.shifted_at) : '') + '">was ' + esc(p.orig_wh) + '</span>' : '') + '</td>';
+      // Every row can go to ANY other warehouse — the best-fill one is highlighted,
+      // the rest are ghost buttons (so an 'optimal' PO can still be consolidated).
       var act = '<td class="sc-actcell">';
       if (canWrite) {
-        if (p.can_improve) act += '<button type="button" class="sc-shiftbtn" data-shift="' + esc(p.best_wh) + '" data-po="' + esc(p.po) + '" data-cur="' + esc(p.cur_code) + '">Shift → ' + esc(p.best_wh) + '</button>';
-        else if (!p.shifted) act += '<span class="sc-optimal" title="already on its best-fill warehouse">✓ optimal</span>';
-        if (p.shifted) act += ' <button type="button" class="sc-revertbtn" data-revert="1" data-po="' + esc(p.po) + '" title="Revert to auto-mapped warehouse">↩ Revert</button>';
+        whs.forEach(function (w) {
+          if (w === p.cur_wh) return;
+          var isBest = (w === p.best_wh);
+          act += '<button type="button" class="sc-shiftbtn' + (isBest ? '' : ' sc-shiftbtn--ghost') + '" ' +
+            'data-shift="' + esc(w) + '" data-po="' + esc(p.po) + '" data-cur="' + esc(p.cur_code) + '" ' +
+            'title="Ship ' + esc(p.po) + ' from ' + esc(w) + '">' + (isBest ? 'Shift → ' : '→ ') + esc(w) + '</button>';
+        });
+        if (p.shifted) act += '<button type="button" class="sc-revertbtn" data-revert="1" data-po="' + esc(p.po) + '" title="Revert to auto-mapped warehouse">↩ Revert</button>';
       }
       act += '</td>';
       return '<tr><td class="av-po2">' + esc(p.po) + '</td><td>' + esc(p.mp) + '</td>' +
@@ -201,8 +208,15 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
       '<td class="num">' + nf(totQ) + '</td><td class="sc-foot-sub">' + nf(sc.n_skus) + ' SKUs</td>' +
       ovCells + '<td><span class="sc-bestpill">' + esc(sc.best_wh) + '</span></td><td></td>' +
       '</tr></tfoot>' : '';
+    // bulk toolbar — send EVERY listed order to one warehouse in a single action
+    var nPo = (sc.po_wise || []).length;
+    var anyShifted = (sc.po_wise || []).some(function (p) { return p.shifted; });
+    var bulk = (canWrite && nPo) ? '<div class="sc-bulk"><span class="sc-bulk-l">Shift all ' + nPo + ' order(s) to</span>' +
+      whs.map(function (w) { return '<button type="button" class="sc-bulk-btn" data-shift-all="' + esc(w) + '">' + esc(w) + '</button>'; }).join('') +
+      (anyShifted ? '<button type="button" class="sc-bulk-btn sc-bulk-revert" data-revert-all="1">↩ Revert all to auto</button>' : '') +
+      '</div>' : '';
     var poTable = '<h3 class="sc-h">PO-wise — fill rate if shipped from each warehouse' +
-      (canWrite ? ' <span class="sc-hhint">· click any % (or “Shift”) to reassign an order</span>' : '') + '</h3>' +
+      (canWrite ? ' <span class="sc-hhint">· click any % (or a button) to reassign an order</span>' : '') + '</h3>' + bulk +
       '<div class="av-lines"><table><thead><tr><th>Order No</th><th>MP</th><th class="num">Ord Qty</th><th>Current WH</th>' +
       whHead + '<th>Best</th><th></th></tr></thead><tbody>' +
       (poRows || '<tr><td colspan="' + (6 + whs.length) + '" class="av-empty">No orders.</td></tr>') +
@@ -257,9 +271,29 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
       })
       .catch(function () { if (window.B2B && B2B.toast) B2B.toast('Network error — retry.', { type: 'error' }); });
   }
+  // Bulk: shift EVERY listed order to one WH (or revert all) in one request.
+  function doShiftAll(wh, revert) {
+    var orders = ta.value.trim();
+    if (!orders) return;
+    var n = document.querySelectorAll('#pane-scenario .sc-actcell').length;
+    if (revert) { if (!confirm('Revert all ' + n + ' order(s) to their auto-mapped warehouse?')) return; }
+    else if (!confirm('Ship all ' + n + ' order(s) from ' + wh + '?\nThis updates every listed order across availability and the inventory fill-rate.')) return;
+    var body = new URLSearchParams(); body.set('pos', orders);
+    if (revert) body.set('action', 'revert'); else body.set('warehouse', wh);
+    B2B.postForm(shiftUrl, body)
+      .then(function (j) {
+        if (!j.ok) { if (window.B2B && B2B.toast) B2B.toast(j.error || 'Bulk shift failed.', { type: 'error' }); return; }
+        if (window.B2B && B2B.toast) B2B.toast((j.n || 0) + ' order(s) ' + (revert ? 'reverted to auto WH' : 'now ship from ' + (j.wh_short || wh)), { type: 'success', title: 'Warehouses updated' });
+        run();
+      })
+      .catch(function () { if (window.B2B && B2B.toast) B2B.toast('Network error — retry.', { type: 'error' }); });
+  }
   document.getElementById('pane-scenario').addEventListener('click', function (e) {
     var s = e.target.closest('[data-shift]'), r = e.target.closest('[data-revert]');
-    if (s) doShift(s.getAttribute('data-po'), s.getAttribute('data-shift'), s.getAttribute('data-cur'), false);
+    var sa = e.target.closest('[data-shift-all]'), ra = e.target.closest('[data-revert-all]');
+    if (sa) doShiftAll(sa.getAttribute('data-shift-all'), false);
+    else if (ra) doShiftAll(null, true);
+    else if (s) doShift(s.getAttribute('data-po'), s.getAttribute('data-shift'), s.getAttribute('data-cur'), false);
     else if (r) doShift(r.getAttribute('data-po'), null, null, true);
   });
 

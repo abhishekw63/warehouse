@@ -145,6 +145,15 @@ def set_wh_override(po, warehouse, orig_warehouse='', actor='', note='') -> dict
     orig = wh_normalize(orig_warehouse) if orig_warehouse else ''
     with _conn() as (cur, d):
         ph = d['ph']
+        # No original supplied (e.g. bulk shift) → capture the PO's auto-mapped WH
+        # now, so the record is complete and Revert restores the right warehouse.
+        # (On re-shift the existing orig is preserved — the upsert never rewrites it.)
+        if not orig:
+            cur.execute(f"SELECT warehouse, marketplace_label FROM {d['orders']} "
+                        f"WHERE po={ph} ORDER BY run_ts DESC LIMIT 1", (po,))
+            row = cur.fetchone()
+            if row:
+                orig = resolve_order_wh(row[0], row[1], row[1])
         if d['kind'] == 'mysql':
             cur.execute(
                 f"INSERT INTO order_wh_override "
