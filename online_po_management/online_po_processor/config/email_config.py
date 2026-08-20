@@ -29,6 +29,13 @@ Two-layer config
 
     Unknown keys are ignored. Missing keys inherit from the defaults.
 
+**Environment variables** (for hosts like Render, where the local JSON is not
+    deployed): ``EMAIL_SENDER`` / ``EMAIL_PASSWORD`` (SMTP creds — NEVER commit
+    the password), plus optional ``EMAIL_TO`` and comma-separated ``EMAIL_CC``
+    to set recipients. Precedence: baked-in defaults < env vars < JSON override.
+    So Render sends using env creds + the committed recipient list out of the
+    box; set EMAIL_TO/EMAIL_CC only to re-route without a code change.
+
 Public surface
 --------------
 ``get_email_config()``
@@ -50,6 +57,21 @@ from online_po_processor.config.paths import get_bundled_data_folder
 # Filename for the optional user-override JSON (lives alongside the
 # bundled master/mapping files in ``Calculation Data/``).
 _EMAIL_CONFIG_FILENAME = "email_config.json"
+
+
+def _env_emails(name: str) -> List[str]:
+    """Parse a comma/newline-separated env var into a clean address list.
+    Lets a host (Render) supply recipients without the gitignored JSON file."""
+    raw = os.environ.get(name, '') or ''
+    return [e.strip() for e in raw.replace('\n', ',').split(',') if e.strip()]
+
+
+# Recipients can come from the environment too (so the reports can be sent from
+# a host like Render, where the local Calculation Data/email_config.json is NOT
+# deployed). Env wins over the baked-in list; the JSON override (local) still
+# wins over both. Addresses are internal, not secret — safe to keep in code.
+_ENV_TO = (os.environ.get('EMAIL_TO', '') or '').strip()
+_ENV_CC = _env_emails('EMAIL_CC')
 
 
 # ── Defaults ───────────────────────────────────────────────────────────
@@ -75,17 +97,28 @@ _DEFAULT_EMAIL_CONFIG: Dict[str, Any] = {
     # ── Primary TO recipient ───────────────────────────────────────────
     # Same as GT Mass — Abhishek owns order management and wants both
     # online and offline reports in one inbox.
-    'DEFAULT_RECIPIENT': 'abhishek.wagh@reneecosmetics.in',
+    'DEFAULT_RECIPIENT': _ENV_TO or 'abhishek.wagh@reneecosmetics.in',
 
     # ── CC recipients ──────────────────────────────────────────────────
     # Only the online-B2B channel. GT Mass Dump CCs 3 additional people
     # for offline/dispatch visibility; those do not apply here.
-    'CC_RECIPIENTS': [
+    # Canonical CC list (deploys everywhere incl. Render). Env EMAIL_CC overrides
+    # it; the local JSON override still wins for ad-hoc local re-routes. Keep in
+    # sync with Calculation Data/email_config.json.
+    'CC_RECIPIENTS': _ENV_CC or [
         'onlineb2b@reneecosmetics.in',
         # 'kuldeep.joshi@reneecosmetics.in',
         'pintu.sharma@reneecosmetics.in',
         'aritra.barmanray@reneecosmetics.in',
-        'jitendra.r@reneecosmetics.in'
+        'jitendra.r@reneecosmetics.in',
+        'mudit.porwal@reneecosmetics.in',
+        'rahul.soni@reneecosmetics.in',
+        'chetna.patil@reneecosmetics.in',
+        'shivani.vaghela@reneecosmetics.in',
+        'rajat.khandelwal@reneecosmetics.in',
+        'govind.mishra@reneecosmetics.in',
+        'ecomm@reneecosmetics.in',
+        'yogesh.parekh@reneecosmetics.in',
     ],
 }
 
