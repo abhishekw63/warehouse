@@ -6,6 +6,7 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
   var btn = document.getElementById('av-check'), statusEl = document.getElementById('av-status');
   var results = document.getElementById('av-results');
   var checkUrl = CFG["b2b_availability_check"];
+  var recordedView = false;   // true while replaying a frozen recorded run (no shifts)
 
   // Persist the last input so a refresh doesn't lose it (restored + auto-checked
   // on load below). Local to this browser; nothing sent until Check.
@@ -168,7 +169,8 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
     }).join('');
     // PO-wise matrix — fill% of each PO in each WH. Each WH cell is a live control
     // for editors: click it to SHIP that PO from that warehouse (persisted).
-    var canWrite = CFG["can_write"];
+    // (A frozen recorded run is read-only — no shifting a past snapshot.)
+    var canWrite = CFG["can_write"] && !recordedView;
     var whHead = whs.map(function (w) { return '<th class="num">' + esc(w) + '</th>'; }).join('');
     var poRows = (sc.po_wise || []).map(function (p) {
       var cells = whs.map(function (w) {
@@ -302,9 +304,95 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
     else if (r) doShift(r.getAttribute('data-po'), null, null, true);
   });
 
+  // ── Record run: freeze the current fill-rate + comparison for later enquiry ──
+  var recordUrl = CFG["b2b_availability_record"], runsUrl = CFG["b2b_availability_runs"];
+  var recBtn = document.getElementById('av-record');
+  var recBanner = document.getElementById('av-recbanner');
+  var runsCard = document.getElementById('av-runs-card');
+  function recordRun() {
+    var orders = ta.value.trim();
+    if (!orders) { statusEl.textContent = 'Nothing to record — run a check first.'; return; }
+    var note = (prompt('Add a note for this record (optional) — e.g. why you\'re snapshotting it:') || '').trim();
+    recBtn.disabled = true;
+    var body = new URLSearchParams(); body.set('orders', orders); body.set('warehouse', whSel.value); if (note) body.set('note', note);
+    B2B.postForm(recordUrl, body)
+      .then(function (j) {
+        recBtn.disabled = false;
+        if (!j.ok) { if (window.B2B && B2B.toast) B2B.toast(j.error || 'Record failed.', { type: 'error' }); return; }
+        if (window.B2B && B2B.toast) B2B.toast('Run #' + j.run_id + ' recorded · ' + j.fill_pct + '% fill @ ' + j.n_orders + ' orders', { type: 'success', title: 'Snapshot saved' });
+        loadRuns();
+      })
+      .catch(function () { recBtn.disabled = false; if (window.B2B && B2B.toast) B2B.toast('Network error — retry.', { type: 'error' }); });
+  }
+  function loadRuns() {
+    fetch(runsUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json(); })
+      .then(function (j) { renderRuns((j && j.runs) || []); })
+      .catch(function () {});
+  }
+  function renderRuns(runs) {
+    document.getElementById('av-runs-n').textContent = runs.length ? '(' + runs.length + ')' : '';
+    runsCard.hidden = runs.length === 0;
+    if (!runs.length) { document.getElementById('av-runs-list').innerHTML = ''; return; }
+    document.getElementById('av-runs-list').innerHTML = runs.map(function (r) {
+      return '<div class="av-run" data-run="' + r.run_id + '">' +
+        '<div class="av-run-main">' +
+        '<span class="av-run-when">' + esc(r.run_ts) + '</span>' +
+        '<span class="av-run-fill" style="color:' + pctColor(r.fill_pct) + '">' + r.fill_pct + '% fill</span>' +
+        '<span class="av-run-meta">' + nf(r.n_orders) + ' orders · ' + nf(r.n_skus) + ' SKUs' + (r.best_wh ? ' · best ' + esc(r.best_wh) : '') + '</span>' +
+        (r.note ? '<span class="av-run-note">“' + esc(r.note) + '”</span>' : '') +
+        '</div>' +
+        '<div class="av-run-sub">🕒 inventory as of ' + (esc(r.inv_as_of) || '—') + (r.actor ? ' · by ' + esc(r.actor) : '') + '</div>' +
+        '<div class="av-run-act">' +
+        '<button type="button" class="av-run-view" data-view="' + r.run_id + '">View snapshot</button>' +
+        (CFG["can_write"] ? '<button type="button" class="av-run-del" data-del="' + r.run_id + '" title="Delete this record">✕</button>' : '') +
+        '</div></div>';
+    }).join('');
+  }
+  function viewRun(runId) {
+    fetch(runsUrl + runId + '/', { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (!j.ok || !j.payload || !j.payload.check) { if (window.B2B && B2B.toast) B2B.toast('Could not load that record.', { type: 'error' }); return; }
+        recordedView = true;
+        var p = j.payload;
+        recBanner.hidden = false;
+        recBanner.innerHTML = '<div class="av-recbanner-in"><span class="av-rec-ic">📸</span>' +
+          '<span class="av-rec-txt">Recorded snapshot · <b>' + esc(j.run_ts) + '</b>' + (j.actor ? ' by ' + esc(j.actor) : '') +
+          ' — fill rate frozen as it was then' + (p.check.summary && p.check.summary.stock_as_of ? ' (inventory ' + esc(p.check.summary.stock_as_of) + ')' : '') +
+          (j.note ? ' · “' + esc(j.note) + '”' : '') + '</span>' +
+          '<button type="button" class="av-rec-exit" id="av-rec-exit">↩ Back to live</button></div>';
+        render(p.check);
+        renderScenarios(p.scenarios);
+        recBtn.hidden = true;
+        var exp = document.getElementById('av-export'); if (exp) exp.hidden = true;
+        results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      })
+      .catch(function () { if (window.B2B && B2B.toast) B2B.toast('Network error — retry.', { type: 'error' }); });
+  }
+  function exitRecorded() {
+    recordedView = false; recBanner.hidden = true; recBtn.hidden = false;
+    var exp = document.getElementById('av-export'); if (exp) exp.hidden = false;
+    run();
+  }
+  function deleteRun(runId) {
+    if (!confirm('Delete recorded run #' + runId + '?')) return;
+    B2B.postForm(runsUrl + runId + '/delete/', new URLSearchParams())
+      .then(function (j) { if (j.ok && window.B2B && B2B.toast) B2B.toast('Record deleted.', { type: 'info' }); loadRuns(); })
+      .catch(function () {});
+  }
+  recBtn.addEventListener('click', recordRun);
+  recBanner.addEventListener('click', function (e) { if (e.target.closest('#av-rec-exit')) exitRecorded(); });
+  document.getElementById('av-runs-list').addEventListener('click', function (e) {
+    var v = e.target.closest('[data-view]'), del = e.target.closest('[data-del]');
+    if (v) viewRun(v.getAttribute('data-view'));
+    else if (del) deleteRun(del.getAttribute('data-del'));
+  });
+
   function run() {
     var orders = ta.value.trim();
     if (!orders) { statusEl.textContent = 'Paste at least one order number.'; return; }
+    recordedView = false; recBanner.hidden = true; recBtn.hidden = false;
     saveState();
     btn.disabled = true; statusEl.textContent = 'Checking…';
     var body = new URLSearchParams(); body.set('orders', orders); body.set('warehouse', whSel.value);
@@ -400,4 +488,5 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
       run();   // re-check → results reappear without re-pasting
     }
   })();
+  loadRuns();   // show any past recorded snapshots on load
 })();

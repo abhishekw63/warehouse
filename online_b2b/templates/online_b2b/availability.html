@@ -42,6 +42,7 @@
 
   <div id="av-results" hidden>
     <div class="im-card reveal">
+      <div id="av-recbanner" hidden></div>
       <div id="av-nf"></div>
       <div class="av-kpis" id="av-kpis"></div>
       <div class="av-asof" id="av-asof"></div>
@@ -52,7 +53,10 @@
           <button type="button" class="tab tab--underline av-tab" data-pane="lines">PO line items</button>
           <button type="button" class="tab tab--underline av-tab" data-pane="sku">By SKU</button>
         </div>
-        <button type="button" class="btn-ghost" id="av-export">⬇ Export Excel</button>
+        <div class="av-ractions">
+          <button type="button" class="btn-ghost" id="av-record" title="Freeze this run (fill rate + comparison) so you can look it up later — inventory keeps changing">🗎 Record run</button>
+          <button type="button" class="btn-ghost" id="av-export">⬇ Export Excel</button>
+        </div>
       </div>
       <div class="av-pane on" id="pane-scenario"></div>
       <div class="av-pane" id="pane-powise"></div>
@@ -60,11 +64,19 @@
       <div class="av-pane" id="pane-sku"></div>
     </div>
   </div>
+
+  <div class="im-card av-runs-card" id="av-runs-card" hidden>
+    <div class="av-runs-head">
+      <h2>🗎 Recorded runs <span class="av-runs-n" id="av-runs-n"></span></h2>
+      <span class="av-hint">Frozen fill-rate snapshots — the FR as it was when recorded (inventory changes over time).</span>
+    </div>
+    <div id="av-runs-list"></div>
+  </div>
 </div>
 
 <input type="hidden" id="av-csrf" value="{{ csrf_token }}">
 <script type="application/json" id="availability-cfg">
-{"b2b_availability_check": "{% url 'b2b_availability_check' %}", "b2b_availability_scenarios": "{% url 'b2b_availability_scenarios' %}", "b2b_availability_shift": "{% url 'b2b_availability_shift' %}", "b2b_availability_export": "{% url 'b2b_availability_export' %}", "b2b_availability_bins": "{% url 'b2b_availability_bins' %}", "can_write": {% if can_write %}true{% else %}false{% endif %}}
+{"b2b_availability_check": "{% url 'b2b_availability_check' %}", "b2b_availability_scenarios": "{% url 'b2b_availability_scenarios' %}", "b2b_availability_shift": "{% url 'b2b_availability_shift' %}", "b2b_availability_record": "{% url 'b2b_availability_record' %}", "b2b_availability_runs": "{% url 'b2b_availability_runs' %}", "b2b_availability_export": "{% url 'b2b_availability_export' %}", "b2b_availability_bins": "{% url 'b2b_availability_bins' %}", "can_write": {% if can_write %}true{% else %}false{% endif %}}
 </script>
 {% endblock %}
 

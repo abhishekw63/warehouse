@@ -2983,6 +2983,44 @@ def availability_shift_wh(request):
 
 @login_required
 @require_POST
+def availability_record(request):
+    """FREEZE the current availability run (fill-rate + best-WH comparison) into a
+    dated record, so it can be enquired into later even after inventory changes.
+    Append-only audit → allowed for Viewers too (allowlisted in the write-guard)."""
+    from .services import availability as av
+    from .services import availability_log as log
+    nos = av.parse_order_nos(request.POST.get('orders', ''))
+    if not nos:
+        return JsonResponse({'ok': False, 'error': 'Paste at least one order number.'})
+    actor = getattr(request.user, 'username', '') or ''
+    return JsonResponse(log.record(nos[:500], request.POST.get('warehouse', ''),
+                                   actor=actor, note=(request.POST.get('note') or '')[:255]))
+
+
+@login_required
+def availability_runs(request):
+    """List recorded availability runs (newest first). Read-only JSON."""
+    from .services import availability_log as log
+    return JsonResponse({'ok': True, 'runs': log.list_runs(100)})
+
+
+@login_required
+def availability_run_view(request, run_id):
+    """Full frozen snapshot of one recorded run (for a read-only replay)."""
+    from .services import availability_log as log
+    return JsonResponse(log.get_run(run_id))
+
+
+@login_required
+@require_POST
+def availability_run_delete(request, run_id):
+    """Delete a recorded run — Editor-only (a write, not allowlisted)."""
+    from .services import availability_log as log
+    return JsonResponse(log.delete_run(run_id))
+
+
+@login_required
+@require_POST
 def availability_export(request):
     """Same check → styled multi-sheet .xlsx (Summary · PO Summary · By Order
     Lines · By SKU · Not Found). Qty AND value fill at every angle."""

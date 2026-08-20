@@ -48,8 +48,11 @@ _SAFE_POST_NAMES = frozenset({
     # DB (they only produce an Excel report). Allowed for Viewers by decision.
     'b2b_full_validation_run', 'b2b_triangular_run',
     # availability checker — read-only reports (the best-WH comparison too;
-    # 'b2b_availability_shift' is deliberately NOT here — it writes, Editors only)
+    # 'b2b_availability_shift'/'..._run_delete' are deliberately NOT here — they
+    # write, Editors only). 'record' is an append-only snapshot → Viewers may keep
+    # an audit of the FR they saw, so it's allowed.
     'b2b_availability_check', 'b2b_availability_bins', 'b2b_availability_scenarios',
+    'b2b_availability_record',
     # read-only data fetches that don't match a suffix
     'b2b_cockpit_po_skus',
     # generating the ERP D365 dump is an export of an already-locked run (no DB
