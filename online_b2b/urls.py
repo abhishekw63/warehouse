@@ -52,6 +52,7 @@ urlpatterns = [
     # Order Availability Checker — paste order no(s) → stock vs mapped WH.
     path('availability/', views.AvailabilityView.as_view(), name='b2b_availability'),
     path('availability/check/', views.availability_check, name='b2b_availability_check'),
+    path('availability/scenarios/', views.availability_scenarios, name='b2b_availability_scenarios'),
     path('availability/export/', views.availability_export, name='b2b_availability_export'),
     path('availability/bins/', views.availability_bins, name='b2b_availability_bins'),
     path('online/', views.dashboard, name='b2b_online'),

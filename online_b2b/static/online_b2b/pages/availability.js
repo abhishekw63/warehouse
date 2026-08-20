@@ -128,6 +128,84 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
     });
   }
 
+  // ── Best-warehouse comparison (overall + PO-wise + SKU-wise, all 3 WHs) ──
+  function scCell(p, best) {
+    return '<td class="num sc-cell' + (best ? ' sc-best' : '') + '" style="color:' + pctColor(p) +
+      ';font-weight:700;">' + p + '%' + (best ? ' <span class="sc-tick">✓</span>' : '') + '</td>';
+  }
+  function renderScenarios(sc) {
+    var pane = document.getElementById('pane-scenario');
+    if (!sc || !sc.ok) {
+      pane.innerHTML = '<div class="av-empty">' + esc((sc && sc.error) || 'Comparison unavailable.') + '</div>';
+      return;
+    }
+    var whs = sc.warehouses || [];
+    var ov = sc.overall || [];
+    var best = ov.filter(function (o) { return o.best; })[0] || ov[0] || {};
+    // recommendation banner
+    var banner = '<div class="sc-rec"><span class="sc-rec-ic">🏆</span><div class="sc-rec-txt">' +
+      'Ship this batch from <b>' + esc(best.wh_short) + '</b> — fills <b>' + best.fill_pct + '%</b> of ordered qty' +
+      (best.fill_val_pct ? ' <span class="sc-rec-sub">(' + best.fill_val_pct + '% by value)</span>' : '') +
+      ', the highest of the three warehouses.' +
+      '</div><span class="sc-rec-tot">' + nf(sc.total_qty) + ' units · ' + nf(sc.n_skus) + ' SKUs · ' + nf(sc.n_orders) + ' orders</span></div>';
+    // overall cards — one per WH
+    var cards = ov.map(function (o) {
+      return '<div class="sc-card' + (o.best ? ' sc-card-best' : '') + '">' +
+        (o.best ? '<span class="sc-badge">BEST</span>' : '') +
+        '<div class="sc-card-wh">' + esc(o.wh_short) + '</div>' +
+        '<div class="sc-card-main" style="color:' + pctColor(o.fill_pct) + '">' + o.fill_pct + '%</div>' +
+        '<div class="sc-card-sub">qty fill · ' + o.fill_val_pct + '% by value</div>' +
+        '<div class="sc-card-row"><span>Fillable</span><b class="pos">' + nf(o.fillable_qty) + '</b></div>' +
+        '<div class="sc-card-row"><span>Short</span><b' + (o.short_qty > 0 ? ' class="neg"' : '') + '>' + nf(o.short_qty) + '</b></div>' +
+        '<div class="sc-card-row"><span>OOS SKUs</span><b' + (o.oos_skus > 0 ? ' class="neg"' : '') + '>' + nf(o.oos_skus) + ' / ' + nf(o.skus) + '</b></div>' +
+        (o.as_of ? '<div class="sc-card-asof">🕒 ' + esc(o.as_of) + '</div>' : '') +
+        '</div>';
+    }).join('');
+    // PO-wise matrix — fill% of each PO in each WH
+    var whHead = whs.map(function (w) { return '<th class="num">' + esc(w) + '</th>'; }).join('');
+    var poRows = (sc.po_wise || []).map(function (p) {
+      var cells = whs.map(function (w) {
+        var d = p.by_wh[w] || {}; return scCell(d.fill_pct || 0, p.best_wh === w);
+      }).join('');
+      return '<tr><td class="av-po2">' + esc(p.po) + '</td><td>' + esc(p.mp) + '</td>' +
+        '<td class="num">' + nf(p.ord_qty) + '</td>' + cells +
+        '<td><span class="sc-bestpill">' + esc(p.best_wh) + '</span></td></tr>';
+    }).join('');
+    var poTable = '<h3 class="sc-h">PO-wise — fill rate if shipped from each warehouse</h3>' +
+      '<div class="av-lines"><table><thead><tr><th>Order No</th><th>MP</th><th class="num">Ord Qty</th>' +
+      whHead + '<th>Best</th></tr></thead><tbody>' +
+      (poRows || '<tr><td colspan="' + (4 + whs.length) + '" class="av-empty">No orders.</td></tr>') +
+      '</tbody></table></div>';
+    // SKU-wise matrix — available / fillable in each WH
+    var skuRows = (sc.sku_wise || []).map(function (k) {
+      var cells = whs.map(function (w) {
+        var d = k.by_wh[w] || {}, isBest = k.best_wh === w;
+        var cls = 'num sc-cell' + (isBest ? ' sc-best' : '') + (d.oos ? ' sc-oos' : '');
+        return '<td class="' + cls + '">' + (d.oos ? '<span class="sc-oostag">OOS</span>' : nf(d.fillable) + ' <i class="sc-av">/ ' + nf(d.available) + '</i>') + '</td>';
+      }).join('');
+      return '<tr><td class="mono">' + esc(k.item_no) + '</td>' +
+        '<td class="av-desc" title="' + esc(k.description) + '">' + esc(k.description) + '</td>' +
+        '<td class="num">' + nf(k.ordered) + '</td><td class="num">' + nf(k.pos) + '</td>' + cells +
+        '<td><span class="sc-bestpill">' + esc(k.best_wh) + '</span></td></tr>';
+    }).join('');
+    var skuTable = '<h3 class="sc-h">SKU-wise — fillable <i class="sc-av">/ available</i> in each warehouse</h3>' +
+      '<div class="av-lines"><table><thead><tr><th>Item</th><th>Description</th><th class="num">Ordered</th><th class="num">POs</th>' +
+      whHead + '<th>Best</th></tr></thead><tbody>' +
+      (skuRows || '<tr><td colspan="' + (5 + whs.length) + '" class="av-empty">No SKUs.</td></tr>') +
+      '</tbody></table></div>';
+    pane.innerHTML = banner + '<div class="sc-cards">' + cards + '</div>' + poTable + skuTable;
+  }
+
+  var scenUrl = CFG["b2b_availability_scenarios"];
+  function runScenarios(orders) {
+    var pane = document.getElementById('pane-scenario');
+    pane.innerHTML = '<div class="av-empty">Comparing warehouses…</div>';
+    var body = new URLSearchParams(); body.set('orders', orders);
+    B2B.postForm(scenUrl, body)
+      .then(renderScenarios)
+      .catch(function () { pane.innerHTML = '<div class="av-empty">Comparison failed — retry.</div>'; });
+  }
+
   function run() {
     var orders = ta.value.trim();
     if (!orders) { statusEl.textContent = 'Paste at least one order number.'; return; }
@@ -140,6 +218,7 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
         if (!j.ok) { statusEl.textContent = j.error || 'Failed.'; return; }
         statusEl.textContent = '✓ ' + j.summary.orders + ' order(s) checked';
         render(j);
+        runScenarios(orders);   // best-warehouse comparison (independent of WH override)
       })
       .catch(function () { btn.disabled = false; statusEl.textContent = 'Network error — retry.'; });
   }

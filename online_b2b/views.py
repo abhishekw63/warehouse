@@ -2923,6 +2923,20 @@ def availability_check(request):
 
 @login_required
 @require_POST
+def availability_scenarios(request):
+    """Paste blob → best-warehouse comparison (JSON): overall + PO-wise +
+    SKU-wise fill in EACH warehouse (AHD/BLR/North), so the highest-fill facility
+    can be picked. Read-only."""
+    from .services import availability as av
+    nos = av.parse_order_nos(request.POST.get('orders', ''))
+    if not nos:
+        return JsonResponse({'ok': False,
+                             'error': 'Paste at least one order number.'})
+    return JsonResponse(av.wh_scenarios(nos[:500]))
+
+
+@login_required
+@require_POST
 def availability_export(request):
     """Same check → styled multi-sheet .xlsx (Summary · PO Summary · By Order
     Lines · By SKU · Not Found). Qty AND value fill at every angle."""

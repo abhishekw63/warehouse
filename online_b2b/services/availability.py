@@ -241,6 +241,154 @@ def check_orders(order_nos, wh_override: str = '') -> dict:
             'summary': summary}
 
 
+def wh_scenarios(order_nos) -> dict:
+    """**Best-warehouse comparison.** For the pasted orders, work out what the
+    fill rate WOULD be if the whole batch shipped from each warehouse (AHD / BLR /
+    North), so the highest-fill facility can be chosen. Read-only; never raises.
+
+    Demand is gathered ONCE (latest run per PO), then netted against *each*
+    warehouse's current stock independently. Returns three lenses::
+
+        {ok, warehouses:[short,...], best_wh, best_wh_code,
+         overall:[{wh, wh_short, code, fill_pct, fill_val_pct, fillable_qty,
+                   short_qty, oos_skus, skus, as_of, best}],
+         po_wise:[{po, mp, ord_qty, ord_value, by_wh:{AHD:{fill_pct,..}}, best_wh}],
+         sku_wise:[{item_no, ean, description, ordered, pos,
+                    by_wh:{AHD:{available, fillable, short, oos}}, best_wh}],
+         total_qty, total_value, n_skus, not_found}
+
+    ``overall`` and ``sku_wise`` net cumulative demand (worst-case truth when one
+    SKU is pulled by several POs); ``po_wise`` scores each PO on its own lines.
+    """
+    order_nos = parse_order_nos(order_nos) if isinstance(order_nos, str) else list(order_nos or [])
+    if not order_nos:
+        return {'ok': False, 'error': 'Paste at least one order number.'}
+
+    whs = inv.WAREHOUSES                       # [{code, name, short}, ...]
+    stock = {w['code']: inv.current_stock_map(w['code']) for w in whs}
+    snaps = inv.current_snapshots()
+
+    def _avail(code: str, item: str) -> float:
+        v = float(stock[code].get(item, 0) or 0)
+        return v if v > 0 else 0.0             # oversold (<0) → 0 fillable
+
+    # ── gather demand ONCE: per-PO lines + per-SKU netted across POs ──
+    po_demand: list[dict] = []                 # [{po, mp, lines:[{item, uv, qty}], ord_qty, ord_val}]
+    sku: dict = {}                             # item -> {item, ean, desc, qty, val, pos:set}
+    not_found: list[str] = []
+    with _conn() as (cur, d):
+        ph, ot = d['ph'], d['orders']
+        for po in order_nos:
+            cur.execute(
+                f"SELECT run_id, marketplace_label FROM {ot} "
+                f"WHERE po={ph} ORDER BY run_ts DESC LIMIT 1", (po,))
+            hdr = cur.fetchone()
+            if not hdr:
+                not_found.append(po)
+                continue
+            run_id, mp_label = hdr
+            cur.execute(
+                f"SELECT item_no, ean, description, qty, unit_price, our_landing "
+                f"FROM order_lines_full WHERE po={ph} AND run_id={ph} ORDER BY item_no",
+                (po, run_id))
+            lines: list[dict] = []
+            oq = ov = 0.0
+            for item_no, ean, desc, qty, unit_price, our_landing in cur.fetchall():
+                key = str(item_no or '').strip()
+                q = float(qty or 0)
+                uv = float(our_landing or 0) or float(unit_price or 0)
+                lines.append({'item': key, 'qty': q, 'uv': uv})
+                oq += q; ov += q * uv
+                s = sku.get(key)
+                if s is None:
+                    s = sku[key] = {'item': key, 'ean': str(ean or ''),
+                                    'desc': str(desc or ''), 'qty': 0.0, 'val': 0.0,
+                                    'pos': set()}
+                s['qty'] += q; s['val'] += q * uv; s['pos'].add(po)
+                if not s['ean'] and ean:
+                    s['ean'] = str(ean)
+                if not s['desc'] and desc:
+                    s['desc'] = str(desc)
+            po_demand.append({'po': po, 'mp': str(mp_label or ''), 'lines': lines,
+                              'ord_qty': oq, 'ord_val': ov})
+
+    if not po_demand:
+        return {'ok': False, 'error': 'None of those orders were found in recorded runs.',
+                'not_found': not_found}
+
+    total_q = sum(p['ord_qty'] for p in po_demand)
+    total_v = sum(p['ord_val'] for p in po_demand)
+
+    def _as_of(code: str) -> str:
+        s = snaps.get(code)
+        return str(s['captured_at']) if s and s.get('captured_at') else ''
+
+    # ── OVERALL per WH (SKU-netted) ──
+    overall: list[dict] = []
+    for w in whs:
+        code = w['code']; fq = fv = 0.0; oos = 0
+        for it, s in sku.items():
+            av = _avail(code, it)
+            f = min(s['qty'], av)
+            fq += f
+            fv += f * (s['val'] / s['qty'] if s['qty'] else 0.0)
+            if av <= 0:
+                oos += 1
+        overall.append({
+            'wh': w['name'], 'wh_short': w['short'], 'code': code,
+            'fill_pct': round(fq / total_q * 100, 1) if total_q else 0.0,
+            'fill_val_pct': round(fv / total_v * 100, 1) if total_v else 0.0,
+            'fillable_qty': _q(fq), 'short_qty': _q(total_q - fq),
+            'ord_qty': _q(total_q), 'oos_skus': oos, 'skus': len(sku),
+            'as_of': _as_of(code),
+        })
+    # best = highest qty fill%, tie-break on value fill%
+    best = max(overall, key=lambda x: (x['fill_pct'], x['fill_val_pct'])) if overall else None
+    best_wh = best['wh_short'] if best else ''
+    best_code = best['code'] if best else ''
+    for o in overall:
+        o['best'] = (o['code'] == best_code)
+
+    # ── PO-wise: each PO scored independently in each WH ──
+    po_wise: list[dict] = []
+    for p in po_demand:
+        by: dict = {}
+        for w in whs:
+            code = w['code']; fq = fv = 0.0
+            for l in p['lines']:
+                f = min(l['qty'], _avail(code, l['item']))
+                fq += f; fv += f * l['uv']
+            by[w['short']] = {
+                'fill_pct': round(fq / p['ord_qty'] * 100, 1) if p['ord_qty'] else 0.0,
+                'fill_val_pct': round(fv / p['ord_val'] * 100, 1) if p['ord_val'] else 0.0,
+                'fillable_qty': _q(fq), 'short_qty': _q(p['ord_qty'] - fq),
+            }
+        bw = max(by, key=lambda k: by[k]['fill_pct']) if by else ''
+        po_wise.append({'po': p['po'], 'mp': p['mp'], 'ord_qty': _q(p['ord_qty']),
+                        'ord_value': round(p['ord_val'], 2), 'by_wh': by, 'best_wh': bw})
+
+    # ── SKU-wise: availability + fillable in each WH ──
+    sku_wise: list[dict] = []
+    for it, s in sku.items():
+        by = {}
+        for w in whs:
+            av = _avail(w['code'], it)
+            by[w['short']] = {'available': _q(av), 'fillable': _q(min(s['qty'], av)),
+                              'short': _q(s['qty'] - min(s['qty'], av)), 'oos': av <= 0}
+        bw = max(by, key=lambda k: by[k]['fillable']) if by else ''
+        sku_wise.append({'item_no': it, 'ean': s['ean'], 'description': s['desc'],
+                         'ordered': _q(s['qty']), 'pos': len(s['pos']),
+                         'by_wh': by, 'best_wh': bw})
+    sku_wise.sort(key=lambda x: -x['ordered'])
+
+    return {'ok': True, 'warehouses': [w['short'] for w in whs],
+            'wh_codes': [w['code'] for w in whs], 'not_found': not_found,
+            'best_wh': best_wh, 'best_wh_code': best_code,
+            'overall': overall, 'po_wise': po_wise, 'sku_wise': sku_wise,
+            'total_qty': _q(total_q), 'total_value': round(total_v, 2),
+            'n_skus': len(sku), 'n_orders': len(po_demand)}
+
+
 def fulfilment_risk(date_from='', date_to='', marketplace='') -> dict:
     """**Fulfilment risk over a period.** Aggregates demand (the *latest* run per
     PO within the upload-date window) per (mapped warehouse, item), then nets it

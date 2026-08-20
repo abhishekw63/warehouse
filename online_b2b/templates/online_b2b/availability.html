@@ -47,13 +47,15 @@
       <div class="av-asof" id="av-asof"></div>
       <div class="av-rhead">
         <div class="av-tabs">
-          <button type="button" class="tab tab--underline av-tab on" data-pane="powise">PO-wise · Fill rate</button>
+          <button type="button" class="tab tab--underline av-tab on" data-pane="scenario">🏆 Best warehouse</button>
+          <button type="button" class="tab tab--underline av-tab" data-pane="powise">PO-wise · Fill rate</button>
           <button type="button" class="tab tab--underline av-tab" data-pane="lines">PO line items</button>
           <button type="button" class="tab tab--underline av-tab" data-pane="sku">By SKU</button>
         </div>
         <button type="button" class="btn-ghost" id="av-export">⬇ Export Excel</button>
       </div>
-      <div class="av-pane on" id="pane-powise"></div>
+      <div class="av-pane on" id="pane-scenario"></div>
+      <div class="av-pane" id="pane-powise"></div>
       <div class="av-pane" id="pane-lines"></div>
       <div class="av-pane" id="pane-sku"></div>
     </div>
@@ -62,7 +64,7 @@
 
 <input type="hidden" id="av-csrf" value="{{ csrf_token }}">
 <script type="application/json" id="availability-cfg">
-{"b2b_availability_check": "{% url 'b2b_availability_check' %}", "b2b_availability_export": "{% url 'b2b_availability_export' %}", "b2b_availability_bins": "{% url 'b2b_availability_bins' %}"}
+{"b2b_availability_check": "{% url 'b2b_availability_check' %}", "b2b_availability_scenarios": "{% url 'b2b_availability_scenarios' %}", "b2b_availability_export": "{% url 'b2b_availability_export' %}", "b2b_availability_bins": "{% url 'b2b_availability_bins' %}"}
 </script>
 {% endblock %}
 
