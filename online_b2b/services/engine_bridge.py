@@ -1448,17 +1448,26 @@ class Processor:
             short = self._source_location_by_po() or {}   # {po: short warehouse code}
         except Exception:  # noqa: BLE001
             short = {}
+        # Ship-to → State/Zone map (same resolution the web tracker uses), loaded
+        # once. Resolved from the REAL ship-to location, not the WH-code override.
+        try:
+            from .order_db import geo_for_location, location_geo_map
+            geomap = location_geo_map()
+        except Exception:  # noqa: BLE001
+            geomap = {}
+            def geo_for_location(_loc, _m=None):  # noqa: E306
+                return {'pincode': '', 'state': '', 'zone': ''}
         wb = load_workbook(path)
         if 'Tracker' in wb.sheetnames:
             del wb['Tracker']
         ws = wb.create_sheet('Tracker')
         # Columns MATCH the org master tracker ('New PO format.xlsx') EXACTLY and
-        # in order, so the operator can copy A2:I<n> and paste straight into it —
+        # in order for A2:I; State + Zone are appended (J, K) as extra columns —
         # same for EVERY marketplace (this runs in the base Processor). 'Order
         # Receive Date' + 'Picklist Qty' are left blank (filled by hand in the
         # master). No TOTAL row → the whole block pastes cleanly.
         cols = ['Segment', 'Market Place', 'PO', 'Location', 'PO Date', 'Exp Date',
-                'PO Aging For Exp', 'Order Value', 'Order Qty']
+                'PO Aging For Exp', 'Order Value', 'Order Qty', 'State', 'Zone']
         ws.append(cols)
         for h in headers:
             po = str(h.get('po') or '')
@@ -1467,6 +1476,7 @@ class Processor:
             exd_d = self._tracker_date_val(d.get('exp_date') or h.get('exp_date'))
             q = int(h.get('qty') or 0)
             v = round(float(h.get('order_value') or 0), 2)
+            geo = geo_for_location(h.get('location'), geomap)   # State/Zone from ship-to
             # Write REAL Excel dates when coercible (so the WH master's filter
             # groups them by month) — fall back to a plain string only if the
             # value can't be parsed as a date.
@@ -1475,7 +1485,8 @@ class Processor:
                        po, short.get(po) or h.get('location') or '',
                        pod_d if pod_d is not None else self._fmt_tracker_date(d.get('po_date') or h.get('po_date')),
                        exd_d if exd_d is not None else self._fmt_tracker_date(d.get('exp_date') or h.get('exp_date')),
-                       '', v, q])        # PO Aging For Exp = filled manually
+                       '', v, q,          # PO Aging For Exp = filled manually
+                       geo.get('state') or '', geo.get('zone') or ''])
             rr = ws.max_row
             if pod_d is not None:
                 ws.cell(rr, 5).number_format = 'DD-MM-YYYY'
@@ -1492,9 +1503,9 @@ class Processor:
             cell.alignment = Alignment(horizontal='center', vertical='center',
                                        wrap_text=True)
             cell.border = bd
-        widths = [13, 16, 18, 42, 13, 13, 16, 15, 11]
+        widths = [13, 16, 18, 42, 13, 13, 16, 15, 11, 16, 11]
         right_cols = {8, 9}          # Order Value, Order Qty
-        center_cols = {5, 6, 7}      # PO Date, Exp Date, PO Aging For Exp
+        center_cols = {5, 6, 7, 11}  # PO Date, Exp Date, PO Aging For Exp, Zone
         for i, w in enumerate(widths, 1):
             ws.column_dimensions[get_column_letter(i)].width = w
         for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
