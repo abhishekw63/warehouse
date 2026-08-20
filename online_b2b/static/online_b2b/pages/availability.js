@@ -21,6 +21,11 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
   function stCls(s) { return 'st ' + (s || '').replace(/\s+/g, ''); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function availCell(v) { return '<td class="num' + (v < 0 ? ' av-neg' : '') + '">' + nf(v) + '</td>'; }
+  function tsStamp() {   // DD-MM-YYYY_HHMMSS — matches the server's download naming
+    var d = new Date(), p = function (n) { return ('0' + n).slice(-2); };
+    return p(d.getDate()) + '-' + p(d.getMonth() + 1) + '-' + d.getFullYear() + '_' +
+      p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+  }
 
   function fillBar(p) {
     return '<div class="av-fill"><div class="av-bar"><span style="width:' + Math.min(100, p) + '%;background:' + pctColor(p) + ';"></span></div>' +
@@ -330,11 +335,19 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
     exportBtn.disabled = true;
     if (window.B2B && B2B.toast) B2B.toast('Building the availability workbook…', { type: 'info', title: 'Downloading', timeout: 6000 });
     var body = new URLSearchParams(); body.set('orders', orders); body.set('warehouse', whSel.value);
+    var fname = '';
     fetch(CFG["b2b_availability_export"], { method: 'POST', headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest', 'Content-Type': 'application/x-www-form-urlencoded' }, body: body.toString() })
-      .then(function (r) { return r.blob(); })
+      .then(function (r) {
+        // honour the server's timestamped filename (Content-Disposition); fall
+        // back to a client-side timestamp so the download is never a stale name.
+        var cd = r.headers.get('Content-Disposition') || '';
+        var m = /filename\*?=(?:UTF-8'')?"?([^;"]+)"?/i.exec(cd);
+        fname = (m && decodeURIComponent(m[1])) || ('availability_' + tsStamp() + '.xlsx');
+        return r.blob();
+      })
       .then(function (blob) {
         var url = URL.createObjectURL(blob), a = document.createElement('a');
-        a.href = url; a.download = 'availability.xlsx'; document.body.appendChild(a); a.click();
+        a.href = url; a.download = fname; document.body.appendChild(a); a.click();
         setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 1500);
         exportBtn.disabled = false;
       })
