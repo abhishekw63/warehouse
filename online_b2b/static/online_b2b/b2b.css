@@ -248,6 +248,11 @@ table.grid tbody tr:hover td{background:var(--surface-2);}
 /* misc --------------------------------------------------------- */
 .scroll{max-height:560px;overflow:auto;border-radius:var(--radius);}
 .scroll table.grid thead th{position:sticky;top:0;z-index:1;}
+/* Inside tab panes (review · record-verify · po_flow), a long line/order list in
+   the 560px inner .scroll box trapped vertical scrolling — the box ate the wheel
+   so the PAGE couldn't scroll down to the rest of the rows. Let those tables flow
+   into the page instead (whole page scrolls); wide tables still scroll sideways. */
+.tabpane .scroll{max-height:none;overflow-y:visible;}
 .btn-more{margin-top:12px;width:100%;padding:11px;border:1px solid var(--border);background:var(--surface-2);
   color:var(--accent);border-radius:var(--radius-sm);font-weight:600;font-size:13px;cursor:pointer;transition:background .15s;}
 .btn-more:hover{background:var(--accent-soft);}
