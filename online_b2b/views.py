@@ -3001,6 +3001,10 @@ def availability_export(request):
         by_wh[k['wh']].add(k['item_no'])
     data['sku_bins'] = {wh: inv.item_bins_bulk(wh, items)
                         for wh, items in by_wh.items()}
+    # Best-warehouse comparison → its own sheets (overall + PO-wise + SKU-wise).
+    sc = av.wh_scenarios(nos[:500])
+    if sc.get('ok'):
+        data['scenarios'] = sc
     buf = av.to_workbook(data)
     fname = f"availability_{_dt.datetime.now():%d-%m-%Y_%H%M%S}.xlsx"
     return FileResponse(

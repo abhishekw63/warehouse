@@ -868,7 +868,74 @@ def to_workbook(data: dict):
                 ws.cell(row=ws.max_row, column=6).fill = f
         _finish(ws, 7)
 
-    # 7) Not Found (only if any)
+    # 7) Best-Warehouse comparison — overall + PO-wise + SKU-wise fill in EACH
+    #    warehouse (so the best-fill facility, and any manual shifts, are visible).
+    sc = data.get('scenarios') or {}
+    if sc.get('ok'):
+        whs = sc.get('warehouses', [])
+        BEST = PatternFill('solid', fgColor='DCFCE7')     # green = the best WH
+        boldc = Font(bold=True)
+
+        # 7a) Overall — one row per warehouse, best highlighted
+        ws = wb.create_sheet('WH Comparison')
+        _sheet(ws, ['Warehouse', 'Fill % (Qty)', 'Fill % (Val)', 'Fillable Qty',
+                    'Short Qty', 'OOS SKUs', 'Total SKUs', 'Inventory as of'],
+               [14, 12, 12, 12, 11, 10, 11, 22])
+        for o in sc.get('overall', []):
+            ws.append([o['wh_short'], o['fill_pct'], o['fill_val_pct'],
+                       o['fillable_qty'], o['short_qty'], o['oos_skus'],
+                       o['skus'], o['as_of']])
+            if o.get('best'):
+                for c in ws[ws.max_row]:
+                    c.fill = BEST; c.font = boldc
+        ws.append([])
+        ws.append(['Best warehouse (whole batch)', sc.get('best_wh', ''),
+                   'Ordered qty', sc.get('total_qty', 0), 'SKUs', sc.get('n_skus', 0)])
+        ws.cell(row=ws.max_row, column=1).font = boldc
+        _finish(ws, 8)
+
+        # 7b) PO by Warehouse — each PO's fill% in every WH + current/shift state,
+        #     with an OVERALL (whole-batch) footer row.
+        ws = wb.create_sheet('PO by Warehouse')
+        heads = (['Order No', 'Marketplace', 'Ordered Qty', 'Current WH']
+                 + [f'{w} Fill%' for w in whs] + ['Best WH', 'Shifted From'])
+        _sheet(ws, heads, [20, 18, 11, 11] + [10] * len(whs) + [10, 12])
+        best_col = {w: 5 + i for i, w in enumerate(whs)}   # WH% columns start at col 5
+        for p in sc.get('po_wise', []):
+            row = ([p['po'], p['mp'], p['ord_qty'], p['cur_wh']]
+                   + [(p['by_wh'].get(w) or {}).get('fill_pct', 0) for w in whs]
+                   + [p['best_wh'], p['orig_wh'] if p.get('shifted') else ''])
+            ws.append(row)
+            if p['best_wh'] in best_col:
+                ws.cell(row=ws.max_row, column=best_col[p['best_wh']]).fill = BEST
+        # OVERALL footer (SKU-netted whole-batch fill per WH)
+        ov_by = {o['wh_short']: o for o in sc.get('overall', [])}
+        foot = (['OVERALL', '', sc.get('total_qty', 0), '']
+                + [(ov_by.get(w) or {}).get('fill_pct', 0) for w in whs]
+                + [sc.get('best_wh', ''), ''])
+        ws.append(foot)
+        for c in ws[ws.max_row]:
+            c.font = boldc
+        if sc.get('best_wh') in best_col:
+            ws.cell(row=ws.max_row, column=best_col[sc['best_wh']]).fill = BEST
+        _finish(ws, len(heads))
+
+        # 7c) SKU by Warehouse — fillable + available per WH (numeric, sortable)
+        ws = wb.create_sheet('SKU by Warehouse')
+        heads = (['Item No', 'Description', 'Ordered', 'POs']
+                 + [h for w in whs for h in (f'{w} Fillable', f'{w} Avail')]
+                 + ['Best WH'])
+        _sheet(ws, heads, [12, 40, 9, 6] + [11] * (2 * len(whs)) + [10])
+        for k in sc.get('sku_wise', []):
+            row = [k['item_no'], k['description'], k['ordered'], k['pos']]
+            for w in whs:
+                d = k['by_wh'].get(w) or {}
+                row += [d.get('fillable', 0), d.get('available', 0)]
+            row.append(k['best_wh'])
+            ws.append(row)
+        _finish(ws, len(heads))
+
+    # 8) Not Found (only if any)
     nf = data.get('not_found', [])
     if nf:
         ws = wb.create_sheet('Not Found')
