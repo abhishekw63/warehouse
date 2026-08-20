@@ -152,14 +152,15 @@
     <p class="aff-hint"><b style="color:#0a7d33;">✓ {{ n_clean_po }} CLEAN</b> · <b style="color:#b91c1c;">⚑ {{ n_affected_po }} AFFECTED</b>
       — CLEAN POs go 100% through as-is; AFFECTED had lines excluded or needing a decision.</p>
     <table class="grid">
-      <thead><tr><th>PO</th><th>Location</th><th>Type</th><th class="r">Items</th><th class="r">Qty</th><th class="r">Value</th><th>Status</th></tr></thead>
+      <thead><tr><th>PO</th><th>Location</th><th>WH</th><th>Type</th><th class="r">Items</th><th class="r">Qty</th><th class="r">Value</th><th>Status</th></tr></thead>
       <tbody>
         {% for h in r.headers %}
         <tr><td class="mono">{{ h.po }}</td><td class="loc" title="{{ h.location }}">{{ h.location|default:'—' }}</td>
+          <td><span class="wh-b" title="Ships from warehouse {{ h.wh }}">{{ h.wh|default:'—' }}</span></td>
           <td><span class="pill {{ h.order_type|lower }}">{{ h.order_type }}</span></td>
           <td class="r">{{ h.items }}</td><td class="r">{{ h.qty }}</td><td class="r">{{ h.order_value|inr_short }}</td>
           <td>{% if h.clean %}<span class="po-clean">✓ CLEAN</span>{% else %}<span class="po-aff">⚑ AFFECTED</span>{% endif %}</td></tr>
-        {% empty %}<tr><td colspan="7" class="muted">No orders.</td></tr>{% endfor %}
+        {% empty %}<tr><td colspan="8" class="muted">No orders.</td></tr>{% endfor %}
       </tbody>
     </table>
   </div>
@@ -301,6 +302,9 @@
 <style>
   .po-clean{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10.5px;font-weight:800;background:#e7f6ec;color:#0a7d33;white-space:nowrap;}
   .po-aff{display:inline-block;padding:2px 10px;border-radius:20px;font-size:10.5px;font-weight:800;background:#fde7e7;color:#b91c1c;white-space:nowrap;}
+  /* warehouse badge (Orders tab) — which WH the PO ships from (AHD/BLR/North) */
+  .wh-b{display:inline-block;padding:2px 9px;border-radius:6px;font-size:10px;font-weight:800;letter-spacing:.03em;
+    white-space:nowrap;background:color-mix(in srgb,var(--accent,#2f6feb) 13%,transparent);color:var(--accent,#2f6feb);}
   .aff-hint{font-size:12px;color:var(--muted,#64748b);margin:0 0 10px;}
   .unmapped-banner{margin:0 0 14px;padding:12px 16px;border-radius:12px;background:#fdecec;
     border:1px solid #f5b4ad;border-left:4px solid var(--red);color:#7a1a12;font-size:13px;line-height:1.55;}

@@ -281,6 +281,20 @@ def _mark_clean(headers, lines):
     return n_clean, len(headers or []) - n_clean
 
 
+def _tag_warehouse(payload, meta):
+    """Tag each header with the fulfilment warehouse SHORT (AHD / BLR / North) it
+    maps to — the SAME resolution the tracker + availability use — so the Orders
+    tab can show a 'WH' column (parity with Online B2B). Uses the header's own
+    warehouse if present, else the run-level one; blank resolves to the default."""
+    from . import inventory_store as inv
+    summ = payload.get('summary') or {}
+    run_wh = summ.get('warehouse') or meta.get('warehouse') or ''
+    mp = summ.get('marketplace') or meta.get('marketplace') or ''
+    for h in payload.get('headers') or []:
+        raw = h.get('warehouse') or run_wh
+        h['wh'] = inv.wh_short(inv.resolve_order_wh(raw, mp, mp))
+
+
 def _mapping_report(headers):
     """Per-PO ship-to resolution for a Mapping tab (parity with Online B2B):
     MAPPED (ship-to resolved) vs UNMAPPED (blank ship-to → the SO can't reach
@@ -391,6 +405,7 @@ def review_context(spec: FlowSpec, token: str, meta: dict) -> dict:
     # a per-SKU rollup + per-PO CLEAN/AFFECTED status + ship-to mapping report.
     payload['sku_rows'] = _sku_rows(payload.get('lines'))
     n_clean_po, n_affected_po = _mark_clean(payload.get('headers'), payload.get('lines'))
+    _tag_warehouse(payload, meta)          # WH each PO maps to → Orders-tab column
     mapping_report, n_unmapped, has_mapping = _mapping_report(payload.get('headers'))
     payload['mapping_report'] = mapping_report
     # Qty-weighted KPIs (parity with the Online B2B review): total qty on
