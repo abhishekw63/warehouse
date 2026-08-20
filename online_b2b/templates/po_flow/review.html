@@ -353,6 +353,26 @@
   var csrfEl = document.querySelector('#confirm-form [name=csrfmiddlewaretoken]');
   var csrf = csrfEl ? csrfEl.value : '';
   var decUrl = "{% url u_decision token %}";
+  // Completed SO Workbook URL — same route serves review vs completed by lock
+  // state, so after Confirm it serves the recorded (completed) workbook.
+  var dlUrl = "{% if has_download or caps.download %}{% url u_download token %}{% else %}{% endif %}";
+
+  // Auto-download the Completed workbook after a successful Confirm & Record —
+  // EXACTLY like Online B2B (native <a download>, so it keeps running even as the
+  // page reloads to the locked review). Zero clicks.
+  function autoDownload(url) {
+    if (!url) return;
+    try {
+      var a = document.createElement('a');
+      a.href = url; a.setAttribute('download', ''); a.style.display = 'none';
+      document.body.appendChild(a); a.click();
+      setTimeout(function () { a.remove(); }, 1500);
+      if (window.B2B && B2B.toast) {
+        B2B.toast('SO Workbook is downloading in the background — check your browser Downloads. You can keep working.',
+                  { type: 'success', title: 'Completed & recorded', timeout: 6000 });
+      }
+    } catch (e) {}
+  }
   document.querySelectorAll('.act-sel').forEach(function (sel) {
     sel.addEventListener('change', function () {
       var tr = sel.closest('tr');
@@ -464,7 +484,10 @@
         .then(function (j) {
           if (!j.ok) { failProgress(j.error || 'Nothing recorded.'); return; }
           finishProgress();
-          setTimeout(function () { window.location = j.review_url || window.location.href; }, 650);
+          autoDownload(j.download_url || dlUrl);   // auto-download the Completed workbook (like Online B2B)
+          // Slightly longer wait so the download kick-off lands before the reload
+          // (a native download keeps running across the navigation anyway).
+          setTimeout(function () { window.location = j.review_url || window.location.href; }, 900);
         }).catch(function () { failProgress('Network error — nothing recorded.'); });
     });
   }
