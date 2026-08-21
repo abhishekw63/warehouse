@@ -71,6 +71,19 @@ var CFG = JSON.parse(document.getElementById("review-cfg").textContent);
       });
   });
 
+  // ONE generic, throttled error for a failed save — so a burst never spams toasts
+  // and the operator always learns a decision didn't stick (never a silent drop).
+  var _lastSaveErrT = 0;
+  function flashSaveError(reason) {
+    var now = Date.now();
+    if (now - _lastSaveErrT < 1500) return;      // collapse a burst into one toast
+    _lastSaveErrT = now;
+    if (window.B2B && B2B.toast) {
+      B2B.toast("A decision didn't save (" + (reason || 'server error') +
+        "). It's not recorded — change it again to retry, or reload the page if it keeps failing.",
+        { type: 'error', title: 'Save failed' });
+    }
+  }
   function saveDecision(tr) {
     var keyEl = tr.querySelector('input[name=aff_key]');
     var sel = tr.querySelector('.act-sel');
@@ -86,11 +99,26 @@ var CFG = JSON.parse(document.getElementById("review-cfg").textContent);
       headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest',
                  'Content-Type': 'application/x-www-form-urlencoded' },
       body: body.toString() })
-      .then(function (r) { return r.json(); })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function (j) {
-        if (j.ok && tick) { tick.hidden = false; tick.classList.add('flash');
+        if (!j.ok) { flashSaveError(j.error); return; }
+        if (tick) { tick.hidden = false; tick.classList.add('flash');
           setTimeout(function () { tick.classList.remove('flash'); }, 700); }
-      }).catch(function () {});
+      }).catch(function (e) { flashSaveError((e && e.message) || 'network'); });
+  }
+  // Batch save — ONE POST for a whole bulk apply (instead of one per row, which
+  // flooded the server and raced the meta.json write for large runs).
+  function saveDecisionsBatch(items) {
+    if (!items.length) return;
+    var body = new URLSearchParams();
+    body.set('items', JSON.stringify(items));
+    return fetch(saveUrl, { method: 'POST', credentials: 'same-origin',
+      headers: { 'X-CSRFToken': csrf, 'X-Requested-With': 'XMLHttpRequest',
+                 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString() })
+      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function (j) { if (j && !j.ok) flashSaveError(j.error); return j; })
+      .catch(function (e) { flashSaveError((e && e.message) || 'network'); });
   }
   document.querySelectorAll('#confirm-form tbody tr').forEach(function (tr) {
     if (!tr.querySelector('input[name=aff_key]')) return;
@@ -134,7 +162,7 @@ var CFG = JSON.parse(document.getElementById("review-cfg").textContent);
     var act = document.getElementById('bulkAction').value;
     var rows = checkedRows();
     if (!act || !rows.length) { return; }
-    var applied = 0, skipped = 0;
+    var applied = 0, skipped = 0, items = [];
     rows.forEach(function (tr) {
       var sel = tr.querySelector('[name=aff_action]');
       if (!sel || sel.disabled) return;
@@ -151,9 +179,16 @@ var CFG = JSON.parse(document.getElementById("review-cfg").textContent);
       tr.classList.remove('dec-included', 'dec-excluded');   // row-wide decision colour
       if (act === 'INCLUDE' || act === 'OVERRIDE') tr.classList.add('dec-included');
       else if (act === 'EXCLUDE') tr.classList.add('dec-excluded');
-      saveDecision(tr);
+      // collect for ONE batched save (not a POST per row)
+      var keyEl = tr.querySelector('input[name=aff_key]'), rem = tr.querySelector('.act-rem');
+      if (keyEl) {
+        items.push({ key: keyEl.value, action: sel.value || '',
+          override_cp: rowOcp ? rowOcp.value : '', remark: rem ? rem.value : '' });
+        var tick = tr.querySelector('.dec-saved'); if (tick) tick.hidden = false;
+      }
       applied++;
     });
+    saveDecisionsBatch(items);   // one request; errors surface via flashSaveError
     var msg = document.getElementById('affBulkMsg');
     if (msg) { msg.textContent = '✓ ' + applied + ' set' + (skipped ? ' · ' + skipped + ' skipped (n/a)' : ''); msg.hidden = false;
       setTimeout(function () { msg.hidden = true; }, 2200); }

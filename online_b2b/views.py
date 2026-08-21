@@ -1394,12 +1394,25 @@ def _save_meta(d: Path, meta: dict) -> None:
     reader never sees a partially-written file — fixes the save-decision race /
     intermittent 404. Callers that read-modify-write should hold ``_meta_lock``."""
     import tempfile
+    import time as _t
     p = d / 'meta.json'
     fd, tmp = tempfile.mkstemp(dir=str(d), suffix='.tmp')
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as f:
             json.dump(meta, f)
-        os.replace(tmp, p)   # atomic on the same filesystem (incl. Windows)
+        # os.replace is atomic, but on Windows it transiently fails with
+        # PermissionError (WinError 5) when antivirus / the search indexer briefly
+        # holds the temp or destination file — likely under a burst of saves. Retry
+        # a few times with a tiny backoff before giving up (the lock still serialises
+        # writers, so this only rides out the OS-level flake).
+        for _attempt in range(8):
+            try:
+                os.replace(tmp, p)
+                break
+            except PermissionError:
+                if _attempt == 7:
+                    raise
+                _t.sleep(0.03 * (_attempt + 1))
     except Exception:
         try:
             os.unlink(tmp)
@@ -1969,8 +1982,39 @@ def save_decision(request, token):
     re-validate and the final lock just commits what's saved. Returns JSON.
 
     The whole read-modify-write is serialised per token (``_meta_lock``) +
-    written atomically, so the several near-simultaneous POSTs from
-    Apply-to-selected neither clobber each other nor 404 on a half-written file."""
+    written atomically. A BULK apply sends ALL selected decisions in ONE request
+    (``items`` = JSON list) so it's a single lock + a single meta write — instead
+    of one POST (and one meta rewrite) per line, which flooded the server and
+    raced the atomic replace on Windows for large runs."""
+    items_raw = (request.POST.get('items') or '').strip()
+    if items_raw:
+        try:
+            items = json.loads(items_raw)
+        except (ValueError, TypeError):
+            return JsonResponse({'ok': False, 'error': 'bad items'})
+        with _meta_lock(token):
+            meta, d = _load_meta(token)
+            if not meta:
+                return JsonResponse({'ok': False, 'error': 'expired'}, status=404)
+            if meta.get('locked'):
+                return JsonResponse({'ok': False, 'error': 'locked'})
+            decisions = dict(meta.get('decisions') or {})
+            n = 0
+            for it in (items or []):
+                k = str((it or {}).get('key') or '').strip()
+                if not k:
+                    continue
+                a = str(it.get('action') or '').strip()
+                o = str(it.get('override_cp') or '').strip()
+                r = str(it.get('remark') or '').strip()
+                if a or r or o:
+                    decisions[k] = {'action': a, 'remark': r, 'override_cp': o}
+                else:
+                    decisions.pop(k, None)
+                n += 1
+            meta['decisions'] = decisions
+            _save_meta(d, meta)          # ONE write for the whole batch
+        return JsonResponse({'ok': True, 'saved': len(decisions), 'applied': n})
     key = (request.POST.get('key') or '').strip()
     if not key:
         return JsonResponse({'ok': False, 'error': 'no key'})
