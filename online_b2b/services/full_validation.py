@@ -66,15 +66,23 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
     lq, lamt = col(lf, 'Quantity'), col(lf, 'Line Amount Excl. VAT')
     lgtin, lno = col(lf, 'GTIN'), col(lf, 'No.')
     ldesc = col(lf, 'Description')
+    hno = col(h, 'No.')          # D365 SO number — fallback PO key for MT (blank-ext) orders
 
-    h = h[h[ext].notna() & (h[ext].astype(str).str.strip() != '')].copy()
-    # PO numbers are case-invariant identifiers, but D365 exports them UPPERCASE
-    # while some channels record them lowercase (e.g. Firstcry 'pin…' vs D365
-    # 'PIN…'). Fold BOTH sides to upper so the match is case-insensitive — else a
-    # recorded PO falsely reads EXTERNAL. Applied uniformly (D365 + our SQL + line
-    # keys), so same-case pairs are unaffected; only case-variant pairs now match.
-    h[ext] = h[ext].astype(str).str.strip().str.upper()
-    d365h = h.groupby(ext).agg(
+    # PO key = External Document No., FALLING BACK to the D365 'No.' (SO number) when
+    # the external doc is blank. Online SOs carry the marketplace PO as their external
+    # doc (== their 'No.'), but MT / GT SOs have a BLANK external doc — their identity
+    # is the SO 'No.' (SO/BN/…, SO/GTM/…), which equals the Lines' 'Document No.' AND
+    # our order_headers.po. Keying on external-doc ONLY silently dropped every MT
+    # order (blank ext → filtered out → "showing Online B2B only"). This is strictly
+    # additive: non-blank ext is unchanged; only blank-ext rows now key on 'No.'.
+    # PO numbers are case-invariant identifiers, but D365 exports them UPPERCASE while
+    # some channels record them lowercase (e.g. Firstcry 'pin…' vs D365 'PIN…'). Fold
+    # BOTH sides to upper so the match is case-insensitive.
+    _extv = h[ext].fillna('').astype(str).str.strip()
+    _nov = (h[hno].fillna('').astype(str).str.strip()) if hno else _extv
+    h['_pokey'] = _extv.where(_extv != '', _nov).str.upper()
+    h = h[h['_pokey'] != ''].copy()
+    d365h = h.groupby('_pokey').agg(
         qty=(hq, lambda s: sum(_num(x) for x in s)),
         val=(hv, lambda s: sum(_num(x) for x in s)),
         pin=(hpin, 'first'), st=(hst, 'first')).to_dict('index')
@@ -107,7 +115,7 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
 
     pos = tuple(d365h.keys())
     if not pos:
-        return {'ok': False, 'error': "No POs (External Document No.) found in the headers file."}
+        return {'ok': False, 'error': "No POs (External Document No. / SO No.) found in the headers file."}
 
     from .order_db import _conn
     with _conn() as (cur, d):
