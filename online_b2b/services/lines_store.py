@@ -453,19 +453,24 @@ def _insert_run_and_headers(cur, ph, run_ts, source, meta, rows, recorded_by=Non
              'marketplace_label, po, location, warehouse, po_date, exp_date, '
              'order_type, items, qty, order_value, output_file')
     marks = ', '.join([ph] * 17)
+    # BATCHED (executemany) — the old per-PO loop paid one network round-trip PER
+    # HEADER, so a 129-PO run cost ~129 hops over remote TiDB. Build the payload
+    # (with the per-row date-guard) first, then insert in a single round-trip.
+    payload = []
     for o in rows:
         # date-guard: catch DD/MM-swapped source dates before they land
         pod, exd = _to_date(o['po_date']), _to_date(o['exp_date'])
         pod, exd, _note = sane_po_exp(o['marketplace_label'], pod, exd)
         if _note:
             _dlog.warning("date-guard: PO %s %s", o['po'], _note)
-        cur.execute(
-            f"INSERT INTO order_headers ({hcols}) VALUES ({marks})",
+        payload.append(
             (run_id, run_ts, run_ts, 'MANUAL', o.get('segment', ORDER_SEGMENT),
              o['marketplace'], o['marketplace_label'], o['po'], o['location'],
              o['warehouse'], pod, exd,
              o['order_type'], o['items'], o['qty'], o['order_value'],
              o['output_file']))
+    if payload:
+        cur.executemany(f"INSERT INTO order_headers ({hcols}) VALUES ({marks})", payload)
     return run_id
 
 
