@@ -112,29 +112,31 @@
     localStorage.setItem(KEY, c ? '1' : '0');
   });
 
-  // Collapsible sidebar groups — click to expand/collapse (remembers state;
-  // auto-open when a child page is active, applied server-side via .open). One
-  // helper wires every group (Admin, Record Verify, …).
-  function wireGroup(btnId, subId, key) {
-    var g = document.getElementById(btnId), sub = document.getElementById(subId);
-    if (!g || !sub) return;
-    var open = sub.classList.contains('open') || localStorage.getItem(key) === '1';
+  // Collapsible sidebar groups (Record Verify, Admin, …). Initial open state comes
+  // from the server (.open on the active section) or the remembered per-group state.
+  // The toggle is DELEGATED on the document so it works for EVERY group uniformly,
+  // can never lose its listener, and doesn't depend on when the (persistent) sidebar
+  // was rendered — the per-element wiring was silently failing for one group.
+  function grpKey(g) { return 'b2b_grp_' + (g.id || ''); }
+  document.querySelectorAll('.b2b-side .side-group').forEach(function (g) {
+    var sub = document.getElementById(g.getAttribute('aria-controls'));
+    if (!sub) return;
+    var open = sub.classList.contains('open') || localStorage.getItem(grpKey(g)) === '1';
     sub.classList.toggle('open', open);
     g.setAttribute('aria-expanded', open ? 'true' : 'false');
-    g.addEventListener('click', function () {
-      var o = sub.classList.toggle('open');
-      g.setAttribute('aria-expanded', o ? 'true' : 'false');
-      localStorage.setItem(key, o ? '1' : '0');
-      // When opening a group low in the (scrollable) nav, bring its just-revealed
-      // sub-links into view so they never sit below the fold ("clicking but not
-      // showing the links"). Only on open; never yanks the view on collapse.
-      if (o && sub.scrollIntoView) {
-        try { sub.scrollIntoView({ block: 'nearest' }); } catch (e) {}
-      }
-    });
-  }
-  wireGroup('adminGroup', 'adminSub', 'b2b_admin_open');
-  wireGroup('rvGroup', 'rvSub', 'b2b_rv_open');
+  });
+  document.addEventListener('click', function (e) {
+    var g = e.target.closest && e.target.closest('.side-group');
+    if (!g || !g.closest('.b2b-side')) return;
+    e.preventDefault();
+    var sub = document.getElementById(g.getAttribute('aria-controls'));
+    if (!sub) return;
+    var o = sub.classList.toggle('open');
+    g.setAttribute('aria-expanded', o ? 'true' : 'false');
+    try { localStorage.setItem(grpKey(g), o ? '1' : '0'); } catch (_e) {}
+    // Bring the just-revealed sub-links into view so they never sit below the fold.
+    if (o && sub.scrollIntoView) { try { sub.scrollIntoView({ block: 'nearest' }); } catch (_e) {} }
+  });
 
   // Enable sidebar transitions only AFTER the first paint, so the saved collapse /
   // sub-nav state (applied synchronously above) never animates in on navigation —
