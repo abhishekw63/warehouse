@@ -31,6 +31,13 @@ def _vmatch(a, b) -> bool:
     return b == 0 or abs(a - b) <= TOL_ABS or abs(a - b) / max(abs(b), 1) <= TOL_PCT
 
 
+def _gst_rate(code) -> float:
+    """GST fraction parsed from a D365 gst code like 'G-18-S' -> 0.18 (0.0 if none)."""
+    import re
+    m = re.search(r'(\d+(?:\.\d+)?)', str(code or ''))
+    return float(m.group(1)) / 100 if m else 0.0
+
+
 def _read(path):
     import pandas as pd
     df = pd.read_excel(path, dtype=str)
@@ -126,12 +133,21 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
                     f"FROM order_headers WHERE UPPER(po) IN ({ph}) GROUP BY UPPER(po), marketplace_label", pos)
         ourh = {str(r[0]): {'mp': r[1], 'qty': float(r[2] or 0), 'val': float(r[3] or 0),
                             'loc': r[4]} for r in cur.fetchall()}
-        cur.execute(f"SELECT UPPER(po),item_no,ean,description,qty,our_cp,status,action,exception_label "
+        cur.execute(f"SELECT UPPER(po),item_no,ean,description,qty,our_cp,status,action,exception_label,"
+                    f"override_cp,gst_code "
                     f"FROM order_lines_full WHERE UPPER(po) IN ({ph})", pos)
         ourL = {}
-        for po, it, ean, desc, qty, cp, st, act, exc in cur.fetchall():
+        for po, it, ean, desc, qty, cp, st, act, exc, ovcp, gstc in cur.fetchall():
+            cp = float(cp or 0)
+            # Effective price = the price we ACTUALLY pushed to D365. When a line was
+            # deliberately re-priced at review (override_cp set, e.g. a vendor/nominal
+            # CP), D365 holds THAT price — so value must reconcile against it, not our
+            # internal book CP. EXCLUDE lines never reach D365, so their book CP stands.
+            eff = (float(ovcp) if (ovcp is not None and str(act or '').upper() != 'EXCLUDE')
+                   else cp)
             ourL[(str(po), str(it))] = {'ean': str(ean or ''), 'desc': str(desc or '')[:60],
-                                        'qty': int(qty or 0), 'cp': float(cp or 0), 'status': st,
+                                        'qty': int(qty or 0), 'cp': cp, 'eff_cp': eff,
+                                        'gst': _gst_rate(gstc), 'status': st,
                                         'action': (act or ''), 'exc': (exc or '')}
 
     hdr_rows, line_rows = [], []
@@ -143,12 +159,19 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
                        if p == po and str(v['action']).upper() == 'EXCLUDE')
         excl_val = sum(v['cp'] * v['qty'] for (p, it), v in ourL.items()
                        if p == po and str(v['action']).upper() == 'EXCLUDE')
+        # Override adjustment (incl-GST): the stored header order_value is book-CP based,
+        # but for re-priced lines D365 holds the pushed (override) price. Subtract the
+        # book-vs-pushed gap so header VALUE OURS reflects what we actually sent to D365.
+        ov_adj = sum((v['cp'] - v['eff_cp']) * v['qty'] * (1 + v['gst'])
+                     for (p, it), v in ourL.items()
+                     if p == po and v['eff_cp'] != v['cp'])
+        our_val_eff = (o['val'] - ov_adj) if o else None
         R['pos'] += 1; R['qd'] += D['qty']; R['vd'] += D['val']
         qok = bool(o) and abs(D['qty'] - o['qty']) < 0.5
         q_expl = bool(o) and abs((o['qty'] - excl_qty) - D['qty']) < 0.5
-        vok = bool(o) and _vmatch(D['val'], o['val'])
+        vok = bool(o) and _vmatch(D['val'], our_val_eff)
         if o:
-            R['qo'] += o['qty']; R['vo'] += o['val']
+            R['qo'] += o['qty']; R['vo'] += our_val_eff
         R['excl'] += excl_qty
         if qok or q_expl:
             R['qok'] += 1
@@ -161,8 +184,8 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
                          'excl_val': round(excl_val, 2),
                          'final': int(o['qty'] - excl_qty) if o else None,
                          'qty_ok': bool(qok or q_expl),
-                         'our_val': round(o['val'], 2) if o else None, 'd365_val': round(D['val'], 2),
-                         'val_diff': round(D['val'] - (o['val'] if o else 0), 2), 'val_ok': bool(vok),
+                         'our_val': round(our_val_eff, 2) if o else None, 'd365_val': round(D['val'], 2),
+                         'val_diff': round(D['val'] - (our_val_eff if o else 0), 2), 'val_ok': bool(vok),
                          'ship_our': (o['loc'] if o else ''), 'ship_d365': D['st'], 'pin_d365': D['pin'],
                          'verdict': verd})
         our_keys = {(p, it) for (p, it) in ourL if p == po}
@@ -171,7 +194,7 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
             it = k[1]; ov = ourL.get(k); dv = d365L.get(k)
             oq = ov['qty'] if ov else None
             dq = int(dv['qty']) if dv else None
-            oval = round(ov['cp'] * ov['qty'], 2) if ov else None
+            oval = round(ov['eff_cp'] * ov['qty'], 2) if ov else None
             dval = round(dv['amt'], 2) if dv else None
             ean = (ov or dv or {}).get('ean', ''); desc = (ov or dv or {}).get('desc', '')
             foc = int(dv['foc']) if dv else 0
