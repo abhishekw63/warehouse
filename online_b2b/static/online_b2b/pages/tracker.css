@@ -33,6 +33,10 @@
   .trk-filter{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 14px;padding:12px 14px;border:1px solid var(--border);border-radius:14px;background:var(--surface-2);}
   .trk-filter select,.trk-filter input[type=search]{padding:8px 11px;border:1px solid var(--border);border-radius:9px;font-size:12.5px;background:#fff;color:var(--text);font-family:inherit;}
   .trk-filter input[name=q]{min-width:230px;} #trkQuick{margin-left:auto;min-width:210px;border-color:color-mix(in srgb,var(--accent) 40%,var(--border));}
+  /* Uploaded-date range filter */
+  .trk-uplbl{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--muted);}
+  .trk-filter .trk-date{padding:7px 9px;border:1px solid var(--border);border-radius:9px;font-size:12.5px;background:#fff;color:var(--text);font-family:inherit;}
+  .trk-updash{color:var(--muted);}
   /* AJAX body + loader */
   .trk-bodywrap{position:relative;min-height:120px;}
   #trk-body{transition:opacity .18s ease;} #trk-body.fade{opacity:.35;}

@@ -632,12 +632,15 @@ class TrackerView(LoginRequiredMixin, TemplateView):
             'marketplace': (request.GET.get('marketplace') or '').strip(),
             'warehouse': (request.GET.get('warehouse') or '').strip(),
             'q': (request.GET.get('q') or '').strip(),
+            'uploaded_from': (request.GET.get('uploaded_from') or '').strip(),
+            'uploaded_to': (request.GET.get('uploaded_to') or '').strip(),
         }
 
     def _ctx(self, request):
         f = self._filters(request)
         return {'t': order_db.consolidated_tracker(
-            f['segment'], f['marketplace'], f['warehouse'], f['q']), 'f': f}
+            f['segment'], f['marketplace'], f['warehouse'], f['q'],
+            uploaded_from=f['uploaded_from'], uploaded_to=f['uploaded_to']), 'f': f}
 
     def get(self, request, *args, **kwargs):
         if request.GET.get('partial'):        # AJAX: KPIs + table only, no reload
@@ -660,7 +663,10 @@ class TrackerExportView(LoginRequiredMixin, View):
         data = order_db.consolidated_tracker(
             seg, (request.GET.get('marketplace') or '').strip(),
             (request.GET.get('warehouse') or '').strip(),
-            (request.GET.get('q') or '').strip(), limit=100000, display_limit=100000)
+            (request.GET.get('q') or '').strip(),
+            uploaded_from=(request.GET.get('uploaded_from') or '').strip(),
+            uploaded_to=(request.GET.get('uploaded_to') or '').strip(),
+            limit=100000, display_limit=100000)
         buf = io.StringIO()
         w = csv.writer(buf)
         w.writerow(['Dept', 'WH', 'Marketplace', 'PO', 'External Doc No', 'Location',

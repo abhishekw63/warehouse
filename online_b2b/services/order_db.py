@@ -871,6 +871,7 @@ def value_concentration(date_from='', date_to='', marketplace='', segment='') ->
 
 
 def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
+                         uploaded_from='', uploaded_to='',
                          limit=8000, display_limit=500) -> dict:
     """**Consolidated order tracker** — one row per order (latest run per PO)
     across BOTH segments (Online B2B + Offline), the single source of truth.
@@ -913,6 +914,12 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
                 base_w.append(f"(h.po LIKE {ph} OR h.location LIKE {ph} OR "
                               f"h.external_doc LIKE {ph} OR h.marketplace_label LIKE {ph})")
                 base_a += [f"%{q}%"] * 4
+            # Uploaded-date window (on the order's run/upload timestamp). Applied to
+            # the shared base so the facility chips reflect the same window too.
+            if uploaded_from:
+                base_w.append(f"DATE(h.run_ts) >= {ph}"); base_a.append(uploaded_from)
+            if uploaded_to:
+                base_w.append(f"DATE(h.run_ts) <= {ph}"); base_a.append(uploaded_to)
             where, args = list(base_w), list(base_a)
             if warehouse:
                 # 'AHD' must match rows stored as either 'AHD' or 'PICK', etc.

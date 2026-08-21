@@ -7,9 +7,10 @@
   var exportBtn = document.getElementById('trkExport');
   var base = location.pathname;
 
+  var FIELDS = ['segment', 'marketplace', 'warehouse', 'q', 'uploaded_from', 'uploaded_to'];
   function params() {
     var p = new URLSearchParams();
-    ['segment', 'marketplace', 'warehouse', 'q'].forEach(function (n) {
+    FIELDS.forEach(function (n) {
       var el = filter.querySelector('[name="' + n + '"]');
       if (el && el.value) p.set(n, el.value);
     });
@@ -32,14 +33,25 @@
   }
 
   function syncUI(p) {
-    var any = ['segment', 'marketplace', 'warehouse', 'q'].some(function (n) { return p.get(n); });
+    var any = FIELDS.some(function (n) { return p.get(n); });
     if (clearBtn) clearBtn.hidden = !any;
     if (exportBtn) exportBtn.href = base + 'export/?' + p.toString();
   }
 
-  // filter events (no reload)
+  // filter events (no reload — loadBody does an AJAX partial swap with a loader)
   filter.querySelectorAll('select').forEach(function (s) { s.addEventListener('change', loadBody); });
+  filter.querySelectorAll('input[type=date]').forEach(function (d) { d.addEventListener('change', loadBody); });
   filter.addEventListener('submit', function (e) { e.preventDefault(); loadBody(); });
+
+  // "Today" — one click scopes to orders uploaded today (local date), no reload.
+  var todayBtn = document.getElementById('trkToday');
+  if (todayBtn) todayBtn.addEventListener('click', function () {
+    var d = new Date();
+    var s = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+    var a = filter.querySelector('[name=uploaded_from]'), b = filter.querySelector('[name=uploaded_to]');
+    if (a) a.value = s; if (b) b.value = s;
+    loadBody();
+  });
 
   // Facility chips live INSIDE the re-rendered body → delegate on the persistent
   // container: a click sets the warehouse filter and reloads (one filter path).
@@ -55,6 +67,7 @@
   if (clearBtn) clearBtn.addEventListener('click', function (e) {
     e.preventDefault();
     filter.querySelectorAll('select').forEach(function (s) { s.value = ''; });
+    filter.querySelectorAll('input[type=date]').forEach(function (d) { d.value = ''; });
     if (qEl) qEl.value = '';
     loadBody();
   });

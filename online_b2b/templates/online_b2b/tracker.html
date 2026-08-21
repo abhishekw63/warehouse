@@ -63,8 +63,13 @@
       {% for w in t.warehouses %}<option value="{{ w }}" {% if w == f.warehouse %}selected{% endif %}>{{ w }}</option>{% endfor %}
     </select>
     <input type="search" name="q" value="{{ f.q }}" placeholder="Search PO · ext doc · location…">
+    <label class="trk-uplbl">Uploaded
+      <input type="date" name="uploaded_from" value="{{ f.uploaded_from }}" title="Uploaded from" class="trk-date">
+      <span class="trk-updash">–</span>
+      <input type="date" name="uploaded_to" value="{{ f.uploaded_to }}" title="Uploaded to" class="trk-date"></label>
+    <button type="button" class="trk-btn ghost sm" id="trkToday" title="Only orders uploaded today">Today</button>
     <button type="submit" class="trk-btn primary sm">Search</button>
-    <a class="trk-btn ghost sm" id="trkClear" href="{% url 'b2b_tracker' %}"{% if not f.seg_label and not f.marketplace and not f.warehouse and not f.q %} hidden{% endif %}>Clear</a>
+    <a class="trk-btn ghost sm" id="trkClear" href="{% url 'b2b_tracker' %}"{% if not f.seg_label and not f.marketplace and not f.warehouse and not f.q and not f.uploaded_from and not f.uploaded_to %} hidden{% endif %}>Clear</a>
     <input type="search" id="trkQuick" placeholder="⚡ filter loaded rows…" autocomplete="off">
   </form>
 
