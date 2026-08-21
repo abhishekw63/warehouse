@@ -327,12 +327,11 @@
         {% else %}
           <h2>Welcome back</h2>
           <p class="sub">Sign in to your RENÉE workspace.</p>
-          {% if form.username.errors or form.password.errors or form.non_field_errors %}
-            <div class="err">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg>
-              Invalid username or password. Please try again.
-            </div>
-          {% endif %}
+          {% comment %}Always rendered (hidden when clean) so the AJAX submit can show it inline without a full page reload.{% endcomment %}
+          <div class="err" id="lgErr"{% if not form.username.errors and not form.password.errors and not form.non_field_errors %} hidden{% endif %}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg>
+            <span id="lgErrMsg">Invalid username or password. Please try again.</span>
+          </div>
           <form action="{% url 'login' %}" method="post" novalidate id="lgForm">
             {% csrf_token %}
             <div class="field">
@@ -381,10 +380,38 @@
       if(e&&p)e.addEventListener('click',function(){var s=p.type==='password';p.type=s?'text':'password';
         e.title=s?'Hide password':'Show password';e.setAttribute('aria-label',e.title);e.style.color=s?'var(--accent)':'';});})();
 
-    // submit → loading state
-    (function(){var f=document.getElementById('lgForm'),b=document.getElementById('lgSubmit');
-      if(f&&b)f.addEventListener('submit',function(){if(f.checkValidity&&!f.checkValidity())return;
-        b.classList.add('loading');b.disabled=true;b.querySelector('.txt').textContent='Signing in…';});})();
+    // submit → AJAX sign-in: on a wrong password the error shows inline (no whole-page
+    // reload / splash re-run). On success we follow the redirect into the app; on any
+    // network hiccup we fall back to a normal form POST so the user is never stuck.
+    (function(){
+      var f=document.getElementById('lgForm'),b=document.getElementById('lgSubmit'),
+          err=document.getElementById('lgErr');
+      if(!f||!b) return;
+      function setLoading(on){b.classList.toggle('loading',on);b.disabled=on;
+        b.querySelector('.txt').textContent=on?'Signing in…':'Sign in';}
+      function showErr(text){
+        if(!err) return;
+        if(text){var m=document.getElementById('lgErrMsg'); if(m)m.textContent=text;}
+        err.hidden=false;
+        err.style.animation='none'; void err.offsetWidth; err.style.animation='';  // re-trigger shake
+        var p=document.getElementById('password'); if(p){p.value='';p.focus();}
+      }
+      f.addEventListener('submit',function(ev){
+        if(f.checkValidity&&!f.checkValidity())return;    // let native validation handle empties
+        if(!window.fetch||!window.FormData){setLoading(true);return;}  // ancient browser → normal POST
+        ev.preventDefault();
+        if(err) err.hidden=true;
+        setLoading(true);
+        fetch(f.action,{method:'POST',body:new FormData(f),credentials:'same-origin',
+                        headers:{'X-Requested-With':'XMLHttpRequest'}})
+          .then(function(r){ if(r.redirected){window.location.href=r.url;return null;} return r.text(); })
+          .then(function(html){
+            if(html===null) return;                        // success → already navigating
+            setLoading(false); showErr();                  // re-rendered login page = bad credentials
+          })
+          .catch(function(){ f.submit(); });               // network error → plain submit fallback
+      });
+    })();
 
     // count-up on live stat chips — triggered once the page reveals (post-splash)
     window.__startCount=function(){
