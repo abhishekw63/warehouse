@@ -86,9 +86,26 @@
     });
   }
 
-  // Script is at end of <body> → DOM ready + head CSS applied → render now.
+  // ApexCharts loads as a separate <script>. Under the persistent shell-nav the
+  // library is (re)injected and loads ASYNC, so this page script can run before it
+  // finishes — checking window.ApexCharts once then would wrongly report "failed to
+  // load". Wait for the library to appear (up to ~6s) before building; only after
+  // the timeout does build() surface the real failure note.
   var built = false;
-  function start() { if (built) return; built = true; try { build(); } catch (e) { console.error(e); } }
+  function start() {
+    if (built) return;
+    var waited = 0;
+    (function waitLib() {
+      if (built) return;
+      if (window.ApexCharts || waited >= 6000) {
+        built = true;
+        try { build(); } catch (e) { console.error(e); }
+        return;
+      }
+      waited += 100;
+      setTimeout(waitLib, 100);
+    })();
+  }
   if (document.readyState !== 'loading') start();
   else document.addEventListener('DOMContentLoaded', start);
 })();

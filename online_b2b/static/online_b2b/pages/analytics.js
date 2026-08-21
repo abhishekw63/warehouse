@@ -450,6 +450,20 @@
     if (['sku', 'trends', 'fulfil', 'exc', 'geo', 'otif', 'dos'].indexOf(t) >= 0) showTab(t);  // deep-link
     else syncURL();
   }
-  if (document.readyState !== 'loading') boot();
-  else document.addEventListener('DOMContentLoaded', boot);
+  // ApexCharts is a separate <script> that loads ASYNC under the persistent
+  // shell-nav — wait for it (up to ~6s) before booting so charts don't render into
+  // a "library unavailable" note on a timing race. Non-chart wiring can wait too;
+  // 6s is a safety ceiling, the lib is normally ready in well under a second.
+  var booted = false;
+  function bootWhenReady() {
+    if (booted) return;
+    var waited = 0;
+    (function wait() {
+      if (booted) return;
+      if (window.ApexCharts || waited >= 6000) { booted = true; boot(); return; }
+      waited += 100; setTimeout(wait, 100);
+    })();
+  }
+  if (document.readyState !== 'loading') bootWhenReady();
+  else document.addEventListener('DOMContentLoaded', bootWhenReady);
 })();
