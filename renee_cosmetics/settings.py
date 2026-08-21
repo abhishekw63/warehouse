@@ -285,8 +285,17 @@ STORAGES = {
 
 # Media — uploaded PO files + generated workbooks (Phase 0). Disk cache only;
 # the system of record for orders is MySQL `renee_orders` (the engine's store).
+# MEDIA_ROOT is env-configurable so a HOST can point it at durable storage: on
+# Render the local disk is EPHEMERAL (wiped on every deploy/restart), so an
+# in-flight upload/review + generated workbooks would be lost. Set MEDIA_ROOT to a
+# mounted persistent disk (e.g. /data/media — needs a paid Render plan) to keep
+# them. Defaults to the repo's ./media for local/LAN hosting (durable there).
 MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
+MEDIA_ROOT = Path(os.environ.get('MEDIA_ROOT') or (BASE_DIR / 'media'))
+try:
+    MEDIA_ROOT.mkdir(parents=True, exist_ok=True)     # ensure the root exists at boot
+except OSError:
+    pass
 
 # A large PO's review form carries 4 decision fields per FLAGGED line
 # (aff_key / aff_action / aff_override_cp / aff_remark). A few hundred affected

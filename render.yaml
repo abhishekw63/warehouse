@@ -7,8 +7,25 @@ services:
     runtime: python
     plan: free
     buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput"
-    startCommand: "gunicorn renee_cosmetics.wsgi --bind 0.0.0.0:$PORT --workers 2 --timeout 120"
+    # --threads gives each worker I/O concurrency (the app waits on remote TiDB a
+    # lot); --timeout 300 so a large Lock&Record (workbook build for thousands of
+    # lines, ~85s+) is never killed mid-record by the old 120s cap.
+    startCommand: "gunicorn renee_cosmetics.wsgi --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 300"
+    # ── PERSISTENT MEDIA (uploads + generated workbooks survive deploys) ──────
+    # Render's disk is EPHEMERAL on the free plan — a redeploy/idle-spin-down drops
+    # in-flight uploads/reviews and generated workbooks. To keep them, upgrade the
+    # plan (disks need Starter+) and UNCOMMENT the block below + the MEDIA_ROOT
+    # env var further down. Then all media (b2b_uploads, workbooks, record-check,
+    # run sidecars) lands on the mounted disk instead of the ephemeral one.
+    # disk:
+    #   name: renee-media
+    #   mountPath: /data
+    #   sizeGB: 1
     envVars:
+      # Uncomment together with the `disk:` block above (needs a paid plan) to put
+      # uploads + generated workbooks on the persistent disk instead of ephemeral.
+      # - key: MEDIA_ROOT
+      #   value: "/data/media"
       - key: DJANGO_DEBUG
         value: "0"
       - key: DJANGO_SECRET_KEY
