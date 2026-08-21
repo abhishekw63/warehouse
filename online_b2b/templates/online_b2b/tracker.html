@@ -19,7 +19,7 @@
     </div>
     <div class="trk-hero-act">
       <button type="button" class="trk-btn primary" id="trkAddBtn">＋ Add PO manually</button>
-      <a class="trk-btn ghost" id="trkExport" href="{% url 'b2b_tracker_export' %}?segment={{ f.seg_label|urlencode }}&marketplace={{ f.marketplace|urlencode }}&warehouse={{ f.warehouse|urlencode }}&q={{ f.q|urlencode }}">⬇ Export</a>
+      <a class="trk-btn ghost" id="trkExport" href="{% url 'b2b_tracker_export' %}?segment={{ f.seg_label|urlencode }}&marketplace={{ f.marketplace|urlencode }}&warehouse={{ f.warehouse|urlencode }}&q={{ f.q|urlencode }}&uploaded_from={{ f.uploaded_from|urlencode }}&uploaded_to={{ f.uploaded_to|urlencode }}">⬇ Export</a>
     </div>
   </div>
 
