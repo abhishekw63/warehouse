@@ -148,6 +148,10 @@ class IssuesEmailReport(EmailReport):
         # only scopes the on-screen view); we then keep the DECIDED lines.
         fetch = {**self.filters, 'resolution': 'all'}
         data = order_db.issues(limit=0, **fetch)
+        # NEVER a false all-clear: if the issue-data read FAILED (DB error), building
+        # with zero rows would produce a "no issues today" mail that hides the
+        # failure. Record it so send()/preview refuse instead of reporting success.
+        self.fetch_error = None if data.get('ok') else (data.get('error') or 'issue data read failed')
         all_rows = data.get('rows', []) if data.get('ok') else []
         # DECIDED lines only = Excluded + Included(their/our CP). Undecided /
         # legacy KEEP flagged lines stay on the Issues page, not in the mail.
@@ -177,6 +181,15 @@ class IssuesEmailReport(EmailReport):
 
     def cc(self):
         return self._cc
+
+    def send(self):
+        """Deliver — but REFUSE if the issue data couldn't be read, so we never
+        mail a false 'no issues today' that hides a DB failure."""
+        if self.fetch_error:
+            return (False, f"Refused to send — couldn't read the issue data "
+                           f"({self.fetch_error}); sending now would be a false "
+                           f"all-clear. Retry once the data loads.")
+        return super().send()
 
     # ── summary metrics ─────────────────────────────────────────────────
     def _compute_summary(self) -> dict:

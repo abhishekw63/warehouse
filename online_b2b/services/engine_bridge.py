@@ -2127,8 +2127,11 @@ class MyntraProcessor(Processor):
         try:
             from . import overrides_store
             deal_map = overrides_store.myntra_deal_map()
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             deal_map = {}
+            self.warnings.append(
+                f"Myntra deal-SKU prices couldn't load ({type(e).__name__}) — deal "
+                f"lines will fall back to flat margin, NOT the negotiated price. Verify prices.")
         applied = mismatched = 0
         for so in result.rows:
             po = str(so.po_number)
@@ -2254,6 +2257,12 @@ class MyntraProcessor(Processor):
                 tbl = tbl[tbl[key].notna()]
             tbl = tbl.dropna(how='all')
             if tbl.empty:
+                # NEVER silent: a PO whose line table filters to empty (blank GTIN/
+                # SKU column, or a header variant) would otherwise vanish unrecorded.
+                self.warnings.append(
+                    f"[{os.path.basename(f)}] Myntra{f' PO {po}' if po else ''}: no "
+                    f"line rows after filtering (GTIN/SKU column blank or renamed) — "
+                    f"PO skipped, nothing recorded from it. Check the file.")
                 continue
             # Remember the with-GST Landing Price per (po, ean) for the tracker's
             # Vendor Landing display column (stamped in post_process; the engine
@@ -2640,6 +2649,11 @@ class BlinkMPProcessor(Processor):
                     'Total|Net', case=False, na=False)]
             df = df.dropna(how='all')
             if df.empty:
+                # NEVER silent: an RO that filters to empty (all Total/Net rows or a
+                # blank Item Code column) would otherwise vanish unrecorded.
+                self.warnings.append(
+                    f"[RO {ro}] {os.path.basename(str(pr['excel']))}: no item rows "
+                    f"after filtering — RO skipped, nothing recorded from it. Check the file.")
                 continue
             if 'Product UPC' in df.columns:    # float/sci-notation → clean EAN
                 df['Product UPC'] = df['Product UPC'].map(self._clean_ean)
@@ -2793,8 +2807,11 @@ class ZeptoProcessor(Processor):
         try:
             from . import overrides_store
             deal_map = overrides_store.zepto_deal_map()
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             deal_map = {}
+            self.warnings.append(
+                f"Zepto deal-SKU prices couldn't load ({type(e).__name__}) — deal "
+                f"lines will fall back to flat margin, NOT the negotiated price. Verify prices.")
         if not deal_map:
             return
         applied = mismatched = 0

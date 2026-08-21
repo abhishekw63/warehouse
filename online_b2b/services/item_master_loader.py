@@ -600,8 +600,13 @@ class DBMasterLoader(MasterLoader):
                         _os.remove(wb)
                     except OSError:
                         pass
-        except Exception:  # noqa: BLE001 — overlays must never break load
-            pass
+        except Exception as _e:  # noqa: BLE001 — overlays must never break the load,
+            # but never SILENTLY: a failed deal-overlay load means deal SKUs can
+            # price at flat margin instead of the negotiated price — log it loudly.
+            import logging as _lg
+            _lg.getLogger(__name__).warning(
+                "Deal-SKU overlays (exceptions + Swiggy deal sheets) failed to load: "
+                "%s — deal SKUs may fall back to flat margin. Check overrides_store.", _e)
         self.swiggy_sku.update(db_sku)
 
         # Historical EAN corrections (received_ean → correct EAN) feed the
