@@ -19,6 +19,13 @@
     </div>
   </div>
 
+  {% comment %}Page-level tabs: Availability Checker | Recorded Runs (smooth cross-fade){% endcomment %}
+  <div class="tabs av-ptabs">
+    <button type="button" class="tab tab--underline av-ptab on" data-ppane="checker">🔎 Check availability</button>
+    <button type="button" class="tab tab--underline av-ptab" data-ppane="runs">🗎 Recorded runs <span class="tcount" id="av-runs-n"></span></button>
+  </div>
+
+  <div id="page-checker" class="av-ppane on">
   <div class="im-card reveal">
     <div class="av-input">
       <div>
@@ -56,7 +63,6 @@
           <button type="button" class="tab tab--underline av-tab" data-pane="powise">PO-wise · Fill rate</button>
           <button type="button" class="tab tab--underline av-tab" data-pane="lines">PO line items</button>
           <button type="button" class="tab tab--underline av-tab" data-pane="sku">By SKU</button>
-          <button type="button" class="tab tab--underline av-tab" data-pane="runs" id="av-tab-runs" hidden>🗎 Recorded runs <span class="tcount" id="av-runs-n"></span></button>
         </div>
         <div class="av-ractions">
           <button type="button" class="btn-ghost" id="av-record" title="Freeze this run (fill rate + comparison) so you can look it up later — inventory keeps changing">🗎 Record run</button>
@@ -67,11 +73,18 @@
       <div class="av-pane" id="pane-powise"></div>
       <div class="av-pane" id="pane-lines"></div>
       <div class="av-pane" id="pane-sku"></div>
-      <div class="av-pane" id="pane-runs">
-        <p class="av-hint" style="margin:0 0 12px;">Frozen fill-rate snapshots — the FR as it was when recorded (inventory changes over time). Click a run to replay it read-only.</p>
-        <div id="av-trend" class="av-trend" hidden></div>
-        <div id="av-runs-list"></div>
+    </div>
+  </div>
+  </div>{% comment %}/page-checker{% endcomment %}
+
+  <div id="page-runs" class="av-ppane" hidden>
+    <div class="im-card reveal">
+      <div class="av-runs-head">
+        <h2>🗎 Recorded runs</h2>
+        <span class="av-hint">Frozen fill-rate snapshots — the FR as it was when recorded (inventory changes over time). Click a run to replay it read-only.</span>
       </div>
+      <div id="av-trend" class="av-trend" hidden></div>
+      <div id="av-runs-list" class="av-runs-empty-wrap"></div>
     </div>
   </div>
 </div>

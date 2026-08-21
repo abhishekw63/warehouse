@@ -335,8 +335,7 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
   var recordUrl = CFG["b2b_availability_record"], runsUrl = CFG["b2b_availability_runs"];
   var recBtn = document.getElementById('av-record');
   var recBanner = document.getElementById('av-recbanner');
-  var runsTab = document.getElementById('av-tab-runs');
-  // Switch the results tab strip to a given pane (shared by clicks + programmatic).
+  // Switch the results tab strip (Best warehouse / PO-wise / …) to a given pane.
   function activateTab(name) {
     document.querySelectorAll('.av-tab').forEach(function (x) { x.classList.toggle('on', x.dataset.pane === name); });
     document.querySelectorAll('.av-pane').forEach(function (x) { x.classList.toggle('on', x.id === 'pane-' + name); });
@@ -414,11 +413,11 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
   }
   function renderRuns(runs) {
     document.getElementById('av-runs-n').textContent = runs.length || '';
-    if (runsTab) runsTab.hidden = runs.length === 0;   // hide the tab when there's nothing to show
-    // Recorded runs exist but no live check has been run this visit → reveal the
-    // results shell and land on the Recorded-runs tab so history is visible on open.
-    if (runs.length && results.hidden) { results.hidden = false; activateTab('runs'); }
-    if (!runs.length) { document.getElementById('av-runs-list').innerHTML = ''; return; }
+    if (!runs.length) {
+      document.getElementById('av-runs-list').innerHTML =
+        '<div class="av-runs-empty">No recorded runs yet — run a check, then hit 🗎 Record run to freeze its fill rate here.</div>';
+      return;
+    }
     document.getElementById('av-runs-list').innerHTML = runs.map(function (r) {
       return '<div class="av-run" data-run="' + r.run_id + '">' +
         '<div class="av-run-main">' +
@@ -447,6 +446,7 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
           ' — fill rate frozen as it was then' + (p.check.summary && p.check.summary.stock_as_of ? ' (inventory ' + esc(p.check.summary.stock_as_of) + ')' : '') +
           (j.note ? ' · “' + esc(j.note) + '”' : '') + '</span>' +
           '<button type="button" class="av-rec-exit" id="av-rec-exit">↩ Back to live</button></div>';
+        showPage('checker');       // snapshot renders in the checker pane — switch to it
         render(p.check);
         renderScenarios(p.scenarios);
         activateTab('scenario');   // land on Best warehouse to show the snapshot
@@ -512,6 +512,18 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
   });
   document.querySelectorAll('.av-tab').forEach(function (t) {
     t.addEventListener('click', function () { activateTab(t.dataset.pane); });
+  });
+
+  // Page-level tabs (Check availability | Recorded runs) — smooth cross-fade.
+  function showPage(name) {
+    document.querySelectorAll('.av-ptab').forEach(function (x) { x.classList.toggle('on', x.dataset.ppane === name); });
+    document.querySelectorAll('.av-ppane').forEach(function (p) {
+      var on = p.id === 'page-' + name;
+      p.hidden = !on; p.classList.toggle('on', on);   // .on re-triggers the fade
+    });
+  }
+  document.querySelectorAll('.av-ptab').forEach(function (t) {
+    t.addEventListener('click', function () { showPage(t.dataset.ppane); });
   });
 
   // Export → styled multi-sheet .xlsx (POST current orders + WH → blob download).

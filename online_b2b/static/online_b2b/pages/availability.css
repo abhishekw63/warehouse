@@ -193,3 +193,9 @@
   .av-tl-item i{width:14px;height:3px;border-radius:2px;display:inline-block;}
   .av-trend-delta{margin-left:auto;font-weight:800;font-size:12px;}
   .av-trend-svg{width:100%;height:150px;display:block;overflow:visible;}
+  /* Page-level tabs (Check availability | Recorded runs) + smooth cross-fade */
+  .av-ptabs{margin:0 0 16px;}
+  .av-ppane[hidden]{display:none;}
+  .av-ppane.on{animation:avFade .3s cubic-bezier(.22,1,.36,1) both;}
+  @media (prefers-reduced-motion:reduce){.av-ppane.on{animation:none;}}
+  .av-runs-empty{padding:36px 20px;text-align:center;color:var(--muted);font-size:13.5px;}
