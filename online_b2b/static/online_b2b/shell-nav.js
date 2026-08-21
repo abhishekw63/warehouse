@@ -87,6 +87,19 @@
     d.querySelectorAll('.b2b-side .sn').forEach(function (a) {
       var h = a.getAttribute('href'); if (h) a.classList.toggle('on', !!want[h]);
     });
+    // Collapsible groups (Record Verify, Admin, …): the persistent sidebar isn't
+    // re-rendered on partial nav, so the server-side auto-open for the ACTIVE
+    // section was never re-applied — navigating to /record-verify left its group
+    // collapsed (its two sub-links hidden). Re-sync each group's open state from
+    // the freshly-fetched sidebar: force-open the active section's group; leave
+    // the rest as the user left them (never fight a manual toggle).
+    doc.querySelectorAll('.b2b-side .side-subnav[id]').forEach(function (nsub) {
+      if (!nsub.classList.contains('open')) return;      // only the active section
+      var cur = d.getElementById(nsub.id); if (!cur) return;
+      cur.classList.add('open');
+      var btn = d.querySelector('.b2b-side [aria-controls="' + nsub.id + '"]');
+      if (btn) btn.setAttribute('aria-expanded', 'true');
+    });
   }
 
   var token = 0, bar = d.getElementById('navProgress');

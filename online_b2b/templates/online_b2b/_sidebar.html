@@ -125,6 +125,12 @@
       var o = sub.classList.toggle('open');
       g.setAttribute('aria-expanded', o ? 'true' : 'false');
       localStorage.setItem(key, o ? '1' : '0');
+      // When opening a group low in the (scrollable) nav, bring its just-revealed
+      // sub-links into view so they never sit below the fold ("clicking but not
+      // showing the links"). Only on open; never yanks the view on collapse.
+      if (o && sub.scrollIntoView) {
+        try { sub.scrollIntoView({ block: 'nearest' }); } catch (e) {}
+      }
     });
   }
   wireGroup('adminGroup', 'adminSub', 'b2b_admin_open');
