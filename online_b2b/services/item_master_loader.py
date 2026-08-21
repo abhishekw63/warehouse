@@ -41,7 +41,7 @@ import pandas as pd
 # byte-for-byte (no spurious trailing '.0', scientific notation, etc.).
 from online_po_processor.data.master_loader import MasterLoader
 
-from .order_db import _conn
+from .order_db import _conn, _conn_tx
 
 _clean = MasterLoader._clean_code
 
@@ -407,7 +407,10 @@ def replace_item_master(rows: list) -> dict:
         r['base_uom'], r['brand'], r['category'], batch, now,
     ) for r in rows]
     cols = ', '.join(_COLS)
-    with _conn() as (cur, d):
+    # ATOMIC: DELETE + upsert in ONE transaction (_conn_tx) so a failed load ROLLS
+    # BACK the DELETE — item_master can never be left empty/partial (which would
+    # mis-flag every SKU as NOT_IN_MASTER on the next run). Was _conn() (autocommit).
+    with _conn_tx() as (cur, d):
         ph = d['ph']
         marks = ', '.join([ph] * len(_COLS))
         # Clear only previous ERP rows; manual rows (batch_id='manual') survive.
@@ -428,7 +431,7 @@ def replace_item_master(rows: list) -> dict:
         cur.execute(f"SELECT COUNT(*) FROM {_MASTER_TABLE} WHERE "
                     f"COALESCE(batch_id,'')='manual'")
         manual = int(cur.fetchone()[0] or 0)
-        cur.connection.commit()
+        # commit/rollback owned by _conn_tx on block exit (atomic)
     return {'ok': True, 'rows': total, 'batch_id': batch,
             'manual_overlaid': manual}
 

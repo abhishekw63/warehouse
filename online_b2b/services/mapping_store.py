@@ -27,7 +27,7 @@ import re as _re
 import pandas as pd
 from online_po_processor.data.mapping_loader import MappingLoader
 
-from .order_db import _conn
+from .order_db import _conn, _conn_tx
 
 _MAP_TABLE = 'ship_to_mapping'
 _FIELD_TABLE = 'ship_to_field'   # user-defined custom-field definitions
@@ -304,7 +304,11 @@ def replace_mapping(rows: list) -> dict:
         r['party'], r['del_location'], r['cust_no'], r['ship_to'], r['name'],
         r['address'], r['address2'], r['postcode'], r['city'], 'excel', batch, now,
     ) for r in rows]
-    with _conn() as (cur, d):
+    # ATOMIC: DELETE + re-INSERT in ONE transaction (_conn_tx) so a failed INSERT
+    # ROLLS BACK the DELETE — a crash can never leave ship_to_mapping empty/partial
+    # (which would then mis-flag SKUs as unmapped on the next run). Was _conn()
+    # (autocommit), where the DELETE committed before the INSERT could fail.
+    with _conn_tx() as (cur, d):
         ph = d['ph']
         cols = ', '.join(_COLS)
         marks = ', '.join([ph] * len(_COLS))
@@ -313,7 +317,6 @@ def replace_mapping(rows: list) -> dict:
                     f"COALESCE(source,'excel') <> 'manual'")
         cur.executemany(
             f"INSERT INTO {_MAP_TABLE} ({cols}) VALUES ({marks})", payload)
-        cur.connection.commit()
     return {'ok': True, 'rows': len(payload), 'batch_id': batch}
 
 
