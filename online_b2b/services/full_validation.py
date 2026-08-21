@@ -134,17 +134,28 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
         ourh = {str(r[0]): {'mp': r[1], 'qty': float(r[2] or 0), 'val': float(r[3] or 0),
                             'loc': r[4]} for r in cur.fetchall()}
         cur.execute(f"SELECT UPPER(po),item_no,ean,description,qty,our_cp,status,action,exception_label,"
-                    f"override_cp,gst_code "
+                    f"override_cp,unit_price,gst_code "
                     f"FROM order_lines_full WHERE UPPER(po) IN ({ph})", pos)
         ourL = {}
-        for po, it, ean, desc, qty, cp, st, act, exc, ovcp, gstc in cur.fetchall():
+        for po, it, ean, desc, qty, cp, st, act, exc, ovcp, up, gstc in cur.fetchall():
             cp = float(cp or 0)
-            # Effective price = the price we ACTUALLY pushed to D365. When a line was
-            # deliberately re-priced at review (override_cp set, e.g. a vendor/nominal
-            # CP), D365 holds THAT price — so value must reconcile against it, not our
-            # internal book CP. EXCLUDE lines never reach D365, so their book CP stands.
-            eff = (float(ovcp) if (ovcp is not None and str(act or '').upper() != 'EXCLUDE')
-                   else cp)
+            up = float(up or 0)
+            # Effective price = the price we ACTUALLY pushed to D365 — that's what D365
+            # holds, so value must reconcile against it, not our internal book/cost CP.
+            #   • unit_price is the literal price written to the SO — it already reflects
+            #     deal pricing (Myntra/Swiggy invoice > cost) AND review overrides (e.g.
+            #     a nominal Rs0.01). Prefer it whenever it's populated (>0).
+            #   • MT SO uploads leave unit_price blank (D365 auto-prices) — fall back to
+            #     override_cp if set, else our book CP.
+            #   • EXCLUDE lines never reach D365, so their book CP stands.
+            if str(act or '').upper() == 'EXCLUDE':
+                eff = cp
+            elif up > 0:
+                eff = up
+            elif ovcp is not None:
+                eff = float(ovcp)
+            else:
+                eff = cp
             ourL[(str(po), str(it))] = {'ean': str(ean or ''), 'desc': str(desc or '')[:60],
                                         'qty': int(qty or 0), 'cp': cp, 'eff_cp': eff,
                                         'gst': _gst_rate(gstc), 'status': st,
