@@ -90,12 +90,18 @@ def _augment(data: dict) -> dict:
     by_po: dict = {}
     for ln in lines:
         by_po.setdefault(ln.get('po'), []).append(ln)
+    # A line is "affected" if its qty/SKU is off (_LINE_PROBLEM) OR its VALUE is off
+    # (val_ok == 'NO') — a value-only mismatch (qty matches but the amount differs
+    # beyond tolerance) is what trips a header 'value' flag, so it must be visible on
+    # the Affected tab, not hidden behind a green qty 'OK'.
+    def _affected(ln):
+        return ln.get('status') in _LINE_PROBLEM or ln.get('val_ok') == 'NO'
     for h in headers:
         h['lines'] = by_po.get(h.get('po'), [])
-        h['bad_lines'] = sum(1 for ln in h['lines'] if ln.get('status') in _LINE_PROBLEM)
+        h['bad_lines'] = sum(1 for ln in h['lines'] if _affected(ln))
     data['orders'] = [h for h in headers if h.get('status') != 'EXTERNAL']
     data['externals'] = [h for h in headers if h.get('status') == 'EXTERNAL']
-    data['affected_lines'] = [ln for ln in lines if ln.get('status') in _LINE_PROBLEM]
+    data['affected_lines'] = [ln for ln in lines if _affected(ln)]
     data['n_lines'] = len(lines)
     data['n_affected_lines'] = len(data['affected_lines'])
     data['tot_qty'] = int(sum(ln.get('d365_qty') or 0 for ln in lines))

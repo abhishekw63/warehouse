@@ -1,15 +1,15 @@
 {% load b2b_extras %}{% comment %}One reconciled LINE (our record ↔ D365): mismatches highlighted red, excluded muted. Reused by the Line-items / Affected panes and the per-PO drill-down.{% endcomment %}
-<tr class="rv-lrow{% if ln.status == 'QTY_MISMATCH' or ln.status == 'MISSING_IN_D365' or ln.status == 'EXTRA_IN_D365' %} rv-lbad{% elif ln.status == 'EXCLUDED' %} rv-lexcl{% endif %}">
+<tr class="rv-lrow{% if ln.status == 'QTY_MISMATCH' or ln.status == 'MISSING_IN_D365' or ln.status == 'EXTRA_IN_D365' or ln.val_ok == 'NO' %} rv-lbad{% elif ln.status == 'EXCLUDED' %} rv-lexcl{% endif %}">
   <td class="mono">{{ ln.po }}</td>
   <td class="mono strong">{{ ln.item }}</td>
   <td class="mono">{{ ln.ean|default:'—' }}</td>
   <td class="rv-desc" title="{{ ln.desc }}">{{ ln.desc|default:'—' }}</td>
   <td class="r{% if ln.status == 'QTY_MISMATCH' %} rv-mis{% endif %}">{% if ln.our_qty != None %}{{ ln.our_qty }}{% else %}—{% endif %}</td>
   <td class="r{% if ln.status == 'QTY_MISMATCH' %} rv-mis{% endif %}">{% if ln.d365_qty != None %}{{ ln.d365_qty }}{% else %}—{% endif %}</td>
-  <td class="r">{% if ln.our_val != None %}{{ ln.our_val|inr_short }}{% else %}—{% endif %}</td>
-  <td class="r">{% if ln.d365_val != None %}{{ ln.d365_val|inr_short }}{% else %}—{% endif %}</td>
+  <td class="r{% if ln.val_ok == 'NO' %} rv-mis{% endif %}">{% if ln.our_val != None %}{{ ln.our_val|inr_short }}{% else %}—{% endif %}</td>
+  <td class="r{% if ln.val_ok == 'NO' %} rv-mis{% endif %}">{% if ln.d365_val != None %}{{ ln.d365_val|inr_short }}{% else %}—{% endif %}</td>
   <td>
-    {% if ln.foc %}<span class="rv-foc" title="{{ ln.foc }} free unit(s) excluded from the qty check">+{{ ln.foc }} FOC</span> {% endif %}{% if ln.status == 'OK' %}<span class="rv-ok">✓ OK</span>
+    {% if ln.foc %}<span class="rv-foc" title="{{ ln.foc }} free unit(s) excluded from the qty check">+{{ ln.foc }} FOC</span> {% endif %}{% if ln.status == 'OK' %}{% if ln.val_ok == 'NO' %}<span class="rv-lchip qty" title="Qty reconciles, but the line VALUE differs > tolerance (our {{ ln.our_val|inr_short }} vs D365 {{ ln.d365_val|inr_short }}) — this is what trips the header ‘value’ flag.">✓ qty · ⚠ value</span>{% else %}<span class="rv-ok">✓ OK</span>{% endif %}
     {% elif ln.status == 'EXCLUDED' %}<span class="rv-lchip excl">excluded</span>
     {% elif ln.status == 'MISSING_IN_D365' %}<span class="rv-lchip miss">missing in D365</span>
     {% elif ln.status == 'EXTRA_IN_D365' %}<span class="rv-lchip extra">extra in D365</span>
