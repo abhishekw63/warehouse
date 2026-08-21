@@ -56,6 +56,7 @@ urlpatterns = [
     path('availability/shift/', views.availability_shift_wh, name='b2b_availability_shift'),
     path('availability/record/', views.availability_record, name='b2b_availability_record'),
     path('availability/runs/', views.availability_runs, name='b2b_availability_runs'),
+    path('availability/trend/', views.availability_trend, name='b2b_availability_trend'),
     path('availability/runs/<int:run_id>/', views.availability_run_view, name='b2b_availability_run_view'),
     path('availability/runs/<int:run_id>/delete/', views.availability_run_delete, name='b2b_availability_run_delete'),
     path('availability/export/', views.availability_export, name='b2b_availability_export'),

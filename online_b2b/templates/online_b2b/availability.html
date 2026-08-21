@@ -35,6 +35,10 @@
           </select>
         </div>
         <button type="button" class="btn-primary" id="av-check" style="width:100%;">Check availability</button>
+        <div class="av-side-row">
+          <button type="button" class="btn-ghost av-clear" id="av-clear" title="Clear the order list + results and start fresh">Clear</button>
+          <select id="av-recent" class="av-sel av-recent" title="Recent searches" hidden><option value="">Recent…</option></select>
+        </div>
         <span class="av-hint" id="av-status"></span>
       </div>
     </div>
@@ -70,13 +74,14 @@
       <h2>🗎 Recorded runs <span class="av-runs-n" id="av-runs-n"></span></h2>
       <span class="av-hint">Frozen fill-rate snapshots — the FR as it was when recorded (inventory changes over time).</span>
     </div>
+    <div id="av-trend" class="av-trend" hidden></div>
     <div id="av-runs-list"></div>
   </div>
 </div>
 
 <input type="hidden" id="av-csrf" value="{{ csrf_token }}">
 <script type="application/json" id="availability-cfg">
-{"b2b_availability_check": "{% url 'b2b_availability_check' %}", "b2b_availability_scenarios": "{% url 'b2b_availability_scenarios' %}", "b2b_availability_shift": "{% url 'b2b_availability_shift' %}", "b2b_availability_record": "{% url 'b2b_availability_record' %}", "b2b_availability_runs": "{% url 'b2b_availability_runs' %}", "b2b_availability_export": "{% url 'b2b_availability_export' %}", "b2b_availability_bins": "{% url 'b2b_availability_bins' %}", "can_write": {% if can_write %}true{% else %}false{% endif %}}
+{"b2b_availability_check": "{% url 'b2b_availability_check' %}", "b2b_availability_scenarios": "{% url 'b2b_availability_scenarios' %}", "b2b_availability_shift": "{% url 'b2b_availability_shift' %}", "b2b_availability_record": "{% url 'b2b_availability_record' %}", "b2b_availability_runs": "{% url 'b2b_availability_runs' %}", "b2b_availability_trend": "{% url 'b2b_availability_trend' %}", "b2b_availability_export": "{% url 'b2b_availability_export' %}", "b2b_availability_bins": "{% url 'b2b_availability_bins' %}", "can_write": {% if can_write %}true{% else %}false{% endif %}}
 </script>
 {% endblock %}
 

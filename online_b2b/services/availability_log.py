@@ -146,3 +146,39 @@ def delete_run(run_id) -> dict:
         ph = d['ph']
         cur.execute(f"DELETE FROM availability_run WHERE run_id={ph}", (run_id,))
     return {'ok': True, 'run_id': run_id}
+
+
+def trend(limit: int = 24) -> dict:
+    """Recorded snapshots as a fill-rate TIME SERIES (oldest→newest) — overall
+    qty/value fill% per recorded run PLUS the per-warehouse fill% frozen in each
+    run's best-WH comparison, so you can see whether availability is improving or
+    slipping run-over-run. Reads the ``payload`` (scenarios.overall) for the
+    per-WH split. Read-only; never raises."""
+    _ensure()
+    rows = []
+    with _conn() as (cur, d):
+        cur.execute(
+            f"SELECT run_id, run_ts, n_orders, fill_pct, fill_val_pct, best_wh, "
+            f"payload FROM availability_run ORDER BY run_id DESC LIMIT {int(limit)}")
+        rows = cur.fetchall()
+    whs: list = []                                  # warehouse shorts seen (stable order)
+    series = []
+    for r in rows:
+        per: dict = {}
+        try:
+            pl = json.loads(r[6]) if r[6] else {}
+            for o in ((pl.get('scenarios') or {}).get('overall') or []):
+                ws = o.get('wh_short')
+                if ws:
+                    per[ws] = float(o.get('fill_pct') or 0)
+                    if ws not in whs:
+                        whs.append(ws)
+        except (ValueError, TypeError):
+            pass
+        series.append({
+            'run_id': r[0], 'run_ts': str(r[1] or ''), 'n_orders': int(r[2] or 0),
+            'fill_pct': round(float(r[3] or 0), 1),
+            'fill_val_pct': round(float(r[4] or 0), 1),
+            'best_wh': str(r[5] or ''), 'per_wh': per})
+    series.reverse()                                # oldest → newest for plotting
+    return {'ok': True, 'warehouses': whs, 'series': series, 'n': len(series)}

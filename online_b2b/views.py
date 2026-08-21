@@ -3011,6 +3011,14 @@ def availability_runs(request):
 
 
 @login_required
+def availability_trend(request):
+    """Fill-rate trend across recorded snapshots (overall + per-warehouse, oldest→
+    newest). Read-only JSON for the trend chart."""
+    from .services import availability_log as log
+    return JsonResponse(log.trend(24))
+
+
+@login_required
 def availability_run_view(request, run_id):
     """Full frozen snapshot of one recorded run (for a read-only replay)."""
     from .services import availability_log as log

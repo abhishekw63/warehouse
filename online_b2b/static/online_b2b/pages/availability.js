@@ -15,6 +15,33 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
     try { localStorage.setItem(LS_KEY, JSON.stringify({ orders: ta.value, warehouse: whSel.value })); } catch (e) {}
   }
 
+  // Recent searches — a small MRU list of order blobs, so you can re-run a prior
+  // list without re-pasting. Stored per-browser; nothing leaves the machine.
+  var RECENT_KEY = 'b2b_availability_recent', RECENT_MAX = 8;
+  var recentSel = document.getElementById('av-recent');
+  function getRecent() {
+    try { return JSON.parse(localStorage.getItem(RECENT_KEY) || '[]') || []; } catch (e) { return []; }
+  }
+  function pushRecent(orders) {
+    orders = (orders || '').trim(); if (!orders) return;
+    var list = getRecent().filter(function (x) { return x.text !== orders; });
+    var n = (orders.match(/\S+/g) || []).length;
+    list.unshift({ text: orders, n: n, at: tsStamp() });
+    list = list.slice(0, RECENT_MAX);
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(list)); } catch (e) {}
+    renderRecent();
+  }
+  function renderRecent() {
+    if (!recentSel) return;
+    var list = getRecent();
+    recentSel.hidden = list.length === 0;
+    recentSel.innerHTML = '<option value="">↺ Recent…</option>' + list.map(function (it, i) {
+      var first = (it.text.match(/\S+/) || [''])[0];
+      return '<option value="' + i + '">' + esc(first) + ' +' + Math.max(0, it.n - 1) + ' more · ' + it.n + ' orders</option>';
+    }).join('');
+    recentSel.value = '';
+  }
+
   function nf(n) { return (n === null || n === undefined) ? '—' : Number(n).toLocaleString('en-IN'); }
   function money(v) { return v ? '₹' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 0 }) : '—'; }
   function pctCell(p, has) { return '<td class="num" style="color:' + pctColor(p) + ';font-weight:700;">' + (has === false ? '—' : p + '%') + '</td>'; }
@@ -329,6 +356,56 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
       .then(function (r) { return r.json(); })
       .then(function (j) { renderRuns((j && j.runs) || []); })
       .catch(function () {});
+    loadTrend();
+  }
+
+  // Fill-rate trend across recorded snapshots — a compact SVG line chart (overall
+  // qty-fill %, plus a faint line per warehouse) so you see availability trending
+  // up or down run-over-run. Read-only; renders nothing when <2 snapshots.
+  var trendUrl = CFG["b2b_availability_trend"], trendBox = document.getElementById('av-trend');
+  var WH_COLOR = { AHD: '#f59e0b', BLR: '#16a34a', North: '#8b5cf6' };
+  function loadTrend() {
+    if (!trendBox) return;
+    fetch(trendUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(function (r) { return r.json(); })
+      .then(renderTrend).catch(function () { trendBox.hidden = true; });
+  }
+  function renderTrend(t) {
+    var s = (t && t.series) || [];
+    if (s.length < 2) { trendBox.hidden = true; return; }   // need ≥2 points for a trend
+    trendBox.hidden = false;
+    var W = 720, H = 150, PL = 34, PR = 12, PT = 14, PB = 22;
+    var iw = W - PL - PR, ih = H - PT - PB;
+    var x = function (i) { return PL + (s.length === 1 ? iw / 2 : iw * i / (s.length - 1)); };
+    var y = function (v) { return PT + ih * (1 - Math.max(0, Math.min(100, v)) / 100); };
+    function line(vals, color, w, dash) {
+      var pts = vals.map(function (v, i) { return (v == null ? null : x(i) + ',' + y(v)); });
+      var dseg = '', started = false;
+      pts.forEach(function (p) { if (p == null) { started = false; return; } dseg += (started ? 'L' : 'M') + p + ' '; started = true; });
+      return dseg ? '<path d="' + dseg + '" fill="none" stroke="' + color + '" stroke-width="' + w + '"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + ' stroke-linejoin="round" stroke-linecap="round"/>' : '';
+    }
+    // gridlines + y labels at 0/50/100
+    var grid = [0, 50, 100].map(function (v) {
+      return '<line x1="' + PL + '" y1="' + y(v) + '" x2="' + (W - PR) + '" y2="' + y(v) + '" stroke="var(--border)" stroke-width="1"/>' +
+        '<text x="' + (PL - 6) + '" y="' + (y(v) + 3) + '" text-anchor="end" font-size="9" fill="var(--muted)">' + v + '</text>';
+    }).join('');
+    // per-warehouse faint lines
+    var whLines = (t.warehouses || []).map(function (wh) {
+      return line(s.map(function (r) { return (r.per_wh && r.per_wh[wh] != null) ? r.per_wh[wh] : null; }), WH_COLOR[wh] || 'var(--muted)', 1.5, '3 3');
+    }).join('');
+    // overall qty-fill line (bold accent) + end dots
+    var overall = line(s.map(function (r) { return r.fill_pct; }), 'var(--accent)', 2.5, '');
+    var dots = s.map(function (r, i) { return '<circle cx="' + x(i) + '" cy="' + y(r.fill_pct) + '" r="2.6" fill="var(--accent)"><title>' + esc(r.run_ts) + ' · ' + r.fill_pct + '% (' + r.n_orders + ' orders' + (r.best_wh ? ' · best ' + esc(r.best_wh) : '') + ')</title></circle>'; }).join('');
+    var last = s[s.length - 1], first = s[0], delta = Math.round((last.fill_pct - first.fill_pct) * 10) / 10;
+    var legend = (t.warehouses || []).map(function (wh) {
+      return '<span class="av-tl-item"><i style="background:' + (WH_COLOR[wh] || 'var(--muted)') + '"></i>' + esc(wh) + '</span>';
+    }).join('');
+    trendBox.innerHTML =
+      '<div class="av-trend-head"><b>Fill-rate trend</b> · last ' + s.length + ' snapshot(s)' +
+      '<span class="av-tl-item"><i style="background:var(--accent)"></i>overall</span>' + legend +
+      '<span class="av-trend-delta" style="color:' + (delta >= 0 ? '#16a34a' : 'var(--red)') + '">' + (delta >= 0 ? '▲ +' : '▼ ') + delta + '% vs first</span></div>' +
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" class="av-trend-svg" preserveAspectRatio="none">' +
+      grid + whLines + overall + dots + '</svg>';
   }
   function renderRuns(runs) {
     document.getElementById('av-runs-n').textContent = runs.length ? '(' + runs.length + ')' : '';
@@ -403,10 +480,26 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
         statusEl.textContent = '✓ ' + j.summary.orders + ' order(s) checked';
         render(j);
         runScenarios(orders);   // best-warehouse comparison (independent of WH override)
+        pushRecent(orders);     // remember this list for the Recent dropdown
       })
       .catch(function () { btn.disabled = false; statusEl.textContent = 'Network error — retry.'; });
   }
   btn.addEventListener('click', run);
+
+  // Clear — empty the list + results and forget the auto-restore, for a fresh start.
+  var clearBtn = document.getElementById('av-clear');
+  if (clearBtn) clearBtn.addEventListener('click', function () {
+    ta.value = ''; whSel.value = ''; statusEl.textContent = '';
+    results.hidden = true; recordedView = false;
+    try { localStorage.removeItem(LS_KEY); } catch (e) {}
+    ta.focus();
+  });
+  // Recent — pick a prior search to re-fill + re-run without re-pasting.
+  if (recentSel) recentSel.addEventListener('change', function () {
+    var i = recentSel.value; if (i === '') return;
+    var it = getRecent()[+i]; if (!it) return;
+    ta.value = it.text; recentSel.value = ''; run();
+  });
   document.querySelectorAll('.av-tab').forEach(function (t) {
     t.addEventListener('click', function () {
       document.querySelectorAll('.av-tab').forEach(function (x) { x.classList.remove('on'); });
@@ -488,5 +581,6 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
       run();   // re-check → results reappear without re-pasting
     }
   })();
-  loadRuns();   // show any past recorded snapshots on load
+  renderRecent();   // populate the Recent dropdown
+  loadRuns();       // show any past recorded snapshots + the fill-rate trend on load
 })();
