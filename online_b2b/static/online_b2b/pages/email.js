@@ -88,14 +88,20 @@ function emNtd(key, btn) {
 // Single delegated click handler — closest() guarantees a PO click resolves to the
 // PO row (emTogglePO), NEVER its MP; an MP click resolves to the MP (emToggle). This
 // removes the inline-onclick + bubbling ambiguity that made a PO click collapse the MP.
-document.addEventListener('click', function (e) {
-  var t = e.target;
-  if (!t || !t.closest) return;
-  var po = t.closest('tr.em-porow');
-  if (po) { emTogglePO(po); return; }
-  var mp = t.closest('tr.em-mprow');
-  if (mp) { emToggle(mp.getAttribute('data-gid')); return; }
-});
+// Bound ONCE: under the persistent shell-nav this script re-runs on re-visit and a
+// removed <script> tag does NOT detach a listener already on document — a second
+// toggle handler would open-then-close each row (net nothing).
+if (!window.__emRowToggleBound) {
+  window.__emRowToggleBound = true;
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    if (!t || !t.closest) return;
+    var po = t.closest('tr.em-porow');
+    if (po) { emTogglePO(po); return; }
+    var mp = t.closest('tr.em-mprow');
+    if (mp) { emToggle(mp.getAttribute('data-gid')); return; }
+  });
+}
 // Label each segment's not-today toggle with its live count (re-run after AJAX swap).
 function emInitNtd() {
   document.querySelectorAll('.em-ntd-btn').forEach(function (btn) {

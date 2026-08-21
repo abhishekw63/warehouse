@@ -72,8 +72,14 @@
 })();
 
 /* ── Per-PO drill-down: click an Orders/Externals row (not its checkbox) to open
-      its line items and pinpoint the mismatch. Delegated → works after re-render. ── */
+      its line items and pinpoint the mismatch. Delegated → works after re-render.
+      Bound ONCE on document: under the persistent shell-nav this page script re-runs
+      on every re-visit, and removing the old <script> tag does NOT detach a listener
+      it already added to document. Without this guard a second listener accumulates
+      and each click opens-then-closes the row (net nothing → "row won't open"). ── */
 (function () {
+  if (window.__rvDrillBound) return;
+  window.__rvDrillBound = true;
   document.addEventListener('click', function (e) {
     if (!e.target.closest) return;
     if (e.target.closest('.rv-chk-col')) return;         // let the checkbox toggle
