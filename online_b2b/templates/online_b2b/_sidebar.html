@@ -54,8 +54,7 @@
     Full Validation link hidden — page/service stay (Triangular uses the service);
     reach it directly at /b2b/full-validation/ if ever needed.{% endcomment %}
     {# STANDALONE Record Verification (removable) #}
-    {# Record Verify — FLAT links (Verify + History). Plain <a> like every other
-       nav item, so it never depends on collapsible JS (which was unreliable). #}
+    {# Record Verify — FLAT links (Verify + History): plain <a> like every other nav item, no collapsible JS. #}
     <a href="{% url 'b2b_record_verify' %}" class="sn{% if '/record-verify' in request.path and '/record-verify/log' not in request.path %} on{% endif %}" title="Record Verify — reconcile recorded data vs D365">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='check' %}</span><span class="side-label">Record Verify</span></a>
     <a href="{% url 'b2b_record_verify_log' %}" class="sn sn-dim{% if '/record-verify/log' in request.path %} on{% endif %}" title="Verification history — Verified / Mismatch / External">
