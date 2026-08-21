@@ -22,6 +22,22 @@ from django.views import View
 from .services import custom_tables as ct
 
 
+class _JsonSafe:
+    """Mixin for AJAX endpoints: any unhandled exception in the view becomes a
+    ``{ok:false, error}`` JSON response (logged) instead of a raw Django 500 HTML
+    page — the client does ``r.json()`` and would otherwise see only a vague
+    'Network error'. Apply to JSON CBVs only (not the HTML shell)."""
+
+    def dispatch(self, request, *args, **kwargs):
+        try:
+            return super().dispatch(request, *args, **kwargs)
+        except Exception as e:  # noqa: BLE001
+            import logging
+            logging.getLogger(__name__).exception('Tables endpoint failed')
+            return JsonResponse(
+                {'ok': False, 'error': f'{type(e).__name__}: {e}'}, status=200)
+
+
 def _body(request) -> dict:
     try:
         return json.loads(request.body or '{}')
@@ -43,7 +59,7 @@ class TablesHomeView(LoginRequiredMixin, View):
         })
 
 
-class TableDataView(LoginRequiredMixin, View):
+class TableDataView(_JsonSafe, LoginRequiredMixin, View):
     """JSON for one table (columns + colour rules + rows) — used on tab switch."""
 
     def get(self, request, slug):
@@ -53,7 +69,7 @@ class TableDataView(LoginRequiredMixin, View):
         return JsonResponse({'ok': True, 'table': t, 'rows': ct.list_rows(t['id'])})
 
 
-class RowAddView(LoginRequiredMixin, View):
+class RowAddView(_JsonSafe, LoginRequiredMixin, View):
     def post(self, request):
         d = _body(request)
         if not d.get('table_id'):
@@ -62,19 +78,19 @@ class RowAddView(LoginRequiredMixin, View):
         return JsonResponse({'ok': True, 'id': rid})
 
 
-class RowUpdateView(LoginRequiredMixin, View):
+class RowUpdateView(_JsonSafe, LoginRequiredMixin, View):
     def post(self, request, row_id):
         ct.update_row(int(row_id), _body(request).get('data') or {})
         return JsonResponse({'ok': True})
 
 
-class RowDeleteView(LoginRequiredMixin, View):
+class RowDeleteView(_JsonSafe, LoginRequiredMixin, View):
     def post(self, request, row_id):
         ct.delete_row(int(row_id))
         return JsonResponse({'ok': True})
 
 
-class TableCreateView(LoginRequiredMixin, View):
+class TableCreateView(_JsonSafe, LoginRequiredMixin, View):
     def post(self, request):
         d = _body(request)
         name = (d.get('name') or '').strip()
@@ -85,7 +101,7 @@ class TableCreateView(LoginRequiredMixin, View):
         return JsonResponse({'ok': True, 'id': tid, 'slug': ct.get_table(tid)['slug']})
 
 
-class TableRenameView(LoginRequiredMixin, View):
+class TableRenameView(_JsonSafe, LoginRequiredMixin, View):
     def post(self, request, table_id):
         name = (_body(request).get('name') or '').strip()
         if name:
@@ -93,7 +109,7 @@ class TableRenameView(LoginRequiredMixin, View):
         return JsonResponse({'ok': True})
 
 
-class TableDeleteView(LoginRequiredMixin, View):
+class TableDeleteView(_JsonSafe, LoginRequiredMixin, View):
     def post(self, request, table_id):
         ct.delete_table(int(table_id))
         return JsonResponse({'ok': True})

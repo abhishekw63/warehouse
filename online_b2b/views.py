@@ -1038,7 +1038,27 @@ def daily_hold_reason(request):
         request.POST.get('remark', ''), user=request.user.get_username()))
 
 
+def _ajax_json_safe(view):
+    """Wrap a JSON/fetch view so an unhandled exception returns
+    ``{ok:false, error}`` (HTTP 200, logged) instead of a raw 500 HTML page the
+    client can't parse (it does ``r.json()``). Place as the innermost decorator."""
+    import functools
+
+    @functools.wraps(view)
+    def _w(request, *a, **k):
+        try:
+            return view(request, *a, **k)
+        except Exception as e:  # noqa: BLE001
+            import logging
+            logging.getLogger(__name__).exception(
+                '%s crashed', getattr(view, '__name__', 'view'))
+            return JsonResponse(
+                {'ok': False, 'error': f'{type(e).__name__}: {e}'}, status=200)
+    return _w
+
+
 @login_required
+@_ajax_json_safe
 def daily_email_preview(request):
     """Render (NO send) the Daily Activity email for a day — the modal shows
     subject + recipients + the exact HTML that will be sent. Accepts optional
@@ -1128,6 +1148,7 @@ class CockpitPOSkusView(View):
 
 
 @login_required
+@_ajax_json_safe
 def email_preview(request):
     """Re-render the summary email for the current day/subject/note/recipients
     (AJAX) — NO send. Returns the exact subject + HTML that would be mailed, so
@@ -1858,11 +1879,26 @@ def confirm(request, token):
         except (ValueError, TypeError):
             as_of = None
 
-    res = engine_bridge.confirm(
-        meta['marketplace'], paths, warehouse=meta['warehouse'],
-        margin_pct=meta['margin_pct'] / 100.0, actions=actions,
-        ean_fixes=meta.get('ean_fixes'), as_of=as_of,
-        recorded_by=(getattr(request.user, 'username', '') or 'system'))
+    # engine_bridge.confirm guards its ATOMIC DB write, but the pre-record steps it
+    # runs first (re-parse + mapping/master DB lookups + workbook export) are not —
+    # a transient DB blip or an openpyxl error there would otherwise 500 the lock to
+    # the JSON client (which then shows only 'Network error'). Wrap it: on a crash,
+    # nothing was recorded (the failure is before the atomic write), so report cleanly.
+    try:
+        res = engine_bridge.confirm(
+            meta['marketplace'], paths, warehouse=meta['warehouse'],
+            margin_pct=meta['margin_pct'] / 100.0, actions=actions,
+            ean_fixes=meta.get('ean_fixes'), as_of=as_of,
+            recorded_by=(getattr(request.user, 'username', '') or 'system'))
+    except Exception as e:  # noqa: BLE001 — never 500 the lock
+        import logging
+        logging.getLogger(__name__).exception('confirm/lock crashed before recording')
+        err = (f"Recording failed before anything was written "
+               f"({type(e).__name__}: {e}). Nothing was recorded — please retry.")
+        if ajax:
+            return JsonResponse({'ok': False, 'error': err}, status=200)
+        messages.error(request, err)
+        return redirect('b2b_review', token=token)
 
     if not res.get('ok'):
         err = res.get('error', 'Push failed.')
@@ -2960,6 +2996,7 @@ class AvailabilityView(LoginRequiredMixin, TemplateView):
 
 @login_required
 @require_POST
+@_ajax_json_safe
 def availability_check(request):
     """Paste blob → parsed order nos → availability dict (JSON). Read-only."""
     from .services import availability as av
@@ -3079,6 +3116,7 @@ def availability_run_delete(request, run_id):
 
 @login_required
 @require_POST
+@_ajax_json_safe
 def availability_export(request):
     """Same check → styled multi-sheet .xlsx (Summary · PO Summary · By Order
     Lines · By SKU · Not Found). Qty AND value fill at every angle."""
