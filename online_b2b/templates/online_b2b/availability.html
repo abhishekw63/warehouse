@@ -56,6 +56,7 @@
           <button type="button" class="tab tab--underline av-tab" data-pane="powise">PO-wise · Fill rate</button>
           <button type="button" class="tab tab--underline av-tab" data-pane="lines">PO line items</button>
           <button type="button" class="tab tab--underline av-tab" data-pane="sku">By SKU</button>
+          <button type="button" class="tab tab--underline av-tab" data-pane="runs" id="av-tab-runs" hidden>🗎 Recorded runs <span class="tcount" id="av-runs-n"></span></button>
         </div>
         <div class="av-ractions">
           <button type="button" class="btn-ghost" id="av-record" title="Freeze this run (fill rate + comparison) so you can look it up later — inventory keeps changing">🗎 Record run</button>
@@ -66,16 +67,12 @@
       <div class="av-pane" id="pane-powise"></div>
       <div class="av-pane" id="pane-lines"></div>
       <div class="av-pane" id="pane-sku"></div>
+      <div class="av-pane" id="pane-runs">
+        <p class="av-hint" style="margin:0 0 12px;">Frozen fill-rate snapshots — the FR as it was when recorded (inventory changes over time). Click a run to replay it read-only.</p>
+        <div id="av-trend" class="av-trend" hidden></div>
+        <div id="av-runs-list"></div>
+      </div>
     </div>
-  </div>
-
-  <div class="im-card av-runs-card" id="av-runs-card" hidden>
-    <div class="av-runs-head">
-      <h2>🗎 Recorded runs <span class="av-runs-n" id="av-runs-n"></span></h2>
-      <span class="av-hint">Frozen fill-rate snapshots — the FR as it was when recorded (inventory changes over time).</span>
-    </div>
-    <div id="av-trend" class="av-trend" hidden></div>
-    <div id="av-runs-list"></div>
   </div>
 </div>
 

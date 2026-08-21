@@ -335,7 +335,12 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
   var recordUrl = CFG["b2b_availability_record"], runsUrl = CFG["b2b_availability_runs"];
   var recBtn = document.getElementById('av-record');
   var recBanner = document.getElementById('av-recbanner');
-  var runsCard = document.getElementById('av-runs-card');
+  var runsTab = document.getElementById('av-tab-runs');
+  // Switch the results tab strip to a given pane (shared by clicks + programmatic).
+  function activateTab(name) {
+    document.querySelectorAll('.av-tab').forEach(function (x) { x.classList.toggle('on', x.dataset.pane === name); });
+    document.querySelectorAll('.av-pane').forEach(function (x) { x.classList.toggle('on', x.id === 'pane-' + name); });
+  }
   function recordRun() {
     var orders = ta.value.trim();
     if (!orders) { statusEl.textContent = 'Nothing to record — run a check first.'; return; }
@@ -408,8 +413,11 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
       grid + whLines + overall + dots + '</svg>';
   }
   function renderRuns(runs) {
-    document.getElementById('av-runs-n').textContent = runs.length ? '(' + runs.length + ')' : '';
-    runsCard.hidden = runs.length === 0;
+    document.getElementById('av-runs-n').textContent = runs.length || '';
+    if (runsTab) runsTab.hidden = runs.length === 0;   // hide the tab when there's nothing to show
+    // Recorded runs exist but no live check has been run this visit → reveal the
+    // results shell and land on the Recorded-runs tab so history is visible on open.
+    if (runs.length && results.hidden) { results.hidden = false; activateTab('runs'); }
     if (!runs.length) { document.getElementById('av-runs-list').innerHTML = ''; return; }
     document.getElementById('av-runs-list').innerHTML = runs.map(function (r) {
       return '<div class="av-run" data-run="' + r.run_id + '">' +
@@ -441,6 +449,7 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
           '<button type="button" class="av-rec-exit" id="av-rec-exit">↩ Back to live</button></div>';
         render(p.check);
         renderScenarios(p.scenarios);
+        activateTab('scenario');   // land on Best warehouse to show the snapshot
         recBtn.hidden = true;
         var exp = document.getElementById('av-export'); if (exp) exp.hidden = true;
         results.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -480,6 +489,7 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
         statusEl.textContent = '✓ ' + j.summary.orders + ' order(s) checked';
         render(j);
         runScenarios(orders);   // best-warehouse comparison (independent of WH override)
+        activateTab('scenario'); // a fresh check lands on Best warehouse
         pushRecent(orders);     // remember this list for the Recent dropdown
       })
       .catch(function () { btn.disabled = false; statusEl.textContent = 'Network error — retry.'; });
@@ -501,11 +511,7 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
     ta.value = it.text; recentSel.value = ''; run();
   });
   document.querySelectorAll('.av-tab').forEach(function (t) {
-    t.addEventListener('click', function () {
-      document.querySelectorAll('.av-tab').forEach(function (x) { x.classList.remove('on'); });
-      document.querySelectorAll('.av-pane').forEach(function (x) { x.classList.remove('on'); });
-      t.classList.add('on'); document.getElementById('pane-' + t.dataset.pane).classList.add('on');
-    });
+    t.addEventListener('click', function () { activateTab(t.dataset.pane); });
   });
 
   // Export → styled multi-sheet .xlsx (POST current orders + WH → blob download).
@@ -572,15 +578,9 @@ var CFG = JSON.parse(document.getElementById("availability-cfg").textContent);
   // your list and results.
   ta.addEventListener('input', saveState);
   whSel.addEventListener('change', saveState);
-  (function restore() {
-    var s;
-    try { s = JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (e) { s = {}; }
-    if (s && s.orders && s.orders.trim()) {
-      ta.value = s.orders;
-      if (s.warehouse) whSel.value = s.warehouse;
-      run();   // re-check → results reappear without re-pasting
-    }
-  })();
+  // NOTE: the page loads FRESH — it no longer auto-restores + re-runs the last
+  // search on refresh (that felt like "the POs come back on their own"). Your last
+  // lists live in the Recent dropdown instead; pick one to re-run deliberately.
   renderRecent();   // populate the Recent dropdown
   loadRuns();       // show any past recorded snapshots + the fill-rate trend on load
 })();
