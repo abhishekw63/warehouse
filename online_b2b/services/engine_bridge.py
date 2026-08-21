@@ -686,8 +686,18 @@ class Processor:
                 self.unmapped.append({'location': loc, 'po': str(_po or '')})
 
         if not result.rows:
-            return {'ok': False, 'error': "No valid rows extracted from the PO file(s).",
-                    'warnings': self.warnings}
+            # Surface WHY no rows came out — the engine's warnings hold the real
+            # cause (wrong sheet, renamed/missing column, empty file). Without them
+            # the operator only sees a vague "No valid rows" and can't fix the file.
+            detail = '; '.join(dict.fromkeys(w for w in self.warnings if w))  # de-dup, keep order
+            err = "No valid rows extracted from the PO file(s)."
+            if detail:
+                err += " Likely cause — " + detail[:400]
+            else:
+                err += (" The sheet/columns didn't match this marketplace's expected "
+                        "format — check it's the right marketplace's PO file (see the "
+                        "template's exact columns) and that no sheet/column was renamed.")
+            return {'ok': False, 'error': err, 'warnings': self.warnings}
 
         if not skip_dedup:
             try:

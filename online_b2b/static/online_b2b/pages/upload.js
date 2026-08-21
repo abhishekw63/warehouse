@@ -125,9 +125,19 @@ var CFG = JSON.parse(document.getElementById("upload-cfg").textContent);
       done = true; clearInterval(tick);
       card.classList.add('proc-err');
       if (spin) spin.style.display = 'none';
-      titleEl.textContent = 'Import failed';
-      stageEl.textContent = msg || 'Something went wrong — please try again.';
-      fill.style.width = '100%'; pctEl.textContent = '';
+      titleEl.textContent = '⚠ Import failed';
+      // Uniform, always-informative reason. The backend returns the real cause;
+      // if it's blank or the bare generic, show a consistent guidance line so the
+      // operator NEVER sees an empty/"Starting…" state on failure.
+      var reason = (msg == null ? '' : String(msg)).trim();
+      if (!reason || /^import failed\.?$/i.test(reason)) {
+        reason = "Couldn't process the file. Check it's the right marketplace's PO "
+               + 'in the expected format (open “Full detail” for the exact columns) '
+               + 'and that no sheet or column was renamed/removed, then retry.';
+      }
+      stageEl.textContent = reason;
+      fill.style.width = '100%'; if (fill.classList) fill.classList.add('proc-fill-err');
+      pctEl.textContent = '';
       timeEl.innerHTML = '<button type="button" id="proc-close" class="proc-close">Close</button>';
       var c = document.getElementById('proc-close');
       if (c) c.addEventListener('click', function () {
