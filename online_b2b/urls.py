@@ -108,8 +108,6 @@ urlpatterns = [
     path('cockpit/preview/', views.email_preview, name='b2b_email_preview'),
     path('cockpit/send/', views.email_send, name='b2b_email_send'),
     path('email/', views.email_page),   # legacy redirect target — old bookmarks still land here
-    path('ui-lab/', views.ui_lab, name='b2b_ui_lab'),
-    path('ui-lab/search/', views.ui_lab_search, name='b2b_ui_lab_search'),
     path('issues/', views.issues, name='b2b_issues'),
     path('issues/export/', views.issues_export, name='b2b_issues_export'),
     path('issues/email/preview/', views.issues_email_preview, name='b2b_issues_email_preview'),

@@ -78,7 +78,7 @@
     {# Admin group — collapsible; Setup (DB) is the first of more to come. #}
     <button type="button" class="sn sn-dim side-group" id="adminGroup" aria-controls="adminSub" title="Admin">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='settings' %}</span><span class="side-label">Admin</span><span class="side-caret side-label">▸</span></button>
-    <div class="side-subnav{% if '/setup' in request.path or '/dev/' in request.path or '/ui-lab' in request.path or '/users' in request.path %} open{% endif %}" id="adminSub">
+    <div class="side-subnav{% if '/setup' in request.path or '/dev/' in request.path or '/users' in request.path %} open{% endif %}" id="adminSub">
       <a href="{% url 'b2b_setup' %}" class="sn sn-dim{% if '/setup' in request.path %} on{% endif %}" title="Setup · switch database (local ↔ server)">
         <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='server' %}</span><span class="side-label">Setup · DB</span></a>
       {% if is_role_admin %}
@@ -89,8 +89,6 @@
         <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='activity' %}</span><span class="side-label">Dev · Health</span></a>
       <a href="{% url 'audit_log' %}" class="sn sn-dim{% if '/audit' in request.path %} on{% endif %}" title="Audit Log — who did what">
         <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='scroll' %}</span><span class="side-label">Audit Log</span></a>
-      <a href="{% url 'b2b_ui_lab' %}" class="sn sn-dim{% if '/ui-lab' in request.path %} on{% endif %}" title="UI Lab (htmx · Alpine)">
-        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='flask' %}</span><span class="side-label">UI Lab</span></a>
     </div>
     {% endif %}
     <a href="{% url 'departments' %}" class="sn sn-dim" title="Departments">

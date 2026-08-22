@@ -3163,29 +3163,6 @@ def availability_bins(request):
                          'bins': bins})
 
 
-# ── UI Lab (learning surface: htmx · Alpine · animation) ────────────────────
-# Isolated, staff-facing page that demonstrates the newer front-end tech on
-# REAL data without touching any production flow. htmx/Alpine load ONLY here
-# (see the template), so the blast radius is this one page.
-@login_required
-def ui_lab(request):
-    """Render the UI Lab page. Thin view — reuses the existing item_master
-    search service (no new query), so htmx has real data to fetch."""
-    from .services import item_master_loader as iml
-    ctx = {'result': iml.list_items('', limit=12)}   # initial rows for first paint
-    return render(request, 'online_b2b/ui_lab.html', ctx)
-
-
-@login_required
-def ui_lab_search(request):
-    """htmx endpoint: return ONLY the results partial for a search term.
-    htmx swaps this fragment into the page — no full reload, no hand-written
-    fetch/JSON. Reuses iml.list_items (same code path as the Item Master page)."""
-    from .services import item_master_loader as iml
-    res = iml.list_items(request.GET.get('q', ''), limit=25)
-    return render(request, 'online_b2b/_ui_lab_rows.html', {'result': res})
-
-
 # ── SKU price/CP exceptions — operator-managed (feeds the engine's exception
 #    overlay; additive, the engine already auto-reads item_exceptions) ────────
 @login_required
