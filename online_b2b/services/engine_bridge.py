@@ -1742,15 +1742,17 @@ class FlipkartProcessor(Processor):
             by_po = self._tracker_labels()
             if by_po:
                 try:
-                    from .order_db import _conn
-                    with _conn() as (cur, d):
+                    from .order_db import _conn_tx
+                    payload = [(label, out['run_id'], po, 'Flipkart')
+                               for po, label in by_po.items()]
+                    # one atomic batch (executemany in _conn_tx) instead of a per-PO
+                    # UPDATE loop on autocommit — all labels re-stamp together or none.
+                    with _conn_tx() as (cur, d):
                         ph = d['ph']
-                        for po, label in by_po.items():
-                            cur.execute(
-                                f"UPDATE order_headers SET marketplace_label={ph} "
-                                f"WHERE run_id={ph} AND po={ph} AND marketplace={ph}",
-                                (label, out['run_id'], po, 'Flipkart'))
-                        cur.connection.commit()
+                        cur.executemany(
+                            f"UPDATE order_headers SET marketplace_label={ph} "
+                            f"WHERE run_id={ph} AND po={ph} AND marketplace={ph}",
+                            payload)
                 except Exception as e:  # noqa: BLE001
                     out.setdefault('warnings', []).append(
                         f"Tracker re-label skipped ({type(e).__name__}: {e}).")
