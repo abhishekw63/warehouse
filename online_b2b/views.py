@@ -3493,8 +3493,16 @@ class EkaDataView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         from .services import eka_data
-        ctx['rows'] = eka_data.all_rows()
-        ctx['status'] = eka_data.status()
+        try:
+            ctx['rows'] = eka_data.all_rows()
+            ctx['status'] = eka_data.status()
+        except Exception as e:  # noqa: BLE001 — a transient remote-DB blip must not 500 the page
+            import logging
+            logging.getLogger(__name__).exception('EKA data load failed')
+            ctx['rows'] = []
+            ctx['status'] = {}
+            ctx['load_error'] = (f'Could not load EKA data (temporary database issue: '
+                                 f'{type(e).__name__}) — please retry.')
         return ctx
 
 

@@ -21,6 +21,7 @@
   </div>
 
   {% if messages %}{% for m in messages %}<div class="banner {% if m.tags == 'error' %}err{% else %}ok{% endif %}">{{ m }}</div>{% endfor %}{% endif %}
+  {% if load_error %}<div class="banner err">{{ load_error }}</div>{% endif %}
 
   <div class="im-kpis reveal">
     <div class="im-kpi k1"><span class="im-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span>
