@@ -1581,17 +1581,15 @@ def _kpis(cur, d, segment=SEGMENT, window='all') -> dict:
         f"FROM {ot} WHERE {seg} {wf}", tuple(sp + wp))
     n_pos, n_lines, tot_qty, tot_val = cur.fetchone()
 
-    # Channels breadth stays ALL-TIME (cumulative, not a windowed volume).
-    cur.execute(f"SELECT COUNT(DISTINCT marketplace_label) FROM {ot} "
-                f"WHERE {seg}", tuple(sp))
-    n_mp = cur.fetchone()[0]
-
-    cur.execute(f"SELECT COUNT(DISTINCT po) FROM {ot} WHERE {seg} "
-                f"AND run_ts >= {ph}", tuple(sp + [_cutoff(kind, RECENT_DAYS)]))
-    updated_2d = cur.fetchone()[0]
-
-    cur.execute(f"SELECT MAX(run_ts) FROM {ot} WHERE {seg}", tuple(sp))
-    last_updated = cur.fetchone()[0]
+    # Channels breadth (ALL-TIME, cumulative), recently-updated POs, and the last
+    # run — all over WHERE {seg}, folded into ONE round-trip (was three separate
+    # queries to remote TiDB). Conditional COUNT(DISTINCT CASE ...) is equivalent to
+    # the old "COUNT(DISTINCT po) WHERE run_ts >= cutoff".
+    cur.execute(
+        f"SELECT COUNT(DISTINCT marketplace_label), "
+        f"COUNT(DISTINCT CASE WHEN run_ts >= {ph} THEN po END), MAX(run_ts) "
+        f"FROM {ot} WHERE {seg}", tuple([_cutoff(kind, RECENT_DAYS)] + sp))
+    n_mp, updated_2d, last_updated = cur.fetchone()
 
     # Expiring soon (mysql DATE math; best-effort 0 on sqlite)
     expiring = 0
@@ -1611,13 +1609,19 @@ def _kpis(cur, d, segment=SEGMENT, window='all') -> dict:
     # lines count as needs-attention / issues. Scoped to the same run_ts window.
     n_issue = needs_attention = order_lines = 0
     try:
-        cur.execute(f"SELECT COUNT(*) FROM order_lines_full WHERE 1=1 {wf}",
-                    tuple(wp))
-        order_lines = cur.fetchone()[0] or 0
-        cur.execute(f"SELECT COUNT(*), COUNT(DISTINCT po) FROM order_lines_full "
-                    f"WHERE status IN ('MISMATCH','NOT_IN_MASTER') "
-                    f"AND (action IS NULL OR action = '') {wf}", tuple(wp))
-        n_issue, needs_attention = cur.fetchone()
+        # total lines + issue lines + POs-needing-attention in ONE pass over the
+        # windowed lines table (was two queries). CASE-fold gives the same counts.
+        cur.execute(
+            f"SELECT COUNT(*), "
+            f"SUM(CASE WHEN status IN ('MISMATCH','NOT_IN_MASTER') "
+            f"AND (action IS NULL OR action = '') THEN 1 ELSE 0 END), "
+            f"COUNT(DISTINCT CASE WHEN status IN ('MISMATCH','NOT_IN_MASTER') "
+            f"AND (action IS NULL OR action = '') THEN po END) "
+            f"FROM order_lines_full WHERE 1=1 {wf}", tuple(wp))
+        order_lines, n_issue, needs_attention = cur.fetchone()
+        order_lines = order_lines or 0
+        n_issue = n_issue or 0
+        needs_attention = needs_attention or 0
     except Exception:
         pass
 
