@@ -159,7 +159,7 @@
   <!-- Line items -->
   <div class="tabpane on" data-pane="lines">
     <div class="scroll">
-    <table class="grid">
+    <table class="grid" data-enh-skip>
       <thead><tr><th>PO</th><th>Item No</th><th>EAN</th><th>Description</th><th class="r">Qty</th>
         <th class="r">Our MRP</th><th class="r">Their MRP</th>
         <th class="r">Our Land</th><th class="r">Their Land</th>
@@ -195,7 +195,7 @@
   <div class="tabpane" data-pane="orders" style="display:none;">
     <p class="aff-hint"><b style="color:#0a7d33;">✓ {{ r.n_clean_po }} CLEAN</b> · <b style="color:#b91c1c;">⚑ {{ r.n_affected_po }} AFFECTED</b>
       — CLEAN POs go 100% to D365 as-is; AFFECTED had qty excluded or lines needing a decision.</p>
-    <table class="grid">
+    <table class="grid" data-enh-skip>
       <thead><tr><th>PO</th><th>Location</th><th>WH</th><th>Type</th><th class="r">Items</th><th class="r">Qty</th><th class="r">Value</th>
         <th>Status</th></tr></thead>
       <tbody>
@@ -218,7 +218,7 @@
       vendor CP / manual) — their price isn't the flat margin. Same data as the
       <b>SKU&nbsp;Summary</b> sheet in the downloaded workbook.</p>
     <div class="scroll">
-    <table class="grid">
+    <table class="grid" data-enh-skip>
       <thead><tr><th>Item No</th><th>EAN</th><th>Description</th><th class="r">Qty</th>
         <th class="r"># POs</th><th class="r">Value (inc GST)</th><th class="r">Unit Price (CP)</th>
         <th>Overridden</th><th>Note</th></tr></thead>
@@ -245,7 +245,7 @@
       <b style="color:var(--green);">● Exact</b> = safe · <b style="color:#b45309;">● Fuzzy</b> = matched by similarity, confirm &amp; promote to exact · <b style="color:var(--red);">● Unmapped</b> = no match (Cust/Ship-to blank), add it. Fix any on the
       <a href="{% url 'b2b_ship_to' %}" target="_blank">Ship-To Mapping</a> page.</p>
     {% if r.mapping_report %}
-    <table class="grid">
+    <table class="grid" data-enh-skip>
       <thead><tr><th>PO</th><th>Location (from PO)</th><th></th><th>Mapped Ship-To</th><th>Cust · Code</th><th>Match</th><th>Remark</th></tr></thead>
       <tbody>
         {% for m in r.mapping_report %}
@@ -305,7 +305,7 @@
     </div>
     {% endif %}
     <div class="scroll aff-scroll">
-    <table class="grid compact aff-tbl">
+    <table class="grid compact aff-tbl" data-enh-skip>
       <thead><tr><th class="chk-col">{% if not locked %}<input type="checkbox" id="affAll" title="select all">{% endif %}</th>
         <th>PO</th><th>Item No</th><th>Description</th><th>EAN</th><th class="r">Qty</th>
         <th class="r">Our MRP</th><th class="r">Their MRP</th>
@@ -373,7 +373,7 @@
 
   <!-- Skipped -->
   <div class="tabpane" data-pane="skipped" style="display:none;">
-    <table class="grid">
+    <table class="grid" data-enh-skip>
       <thead><tr><th>PO</th><th>Marketplace</th><th>Location</th><th class="r">Qty</th><th class="r">Value</th></tr></thead>
       <tbody>
         {% for sk in r.skipped %}

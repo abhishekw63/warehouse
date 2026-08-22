@@ -110,7 +110,7 @@
   <!-- Line items -->
   <div class="tabpane on" data-pane="lines">
     <div class="scroll">
-    <table class="grid">
+    <table class="grid" data-enh-skip>
       <thead><tr><th>PO</th><th>Item No</th><th>EAN</th><th>Description</th><th class="r">Qty</th>
         <th class="r">Unit price</th><th class="r">MRP</th>
         {% if caps.vendor_cols %}<th class="r">Their MRP</th><th class="r">Diff</th>{% endif %}
@@ -151,7 +151,7 @@
   <div class="tabpane" data-pane="orders" style="display:none;">
     <p class="aff-hint"><b style="color:#0a7d33;">✓ {{ n_clean_po }} CLEAN</b> · <b style="color:#b91c1c;">⚑ {{ n_affected_po }} AFFECTED</b>
       — CLEAN POs go 100% through as-is; AFFECTED had lines excluded or needing a decision.</p>
-    <table class="grid">
+    <table class="grid" data-enh-skip>
       <thead><tr><th>PO</th><th>Location</th><th>WH</th><th>Type</th><th class="r">Items</th><th class="r">Qty</th><th class="r">Value</th><th>Status</th></tr></thead>
       <tbody>
         {% for h in r.headers %}
@@ -170,7 +170,7 @@
     <p class="aff-hint">Per-SKU demand across this run — qty, # POs, value and unit price.
       <b style="color:#b45309;">● Highlighted</b> rows are <b>overridden</b> (deal / vendor CP / manual decision).</p>
     <div class="scroll">
-    <table class="grid">
+    <table class="grid" data-enh-skip>
       <thead><tr><th>Item No</th><th>EAN</th><th>Description</th><th class="r">Qty</th><th class="r"># POs</th>
         <th class="r">Value</th><th class="r">Unit Price</th><th>Overridden</th><th>Note</th></tr></thead>
       <tbody>
@@ -198,7 +198,7 @@
       <b style="color:#b91c1c;">● UNMAPPED</b> = blank ship-to — the SO <b>can't reach D365</b> until you add the store in
       <a href="{% url 'b2b_ship_to' %}" target="_blank">Ship-To Mapping</a>.</p>
     <div class="scroll">
-    <table class="grid">
+    <table class="grid" data-enh-skip>
       <thead><tr><th>PO</th><th>Location (from file)</th><th></th><th>Ship-to</th><th>Del Location</th><th>City</th><th>State</th><th>Pin</th><th class="r">Qty</th><th>Status</th></tr></thead>
       <tbody>
         {% for m in r.mapping_report %}
@@ -228,7 +228,7 @@
     <div class="aff-exc">
       <div class="aff-exc-h">⚠ <b>{{ r.file_issues|length }} file / PO exception(s)</b> — couldn't be read the standard way (skipped or rescued). Fix the source file &amp; re-upload, or record the rest.</div>
       <div class="scroll">
-      <table class="grid">
+      <table class="grid" data-enh-skip>
         <thead><tr><th>File</th><th>Problem</th><th>Detail</th></tr></thead>
         <tbody>
           {% for f in r.file_issues %}
@@ -245,7 +245,7 @@
     {% endif %}
     {% if r.affected %}
     <div class="scroll">
-    <table class="grid">
+    <table class="grid" data-enh-skip>
       <thead><tr><th>PO</th><th>Item No</th><th>EAN</th><th>Description</th><th class="r">Qty</th><th>Status</th>
         {% if not locked %}<th>Decision</th>{% endif %}</tr></thead>
       <tbody>
@@ -276,7 +276,7 @@
       <b>qty never doubles</b>. <span class="po-rev">⚠ Revised</span> = same PO number but the
       <b>SKU count / total qty changed</b> (a re-send); the recorded values are kept — delete the
       old run &amp; re-record if you want the new version.</p>
-    <table class="grid">
+    <table class="grid" data-enh-skip>
       <thead><tr><th>PO</th><th>Location</th><th>Type</th><th class="r">Recorded<br><small>SKU · Qty</small></th><th class="r">Incoming<br><small>SKU · Qty</small></th><th class="r">Value</th></tr></thead>
       <tbody>
         {% for sk in r.skipped %}
