@@ -18,10 +18,13 @@ order logic:
 
 from __future__ import annotations
 
+import logging
 import re
 
 from . import inventory_store as inv
 from .order_db import _conn
+
+_log = logging.getLogger(__name__)
 
 # Split pasted text into tokens: Excel copy is tab/space/newline separated; also
 # tolerate commas and semicolons. Order numbers themselves keep their internal
@@ -232,6 +235,8 @@ def check_orders(order_nos, wh_override: str = '') -> dict:
         try:
             rows = inv.bin_audit(snap['snapshot_id'])
         except Exception:  # noqa: BLE001
+            _log.exception('bin_audit(%s) failed — no bin drill-down for this WH',
+                           snap.get('snapshot_id'))
             rows = []
         bins[inv.wh_short(wh)] = [{
             'bin': r.get('bin_code', ''), 'zone': r.get('zone_code', ''),

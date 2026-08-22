@@ -18,10 +18,13 @@ the old map's intent).
 from __future__ import annotations
 
 import datetime as _dt
+import logging
 
 from online_po_processor.data.master_loader import MasterLoader
 
 from .order_db import _conn
+
+_log = logging.getLogger(__name__)
 
 _clean = MasterLoader._clean_code
 _TABLE = 'channel_sku_map'
@@ -74,6 +77,7 @@ def channel_codes(channel: str) -> dict:
                     out[_clean(sku)] = _clean(ean)
             return out
     except Exception:  # noqa: BLE001
+        _log.exception('channel_codes(%s) failed — returning empty map', channel)
         return {}
 
 
@@ -106,6 +110,7 @@ def table_count() -> int:
             cur.execute(f"SELECT COUNT(*) FROM {_TABLE}")
             return int(cur.fetchone()[0] or 0)
     except Exception:  # noqa: BLE001
+        _log.exception('table_count failed — returning 0')
         return 0
 
 
@@ -125,6 +130,7 @@ def migrate_from_swiggy_map() -> dict:
                 "LEFT JOIN item_master m ON m.item_no = s.item_no")
             src = cur.fetchall()
         except Exception:  # noqa: BLE001
+            _log.exception('migrate_from_swiggy_map: source read failed — treating as empty')
             src = []
         for item_no, sku, ean in src:
             if sku and str(sku).strip() and str(sku).lower() != 'nan':
@@ -180,4 +186,5 @@ def list_codes(channel: str = '', q: str = '', limit: int = 300) -> dict:
         return {'rows': rows, 'total': total, 'channels': channels,
                 'channel': channel, 'q': q}
     except Exception:  # noqa: BLE001
+        _log.exception('list_codes failed — returning empty result')
         return {'rows': [], 'total': 0, 'channels': [], 'channel': channel, 'q': q}

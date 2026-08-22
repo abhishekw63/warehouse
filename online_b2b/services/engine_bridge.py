@@ -1691,6 +1691,9 @@ class Processor:
                 city_by_loc = {str(l).strip().lower(): str(c).strip()
                                for l, c in cur.fetchall()}
         except Exception:  # noqa: BLE001
+            import logging
+            logging.getLogger(__name__).exception(
+                '_mapped_city_by_po: ship_to city lookup failed — no city overlay')
             return {}
         out = {}
         for h in self._headers():
