@@ -274,12 +274,21 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
-# WhiteNoise: compress + hash static files at collectstatic time and serve them
-# with far-future caching. Falls back gracefully if a referenced file is missing.
+# Static files storage.
+#  • Production (DEBUG off): CONTENT-HASHED filenames + manifest + compression, so
+#    every deploy serves a NEW url and browsers can never keep serving a stale
+#    JS/CSS from cache (the root cause of "old code after a change" bugs). The
+#    resilient subclass falls back to the plain name if an entry is missing rather
+#    than 500-ing the page.
+#  • Dev (DEBUG on): plain compressed storage — runserver serves straight from the
+#    source dirs, so no `collectstatic`/manifest is needed while developing.
 STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {
-        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+        "BACKEND": (
+            "whitenoise.storage.CompressedStaticFilesStorage" if DEBUG
+            else "renee_cosmetics.storage.ResilientManifestStaticFilesStorage"
+        ),
     },
 }
 
