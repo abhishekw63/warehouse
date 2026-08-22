@@ -32,7 +32,7 @@ from __future__ import annotations
 import datetime as _dt
 import re
 
-from .order_db import _conn
+from .order_db import _conn, _conn_tx
 
 # ── warehouses (D365 Location code → friendly name / short tag) ──────────────
 WAREHOUSES = [
@@ -650,7 +650,7 @@ def save_snapshot(warehouse, parsed_wh, source_file='', user='',
     if isinstance(cap, _dt.datetime):
         cap = cap.strftime('%Y-%m-%d %H:%M:%S')
     t = parsed_wh['totals']
-    with _conn() as (cur, d):
+    with _conn_tx() as (cur, d):    # atomic: demote old current + insert new snapshot + all rows together
         ph = d['ph']
         cur.execute(f"UPDATE inventory_snapshot SET is_current=0 "
                     f"WHERE warehouse={ph} AND is_current=1", (warehouse,))
@@ -692,7 +692,6 @@ def save_snapshot(warehouse, parsed_wh, source_file='', user='',
                 f"INSERT INTO inventory_bin_line (snapshot_id, warehouse, item_no,"
                 f" bin_code, zone_code, decision, qty) VALUES ({','.join([ph]*7)})",
                 line_rows)
-        cur.connection.commit()
     return {'ok': True, 'snapshot_id': snap_id, 'warehouse': warehouse,
             'item_count': len(stock_rows)}
 

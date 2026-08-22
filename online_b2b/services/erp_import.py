@@ -19,7 +19,7 @@ import datetime as _dt
 import os
 import re
 
-from .order_db import _conn
+from .order_db import _conn, _conn_tx
 
 # ERP header name (lower, stripped) → our field. Matched fuzzily by substring.
 _FIELD_BY_HEADER = [
@@ -219,7 +219,7 @@ def do_import(filepath: str) -> dict:
     n_channels = len({r['channel'] for r in new_rows})
 
     try:
-        with _conn() as (cur, d):
+        with _conn_tx() as (cur, d):   # atomic: runs row + its headers commit together (no orphan run)
             ph = d['ph']
             # runs row
             cur.execute(
@@ -244,7 +244,6 @@ def do_import(filepath: str) -> dict:
                 ))
             cur.executemany(
                 f"INSERT INTO order_headers ({cols}) VALUES ({phs})", payload)
-            cur.connection.commit()
         return {'ok': True, 'run_id': run_id, 'imported': len(new_rows),
                 'skipped': len(pv['rows']) - len(new_rows)}
     except Exception as e:  # noqa: BLE001

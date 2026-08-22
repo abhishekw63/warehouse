@@ -460,8 +460,9 @@ def diff_against_current(rows: list) -> dict:
 def upsert_d365(rows: list) -> dict:
     """Additively merge D365 rows: INSERT new Ship-to Codes (source='d365'),
     UPDATE the owned fields on existing NON-manual rows (blank D365 values keep
-    the current value via COALESCE/NULLIF). Manual rows are never touched. One
-    batched transaction — safe over TiDB. Returns counts."""
+    the current value via COALESCE/NULLIF). Manual rows are never touched. INSERT
+    + UPDATE run in ONE transaction (_conn_tx) so a mid-way failure can't leave the
+    new rows committed without the updates. Returns counts."""
     ensure_table()
     diff = diff_against_current(rows)
     new_rows = diff['new']
@@ -471,7 +472,7 @@ def upsert_d365(rows: list) -> dict:
     ins_cols = ['party', 'del_location', 'cust_no', 'ship_to', 'name', 'address',
                 'address2', 'postcode', 'city', 'state', 'gst_reg', 'country',
                 'source', 'batch_id', 'updated_at']
-    with _conn() as (cur, d):
+    with _conn_tx() as (cur, d):        # atomic: INSERT + UPDATE commit together or not at all
         ph = d['ph']
         if new_rows:
             marks = ', '.join([ph] * len(ins_cols))
@@ -492,7 +493,6 @@ def upsert_d365(rows: list) -> dict:
             payload = [tuple([r.get(fld, '') for fld in _D365_FIELDS] +
                              [now, r['ship_to']]) for r in changed_rows]
             cur.executemany(sql, payload)
-        cur.connection.commit()
     return {'ok': True, 'inserted': len(new_rows),
             'updated': len(changed_rows), 'batch_id': batch,
             'skipped_manual': diff['changed_manual']}
