@@ -7,90 +7,90 @@
 
   <nav class="side-nav">
     <a href="{% url 'b2b_dashboard' %}" class="sn{% if request.path == '/b2b/' %} on{% endif %}" title="Hub">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><span class="side-label">Hub</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='grid' %}</span><span class="side-label">Hub</span></a>
     <a href="{% url 'b2b_daily' %}" class="sn{% if '/daily' in request.path %} on{% endif %}" title="Daily Tasks">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='clock' %}</span><span class="side-label">Daily Tasks</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='tasks' %}</span><span class="side-label">Daily Tasks</span></a>
     <a href="{% url 'b2b_email' %}" class="sn{% if '/b2b/cockpit' in request.path or '/b2b/email' in request.path %} on{% endif %}" title="Fulfilment Cockpit — order-wise fill rate & billing (email is one part)">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='mail' %}</span><span class="side-label">Fulfilment Cockpit</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='gauge' %}</span><span class="side-label">Fulfilment Cockpit</span></a>
     <a href="{% url 'b2b_analytics' %}" class="sn{% if '/analytics' in request.path %} on{% endif %}" title="Analytics">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><span class="side-label">Analytics</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='chart' %}</span><span class="side-label">Analytics</span></a>
     <a href="{% url 'b2b_rules' %}" class="sn{% if '/rules' in request.path %} on{% endif %}" title="Rules & Exceptions">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><span class="side-label">Rules &amp; Exceptions</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='rules' %}</span><span class="side-label">Rules &amp; Exceptions</span></a>
     <a href="{% url 'b2b_exceptions' %}" class="sn{% if '/exceptions' in request.path %} on{% endif %}" title="SKU Exceptions">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='hash' %}</span><span class="side-label">SKU Exceptions</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='tag' %}</span><span class="side-label">SKU Exceptions</span></a>
 
     <div class="side-sep">Segments</div>
     <a href="{% url 'b2b_online' %}" class="sn{% if '/b2b/online' in request.path %} on{% endif %}" title="Online B2B">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='store' %}</span><span class="side-label">Online B2B</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='globe' %}</span><span class="side-label">Online B2B</span></a>
     <a href="{% url 'b2b_offline' %}" class="sn{% if '/b2b/offline' in request.path %} on{% endif %}" title="Offline">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><span class="side-label">Offline</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='store' %}</span><span class="side-label">Offline</span></a>
 
     <div class="side-sep">Data</div>
     <a href="{% url 'b2b_orders' %}" class="sn{% if '/orders' in request.path %} on{% endif %}" title="Orders">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='po' %}</span><span class="side-label">Orders</span></a>
     <a href="{% url 'b2b_tracker' %}" class="sn{% if '/tracker' in request.path %} on{% endif %}" title="Consolidated Tracker — single source of truth (Online B2B + Offline)">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='po' %}</span><span class="side-label">Tracker</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='route' %}</span><span class="side-label">Tracker</span></a>
     <a href="{% url 'b2b_tables' %}" class="sn{% if '/b2b/tables' in request.path %} on{% endif %}" title="Tables — editable master data (GT Select status, etc.)">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='hash' %}</span><span class="side-label">Tables</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='table' %}</span><span class="side-label">Tables</span></a>
     <a href="{% url 'b2b_lines' %}" class="sn{% if '/lines' in request.path %} on{% endif %}" title="Line Items">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='search' %}</span><span class="side-label">Line Items</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='list' %}</span><span class="side-label">Line Items</span></a>
     <a href="{% url 'b2b_sku_summary' %}" class="sn{% if '/sku-summary' in request.path %} on{% endif %}" title="SKU Summary">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><span class="side-label">SKU Summary</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='pie' %}</span><span class="side-label">SKU Summary</span></a>
     <a href="{% url 'b2b_inventory' %}" class="sn{% if '/inventory' in request.path %} on{% endif %}" title="Inventory · Fill Rate">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><span class="side-label">Inventory</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='warehouse' %}</span><span class="side-label">Inventory</span></a>
     <a href="{% url 'b2b_availability' %}" class="sn{% if '/availability' in request.path %} on{% endif %}" title="Availability Check">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='search' %}</span><span class="side-label">Availability Check</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='scan' %}</span><span class="side-label">Availability Check</span></a>
     <a href="{% url 'b2b_item_master' %}" class="sn{% if '/item-master' in request.path %} on{% endif %}" title="Item Master">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><span class="side-label">Item Master</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='barcode' %}</span><span class="side-label">Item Master</span></a>
     <a href="{% url 'b2b_ship_to' %}" class="sn{% if '/ship-to' in request.path %} on{% endif %}" title="Ship-To Mapping">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='store' %}</span><span class="side-label">Ship-To Mapping</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='pin' %}</span><span class="side-label">Ship-To Mapping</span></a>
     <a href="{% url 'b2b_eka_data' %}" class="sn{% if '/eka-data' in request.path %} on{% endif %}" title="EKA Data — margin % · Type (SO/TO) · store registry">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><span class="side-label">EKA Data</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='database' %}</span><span class="side-label">EKA Data</span></a>
     <a href="{% url 'b2b_issues' %}" class="sn{% if '/issues' in request.path %} on{% endif %}" title="Issues">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><span class="side-label">Issues</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='flag' %}</span><span class="side-label">Issues</span></a>
     <a href="{% url 'b2b_tat' %}" class="sn{% if '/tat' in request.path %} on{% endif %}" title="TAT · SLA">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='clock' %}</span><span class="side-label">TAT · SLA</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='timer' %}</span><span class="side-label">TAT · SLA</span></a>
     {% comment %}Sales Validation removed 2026-07-20 (superseded by Triangular).
     Full Validation link hidden — page/service stay (Triangular uses the service);
     reach it directly at /b2b/full-validation/ if ever needed.{% endcomment %}
     {# STANDALONE Record Verification (removable) #}
     {# Record Verify — FLAT links (Verify + History): plain <a> like every other nav item, no collapsible JS. #}
     <a href="{% url 'b2b_record_verify' %}" class="sn{% if '/record-verify' in request.path and '/record-verify/log' not in request.path %} on{% endif %}" title="Record Verify — reconcile recorded data vs D365">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='check' %}</span><span class="side-label">Record Verify</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='verify' %}</span><span class="side-label">Record Verify</span></a>
     <a href="{% url 'b2b_record_verify_log' %}" class="sn sn-dim{% if '/record-verify/log' in request.path %} on{% endif %}" title="Verification history — Verified / Mismatch / External">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='clock' %}</span><span class="side-label">RV History</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='history' %}</span><span class="side-label">RV History</span></a>
 
     <div class="side-sep">Process</div>
     {# Process PO split into two flat links: Online (this app) + Offline (GT Mass · EKA · MT — Reliance Trends lives under MT — · GT Select, on the Offline dashboard). #}
     <a href="{% url 'b2b_upload' %}" class="sn{% if '/upload' in request.path or '/review' in request.path %} on{% endif %}" title="Online — Process PO">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='store' %}</span><span class="side-label">Online</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='upload' %}</span><span class="side-label">Online</span></a>
     <a href="{% url 'offline_dashboard' %}" class="sn{% if '/offline/' in request.path %} on{% endif %}" title="Offline — GT Mass · EKA · MT · GT Select">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><span class="side-label">Offline</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='truck' %}</span><span class="side-label">Offline</span></a>
     {# STANDALONE Batch Detect (removable) — Phase 0/1 read-only file→MP detector #}
     <a href="{% url 'b2b_batch' %}" class="sn{% if '/batch' in request.path %} on{% endif %}" title="Batch — detect which marketplace each file is (read-only)">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='search' %}</span><span class="side-label">Batch Detect</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='layers' %}</span><span class="side-label">Batch Detect</span></a>
     <a href="{% url 'b2b_drafts' %}" class="sn{% if '/drafts' in request.path %} on{% endif %}" title="Review Later">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='clock' %}</span><span class="side-label">Review Later</span></a>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='bookmark' %}</span><span class="side-label">Review Later</span></a>
   </nav>
 
   <div class="side-foot">
     {% if user.is_staff %}
     {# Admin group — collapsible; Setup (DB) is the first of more to come. #}
     <button type="button" class="sn sn-dim side-group" id="adminGroup" aria-controls="adminSub" title="Admin">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><span class="side-label">Admin</span><span class="side-caret side-label">▸</span></button>
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='settings' %}</span><span class="side-label">Admin</span><span class="side-caret side-label">▸</span></button>
     <div class="side-subnav{% if '/setup' in request.path or '/dev/' in request.path or '/ui-lab' in request.path or '/users' in request.path %} open{% endif %}" id="adminSub">
       <a href="{% url 'b2b_setup' %}" class="sn sn-dim{% if '/setup' in request.path %} on{% endif %}" title="Setup · switch database (local ↔ server)">
-        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='box' %}</span><span class="side-label">Setup · DB</span></a>
+        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='server' %}</span><span class="side-label">Setup · DB</span></a>
       {% if is_role_admin %}
       <a href="{% url 'users_roles' %}" class="sn sn-dim{% if '/users' in request.path %} on{% endif %}" title="Users &amp; Roles — who can write">
-        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><span class="side-label">Users &amp; Roles</span></a>
+        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='users' %}</span><span class="side-label">Users &amp; Roles</span></a>
       {% endif %}
       <a href="{% url 'dev_dashboard' %}" class="sn sn-dim{% if '/dev/' in request.path %} on{% endif %}" title="Dev · Health">
-        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><span class="side-label">Dev · Health</span></a>
+        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='activity' %}</span><span class="side-label">Dev · Health</span></a>
       <a href="{% url 'audit_log' %}" class="sn sn-dim{% if '/audit' in request.path %} on{% endif %}" title="Audit Log — who did what">
-        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><span class="side-label">Audit Log</span></a>
+        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='scroll' %}</span><span class="side-label">Audit Log</span></a>
       <a href="{% url 'b2b_ui_lab' %}" class="sn sn-dim{% if '/ui-lab' in request.path %} on{% endif %}" title="UI Lab (htmx · Alpine)">
-        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><span class="side-label">UI Lab</span></a>
+        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='flask' %}</span><span class="side-label">UI Lab</span></a>
     </div>
     {% endif %}
     <a href="{% url 'departments' %}" class="sn sn-dim" title="Departments">
