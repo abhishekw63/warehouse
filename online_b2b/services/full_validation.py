@@ -138,8 +138,8 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
                     f"FROM order_lines_full WHERE UPPER(po) IN ({ph})", pos)
         ourL = {}
         for po, it, ean, desc, qty, cp, st, act, exc, ovcp, up, gstc in cur.fetchall():
-            cp = float(cp or 0)
-            up = float(up or 0)
+            cp = float(cp or 0); up = float(up or 0); qty = int(qty or 0)
+            action = str(act or '').upper()
             # Effective price = the price we ACTUALLY pushed to D365 — that's what D365
             # holds, so value must reconcile against it, not our internal book/cost CP.
             #   • unit_price is the literal price written to the SO — it already reflects
@@ -148,7 +148,7 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
             #   • MT SO uploads leave unit_price blank (D365 auto-prices) — fall back to
             #     override_cp if set, else our book CP.
             #   • EXCLUDE lines never reach D365, so their book CP stands.
-            if str(act or '').upper() == 'EXCLUDE':
+            if action == 'EXCLUDE':
                 eff = cp
             elif up > 0:
                 eff = up
@@ -156,26 +156,42 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
                 eff = float(ovcp)
             else:
                 eff = cp
-            ourL[(str(po), str(it))] = {'ean': str(ean or ''), 'desc': str(desc or '')[:60],
-                                        'qty': int(qty or 0), 'cp': cp, 'eff_cp': eff,
-                                        'gst': _gst_rate(gstc), 'status': st,
-                                        'action': (act or ''), 'exc': (exc or '')}
+            # AGGREGATE by (PO, item): a PO can legitimately carry the same SKU on more
+            # than one line (e.g. 144 + 24). D365 already sums duplicate item lines
+            # (g['qty'] += q above), so we MUST too — otherwise the last line overwrites
+            # the rest and a real qty (168) reads as only the last line (24), a phantom
+            # QTY_MISMATCH. Included qty/value drive the D365 compare; excluded qty/value
+            # are tracked separately (they never reach D365).
+            key = (str(po), str(it))
+            e = ourL.get(key)
+            if e is None:
+                e = ourL[key] = {'ean': str(ean or ''), 'desc': str(desc or '')[:60],
+                                 'qty': 0, 'val': 0.0, 'adj': 0.0, 'excl_qty': 0, 'excl_val': 0.0,
+                                 'status': st, 'action': '', 'exc': ''}
+            if action == 'EXCLUDE':
+                e['excl_qty'] += qty
+                e['excl_val'] += cp * qty
+                if e['qty'] == 0:                       # entirely excluded (so far)
+                    e['action'] = 'EXCLUDE'; e['exc'] = exc or e['exc']
+            else:
+                e['qty'] += qty
+                e['val'] += eff * qty
+                e['adj'] += (cp - eff) * qty * (1 + _gst_rate(gstc))
+                e['action'] = act or ''                 # an included line owns the display action
+                if st:
+                    e['status'] = st
 
     hdr_rows, line_rows = [], []
     roll = defaultdict(lambda: {'pos': 0, 'qok': 0, 'vok': 0, 'excl': 0, 'qd': 0, 'qo': 0, 'vd': 0,
                                 'vo': 0, 'ln_ok': 0, 'ln_excl': 0, 'ln_miss': 0, 'ln_extra': 0, 'ln_qty': 0})
     for po, D in d365h.items():
         o = ourh.get(po); mp = (o or {}).get('mp', 'UNKNOWN'); R = roll[mp]
-        excl_qty = sum(v['qty'] for (p, it), v in ourL.items()
-                       if p == po and str(v['action']).upper() == 'EXCLUDE')
-        excl_val = sum(v['cp'] * v['qty'] for (p, it), v in ourL.items()
-                       if p == po and str(v['action']).upper() == 'EXCLUDE')
+        excl_qty = sum(v['excl_qty'] for (p, it), v in ourL.items() if p == po)
+        excl_val = sum(v['excl_val'] for (p, it), v in ourL.items() if p == po)
         # Override adjustment (incl-GST): the stored header order_value is book-CP based,
         # but for re-priced lines D365 holds the pushed (override) price. Subtract the
         # book-vs-pushed gap so header VALUE OURS reflects what we actually sent to D365.
-        ov_adj = sum((v['cp'] - v['eff_cp']) * v['qty'] * (1 + v['gst'])
-                     for (p, it), v in ourL.items()
-                     if p == po and v['eff_cp'] != v['cp'])
+        ov_adj = sum(v['adj'] for (p, it), v in ourL.items() if p == po)
         our_val_eff = (o['val'] - ov_adj) if o else None
         R['pos'] += 1; R['qd'] += D['qty']; R['vd'] += D['val']
         qok = bool(o) and abs(D['qty'] - o['qty']) < 0.5
@@ -205,7 +221,9 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
             it = k[1]; ov = ourL.get(k); dv = d365L.get(k)
             oq = ov['qty'] if ov else None
             dq = int(dv['qty']) if dv else None
-            oval = round(ov['eff_cp'] * ov['qty'], 2) if ov else None
+            oval = round(ov['val'], 2) if ov else None
+            if ov and not ov['qty'] and ov['excl_qty']:   # entirely-excluded item → show its excluded qty/value
+                oq = ov['excl_qty']; oval = round(ov['excl_val'], 2)
             dval = round(dv['amt'], 2) if dv else None
             ean = (ov or dv or {}).get('ean', ''); desc = (ov or dv or {}).get('desc', '')
             foc = int(dv['foc']) if dv else 0
