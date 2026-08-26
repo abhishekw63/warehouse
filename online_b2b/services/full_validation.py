@@ -97,6 +97,7 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
     lf[docno] = lf[docno].astype(str).str.strip().str.upper()   # case-insensitive PO match
     d365L = defaultdict(lambda: {'qty': 0.0, 'amt': 0.0, 'foc': 0.0, 'ean': '', 'desc': ''})
     foc_by_po = defaultdict(float)
+    paid_by_po = defaultdict(float)          # paid (non-FOC) line qty per PO
     for _, r in lf.iterrows():
         k = (r[docno], str(r[lno]).strip())
         g = d365L[k]
@@ -111,14 +112,24 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
         else:
             g['qty'] += q
             g['amt'] += amt
+            paid_by_po[r[docno]] += q
         g['ean'] = str(r.get(lgtin) or ''); g['desc'] = str(r.get(ldesc) or '')[:60]
 
-    # The D365 header 'Total Quantity' also includes the FOC free units — net them
-    # out so the header reconciles against our paid qty.
-    for _po, _foc in foc_by_po.items():
-        if _po in d365h:
-            d365h[_po]['foc'] = _foc
-            d365h[_po]['qty'] = d365h[_po]['qty'] - _foc
+    # The D365 header 'Total Quantity' includes the FOC free units, so net them out
+    # to reconcile against our paid qty. BUT for some channels (GT Mass) the header
+    # 'Total Quantity' is not populated at all (0) even though the LINES carry the
+    # real qty — netting FOC then drives the header qty NEGATIVE and every GT Mass
+    # PO shows a phantom qty MISMATCH. So: when netting the header total would go
+    # non-positive though the lines DO carry paid qty, trust the line-derived paid
+    # sum instead. Normal channels (header total = paid + FOC) are unchanged.
+    for _po in set(foc_by_po) | set(paid_by_po):
+        if _po not in d365h:
+            continue
+        _foc = foc_by_po.get(_po, 0.0)
+        _paid = paid_by_po.get(_po, 0.0)
+        d365h[_po]['foc'] = _foc
+        netted = d365h[_po]['qty'] - _foc
+        d365h[_po]['qty'] = _paid if (netted <= 0 and _paid > 0) else netted
 
     pos = tuple(d365h.keys())
     if not pos:
