@@ -1459,6 +1459,7 @@ class Processor:
         AutoFilter (not listed as flat text), sorts right, and survives a paste
         into the org master. ``None`` when the value isn't a date."""
         import datetime as _dt
+        import re as _re
         if not v:
             return None
         if isinstance(v, _dt.datetime):
@@ -1471,7 +1472,23 @@ class Processor:
                 return _dt.datetime.strptime(s, fmt).date()
             except ValueError:
                 continue
-        return None
+        # Robust fallback for timestamp strings that carry time/timezone junk the
+        # exact formats above choke on — e.g. Go's "2026-08-25 00:00:00 +0000 UTC"
+        # (which used to leak into the Tracker as raw text), ISO
+        # "2026-08-21T05:58:32+00:00", or "2026-09-05T18:29:59Z". Pull the leading
+        # calendar date out and drop the rest.
+        m = _re.match(r'\s*(\d{4})-(\d{1,2})-(\d{1,2})', s)          # ISO   YYYY-M-D…
+        if m:
+            y, mo, d = m.groups()
+        else:
+            m = _re.match(r'\s*(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})', s)  # day-first D-M-YYYY…
+            if not m:
+                return None
+            d, mo, y = m.groups()
+        try:
+            return _dt.date(int(y), int(mo), int(d))
+        except ValueError:
+            return None
 
     @classmethod
     def _fmt_tracker_date(cls, v) -> str:

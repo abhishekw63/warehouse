@@ -161,13 +161,18 @@ def _register_web_channels(eng) -> None:
 
     # Manash = Purplle OFFLINE. Same tab-separated '.XLS' as online Purplle
     # (normalised by _normalize_manash_excel); multi-store — the 'Address' column
-    # is the ship-to lookup key (exact-matches del_location for party 'Manash',
-    # cust 20328). Mapping-only like LS: NO price/CP check (MT rule).
+    # is the ship-to lookup key (exact-matches del_location). Mapping-only like
+    # LS: NO price/CP check (MT rule).
+    # ── PARTY ALIGNMENT (same bug class as LL/Lulu below) ──────────────────────
+    # These stores' Ship-To B2B rows live under party 'Manash ECOM Offline' — in
+    # BOTH the Excel master (Online_B2B_Dump_Compilation.xlsx) AND ship_to_mapping.
+    # There is NO party 'Manash' in the Ship-To B2B master, so party='Manash'
+    # matched 0 rows and every PO came out UNMAPPED. Align party to the data.
     if 'PPL' not in eng.CHANNELS:
         eng.CHANNELS['PPL'] = eng.ChannelConfig(
             code='PPL',
             display_name='Manash (Purplle offline)',
-            party='Manash',                   # ship_to_mapping party (cust 20328)
+            party='Manash ECOM Offline',      # Ship-To B2B party (cust 20328) — see note above
             input_folder_name='Input_MANASH',
             output_folder_name='Output_MANASH',
             sell_to='20328',

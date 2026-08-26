@@ -117,17 +117,38 @@ def mysql_ssl(cfg: dict) -> dict:
 
 
 def _to_date(val):
-    """Parse a tracker date string (dd-mm-yyyy / dd.mm.yyyy / …) to a
-    ``date`` for DATE columns; ``None`` when blank/unparseable."""
+    """Parse a tracker date value to a ``date`` for DATE columns; ``None`` when
+    blank/unparseable. Robust to real date/datetime objects and to messy
+    timestamp strings that carry time/timezone junk the exact formats choke on —
+    e.g. Go's "2026-08-25 00:00:00 +0000 UTC" (which used to land as a NULL
+    po_date → blank Tracker + no TAT), ISO "…T05:58:32+00:00" / "…Z". Pull the
+    leading calendar date out and drop the rest."""
     if not val:
         return None
+    import datetime as _dt
+    import re as _re
+    if isinstance(val, _dt.datetime):
+        return val.date()
+    if isinstance(val, _dt.date):
+        return val
     s = str(val).strip()
     for fmt in ('%d-%m-%Y', '%d.%m.%Y', '%d/%m/%Y', '%Y-%m-%d'):
         try:
             return datetime.strptime(s, fmt).date()
         except ValueError:
             continue
-    return None
+    m = _re.match(r'\s*(\d{4})-(\d{1,2})-(\d{1,2})', s)          # ISO  YYYY-M-D…
+    if m:
+        y, mo, d = m.groups()
+    else:
+        m = _re.match(r'\s*(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})', s)  # day-first D-M-YYYY…
+        if not m:
+            return None
+        d, mo, y = m.groups()
+    try:
+        return _dt.date(int(y), int(mo), int(d))
+    except ValueError:
+        return None
 
 
 def _to_dt(val):
