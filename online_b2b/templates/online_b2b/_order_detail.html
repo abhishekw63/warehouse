@@ -1,0 +1,75 @@
+{% load static b2b_extras %}
+{% comment %}Per-PO drill drawer content (AJAX, loaded by tracker.js into #odPanel).
+Same visual language as the Tracker table — dept badge · zone chip · mono · inr_short —
+plus an accurate Full → Excluded → Final (to-D365) breakdown and every line of the PO's
+latest run. One PO in place; no full-run navigation.{% endcomment %}
+{% if not d.ok or not d.header %}
+  <div class="od-empty">No recorded detail for PO <b>{{ d.po }}</b>{% if d.error %} <span class="od-err">({{ d.error }})</span>{% endif %}.</div>
+{% else %}
+{% with h=d.header k=d.kpis %}
+<div class="od-head">
+  <span class="dept-b {% if h.dept == 'Offline' %}off{% else %}on{% endif %}"><i></i>{{ h.dept }}</span>
+  <h2 class="od-pono mono">{{ h.po }}</h2>
+  <span class="od-mp" title="Marketplace">{{ h.marketplace|default:'—' }}</span>
+  <span class="od-wh mono" title="Fulfilment centre">{{ h.wh|default:'—' }}</span>
+</div>
+
+<div class="od-meta">
+  <div class="od-m"><span class="od-l">External Doc</span><span class="od-v mono">{{ h.external_doc|default:'—' }}</span></div>
+  <div class="od-m od-m-wide"><span class="od-l">Location</span><span class="od-v">{{ h.location|default:'—' }}</span></div>
+  <div class="od-m"><span class="od-l">Pincode</span><span class="od-v mono">{{ h.pincode|default:'—' }}</span></div>
+  <div class="od-m"><span class="od-l">Zone</span><span class="od-v">{% if h.zone %}<span class="zn zn-{{ h.zone|lower }}">{{ h.zone }}</span>{% else %}<span class="muted">—</span>{% endif %}</span></div>
+  <div class="od-m"><span class="od-l">PO Date</span><span class="od-v">{{ h.po_date|date:'d M Y'|default:'—' }}</span></div>
+  <div class="od-m"><span class="od-l">Exp Date</span><span class="od-v">{{ h.exp_date|date:'d M Y'|default:'—' }}</span></div>
+  <div class="od-m"><span class="od-l">Uploaded</span><span class="od-v">{{ h.uploaded|date:'d M Y · H:i'|default:'—' }}</span></div>
+  <div class="od-m od-m-wide"><span class="od-l">File source</span><span class="od-v mono od-src" title="{{ h.file_source }}">{{ h.file_source|default:'—' }}</span></div>
+</div>
+
+<div class="od-kpis">
+  <div class="od-kpi"><div class="od-kn">{{ k.full_qty|compact }}</div><div class="od-kl">Full Order Qty</div></div>
+  <div class="od-kpi od-excl"><div class="od-kn">{{ k.excl_qty|compact }}</div><div class="od-kl">Excluded{% if k.excl_lines %} · {{ k.excl_lines }} line{{ k.excl_lines|pluralize }}{% endif %}</div></div>
+  <div class="od-kpi od-final"><div class="od-kn">{{ k.final_qty|compact }}</div><div class="od-kl">Final Qty → D365</div></div>
+  <div class="od-kpi"><div class="od-kn">{{ k.final_value|inr_short }}</div><div class="od-kl">Final Value → D365</div></div>
+</div>
+
+{% if d.billing and d.billing.has_stock %}
+{% with bp=d.billing.fill_pct %}
+<div class="od-fulfil">
+  <div class="od-fulfil-hd">Fulfilment now <span>· from {{ d.billing.wh_short }} stock{% if d.billing.stock_as_of %} · as of {{ d.billing.stock_as_of|slice:':10' }}{% endif %}</span></div>
+  <div class="od-fulfil-row">
+    <div class="od-fulfil-num"><div class="od-fulfil-v">{{ d.billing.fillable_value|inr_short }}</div><div class="od-fulfil-l">Billable now</div></div>
+    <div class="od-fulfil-bar">
+      <div class="od-fmeter"><i class="{% if bp >= 95 %}ok{% elif bp >= 60 %}mid{% else %}low{% endif %}" data-w="{{ bp|floatformat:0 }}"></i></div>
+      <div class="od-fulfil-sub"><b>{{ bp|floatformat:0 }}%</b> fillable{% if d.billing.short_value %} · <span class="od-short-v">{{ d.billing.short_value|inr_short }} short</span>{% endif %}</div>
+    </div>
+  </div>
+</div>
+{% endwith %}
+{% endif %}
+
+<div class="od-lines-hd">Line items <span class="od-count">{{ k.lines }}</span>{% if k.excl_lines %} <span class="od-count od-count-x" title="dropped, not sent to D365">{{ k.excl_lines }} excluded</span>{% endif %}</div>
+{% if d.lines %}
+<div class="od-scroll">
+<table class="trk-tbl od-ltbl">
+  <thead><tr>
+    <th>Item</th><th>EAN</th><th>Description</th>
+    <th class="r">Qty</th><th class="r">Unit ₹</th><th class="r">Value</th><th>Status</th>
+  </tr></thead>
+  <tbody>{% for ln in d.lines %}
+    <tr class="{% if ln.dropped %}od-lexcl{% endif %}">
+      <td class="mono strong">{{ ln.item_no }}</td>
+      <td class="mono">{{ ln.ean|default:'—' }}</td>
+      <td class="od-desc" title="{{ ln.description }}">{{ ln.description|default:'—' }}</td>
+      <td class="r" data-v="{{ ln.qty }}">{{ ln.qty }}</td>
+      <td class="r mono">{% if ln.unit_price %}{{ ln.unit_price|floatformat:2 }}{% else %}—{% endif %}</td>
+      <td class="r val" data-v="{{ ln.value }}">{{ ln.value|inr_short }}</td>
+      <td>{% if ln.dropped %}<span class="od-chip excl" title="Dropped ({{ ln.status }}{% if ln.action %} / {{ ln.action }}{% endif %}) — held out of the D365 upload">excluded</span>{% elif ln.exception_label %}<span class="od-chip exc" title="Accepted exception">{{ ln.exception_label }}</span>{% else %}<span class="od-chip ok">✓ OK</span>{% endif %}{% if ln.short_units and not ln.dropped %} <span class="od-chip short" title="{{ ln.available|floatformat:0 }} in {{ d.billing.wh_short }} stock · {{ ln.fillable|floatformat:0 }} fillable now · {{ ln.short_units|floatformat:0 }} short">−{{ ln.short_units|floatformat:0 }} stock</span>{% endif %}</td>
+    </tr>
+  {% endfor %}</tbody>
+</table>
+</div>
+{% else %}
+  <div class="od-noln">No line items recorded for this PO — header-only (e.g. a Tkinter-only run).</div>
+{% endif %}
+{% endwith %}
+{% endif %}

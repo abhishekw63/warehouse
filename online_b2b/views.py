@@ -467,8 +467,62 @@ def _daily_ctx(request):
             daily['focus'] = _dt.date.fromisoformat(start).strftime('%d %b')
         except ValueError:
             pass
+    # Enriched nested hierarchy for the ECharts Sunburst / Treemap views — reuses
+    # `hier` (no extra current-period query). Each LEAF carries every metric (`m` =
+    # value/qty/pos/items) so the client can re-size by any of them, plus `mp` (drill
+    # to the same Orders filter as the tree) and `growth` (% vs the previous period).
+    # Purely additive; the tree data/markup is untouched.
+    today = _dt.date.today()
+    if start and end:
+        try:
+            _d0 = _dt.date.fromisoformat(start); _d1 = _dt.date.fromisoformat(end)
+            _span = (_d1 - _d0).days + 1
+            _ps = (_d0 - _dt.timedelta(days=_span)).isoformat()
+            _pe = (_d0 - _dt.timedelta(days=1)).isoformat()
+        except ValueError:
+            _ps = _pe = ''
+    else:
+        _pe = (today - _dt.timedelta(days=days)).isoformat()
+        _ps = (today - _dt.timedelta(days=2 * days - 1)).isoformat()
+    prior: dict = {}
+    if _ps and _pe:
+        try:                                             # growth is best-effort
+            ph = order_db.intake_hierarchy(start=_ps, end=_pe)
+            for _s in ph.get('segments', []):
+                for _m in _s.get('marketplaces', []):
+                    for _c in _m.get('children', []):
+                        prior[(_s.get('segment'), _c.get('label'))] = _c.get('value') or 0
+        except Exception:  # noqa: BLE001
+            prior = {}
+
+    def _growth(seg, label, cur):
+        p = prior.get((seg, label))
+        if not p:                                        # no prior (or zero) → "new", no %
+            return None
+        return round((cur - p) / p * 100, 1)
+
+    def _leaf(name, node, seg, label):
+        return {'name': name, 'mp': label,
+                'm': {'value': round(node.get('value') or 0), 'qty': int(node.get('qty') or 0),
+                      'pos': node.get('pos') or 0, 'items': node.get('items') or 0},
+                'growth': _growth(seg, label, node.get('value') or 0)}
+
+    breakdown = []
+    for s in hier.get('segments', []):
+        seg = s.get('segment', '')
+        seg_node = {'name': seg, 'children': []}
+        for m in s.get('marketplaces', []):
+            if m.get('multi'):
+                kids = [_leaf(c.get('label', ''), c, seg, c.get('label', ''))
+                        for c in m.get('children', [])]
+                seg_node['children'].append({'name': m.get('marketplace', ''), 'children': kids})
+            else:
+                kk = m.get('children') or []
+                lbl = kk[0].get('label') if kk else m.get('marketplace', '')
+                seg_node['children'].append(_leaf(m.get('marketplace', ''), m, seg, lbl))
+        breakdown.append(seg_node)
     return {'days': days, 'start': start, 'end': end,
-            'hier': hier, 'daily': daily}
+            'hier': hier, 'daily': daily, 'breakdown': breakdown}
 
 
 def _sku_ctx(request):
@@ -636,11 +690,37 @@ class TrackerView(LoginRequiredMixin, TemplateView):
             'uploaded_to': (request.GET.get('uploaded_to') or '').strip(),
         }
 
+    @staticmethod
+    def _attach_billing(t):
+        """Attach 'estimated billing' (billable-from-current-stock ₹) to each shown
+        row + the snapshot 'as of' for the column header. Additive and defensive —
+        an inventory hiccup must never break the tracker table."""
+        try:
+            from .services import availability as _av
+            rows = t.get('rows') or []
+            bill = _av.tracker_billing([r['po'] for r in rows])
+            as_of = None
+            for r in rows:
+                b = bill.get(r['po'])
+                r['est_billing'] = b
+                so = b.get('stock_as_of') if b else None
+                if so and (as_of is None or so > as_of):
+                    as_of = so
+            t['bill_as_of'] = as_of
+        except Exception:  # noqa: BLE001
+            pass
+
     def _ctx(self, request):
+        # NOTE: estimated billing is NOT computed here — it's a ~2s inventory pass
+        # that would block the (already remote-TiDB-bound) tracker render. The page
+        # paints instantly with placeholder cells; tracker.js fetches billing from
+        # TrackerBillingView right after and fills them in. Export computes it inline
+        # (a deliberate download tolerates the latency).
         f = self._filters(request)
-        return {'t': order_db.consolidated_tracker(
+        t = order_db.consolidated_tracker(
             f['segment'], f['marketplace'], f['warehouse'], f['q'],
-            uploaded_from=f['uploaded_from'], uploaded_to=f['uploaded_to']), 'f': f}
+            uploaded_from=f['uploaded_from'], uploaded_to=f['uploaded_to'])
+        return {'t': t, 'f': f}
 
     def get(self, request, *args, **kwargs):
         if request.GET.get('partial'):        # AJAX: KPIs + table only, no reload
@@ -667,19 +747,157 @@ class TrackerExportView(LoginRequiredMixin, View):
             uploaded_from=(request.GET.get('uploaded_from') or '').strip(),
             uploaded_to=(request.GET.get('uploaded_to') or '').strip(),
             limit=100000, display_limit=100000)
+        TrackerView._attach_billing(data)   # est. billing from current inventory
         buf = io.StringIO()
         w = csv.writer(buf)
         w.writerow(['Dept', 'WH', 'Marketplace', 'PO', 'External Doc No', 'Location',
-                    'PO Date', 'Exp Date', 'Order Qty', 'Order Value', 'Pincode',
+                    'PO Date', 'Exp Date', 'Order Qty', 'Order Value',
+                    'Est. Billing (current stock)', 'Fill %', 'Pincode',
                     'Zone', 'Uploaded', 'OMT'])
         for r in data.get('rows', []):
+            b = r.get('est_billing') or {}
+            est = '' if (not b or b.get('no_stock')) else b.get('est_value', '')
+            fill = '' if (not b or b.get('no_stock')) else b.get('fill_pct', '')
             w.writerow([r['dept'], r['wh'], r['marketplace'], r['po'], r['external_doc'],
                         r['location'], r['po_date'] or '', r['exp_date'] or '',
-                        r['qty'], r['order_value'], r['pincode'], r['zone'],
+                        r['qty'], r['order_value'], est, fill, r['pincode'], r['zone'],
                         r['uploaded'] or '', r.get('omt', '')])
         resp = HttpResponse(buf.getvalue(), content_type='text/csv')
         resp['Content-Disposition'] = 'attachment; filename="consolidated_tracker.csv"'
         return resp
+
+
+class TrackerBillingView(LoginRequiredMixin, View):
+    """Async 'estimated billing' for the tracker rows the page is showing. The
+    page posts the visible PO list; we return each PO's billable-from-current-stock
+    ₹ + fill% + the snapshot 'as of'. Deliberately OFF the render path so the table
+    paints instantly and this ~2s inventory pass fills the column in after."""
+
+    def post(self, request):
+        import json
+        try:
+            pos = (json.loads(request.body or b'{}') or {}).get('pos') or []
+        except Exception:  # noqa: BLE001
+            pos = request.POST.getlist('pos')
+        from .services import availability as _av
+        from .templatetags.b2b_extras import inr_short
+        bill = _av.tracker_billing(pos)
+        as_of = None
+        out = {}
+        for po, b in bill.items():
+            out[po] = {'est': b['est_value'], 'ord': b['ord_value'],
+                       'est_fmt': inr_short(b['est_value']),
+                       'short': b['short_value'], 'fill': b['fill_pct'],
+                       'wh': b['wh_short'], 'no_stock': b['no_stock'],
+                       # Full → Uploaded(D365) → Excluded breakdown
+                       'upl_qty': b['upl_qty'], 'excl_qty': b['excl_qty'],
+                       'upl_value': b['upl_value'], 'excl_value': b['excl_value']}
+            so = b.get('stock_as_of')
+            if so and (as_of is None or so > as_of):
+                as_of = so
+        fmt = (lambda dt, f: dt.strftime(f) if hasattr(dt, 'strftime') else str(dt))
+        return JsonResponse({
+            'ok': True, 'bill': out,
+            'as_of': fmt(as_of, '%d %b %Y · %H:%M') if as_of else '',
+            'as_of_short': fmt(as_of, '%d %b') if as_of else '',
+        })
+
+
+class TrackerTodayView(LoginRequiredMixin, View):
+    """Today's fulfilment snapshot for the KPI strip — orders UPLOADED today (the
+    client's local date, honoring the current tracker filters): count, value,
+    billable-now-from-stock + avg fill, and at-risk (fill < 60%). One JSON,
+    fetched async after the table paints so it never blocks render."""
+
+    def get(self, request):
+        import datetime
+        day = (request.GET.get('d') or '').strip() or datetime.date.today().isoformat()
+        f = TrackerView()._filters(request)
+        t = order_db.today_orders(day, f['segment'], f['marketplace'],
+                                  f['warehouse'], f['q'])
+        pos = t.get('pos') or []
+        from .services import availability as _av
+        from .templatetags.b2b_extras import inr_short
+        bill = _av.tracker_billing(pos)
+        est = short = ordv = 0.0
+        risk = 0
+        as_of = None
+        for po in pos:
+            b = bill.get(po)
+            if not b or b.get('no_stock'):
+                continue
+            est += b['est_value']; short += b['short_value']; ordv += b['ord_value']
+            if b['fill_pct'] < 60:
+                risk += 1
+            so = b.get('stock_as_of')
+            if so and (as_of is None or so > as_of):
+                as_of = so
+        fmt = (lambda dt, s: dt.strftime(s) if hasattr(dt, 'strftime') else str(dt))
+        # dept-wise split (Online B2B vs Offline) for each KPI
+        seg_labels = {'OnlineB2B': 'Online B2B', 'Offline': 'Offline'}
+        seg_order = {'OnlineB2B': 0, 'Offline': 1}
+        segments = []
+        for code, sg in (t.get('segments') or {}).items():
+            s_est = 0.0
+            s_risk = 0
+            for po in sg['pos']:
+                b = bill.get(po)
+                if not b or b.get('no_stock'):
+                    continue
+                s_est += b['est_value']
+                if b['fill_pct'] < 60:
+                    s_risk += 1
+            segments.append({
+                'code': code, 'label': seg_labels.get(code, code or 'Other'),
+                'count': sg['count'],
+                'value': sg['value'], 'value_fmt': inr_short(sg['value']),
+                'billable': round(s_est, 2), 'billable_fmt': inr_short(s_est),
+                'risk': s_risk,
+            })
+        segments.sort(key=lambda s: seg_order.get(s['code'], 9))
+        return JsonResponse({
+            'ok': t.get('ok', False), 'day': day, 'count': t['count'],
+            'value_fmt': inr_short(t['value']), 'value': t['value'],
+            'billable_fmt': inr_short(est), 'billable': round(est, 2),
+            'avg_fill': round(est / ordv * 100) if ordv else 0,
+            'risk': risk, 'short_fmt': inr_short(short),
+            'as_of_short': fmt(as_of, '%d %b') if as_of else '',
+            'segments': segments,
+        })
+
+
+class TrackerInsightsView(LoginRequiredMixin, View):
+    """Async chart data for the tracker's collapsible **Insights** panel — daily
+    intake trend, marketplace breakdown, facility load (order_db.tracker_insights)
+    + a today fill-rate (billable vs short). Self-contained & removable; kept OFF
+    the tracker render path so it never blocks the table."""
+
+    def get(self, request):
+        import datetime
+        f = TrackerView()._filters(request)
+        day = (request.GET.get('d') or '').strip() or datetime.date.today().isoformat()
+        ins = order_db.tracker_insights(
+            f['segment'], f['marketplace'], f['warehouse'], f['q'],
+            uploaded_from=f['uploaded_from'], uploaded_to=f['uploaded_to'], day=day)
+        # today fill-rate (billable vs short) — reuse today_orders + the billing pass
+        fill = {'billable': 0.0, 'short': 0.0}
+        try:
+            from .services import availability as _av
+            t = order_db.today_orders(day, f['segment'], f['marketplace'],
+                                      f['warehouse'], f['q'])
+            bill = _av.tracker_billing(t.get('pos') or [])
+            est = short = 0.0
+            for po in (t.get('pos') or []):
+                b = bill.get(po)
+                if not b or b.get('no_stock'):
+                    continue
+                est += b['est_value']
+                short += b['short_value']
+            fill = {'billable': round(est, 2), 'short': round(short, 2)}
+        except Exception:  # noqa: BLE001
+            pass
+        ins['fill'] = fill
+        return JsonResponse(ins)
 
 
 class TrackerAddView(LoginRequiredMixin, View):
@@ -818,21 +1036,59 @@ def dashboard(request):
 
 @login_required
 def orders(request):
-    """Full order list — filter bar + table + load-more + export."""
-    f = _filters(request)
-    data = order_db.dashboard(offset=_int(request, 'offset'), **f)
-    if _is_ajax(request):
-        return render(request, 'online_b2b/_orders_results.html', {'d': data})
-    return render(request, 'online_b2b/orders.html', {'d': data})
+    """Deprecated — the standalone Orders list folded into the Consolidated
+    Tracker (the single source of truth across Online B2B + Offline). Kept as a
+    param-translating redirect so old bookmarks / deep links keep landing on the
+    right filtered view: ?segment= (code → tracker label) and ?marketplace= /
+    ?warehouse= / ?q= carry over; Orders-only params (days, order_type, order
+    date range, sort) have no tracker analogue and are dropped."""
+    from urllib.parse import urlencode
+    from django.urls import reverse
+    g = request.GET
+    seg_label = {'OnlineB2B': 'Online B2B', 'Offline': 'Offline'}.get(
+        g.get('segment', '').strip(), '')
+    params = {}
+    if seg_label:
+        params['segment'] = seg_label
+    for k in ('marketplace', 'warehouse', 'q'):
+        v = g.get(k, '').strip()
+        if v:
+            params[k] = v
+    url = reverse('b2b_tracker')
+    if params:
+        url += '?' + urlencode(params)
+    return redirect(url)
 
 
-@login_required
-def orders_more(request):
-    """'Load more' → next page of order rows only."""
-    f = _filters(request)
-    page = order_db.orders_page(offset=_int(request, 'offset'), **f)
-    return render(request, 'online_b2b/_orders_rows.html',
-                  {'orders': page['orders'], 'page': page})
+class OrderDetailView(LoginRequiredMixin, View):
+    """Per-PO drill-down (Tracker drawer, AJAX partial) — the PO's tracker-format
+    header + Full→Excluded→Final qty/value breakdown + every line of its latest
+    run. One PO, opened in place; no full-run navigation."""
+
+    def get(self, request, po):
+        d = order_db.po_detail(po)
+        # Fulfilment overlay: billable-now-from-stock (same engine as the tracker
+        # column + Availability Checker), merged in per-line. Additive & defensive.
+        try:
+            from .services import availability as _av
+            o = (_av.check_orders([po]).get('orders') or [None])[0]
+            if o:
+                d['billing'] = {
+                    'fillable_value': o['fillable_value'], 'ord_value': o['ord_value'],
+                    'short_value': o['short_value'], 'fill_pct': o['fill_val_pct'],
+                    'fill_qty_pct': o['fill_pct'], 'wh_short': o['wh_short'],
+                    'stock_as_of': o['stock_as_of'], 'has_stock': bool(o['stock_as_of']),
+                }
+                avail = {str(l['item_no']): l for l in o.get('lines', [])}
+                for ln in d.get('lines', []):
+                    a = avail.get(str(ln['item_no']))
+                    if a:
+                        ln['available'] = a['available']
+                        ln['fillable'] = a['fillable']
+                        ln['short_units'] = a['short']
+        except Exception:  # noqa: BLE001
+            pass
+        return render(request, 'online_b2b/_order_detail.html', {'d': d})
 
 
 def _line_filters(request):
@@ -2330,11 +2586,11 @@ def bulk_confirm(request, token):
         return redirect('b2b_bulk_review', token=token)
     if not res.get('imported'):
         messages.info(request, "All orders were already imported — nothing new.")
-        return redirect('b2b_orders')
+        return redirect('b2b_tracker')
     messages.success(
         request, f"Imported {res['imported']} order(s) "
         f"({res.get('skipped', 0)} already present).")
-    return redirect('b2b_orders')
+    return redirect('b2b_tracker')
 
 
 @login_required
@@ -2705,13 +2961,13 @@ def gt_select_confirm(request, token):
     shutil.rmtree(d, ignore_errors=True)
     if not res.get('imported'):
         messages.info(request, "All orders were already imported — nothing new.")
-        return redirect('b2b_orders')
+        return redirect('b2b_tracker')
     messages.success(
         request, f"✓ Imported {res['imported']} GT Select order(s) · "
         f"{res['lines']} line(s) ({res.get('skipped', 0)} already present).")
     if res.get('run_id'):
         return redirect('b2b_run_detail', run_id=res['run_id'])
-    return redirect('b2b_orders')
+    return redirect('b2b_tracker')
 
 
 @login_required

@@ -1,0 +1,39 @@
+/* Tracker → Insights panel styles (self-contained; loaded only on the tracker
+   page). Removing this file + the JS + the include cleanly drops the feature. */
+.ti-panel{margin:0 0 16px;border:1px solid var(--border);border-radius:16px;background:var(--surface);overflow:hidden;box-shadow:0 4px 18px -12px rgba(15,23,42,.35);}
+.ti-toggle{display:flex;align-items:center;gap:12px;width:100%;padding:13px 18px;background:none;border:0;cursor:pointer;font-family:inherit;text-align:left;color:var(--text);transition:background .13s;}
+.ti-toggle:hover{background:color-mix(in srgb,var(--accent) 4%,var(--surface));}
+.ti-tt{font-size:14px;font-weight:800;}
+.ti-sub{font-size:12px;color:var(--muted);font-weight:600;}
+.ti-caret{margin-left:auto;font-size:12px;color:var(--muted);transition:transform .2s;}
+.ti-panel.open .ti-caret{transform:rotate(180deg);}
+.ti-body{padding:0 16px 16px;border-top:1px solid var(--border-2);}
+.ti-body[hidden]{display:none;}
+.ti-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px;}
+.ti-card{border:1px solid var(--border);border-radius:12px;background:var(--surface);padding:12px 14px 14px;min-width:0;}
+.ti-wide{grid-column:1 / -1;}
+@media(max-width:900px){.ti-grid{grid-template-columns:1fr;}}
+.ti-h{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;color:var(--text);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px;}
+.ti-note{font-size:10px;font-weight:600;text-transform:none;letter-spacing:0;color:var(--muted);}
+.ti-seg{margin-left:auto;display:inline-flex;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:2px;}
+.ti-seg button{border:0;background:none;font-family:inherit;font-size:10.5px;font-weight:700;color:var(--text-2,var(--muted));padding:3px 10px;border-radius:6px;cursor:pointer;text-transform:none;letter-spacing:0;transition:background .12s,color .12s;}
+.ti-seg button.on{background:var(--accent);color:#fff;}
+.ti-chart{height:190px;width:100%;}
+.ti-wide .ti-chart{height:210px;}
+#tiArrival{height:240px;}
+.ti-empty{text-align:center;color:var(--muted);padding:20px;font-size:13px;}
+.ti-empty[hidden]{display:none;}
+/* expand button + big chart modal */
+.ti-exp{margin-left:auto;border:0;background:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:2px 5px;border-radius:6px;transition:color .12s,background .12s;}
+.ti-h .ti-seg + .ti-exp{margin-left:8px;}
+.ti-exp:hover{color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent);}
+.ti-modal-ov{position:fixed;inset:0;z-index:9992;background:rgba(15,23,42,.5);backdrop-filter:blur(3px);}
+.ti-modal-ov[hidden]{display:none;}
+.ti-modal{position:fixed;z-index:9993;top:50%;left:50%;transform:translate(-50%,-50%);width:min(1120px,94vw);height:min(700px,88vh);
+  background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:0 30px 80px -28px rgba(15,23,42,.6);display:flex;flex-direction:column;overflow:hidden;}
+.ti-modal[hidden]{display:none;}
+.ti-modal-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--border-2);}
+.ti-modal-t{font-size:14px;font-weight:800;color:var(--text);}
+.ti-modal-x{border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);width:30px;height:30px;border-radius:9px;cursor:pointer;font-size:14px;line-height:1;}
+.ti-modal-x:hover{border-color:var(--accent);color:var(--accent);}
+.ti-modal-chart{flex:1;width:100%;padding:10px 12px 12px;}

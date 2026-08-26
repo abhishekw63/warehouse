@@ -129,6 +129,21 @@ def db_label_to_channel() -> dict:
     return {c.db_label: c.key for c in CHANNELS if c.db_label}
 
 
+def mt_child_labels() -> set:
+    """``order_headers.marketplace_label`` values that are MT-Select children — they
+    all roll up to a single **MT** parent in the tracker's dept/marketplace charts
+    (Health & Glow, Lifestyle, Health & Beauty, Shoppers Stop, … → 'MT')."""
+    return {c.db_label for c in CHANNELS if c.parent == 'mt_select' and c.db_label}
+
+
+def db_key_to_display() -> dict:
+    """``{order_headers.marketplace (coarse parent): friendly display}`` — the
+    coarse ``marketplace`` column already groups families (all Flipkart labels =
+    'Flipkart', all MT children = 'MT'), so grouping by it + this map gives clean
+    parent-level names (Blink→Blinkit, Flipkart→Flipkart, MT→MT)."""
+    return {c.db_key: c.display for c in CHANNELS if c.db_key}
+
+
 def children_of(key: str) -> list[Channel]:
     """The child channels nested under ``key`` (in display order); [] if none."""
     return [c for c in CHANNELS if c.parent == key]

@@ -74,16 +74,16 @@ def check_orders(order_nos, wh_override: str = '') -> dict:
     """
     override_code = inv.wh_normalize(wh_override) if (wh_override or '').strip() else ''
 
-    # One stock map per distinct warehouse actually used (cheap + avoids re-query).
+    # One stock map per distinct warehouse actually used, cached per snapshot so
+    # repeat checks (and the tracker drawer) skip the ~1s reload — see _cached_stock_map.
+    _snaps = inv.current_snapshots()
     _stock: dict[str, dict] = {}
 
     def stock_for(wh: str) -> dict:
         if wh not in _stock:
-            _stock[wh] = inv.current_stock_map(wh)
+            _stock[wh] = _cached_stock_map(wh, _snaps)
         return _stock[wh]
 
-    # Snapshot timestamps → "inventory as of …" per warehouse.
-    _snaps = inv.current_snapshots()
     # Manual per-PO warehouse overrides (loaded once; beat the auto map).
     _ov = inv.wh_override_map()
 
@@ -247,6 +247,135 @@ def check_orders(order_nos, wh_override: str = '') -> dict:
     return {'ok': True, 'orders': orders, 'skus': skus, 'not_found': not_found,
             'bins': bins, 'override': override_code, 'wh_options': inv.WAREHOUSES,
             'summary': summary}
+
+
+# Per-process stock-map cache for the Tracker billing column, keyed by
+# (warehouse, snapshot_id). A new bin upload makes a NEW snapshot_id → new key →
+# automatic refresh (stays fully dynamic), so this only skips the redundant ~1s
+# reload of the SAME current snapshot across repeated filter changes. At most one
+# entry per warehouse (stale snapshots are evicted), so it stays tiny.
+_BILL_STOCK_CACHE: dict = {}
+
+
+def _cached_stock_map(wh, snaps) -> dict:
+    """``inv.current_stock_map(wh)`` cached per ``(warehouse, snapshot_id)`` for
+    this process. A new bin upload changes the snapshot_id → new key → automatic
+    refresh (stays dynamic); the SAME current snapshot is reused across calls,
+    skipping the ~1s reload. Shared by ``tracker_billing`` + ``check_orders`` (so
+    the tracker column, the drill drawer, and the Availability Checker all warm
+    the same cache). At most one entry per warehouse."""
+    snap = snaps.get(wh)
+    sid = snap.get('snapshot_id') if snap else None
+    key = (wh, sid)
+    sm = _BILL_STOCK_CACHE.get(key)
+    if sm is None:
+        sm = inv.current_stock_map(wh)
+        for k in [k for k in _BILL_STOCK_CACHE if k[0] == wh]:
+            del _BILL_STOCK_CACHE[k]          # evict this WH's stale snapshot
+        _BILL_STOCK_CACHE[key] = sm
+    return sm
+
+
+def tracker_billing(pos) -> dict:
+    """Batched **estimated billing** for many POs at once — powers the Tracker's
+    'Est. Billing' column. For each PO: the ₹ value its mapped warehouse's CURRENT
+    inventory snapshot can fill right now (billable-from-stock). Same fill logic as
+    the Availability Checker — ``min(ordered, available) × inc-GST landing`` — the
+    same WH resolution (auto map → manual shift override) and the same current
+    snapshots. Gross per-PO (each PO sees full stock; no cross-PO allocation), so a
+    row's number matches what the Availability Checker shows for that PO alone.
+
+    Returns ``{po: {est_value, ord_value, short_value, fill_pct, wh_short,
+    stock_as_of, no_stock}}`` (``no_stock=True`` when the PO's WH has no current
+    snapshot → the UI shows '—', never a misleading ₹0). Read-only; never raises."""
+    pos = [str(p).strip() for p in (pos or []) if str(p or '').strip()]
+    out: dict = {}
+    if not pos:
+        return out
+    try:
+        from .triangular_validation import _line_val, _is_dropped
+        snaps = inv.current_snapshots()
+        ov = inv.wh_override_map()
+        stock_cache: dict = {}
+
+        def stock_for(wh):
+            if wh not in stock_cache:
+                stock_cache[wh] = _cached_stock_map(wh, snaps)
+            return stock_cache[wh]
+
+        po_wh: dict = {}          # po → resolved inventory WH code
+        hfull: dict = {}          # po → (header qty, header order_value) = the FULL totals
+        acc: dict = {}            # po → {est, ord, short, excl_q, excl_v}
+        CHUNK = 900               # keep the IN(...) list well under driver limits
+        with _conn() as (cur, d):
+            ph = d['ph']
+            for i in range(0, len(pos), CHUNK):
+                batch = pos[i:i + CHUNK]
+                marks = ','.join([ph] * len(batch))
+                # latest run per PO in this batch (+ its raw WH / marketplace)
+                cur.execute(
+                    f"SELECT h.po, h.run_id, h.warehouse, h.marketplace_label, "
+                    f"h.qty, h.order_value FROM order_headers h JOIN ("
+                    f"  SELECT po, MAX(run_ts) mx FROM order_headers "
+                    f"  WHERE po IN ({marks}) GROUP BY po) t "
+                    f"ON h.po=t.po AND h.run_ts=t.mx", tuple(batch))
+                hdr = {}
+                for po, run_id, wh_raw, mp, hqty, hval in cur.fetchall():
+                    po = str(po)
+                    hdr[po] = str(run_id)
+                    hfull[po] = (int(hqty or 0), float(hval or 0))
+                    po_wh[po] = inv.effective_order_wh(
+                        po, wh_raw, str(mp or ''), str(mp or ''), ov)
+                if not hdr:
+                    continue
+                # recorded lines for exactly those POs' latest runs (+ the fields
+                # for the Full → Uploaded(D365) → Excluded qty/value breakdown)
+                cur.execute(
+                    f"SELECT po, run_id, item_no, qty, unit_price, our_landing, "
+                    f"gst_code, status, action FROM order_lines_full "
+                    f"WHERE po IN ({marks})", tuple(batch))
+                for (po, run_id, item_no, qty, unit_price, our_landing,
+                     gst_code, status, action) in cur.fetchall():
+                    po = str(po)
+                    if hdr.get(po) != str(run_id):
+                        continue                       # superseded run → skip
+                    sm = stock_for(po_wh.get(po, ''))
+                    q = float(qty or 0)
+                    uv = float(our_landing or 0) or float(unit_price or 0)
+                    avail = float(sm.get(str(item_no or '').strip(), 0) or 0)
+                    fillable = min(q, avail if avail > 0 else 0.0)
+                    a = acc.setdefault(po, {'est': 0.0, 'ord': 0.0, 'short': 0.0,
+                                            'excl_q': 0.0, 'excl_v': 0.0})
+                    a['est'] += fillable * uv
+                    a['ord'] += q * uv
+                    a['short'] += (q - fillable) * uv
+                    # Excluded (dropped) qty/value only — Full/Total comes from the
+                    # header (authoritative; matches the existing columns), and
+                    # Uploaded = Full − Excluded, so the three always tie out.
+                    if _is_dropped(status, action):
+                        a['excl_q'] += q
+                        a['excl_v'] += _line_val(our_landing, unit_price, gst_code, int(q))
+        for po, a in acc.items():
+            wh = po_wh.get(po, '')
+            snap = snaps.get(wh)
+            fq, fv = hfull.get(po, (0, 0.0))
+            eq, ev = int(a['excl_q']), round(a['excl_v'], 2)
+            out[po] = {
+                'est_value': round(a['est'], 2),
+                'ord_value': round(a['ord'], 2),
+                'short_value': round(a['short'], 2),
+                'fill_pct': round(a['est'] / a['ord'] * 100, 1) if a['ord'] else 0.0,
+                'wh_short': inv.wh_short(wh),
+                'stock_as_of': (snap.get('captured_at') if snap else None),  # datetime → template formats
+                'no_stock': snap is None,     # WH has no current snapshot → show '—'
+                # Full → Uploaded(D365) → Excluded breakdown, anchored to the header
+                # totals so it ties out to the existing Qty / Value columns.
+                'full_qty': fq, 'excl_qty': eq, 'upl_qty': fq - eq,
+                'full_value': round(fv, 2), 'excl_value': ev, 'upl_value': round(fv - ev, 2),
+            }
+    except Exception:  # noqa: BLE001 — additive; a billing hiccup must never break the tracker
+        return out
+    return out
 
 
 def wh_scenarios(order_nos) -> dict:

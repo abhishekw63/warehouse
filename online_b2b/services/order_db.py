@@ -624,7 +624,8 @@ _IN_STATES = {
     'MH': 'Maharashtra', 'KA': 'Karnataka', 'HR': 'Haryana', 'TN': 'Tamil Nadu',
     'UP': 'Uttar Pradesh', 'WB': 'West Bengal', 'TS': 'Telangana', 'TG': 'Telangana',
     'DL': 'Delhi', 'PB': 'Punjab', 'GJ': 'Gujarat', 'RJ': 'Rajasthan', 'KL': 'Kerala',
-    'MP': 'Madhya Pradesh', 'AP': 'Andhra Pradesh', 'BR': 'Bihar', 'OD': 'Odisha',
+    'MP': 'Madhya Pradesh', 'AP': 'Andhra Pradesh', 'AD': 'Andhra Pradesh',  # AD = D365's code for Andhra Pradesh
+    'BR': 'Bihar', 'OD': 'Odisha',
     'OR': 'Odisha', 'AS': 'Assam', 'JH': 'Jharkhand', 'CG': 'Chhattisgarh',
     'UK': 'Uttarakhand', 'UT': 'Uttarakhand', 'HP': 'Himachal Pradesh',
     'JK': 'Jammu & Kashmir', 'GA': 'Goa', 'CH': 'Chandigarh', 'PY': 'Puducherry',
@@ -931,14 +932,14 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
             cur.execute(
                 "SELECT h.segment, h.warehouse, h.marketplace_label, h.po, "
                 "h.external_doc, h.location, h.po_date, h.exp_date, h.order_value, "
-                "h.qty, h.run_ts, h.output_file FROM order_headers h JOIN ("
+                "h.qty, h.run_ts, h.output_file, h.run_id FROM order_headers h JOIN ("
                 "  SELECT marketplace, po, MAX(run_ts) mx FROM order_headers "
                 "  GROUP BY marketplace, po) t ON h.marketplace=t.marketplace "
                 f"AND h.po=t.po AND h.run_ts=t.mx WHERE 1=1{wsql} "
                 f"ORDER BY h.run_ts DESC, h.po LIMIT {int(limit)}", tuple(args))
             cols = ['segment', 'warehouse', 'marketplace_label', 'po', 'external_doc',
                     'location', 'po_date', 'exp_date', 'order_value', 'qty',
-                    'run_ts', 'output_file']
+                    'run_ts', 'output_file', 'run_id']
             tv = tq = 0.0
             rows = []
             for r in cur.fetchall():
@@ -960,6 +961,7 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
                     'order_value': round(val, 2), 'qty': qty,
                     'uploaded': m['run_ts'],
                     'file_source': _os.path.basename(str(m['output_file'] or '')) if m['output_file'] else '',
+                    'run_id': m['run_id'],
                     'omt': '', 'source': 'auto', 'id': None,
                 })
 
@@ -1046,6 +1048,174 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
             out.update({'ok': True, 'rows': rows[:int(display_limit)],  # …table renders latest N
                         'total_value': round(tv, 2), 'total_qty': int(tq),
                         'count': total_n, 'shown': min(total_n, int(display_limit))})
+    except Exception as e:  # noqa: BLE001
+        out['error'] = f"{type(e).__name__}: {e}"
+    return out
+
+
+def today_orders(day: str, segment='', marketplace='', warehouse='', q='') -> dict:
+    """Latest-run orders UPLOADED on ``day`` (YYYY-MM-DD — the client's LOCAL date),
+    within the SAME filters as the tracker. Powers the tracker's 'Today' KPI strip:
+    returns ``{ok, count, value, pos}`` — count (distinct PO) + Σ order_value + the
+    PO list (for the async billing pass). Full-day, NOT capped to the shown rows.
+    Read-only; never raises."""
+    out = {'ok': False, 'count': 0, 'value': 0.0, 'pos': [], 'day': day}
+    try:
+        with _conn() as (cur, d):
+            ph = d['ph']
+            w, a = [f"DATE(h.run_ts)={ph}"], [day]
+            if segment:
+                w.append(f"h.segment={ph}"); a.append(segment)
+            if marketplace:
+                w.append(f"h.marketplace_label={ph}"); a.append(marketplace)
+            if q:
+                w.append(f"(h.po LIKE {ph} OR h.location LIKE {ph} OR "
+                         f"h.external_doc LIKE {ph} OR h.marketplace_label LIKE {ph})")
+                a += [f"%{q}%"] * 4
+            if warehouse:
+                aliases = _facility_maps()[1].get(warehouse, [warehouse])
+                w.append(f"h.warehouse IN ({','.join([ph] * len(aliases))})"); a += aliases
+            cur.execute(
+                f"SELECT h.po, h.order_value, h.segment FROM order_headers h JOIN ("
+                f"  SELECT marketplace, po, MAX(run_ts) mx FROM order_headers "
+                f"  GROUP BY marketplace, po) t ON h.marketplace=t.marketplace "
+                f"AND h.po=t.po AND h.run_ts=t.mx WHERE {' AND '.join(w)}", tuple(a))
+            seen, pos, val = set(), [], 0.0
+            segs: dict = {}          # segment code → {count, value, pos} (B2B vs Offline)
+            for po, ov, seg in cur.fetchall():
+                v = float(ov or 0); val += v
+                po = str(po); seg = str(seg or 'Other')
+                sg = segs.setdefault(seg, {'count': 0, 'value': 0.0, 'pos': []})
+                sg['value'] += v
+                if po not in seen:
+                    seen.add(po); pos.append(po)
+                    sg['count'] += 1; sg['pos'].append(po)
+            for s in segs.values():
+                s['value'] = round(s['value'], 2)
+            out.update(ok=True, count=len(seen), value=round(val, 2), pos=pos, segments=segs)
+    except Exception as e:  # noqa: BLE001
+        out['error'] = f"{type(e).__name__}: {e}"
+    return out
+
+
+def tracker_insights(segment='', marketplace='', warehouse='', q='',
+                     uploaded_from='', uploaded_to='', day='', days=30) -> dict:
+    """Chart data for the tracker's (collapsible, removable) Insights panel — a
+    daily intake trend (segment-split, last ``days``, ignores the date filter so
+    the trend stays a trend), a marketplace breakdown, and facility load — all
+    honoring the current tracker filters. Isolated/additive; read-only; never
+    raises (returns empty structures on failure)."""
+    import datetime as _dt2
+    out = {'ok': False, 'daily': {'labels': [], 'series': {}},
+           'marketplaces': [], 'facilities': [],
+           'arrival': {'markets': [], 'dow': [], 'data': [], 'max': 0}}
+    try:
+        with _conn() as (cur, d):
+            ph = d['ph']
+            latest = ("order_headers h JOIN (SELECT marketplace, po, MAX(run_ts) mx "
+                      "FROM order_headers GROUP BY marketplace, po) t ON "
+                      "h.marketplace=t.marketplace AND h.po=t.po AND h.run_ts=t.mx")
+
+            def flt(with_date):
+                w, a = [], []
+                if segment:
+                    w.append(f"h.segment={ph}"); a.append(segment)
+                if marketplace:
+                    w.append(f"h.marketplace_label={ph}"); a.append(marketplace)
+                if q:
+                    w.append(f"(h.po LIKE {ph} OR h.location LIKE {ph} OR "
+                             f"h.external_doc LIKE {ph} OR h.marketplace_label LIKE {ph})")
+                    a += [f"%{q}%"] * 4
+                if warehouse:
+                    al = _facility_maps()[1].get(warehouse, [warehouse])
+                    w.append(f"h.warehouse IN ({','.join([ph] * len(al))})"); a += al
+                if with_date:
+                    if uploaded_from:
+                        w.append(f"DATE(h.run_ts) >= {ph}"); a.append(uploaded_from)
+                    if uploaded_to:
+                        w.append(f"DATE(h.run_ts) <= {ph}"); a.append(uploaded_to)
+                return ((' AND ' + ' AND '.join(w)) if w else ''), a
+
+            # 1) daily trend — last `days`, segment-split (ignores date filter)
+            wsql, args = flt(False)
+            cur.execute(
+                f"SELECT DATE(h.run_ts), h.segment, COUNT(DISTINCT h.po), "
+                f"COALESCE(SUM(h.order_value),0) FROM {latest} WHERE "
+                f"DATE(h.run_ts) >= (CURDATE() - INTERVAL {int(days)} DAY){wsql} "
+                f"GROUP BY DATE(h.run_ts), h.segment", tuple(args))
+            dmap = {}
+            for dt, seg, cnt, v in cur.fetchall():
+                ds = dt.isoformat() if hasattr(dt, 'isoformat') else str(dt)
+                dmap.setdefault(ds, {})[str(seg or 'Other')] = (int(cnt or 0), float(v or 0))
+            try:
+                end = _dt2.date.fromisoformat(day) if day else _dt2.date.today()
+            except Exception:  # noqa: BLE001
+                end = _dt2.date.today()
+            labels = [(end - _dt2.timedelta(days=i)).isoformat()
+                      for i in range(int(days), -1, -1)]
+            series = {}
+            for sc in ('OnlineB2B', 'Offline'):
+                series[sc] = {
+                    'count': [dmap.get(l, {}).get(sc, (0, 0))[0] for l in labels],
+                    'value': [round(dmap.get(l, {}).get(sc, (0, 0))[1], 2) for l in labels],
+                }
+            out['daily'] = {'labels': labels, 'series': series}
+
+            # Parent-level roll-up: group by the COARSE ``marketplace`` column,
+            # which already folds families (every Flipkart label → 'Flipkart', all
+            # MT children → 'MT'); map to friendly display names. Matches Analytics.
+            from .marketplaces import db_key_to_display
+            disp = db_key_to_display()
+
+            # 2) marketplace breakdown — all filters, dept-tagged, parent-rolled
+            wsql2, args2 = flt(True)
+            cur.execute(
+                f"SELECT h.marketplace, h.segment, COUNT(DISTINCT h.po), "
+                f"COALESCE(SUM(h.order_value),0) FROM {latest} WHERE 1=1{wsql2} "
+                f"GROUP BY h.marketplace, h.segment ORDER BY 3 DESC LIMIT 12", tuple(args2))
+            out['marketplaces'] = [{'name': disp.get(r[0], r[0] or '—'), 'dept': r[1] or '',
+                                    'count': int(r[2] or 0), 'value': float(r[3] or 0)}
+                                   for r in cur.fetchall()]
+
+            # 3) facility load — all filters (canon AHD / BLR / North)
+            cur.execute(
+                f"SELECT h.warehouse, COUNT(DISTINCT h.po), COALESCE(SUM(h.order_value),0) "
+                f"FROM {latest} WHERE 1=1{wsql2} GROUP BY h.warehouse", tuple(args2))
+            fac = {}
+            for wraw, cnt, v in cur.fetchall():
+                code = _canon_fac(wraw)
+                fc = fac.setdefault(code, {'code': code, 'count': 0, 'value': 0.0})
+                fc['count'] += int(cnt or 0); fc['value'] += float(v or 0)
+            out['facilities'] = sorted(fac.values(), key=lambda x: -x['count'])
+
+            # 4) arrival pattern — marketplace × weekday PROBABILITY over 90 days,
+            #    on the **PO date** (when the marketplace RELEASED the order), NOT
+            #    the upload date — that's the true arrival for prediction. Of the N
+            #    times each weekday occurred, on how many did the MP release a PO?
+            #    → "chance Blinkit releases on a Monday = 98%". WEEKDAY(): Mon=0…Sun=6.
+            cur.execute(
+                f"SELECT h.marketplace, WEEKDAY(h.po_date), "
+                f"COUNT(DISTINCT DATE(h.po_date)) FROM {latest} WHERE "
+                f"h.po_date IS NOT NULL AND DATE(h.po_date) <= CURDATE() AND "
+                f"DATE(h.po_date) >= (CURDATE() - INTERVAL 90 DAY){wsql} "
+                f"GROUP BY h.marketplace, WEEKDAY(h.po_date)", tuple(args))
+            today = _dt2.date.today()
+            wk_occ = [0] * 7                       # how many of each weekday in 90d
+            for i in range(90):
+                wk_occ[(today - _dt2.timedelta(days=i)).weekday()] += 1
+            arr = {}                               # parent-MP → [7 distinct PO-dates]
+            for mkt, dow, dts in cur.fetchall():
+                arr.setdefault(disp.get(mkt, mkt or '—'), [0] * 7)[int(dow)] += int(dts or 0)
+            tops = sorted(arr.items(), key=lambda kv: -sum(kv[1]))[:10]
+            data = []
+            for mi, (_name, counts) in enumerate(tops):
+                for di in range(7):
+                    pct = round(min(counts[di], wk_occ[di]) / wk_occ[di] * 100) if wk_occ[di] else 0
+                    data.append([di, mi, pct])     # value = probability %
+            out['arrival'] = {'markets': [k for k, _ in tops],
+                              'dow': ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                              'data': data, 'max': 100}
+        out['ok'] = True
     except Exception as e:  # noqa: BLE001
         out['error'] = f"{type(e).__name__}: {e}"
     return out
@@ -2219,6 +2389,103 @@ def run_detail(run_id: int) -> dict:
                 out['lines'] = []
             out['issues'] = [l for l in out['lines']
                              if l['status'] in ('MISMATCH', 'NOT_IN_MASTER')]
+        out['ok'] = True
+    except Exception as e:  # noqa: BLE001
+        out['error'] = f"{type(e).__name__}: {e}"
+    return out
+
+
+def po_detail(po: str) -> dict:
+    """Everything about ONE purchase order — powers the Tracker drill-down
+    drawer. Returns the SAME tracker-format header (dept · WH · MP · location ·
+    pincode · zone · dates · value · qty · upload · source) for the PO's LATEST
+    run, plus every line of that run and an accurate Full → Excluded → Final
+    (to-D365) qty/value breakdown. Reuses the app's own ``_is_dropped`` /
+    ``_line_val`` classifiers so the numbers tie out to the intake reports.
+    Read-only; never raises."""
+    import os as _os
+    import re as _re
+    from .triangular_validation import _line_val, _is_dropped
+    po = str(po or '').strip()
+    out = {'ok': False, 'po': po, 'header': None, 'lines': [],
+           'kpis': {'full_qty': 0, 'excl_qty': 0, 'final_qty': 0,
+                    'full_value': 0.0, 'excl_value': 0.0, 'final_value': 0.0,
+                    'lines': 0, 'excl_lines': 0}}
+    try:
+        with _conn() as (cur, d):
+            ph = d['ph']
+
+            def nk(s):
+                return _re.sub(r'[^a-z0-9]', '', str(s or '').lower())
+
+            # ship-to → (pincode, state) for pincode/zone enrichment (as tracker)
+            loc2geo = {}
+            try:
+                cur.execute('SELECT del_location, postcode, state '
+                            'FROM ship_to_mapping')
+                for dl, pc, sstate in cur.fetchall():
+                    loc2geo[nk(dl)] = (str(pc or ''), str(sstate or ''))
+            except Exception:  # noqa: BLE001
+                loc2geo = {}
+
+            # latest-run header for this PO
+            cur.execute(
+                f"SELECT h.segment, h.warehouse, h.marketplace_label, h.po, "
+                f"h.external_doc, h.location, h.po_date, h.exp_date, "
+                f"h.order_value, h.qty, h.run_ts, h.output_file, h.run_id "
+                f"FROM order_headers h WHERE h.po={ph} "
+                f"ORDER BY h.run_ts DESC LIMIT 1", (po,))
+            r = cur.fetchone()
+            if not r:
+                out['ok'] = True          # unknown PO → empty, not an error
+                return out
+            hcols = ['segment', 'warehouse', 'marketplace_label', 'po',
+                     'external_doc', 'location', 'po_date', 'exp_date',
+                     'order_value', 'qty', 'run_ts', 'output_file', 'run_id']
+            m = dict(zip(hcols, r))
+            run_id = m['run_id']
+            pin, st = loc2geo.get(nk(m['location']), ('', ''))
+            stname = _IN_STATES.get(st.upper(), st) if st else ''
+            zone = _IN_ZONES.get(stname, '') if stname else ''
+            out['header'] = {
+                'dept': _SEG_LABEL.get(m['segment'], m['segment'] or 'Other'),
+                'wh': _canon_fac(m['warehouse']),
+                'marketplace': m['marketplace_label'] or '',
+                'po': m['po'], 'external_doc': m['external_doc'] or '',
+                'location': m['location'] or '', 'pincode': pin, 'zone': zone,
+                'po_date': m['po_date'], 'exp_date': m['exp_date'],
+                'order_value': round(float(m['order_value'] or 0), 2),
+                'qty': int(m['qty'] or 0), 'uploaded': m['run_ts'],
+                'file_source': (_os.path.basename(str(m['output_file'] or ''))
+                                if m['output_file'] else ''),
+            }
+
+            # every line of that latest run for this PO
+            lcols = ['item_no', 'ean', 'description', 'qty', 'unit_price',
+                     'our_mrp', 'our_cp', 'our_landing', 'gst_code',
+                     'status', 'action', 'exception_label']
+            cur.execute(
+                f"SELECT {', '.join(lcols)} FROM order_lines_full "
+                f"WHERE run_id={ph} AND po={ph} ORDER BY item_no", (run_id, po))
+            lines = _rows(cur, lcols)
+            k = out['kpis']
+            for ln in lines:
+                q = int(ln['qty'] or 0)
+                v = _line_val(ln.get('our_landing'), ln.get('unit_price'),
+                              ln.get('gst_code'), q)
+                dropped = _is_dropped(ln.get('status'), ln.get('action'))
+                ln['value'] = round(v, 2)
+                ln['dropped'] = dropped
+                ln['landing'] = round(v / q, 2) if q else None   # per-unit basis
+                k['full_qty'] += q; k['full_value'] += v; k['lines'] += 1
+                if dropped:
+                    k['excl_qty'] += q; k['excl_value'] += v; k['excl_lines'] += 1
+                else:
+                    k['final_qty'] += q; k['final_value'] += v
+            k['full_value'] = round(k['full_value'], 2)
+            k['excl_value'] = round(k['excl_value'], 2)
+            k['final_value'] = round(k['final_value'], 2)
+            out['lines'] = lines
         out['ok'] = True
     except Exception as e:  # noqa: BLE001
         out['error'] = f"{type(e).__name__}: {e}"

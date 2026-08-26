@@ -75,10 +75,13 @@ urlpatterns = [
          name='b2b_template'),
     # READ-ONLY partial for the Process-PO upload page's live marketplace panel.
     path('mp-profile/<str:mp>/', views.b2b_mp_profile, name='b2b_mp_profile'),
-    path('orders/', views.orders, name='b2b_orders'),
-    path('orders/more/', views.orders_more, name='b2b_orders_more'),
+    path('orders/', views.orders, name='b2b_orders'),  # compat redirect → tracker
+    path('order/<path:po>/', views.OrderDetailView.as_view(), name='b2b_order_detail'),
     path('tracker/', views.TrackerView.as_view(), name='b2b_tracker'),
     path('tracker/export/', views.TrackerExportView.as_view(), name='b2b_tracker_export'),
+    path('tracker/billing/', views.TrackerBillingView.as_view(), name='b2b_tracker_billing'),
+    path('tracker/today/', views.TrackerTodayView.as_view(), name='b2b_tracker_today'),
+    path('tracker/insights/', views.TrackerInsightsView.as_view(), name='b2b_tracker_insights'),
     path('tracker/add/', views.TrackerAddView.as_view(), name='b2b_tracker_add'),
     path('tracker/<int:row_id>/delete/', views.TrackerDeleteView.as_view(), name='b2b_tracker_delete'),
     # ── Tables · master-tables manager (standalone; delete these lines + the

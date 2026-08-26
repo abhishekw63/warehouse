@@ -1,12 +1,8 @@
 {% load static b2b_extras %}
-{% comment %} Tracker body (KPIs + table) — re-fetched via ?partial=1 on filter
-change so the page never reloads. {% endcomment %}
-<div class="trk-kpis">
-  <div class="trk-kpi k1"><div class="k-ic">▦</div><div><div class="k-n">{{ t.count|compact }}</div><div class="k-l">Orders</div></div></div>
-  <div class="trk-kpi k2"><div class="k-ic">∑</div><div><div class="k-n">{{ t.total_qty|compact }}</div><div class="k-l">Total Qty</div></div></div>
-  <div class="trk-kpi k3"><div class="k-ic">₹</div><div><div class="k-n">{{ t.total_value|inr_short }}</div><div class="k-l">Order Value</div></div></div>
-</div>
-
+{% comment %} Tracker body (facilities + table) — re-fetched via ?partial=1 on
+filter change so the page never reloads. The KPI strip is intentionally NOT here:
+it lives in the persistent shell (tracker.html) and is updated in place by
+tracker.js, so a filter change never resets it to a loading state. {% endcomment %}
 {% if t.facilities %}
 <div class="trk-facs" role="group" aria-label="Filter by fulfilment centre">
   <span class="trk-facs-lbl">Facility</span>
@@ -24,37 +20,46 @@ change so the page never reloads. {% endcomment %}
   <div class="trk-scroll">
   <table class="trk-tbl sortable">
     <thead><tr>
-      <th class="fz">Dept</th><th class="fz">WH</th><th class="fz">Marketplace</th><th class="fz srt" data-k="po">PO ⇅</th>
+      <th class="fz">Dept</th><th class="fz">WH</th><th class="fz">Marketplace</th><th class="fz srt" data-k="po">PO</th>
       <th>External Doc</th><th>Location</th>
-      <th class="srt" data-k="pod">PO Date ⇅</th><th class="srt" data-k="exp">Exp Date ⇅</th>
-      <th class="r srt" data-k="qty">Qty ⇅</th><th class="r srt" data-k="val">Value ⇅</th>
+      <th class="srt" data-k="pod">PO Date</th><th class="srt" data-k="exp">Exp Date</th>
+      <th class="r srt trk-grp" data-k="qty" title="Full order quantity — everything on the PO">Full Qty</th>
+      <th class="r" data-k="uplqty" title="Uploaded to D365 (Full − Excluded)">D365 Qty</th>
+      <th class="r trk-excl-h" data-k="exclqty" title="Excluded / dropped units">Excl</th>
+      <th class="r srt trk-grp" data-k="val" title="Total order value (inc-GST)">Total Val</th>
+      <th class="r" data-k="uplval" title="Uploaded value to D365 (Total − Excluded)">D365 Val</th>
+      <th class="r trk-excl-h" data-k="exclval" title="Excluded value">Excl</th>
+      <th class="r srt trk-bill-h trk-grp" data-k="bill" title="Estimated billing — order value fillable from the CURRENT inventory snapshot (auto-updates when new bin content is uploaded)">Est. Billing<span class="trk-bill-asof" id="trkBillAsof"></span></th>
       <th>Pincode</th><th>Zone</th>
-      <th class="srt on" data-k="up" data-dir="desc">Uploaded ⇅</th><th>OMT</th>
+      <th class="srt on" data-k="up" data-dir="desc">Uploaded</th><th class="srt" data-k="run">Run</th>
     </tr></thead>
     <tbody>{% for r in t.rows %}
       <tr class="{% if r.source == 'manual' %}trk-manual{% endif %}">
         <td class="fz"><span class="dept-b {% if r.dept == 'Offline' %}off{% else %}on{% endif %}"><i></i>{{ r.dept }}</span>{% if r.source == 'manual' %}<span class="trk-mtag" title="manually added">✎</span>{% endif %}</td>
         <td class="fz mono">{{ r.wh|default:'—' }}</td>
         <td class="fz trk-mp" title="{{ r.marketplace }}">{{ r.marketplace|default:'—' }}</td>
-        <td class="fz mono strong" data-k="po">{{ r.po }}</td>
+        <td class="fz mono strong trk-po" data-k="po" data-po="{{ r.po }}" tabindex="0" role="button" title="Open order detail">{{ r.po }}</td>
         <td class="mono">{{ r.external_doc|default:'—' }}</td>
         <td class="trk-loc" title="{{ r.location }}">{{ r.location|default:'—' }}</td>
         <td class="nowrap" data-k="pod" data-v="{{ r.po_date|date:'Y-m-d' }}">{{ r.po_date|date:'d M Y'|default:'—' }}</td>
         <td class="nowrap" data-k="exp" data-v="{{ r.exp_date|date:'Y-m-d' }}">{{ r.exp_date|date:'d M Y'|default:'—' }}</td>
-        <td class="r" data-k="qty" data-v="{{ r.qty }}">{{ r.qty|compact }}</td>
-        <td class="r val" data-k="val" data-v="{{ r.order_value }}">{{ r.order_value|inr_short }}</td>
+        <td class="r trk-grp mono strong" data-k="qty" data-v="{{ r.qty }}">{{ r.qty|compact }}</td>
+        <td class="r trk-bd" data-k="uplqty" data-bd-po="{{ r.po }}" data-bd="uplqty" data-v="0"><span class="trk-bill-wait">·</span></td>
+        <td class="r trk-bd trk-excl" data-k="exclqty" data-bd-po="{{ r.po }}" data-bd="exclqty" data-v="0"><span class="trk-bill-wait">·</span></td>
+        <td class="r val trk-grp" data-k="val" data-v="{{ r.order_value }}">{{ r.order_value|inr_short }}</td>
+        <td class="r trk-bd" data-k="uplval" data-bd-po="{{ r.po }}" data-bd="uplval" data-v="0"><span class="trk-bill-wait">·</span></td>
+        <td class="r trk-bd trk-excl" data-k="exclval" data-bd-po="{{ r.po }}" data-bd="exclval" data-v="0"><span class="trk-bill-wait">·</span></td>
+        <td class="r trk-bill trk-grp" data-k="bill" data-bill-po="{{ r.po }}" data-v="0"><span class="trk-bill-wait" aria-label="loading">···</span></td>
         <td class="mono">{{ r.pincode|default:'—' }}</td>
         <td>{% if r.zone %}<span class="zn zn-{{ r.zone|lower }}">{{ r.zone }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
         <td class="nowrap up" data-k="up" data-v="{{ r.uploaded|date:'Y-m-d H:i:s' }}">{{ r.uploaded|date:'d M y'|default:'—' }}{% if r.uploaded %}<span class="up-t">{{ r.uploaded|date:'H:i' }}</span>{% endif %}</td>
-        <td class="trk-omt">{% if r.source == 'manual' %}<span title="{{ r.omt }}">{{ r.omt|default:'' }}</span>
-          <form method="post" action="{% url 'b2b_tracker_delete' r.id %}" class="trk-del" onsubmit="return confirm('Delete this manual row?');">{% csrf_token %}<button type="submit" title="delete manual row">×</button></form>
-          {% else %}<span class="muted">—</span>{% endif %}</td>
+        <td class="trk-run" data-k="run" data-v="{{ r.run_id|default:0 }}">{% if r.run_id %}<a href="{% url 'b2b_run_detail' run_id=r.run_id %}" class="trk-runlink" title="Open run #{{ r.run_id }} — batch view &amp; downloads">#{{ r.run_id }}</a>{% elif r.source == 'manual' %}<form method="post" action="{% url 'b2b_tracker_delete' r.id %}" class="trk-del" onsubmit="return confirm('Delete this manual row?');">{% csrf_token %}<button type="submit" title="delete manual row">×</button></form>{% else %}<span class="muted">—</span>{% endif %}</td>
       </tr>
     {% endfor %}</tbody>
   </table>
   </div>
 </div>
-<p class="trk-foot">Showing latest <b>{{ t.shown }}</b> of <b>{{ t.count }}</b> orders{% if t.count > t.shown %} <span class="cap">· filter or search to see the rest</span>{% endif %} · Pincode &amp; Zone from the ship-to master.</p>
+<p class="trk-foot">Showing latest <b>{{ t.shown }}</b> of <b>{{ t.count }}</b> orders{% if t.count > t.shown %} <span class="cap">· filter or search to see the rest</span>{% endif %} · Pincode &amp; Zone from the ship-to master · <b>Est. Billing</b> = order value fillable from the current inventory snapshot<span id="trkBillFoot"></span>, auto-updating when new bin content is uploaded.</p>
 {% else %}
   <div class="trk-empty">No orders match {% if f.seg_label or f.marketplace or f.warehouse or f.q %}these filters{% else %}yet{% endif %}.</div>
 {% endif %}
