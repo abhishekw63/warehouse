@@ -41,3 +41,18 @@
 .ti-modal-x{border:1px solid var(--border);background:var(--surface-2);color:var(--text-2);width:30px;height:30px;border-radius:9px;cursor:pointer;font-size:14px;line-height:1;}
 .ti-modal-x:hover{border-color:var(--accent);color:var(--accent);}
 .ti-modal-chart{flex:1;width:100%;padding:10px 12px 12px;}
+
+/* date-range pill — which window the charts currently cover */
+.ti-daterange{display:inline-flex;align-items:center;gap:6px;margin:12px 2px 2px;padding:4px 11px;
+  font-size:11.5px;font-weight:700;color:var(--text-2);background:var(--surface-2,#f1f5f9);
+  border:1px solid var(--border);border-radius:999px;font-variant-numeric:tabular-nums;}
+.ti-daterange:empty{display:none;}
+
+/* loading skeleton — soft shimmer in each chart cell while the first data loads,
+   instead of a blank white box (and covers the "renders on 2nd load" gap). */
+.ti-body.ti-loading .ti-chart{position:relative;overflow:hidden;border-radius:8px;
+  background:linear-gradient(100deg,var(--surface-2,#f1f5f9) 30%,
+    color-mix(in srgb,var(--accent) 7%,var(--surface-2,#f1f5f9)) 50%,var(--surface-2,#f1f5f9) 70%);
+  background-size:200% 100%;animation:tiShimmer 1.15s ease-in-out infinite;}
+@keyframes tiShimmer{from{background-position:200% 0;}to{background-position:-200% 0;}}
+@media (prefers-reduced-motion:reduce){.ti-body.ti-loading .ti-chart{animation:none;}}

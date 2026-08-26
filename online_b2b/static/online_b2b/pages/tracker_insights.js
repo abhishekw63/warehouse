@@ -138,21 +138,40 @@
         series: [{ type: 'heatmap', data: A.data, label: { show: true, formatter: function (p) { return p.value[2] ? p.value[2] + '%' : ''; }, fontSize: 9.5, fontWeight: 600, color: '#1e293b' }, itemStyle: { borderColor: c.surface, borderWidth: 1.5 }, emphasis: { itemStyle: { borderColor: c.text } } }]
       }, true);
     }
+    bodyEl.classList.remove('ti-loading');   // charts painted → drop the skeleton
     resize();
+    requestAnimationFrame(resize);           // container may have JUST laid out
+    updateDateRange(d);
   }
   function resize() { Object.keys(charts).forEach(function (k) { if (charts[k]) charts[k].resize(); }); }
+
+  // Show WHICH date window the charts cover (the filter range, else the trend's
+  // own last-30-days span).
+  function updateDateRange(d) {
+    var el = document.getElementById('tiDateRange');
+    if (!el) return;
+    var f = params(), from = f.get('uploaded_from'), to = f.get('uploaded_to');
+    var lbls = (d && d.daily && d.daily.labels) || [];
+    var txt;
+    if (from || to) txt = (from || '…') + '  →  ' + (to || '…');
+    else if (lbls.length) txt = lbls[0] + '  →  ' + lbls[lbls.length - 1] + ' · last 30d';
+    else txt = 'last 30 days';
+    el.textContent = '📅 ' + txt;
+  }
 
   var inflight = false;
   function load(force) {
     if (!panel.classList.contains('open')) return;   // only when open
     var s = sig(), cached = cacheGet(s);
     if (cached && !force) render(cached);      // instant paint from cache
+    else if (!lastData) bodyEl.classList.add('ti-loading');   // nothing yet → skeleton (no blank white)
     if (inflight) return;
     inflight = true;
     fetch(url + '?' + s, { headers: { 'X-Requested-With': 'fetch' } })
       .then(function (r) { return r.json(); })
-      .then(function (d) { inflight = false; if (d && d.ok) { cacheSet(s, d); render(d); } })
-      .catch(function () { inflight = false; });
+      .then(function (d) { inflight = false; bodyEl.classList.remove('ti-loading');
+        if (d && d.ok) { cacheSet(s, d); render(d); } })
+      .catch(function () { inflight = false; bodyEl.classList.remove('ti-loading'); });
   }
 
   // ── open / collapse (remembered) — SMOOTH accordion, not a hard snap ─────
@@ -234,6 +253,15 @@
   // follow filter changes (a hint from tracker.js; harmless if absent) + resize
   document.addEventListener('trk:filterchange', function () { load(true); });
   window.addEventListener('resize', function () { resize(); if (modalChart && modal && !modal.hidden) modalChart.resize(); });
+
+  // ECharts measures a chart's container ONCE at init; a 0-size div (first paint,
+  // or a just-expanded panel) makes it render blank until the next resize — the
+  // "shows only on the 2nd load" bug. Observe the body so every chart snaps to its
+  // real size the instant it gets one. Debounced.
+  if (window.ResizeObserver) {
+    var _roT;
+    new ResizeObserver(function () { clearTimeout(_roT); _roT = setTimeout(resize, 60); }).observe(bodyEl);
+  }
 
   // restore open state
   var wasOpen = false;
