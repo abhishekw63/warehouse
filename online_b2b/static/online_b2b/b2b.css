@@ -974,6 +974,12 @@ tr.sku-drill > td{background:#f7f9fc;padding:0;}
 .build-badge.ok{color:#9fb0c9;background:rgba(255,255,255,.05);}
 .build-badge.stale{color:#fff;background:var(--red);animation:buildpulse 1.4s ease-in-out infinite;}
 @keyframes buildpulse{0%,100%{opacity:1}50%{opacity:.55}}
+/* build LOG variant — two tidy lines: bold date + dim, ellipsized "what shipped".
+   Full commit + rolling log live in the native tooltip (hover). */
+.build-badge.build-log{display:block;max-width:100%;padding:5px 8px;cursor:default;line-height:1.35;}
+.build-badge.build-log .bb-v{display:block;color:#8ad6a8;letter-spacing:.01em;}
+.build-badge.build-log .bb-m{display:block;font-weight:500;font-size:9.5px;opacity:.72;margin-top:1px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 body.b2b-collapsed .side-build{display:none;}
 /* per-line decision saved tick (review page) */
 .dec-saved{display:inline-block;margin-left:6px;font-size:11px;font-weight:700;color:var(--green);
