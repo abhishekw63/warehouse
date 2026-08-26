@@ -416,12 +416,25 @@ class GTMassRecorder:
             o = orders.get(so)
             if o is None:
                 o = {
-                    'po': so, 'location': '', 'items': 0, 'qty': 0,
-                    'order_value': 0.0, 'source_files': set(), '_lines': [],
+                    'po': so, 'location': '', 'warehouse': '', 'items': 0,
+                    'qty': 0, 'order_value': 0.0, 'source_files': set(),
+                    '_lines': [], '_locs': set(), '_dists': set(),
                 }
                 orders[so] = o
             if not o['location'] and (r.distributor or '').strip():
                 o['location'] = r.distributor.strip()
+            # track distinct regions + distributors per PO → duplicate/collision guard
+            if (r.location or '').strip():
+                o['_locs'].add(r.location.strip().upper())
+            if (r.distributor or '').strip():
+                o['_dists'].add(r.distributor.strip())
+            # Per-order fulfilment warehouse = the SO's own 'Location' region from
+            # the Excel (AHD / BLR / NORTH → PICK / DS_BL_OFF1 / NORTH WH-0). GT
+            # Mass is one PO per file, so all its lines share one region; take the
+            # first non-blank. The run-level warehouse is only a fallback for a
+            # sheet that omits Location — so orders no longer all read AHD.
+            if not o['warehouse'] and (r.location or '').strip():
+                o['warehouse'] = r.location.strip()
             o['source_files'].add(r.source_file)
             o['items'] += 1
             o['qty'] += oqty                       # ERP order qty (testers auto-added)
@@ -441,6 +454,42 @@ class GTMassRecorder:
             o['order_value'] = round(
                 sum(self.prices.get(f, {}).get('so_value', 0.0)
                     for f in o['source_files']), 2)
+        # ── validation guards (highlight loudly; never silently merge) ─────────
+        #  1) PO number must be the GT Mass format SO/GTM/#### (4 digits)
+        #  2) Location must be AHD / BLR / NORTH (missing / other = flag)
+        #  3) Same PO across >1 file = possible duplicate; across >1 warehouse =
+        #     a PO-number collision between distributors → do NOT merge/upload.
+        import re as _re
+        import os as _os2
+        from ..utils import LOCATION_CODE_MAP
+        valid = set(LOCATION_CODE_MAP)                     # {'AHD','BLR','NORTH'}
+        po_re = _re.compile(r'^SO/GTM/\d{4}$', _re.IGNORECASE)
+        for so, o in orders.items():
+            iss, block = [], []       # iss = all (display); block = HELD-BACK reasons
+            if not po_re.match(so):   # format = highlight only (never blocks)
+                iss.append(f"PO '{so}' is not the GT Mass format SO/GTM/#### (4 digits)")
+            locs = o.pop('_locs', set())
+            dists = o.pop('_dists', set())
+            if not locs:
+                m = "Location is missing — needs AHD / BLR / NORTH"
+                iss.append(m); block.append(m)
+            else:
+                bad = sorted(l for l in locs if l not in valid)
+                if bad:
+                    m = f"Location '{', '.join(bad)}' is not AHD / BLR / NORTH"
+                    iss.append(m); block.append(m)
+            if len(o['source_files']) > 1:
+                srcs = ', '.join(sorted(_os2.path.basename(f) for f in o['source_files']))
+                if len(locs) > 1:
+                    m = (f"DUPLICATE PO across DIFFERENT warehouses ({', '.join(sorted(locs))})"
+                         f"{(' / distributors (' + ', '.join(sorted(dists)) + ')') if len(dists) > 1 else ''}"
+                         f" — files: {srcs}. Do NOT merge/upload.")
+                else:
+                    m = f"PO appears in {len(o['source_files'])} files ({srcs}) — possible duplicate."
+                iss.append(m); block.append(m)
+            o['issues'] = iss
+            o['blocked'] = bool(block)
+            o['block_reasons'] = block
         return orders
 
     # ── phase 1: preview (no DB writes) ─────────────────────────────────
@@ -459,7 +508,8 @@ class GTMassRecorder:
             return {'ok': False, 'error': str(e), 'phase': 'confirm'}
         orders = self._orders()
         recorded = self._record(orders)
-        out_path = self._write_dump()
+        blocked = {so for so, o in orders.items() if o.get('blocked')}
+        out_path = self._write_dump(blocked)   # held-back POs never reach the D365 dump
         summ = self._summary(orders, recorded=recorded, phase='confirm')
         summ['output_path'] = str(out_path) if out_path else None
         summ['output_name'] = out_path.name if out_path else None
@@ -481,11 +531,17 @@ class GTMassRecorder:
         except Exception as e:  # noqa: BLE001
             return {'recorded': False, 'reason': f'DB read failed: {e}'}
 
-        new = {so: o for so, o in orders.items() if so not in existing}
-        skipped = len(orders) - len(new)
+        # HARD BLOCK: never record a PO that failed a blocking guard (bad/missing
+        # location, or duplicate/collision). It's held back until the source is fixed.
+        blocked = {so for so, o in orders.items() if o.get('blocked')}
+        new = {so: o for so, o in orders.items()
+               if so not in existing and so not in blocked}
+        skipped = sum(1 for so in orders if so in existing and so not in blocked)
         if not new:
-            return {'recorded': False, 'reason': 'all POs already recorded',
-                    'skipped': skipped}
+            return {'recorded': False,
+                    'reason': ('all valid POs already recorded' if not blocked
+                               else 'nothing to record — POs held back (validation) or already recorded'),
+                    'skipped': skipped, 'blocked': sorted(blocked)}
 
         run_ts = _dt.datetime.now()
         out_name = self._dump_name()
@@ -512,10 +568,13 @@ class GTMassRecorder:
                          'output_file')
                 marks = ', '.join([ph] * 16)
                 for so, o in new.items():
+                    # per-order region (from the sheet's Location) wins; the
+                    # run-level warehouse is only the fallback.
+                    o_wh = (o.get('warehouse') or '').strip() or wh
                     cur.execute(
                         f"INSERT INTO order_headers ({hcols}) VALUES ({marks})",
                         (run_id, run_ts, 'MANUAL', SEGMENT, MARKETPLACE,
-                         MARKETPLACE, so, o['location'], wh, po_date, None,
+                         MARKETPLACE, so, o['location'], o_wh, po_date, None,
                          'SO', o['items'], o['qty'], o['order_value'], out_name))
                 cur.connection.commit()
         except Exception as e:  # noqa: BLE001
@@ -545,20 +604,32 @@ class GTMassRecorder:
             lines_store.insert_lines(run_id, rows)
         except Exception as e:  # noqa: BLE001 — never block on the audit
             return {'recorded': True, 'run_id': run_id, 'recorded_pos': len(new),
-                    'skipped': skipped, 'lines': 0,
+                    'skipped': skipped, 'blocked': sorted(blocked), 'lines': 0,
                     'reason': f'lines audit skipped: {e}'}
         return {'recorded': True, 'run_id': run_id, 'recorded_pos': len(new),
-                'skipped': skipped, 'lines': len(rows)}
+                'skipped': skipped, 'blocked': sorted(blocked), 'lines': len(rows)}
 
     # ── dump (re-uses the frozen exporter; output identical to the page) ─
     def _dump_name(self) -> str:
         return f"gt_mass_dump_{_dt.datetime.now().strftime('%d%m%Y')}.xlsx"
 
-    def _write_dump(self):
+    def _write_dump(self, blocked_sos=None):
         """Write the SAME 7-sheet dump the existing page produces, to MEDIA so it
-        can be downloaded post-confirm. Uses the frozen exporter unchanged."""
+        can be downloaded post-confirm. Uses the frozen exporter unchanged — except
+        that POs held back by the validation guards (``blocked_sos``) are filtered
+        out of the rows first, so a bad/duplicate PO can never reach the D365 dump."""
         try:
-            buf = _automation().exporter.export_to_memory(self.result)
+            blocked_sos = blocked_sos or set()
+            res = self.result
+            _orig_rows = getattr(res, 'rows', None)
+            if blocked_sos and _orig_rows is not None:
+                res.rows = [r for r in _orig_rows
+                            if (getattr(r, 'so_number', '') or '').strip() not in blocked_sos]
+            try:
+                buf = _automation().exporter.export_to_memory(res)
+            finally:
+                if blocked_sos and _orig_rows is not None:
+                    res.rows = _orig_rows          # restore (summary/other consumers)
             if buf is None:
                 return None
             out_dir = Path(settings.MEDIA_ROOT) / 'gt_mass_out'

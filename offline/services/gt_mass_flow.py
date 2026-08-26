@@ -84,11 +84,17 @@ class GTMassProcessor:
     def _payload(self, rec, orders, recorded=None, phase='preview',
                  output_path=None):
         existing = _existing_po_stats()
-        headers, lines, skipped = [], [], []
+        headers, lines, skipped, blocked = [], [], [], []
         new_pos = new_lines = new_qty = 0
         new_value = 0.0
         n_revised = 0
         for so, o in orders.items():
+            if o.get('blocked'):        # HELD BACK — never offered for recording
+                blocked.append({'po': so, 'location': o.get('location'),
+                                'qty': o['qty'], 'order_value': o['order_value'],
+                                'marketplace_label': MARKETPLACE,
+                                'reasons': o.get('block_reasons') or []})
+                continue
             if so in existing and phase == 'preview':
                 prev = existing[so]
                 in_sku, in_qty = int(o['items']), int(o['qty'])
@@ -108,6 +114,7 @@ class GTMassProcessor:
             new_qty += o['qty']
             new_value += o['order_value']
             headers.append({'po': so, 'location': o['location'],
+                            'warehouse': o.get('warehouse', ''),
                             'order_type': 'SO', 'items': o['items'],
                             'qty': o['qty'], 'order_value': o['order_value']})
             for ln in o['_lines']:
@@ -121,6 +128,11 @@ class GTMassProcessor:
                     'key': _line_key(so, ln['item_no'], ln['ean']),
                 })
         warnings = []
+        # per-PO validation guards (format · location · duplicate/collision) —
+        # surfaced for EVERY order (new + already-recorded) so nothing slips through.
+        for so, o in orders.items():
+            for iss in (o.get('issues') or []):
+                warnings.append(f"{so} — {iss}")
         for fname, w in (getattr(rec.result, 'warned_files', None) or []):
             warnings.append(f"{fname}: {w}")
         for fname, rsn in (getattr(rec.result, 'failed_files', None) or []):
@@ -130,9 +142,10 @@ class GTMassProcessor:
             'ok': bool(headers) if phase == 'preview' else True,
             'summary': {'pos': new_pos, 'lines': new_lines, 'qty': new_qty,
                         'value': round(new_value, 2), 'affected': len(fi),
-                        'skipped': len(skipped), 'revised': n_revised},
+                        'skipped': len(skipped), 'revised': n_revised,
+                        'blocked': len(blocked)},
             'headers': headers, 'lines': lines, 'affected': [],
-            'file_issues': fi, 'skipped': skipped,
+            'file_issues': fi, 'skipped': skipped, 'blocked': blocked,
             'warnings': warnings, 'output_path': output_path,
             'error': (None if headers or phase != 'preview'
                       else 'No resolvable POs in the uploaded file(s).'),
