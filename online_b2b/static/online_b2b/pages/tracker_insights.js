@@ -82,8 +82,11 @@
         xAxis: { type: 'category', data: fmtLbl, axisLine: { lineStyle: { color: c.border } }, axisLabel: { color: c.text2, fontSize: 9.5, interval: 4 }, axisTick: { show: false } },
         yAxis: { type: 'value', splitLine: { lineStyle: { color: c.border, opacity: .5 } }, axisLabel: { color: c.text2, fontSize: 9.5, formatter: (metric === 'value' ? function (v) { return inrCr(v); } : '{value}') } },
         series: [
-          { name: 'Online B2B', type: 'line', stack: 't', smooth: true, symbol: 'none', areaStyle: { opacity: .28 }, lineStyle: { width: 2 }, itemStyle: { color: c.accent }, data: pick('OnlineB2B') },
-          { name: 'Offline', type: 'line', stack: 't', smooth: true, symbol: 'none', areaStyle: { opacity: .28 }, lineStyle: { width: 2 }, itemStyle: { color: c.off }, data: pick('Offline') }
+          // smoothMonotone:'x' + gentle smooth keep the spline from OVERSHOOTING
+          // below zero at the sharp intake valleys (the odd teardrop "bulbs" under
+          // the axis); clip:true guarantees nothing paints below the baseline.
+          { name: 'Online B2B', type: 'line', stack: 't', smooth: 0.3, smoothMonotone: 'x', clip: true, symbol: 'none', areaStyle: { opacity: .28 }, lineStyle: { width: 2 }, itemStyle: { color: c.accent }, data: pick('OnlineB2B') },
+          { name: 'Offline', type: 'line', stack: 't', smooth: 0.3, smoothMonotone: 'x', clip: true, symbol: 'none', areaStyle: { opacity: .28 }, lineStyle: { width: 2 }, itemStyle: { color: c.off }, data: pick('Offline') }
         ]
       }, true);
     }
