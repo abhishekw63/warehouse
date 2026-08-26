@@ -56,6 +56,44 @@
   .trk-kpi.k-risk.has-risk .k-ic{background:linear-gradient(135deg,#fbbf24,#ef4444);color:#fff;}
   .trk-kpi.k-risk.has-risk .k-n{color:#dc2626;}
   .trk-kpi.k-bill .k-n,.trk-kpi.k-risk .k-n{min-height:23px;}
+  /* ── clickable KPI cards → facility (AHD/BLR/North) breakdown drawer ── */
+  .trk-kpi[data-metric]{cursor:pointer;transition:box-shadow .16s,transform .08s,border-color .16s;}
+  .trk-kpi[data-metric]:hover{border-color:color-mix(in srgb,var(--accent) 40%,var(--border));box-shadow:0 8px 22px -12px rgba(15,23,42,.5);}
+  .trk-kpi[data-metric]:active{transform:translateY(1px);}
+  .trk-kpi[data-metric]:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+  .trk-kpi.kpi-active{border-color:var(--accent);box-shadow:0 8px 22px -12px color-mix(in srgb,var(--accent) 65%,transparent);}
+  .k-fc-cue{display:none;margin-left:6px;font-size:9px;font-weight:800;letter-spacing:.04em;color:var(--accent);
+    padding:1px 5px;border-radius:999px;background:color-mix(in srgb,var(--accent) 12%,transparent);vertical-align:1px;}
+  .trk-kpi[data-metric]:hover .k-fc-cue,.trk-kpi.kpi-active .k-fc-cue{display:inline-block;}
+  .trk-kpi.kpi-active .k-fc-cue{color:#fff;background:var(--accent);}
+  /* the drawer itself — slides open right below the KPI strip */
+  .trk-fac-drawer{margin:-6px 0 16px;border:1px solid var(--border);border-radius:14px;background:var(--surface);
+    box-shadow:0 6px 22px -14px rgba(15,23,42,.4);overflow:hidden;max-height:0;opacity:0;
+    transition:max-height .26s cubic-bezier(.22,1,.36,1),opacity .2s ease,margin .26s ease;}
+  .trk-fac-drawer[hidden]{display:none;}
+  .trk-fac-drawer.open{max-height:340px;opacity:1;}
+  @media (prefers-reduced-motion:reduce){.trk-fac-drawer{transition:none;}}
+  .tfd-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 16px 9px;border-bottom:1px solid var(--border-2,var(--border));}
+  .tfd-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);}
+  .tfd-title b{color:var(--text);}
+  .tfd-x{border:1px solid var(--border);background:var(--surface-2);color:var(--text-2,var(--muted));width:26px;height:26px;border-radius:8px;cursor:pointer;font-size:12px;line-height:1;font-family:inherit;transition:border-color .13s,color .13s;}
+  .tfd-x:hover{border-color:var(--accent);color:var(--accent);}
+  .tfd-body{display:flex;flex-direction:column;gap:10px;padding:13px 15px 15px;}
+  /* label auto-sizes to the widest facility name ("North") and grid shares the
+     track across rows, so all 3 labels align — and it fits a card-width drawer. */
+  .tfd-row{display:grid;grid-template-columns:auto minmax(36px,1fr) auto;align-items:center;gap:11px;}
+  .tfd-fac{display:inline-flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--text);}
+  .tfd-fac i{width:10px;height:10px;border-radius:3px;flex:none;background:var(--muted);}
+  .tfd-track{height:9px;border-radius:999px;background:color-mix(in srgb,var(--muted) 15%,transparent);overflow:hidden;}
+  .tfd-fill{display:block;height:100%;min-width:2px;border-radius:999px;background:color-mix(in srgb,var(--muted) 55%,transparent);transition:width .5s cubic-bezier(.22,1,.36,1);}
+  .tfd-val{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .tfd-val b{display:block;font-size:14px;font-weight:800;color:var(--text);line-height:1.15;}
+  .tfd-val em{font-style:normal;font-size:10.5px;font-weight:600;color:var(--text-2,var(--muted));}
+  .tfd-empty{padding:8px 2px;color:var(--muted);font-size:12.5px;}
+  /* facility palette — matches the Insights donut (AHD=accent · BLR=teal · North=amber) */
+  .fc-ahd i,.tfd-fill.fc-ahd{background:var(--accent);}
+  .fc-blr i,.tfd-fill.fc-blr{background:#11998e;}
+  .fc-north i,.tfd-fill.fc-north{background:#f59e0b;}
   /* Facility-wise quick filter chips (AHD / BLR / North) */
   .trk-facs{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 12px;padding:11px 16px;
     border:1px solid var(--border);border-radius:12px;background:var(--surface);box-shadow:0 4px 18px -12px rgba(15,23,42,.3);}

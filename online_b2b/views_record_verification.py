@@ -98,9 +98,12 @@ def _augment(data: dict) -> dict:
     # the Affected tab, not hidden behind a green qty 'OK'.
     def _affected(ln):
         return ln.get('status') in _LINE_PROBLEM or ln.get('val_ok') == 'NO'
+    ext_pos = {h.get('po') for h in headers if h.get('status') == 'EXTERNAL'}
     for h in headers:
         h['lines'] = by_po.get(h.get('po'), [])
-        h['bad_lines'] = sum(1 for ln in h['lines'] if _affected(ln))
+        # EXTERNAL POs (GT Select etc.) are beyond our cross-check → their lines are
+        # never "affected"; don't show a red line-count badge on them.
+        h['bad_lines'] = 0 if h.get('status') == 'EXTERNAL' else sum(1 for ln in h['lines'] if _affected(ln))
         # An empty D365 SO shell — ZERO qty AND value (blank customer/pincode too).
         # Nothing to reconcile or capture → struck through so it reads as skippable.
         # NB: test qty+value, NOT lines — a GT Select external legitimately has qty/
@@ -109,7 +112,8 @@ def _augment(data: dict) -> dict:
         h['is_empty'] = not (h.get('d365_qty') or 0) and not (h.get('d365_val') or 0)
     data['orders'] = [h for h in headers if h.get('status') != 'EXTERNAL']
     data['externals'] = [h for h in headers if h.get('status') == 'EXTERNAL']
-    data['affected_lines'] = [ln for ln in lines if _affected(ln)]
+    # EXTERNAL POs are beyond comparison — keep their lines OFF the affected tab.
+    data['affected_lines'] = [ln for ln in lines if _affected(ln) and ln.get('po') not in ext_pos]
     data['n_lines'] = len(lines)
     data['n_affected_lines'] = len(data['affected_lines'])
     data['tot_qty'] = int(sum(ln.get('d365_qty') or 0 for ln in lines))
@@ -157,6 +161,9 @@ class RecordVerificationView(LoginRequiredMixin, TemplateView):
                 ctx['confirmed'] = res.get('confirmed', False)
                 ctx['capture'] = res.get('capture')          # external-order capture panel
                 ctx['captured'] = res.get('captured', False)
+                # per-tab discard states (top-bar Discard deletes the whole check)
+                ctx['import_discarded'] = res.get('import_discarded', False)
+                ctx['verify_discarded'] = res.get('verify_discarded', False)
                 ctx['taxonomy'] = mkt.classification_options()
         return ctx
 
@@ -208,7 +215,11 @@ class RecordVerificationRunView(LoginRequiredMixin, View):
                     new_orders = [{
                         'so_no': h['so_no'], 'external_doc': h['external_doc'],
                         'marketplace': h['marketplace'], 'segment': h['segment'],
-                        'posting_group': h['posting_group'], 'ship_name': h['ship_name'],
+                        'posting_group': h['posting_group'],
+                        # normalized posting-group key (same _norm_pg the classify rows
+                        # use) so the UI can gate ONLY on groups with a selected order
+                        'class_key': gts._norm_pg(h['posting_group']),
+                        'ship_name': h['ship_name'],
                         'customer_name': h['customer_name'], 'cust_no': h['cust_no'],
                         'ship_code': h['ship_code'], 'postcode': h['postcode'],
                         'warehouse': h['warehouse'], 'line_count': h['line_count'],
@@ -353,6 +364,9 @@ class RecordVerificationDiscardView(LoginRequiredMixin, View):
 
     def post(self, request, token):
         d = _tok_dir(token)
+        # Discard is a run-level action (top of the page): drop the WHOLE check —
+        # both the Import and Verify tabs — and return to a clean upload. The UI
+        # confirm warns when imports are still pending, so this is never a surprise.
         if d.exists() and d.resolve() != _UP.resolve():
             shutil.rmtree(d, ignore_errors=True)
         msg = 'Discarded — the check was removed. Nothing was recorded.'
@@ -361,6 +375,26 @@ class RecordVerificationDiscardView(LoginRequiredMixin, View):
                                  'redirect': reverse('b2b_record_verify')})
         messages.info(request, msg)
         return redirect('b2b_record_verify')
+
+
+class RecordVerificationDiscardPartView(LoginRequiredMixin, View):
+    """Discard ONE tab's work — the import OR the verification — leaving the other
+    tab intact. The top-bar Discard drops the whole check; this is the per-tab one.
+    POST ``part=import|verify``. Keeps the token (nothing is deleted, just flagged)."""
+
+    def post(self, request, token):
+        rp, res = _load_result(token)
+        part = (request.POST.get('part') or '').strip().lower()
+        if part == 'import':
+            res['import_discarded'] = True
+            msg = 'Import discarded — no new orders captured. Verification is untouched.'
+        elif part == 'verify':
+            res['verify_discarded'] = True
+            msg = 'Verification discarded — nothing recorded. Your import is untouched.'
+        else:
+            return JsonResponse({'ok': False, 'error': 'Unknown part to discard.'}, status=400)
+        _save_result(rp, res)
+        return _done(request, token, msg, redirect=_token_url(token))
 
 
 class RecordVerificationDownloadView(LoginRequiredMixin, View):

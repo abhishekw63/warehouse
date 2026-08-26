@@ -124,7 +124,11 @@
   if (!btn) return;
   btn.addEventListener('click', function () {
     var url = btn.getAttribute('data-url'); if (!url) return;
-    if (!window.confirm('Discard this check? It will be removed — nothing is recorded.')) return;
+    var pending = parseInt(btn.getAttribute('data-pending') || '0', 10);
+    var q = pending > 0
+      ? 'Discard this ENTIRE check? You still have ' + pending + ' import order(s) pending — they will be discarded too. Nothing is recorded.'
+      : 'Discard this entire check? It will be removed — nothing is recorded.';
+    if (!window.confirm(q)) return;
     btn.disabled = true; btn.innerHTML = 'Discarding…';
     B2B.postForm(url, {}).then(function (j) {
       if (j && j.ok) {
@@ -202,13 +206,50 @@
       overrides[row.getAttribute('data-key')] = { posting_group: row.getAttribute('data-pg'),
         segment: seg, marketplace: mp, marketplace_label: isMT ? chEl.value : mpText };
     });
+    previewChannels();
     update();
   }
+  // Reflect each classified group's chosen channel in the order table's CHANNEL cell
+  // (preview the change before pushing); restore the original label when cleared.
+  function previewChannels() {
+    chks().forEach(function (c) {
+      var row = c.closest('tr'); if (!row) return;
+      var cell = row.querySelector('.rv-cap-ch'); if (!cell) return;
+      var ov = overrides[c.getAttribute('data-classkey')];
+      if (ov && ov.marketplace_label) { cell.textContent = ov.marketplace_label; cell.classList.add('rv-cap-ch-new'); }
+      else { cell.textContent = cell.getAttribute('data-orig') || cell.textContent; cell.classList.remove('rv-cap-ch-new'); }
+    });
+  }
+  function classifyKeys() {
+    return classify ? [].slice.call(classify.querySelectorAll('.rv-cap-cl-row'))
+      .map(function (r) { return r.getAttribute('data-key'); }) : [];
+  }
   function update() {
-    var sel = selectedPos().length, remaining = needsN - Object.keys(overrides).length;
+    var all = chks();
+    // Reflect include/exclude on the table like the review page: ticked = INCLUDED
+    // (green), unticked = EXCLUDED (red + struck) — the user sees what will push.
+    all.forEach(function (c) {
+      var tr = c.closest('tr'); if (!tr) return;
+      tr.classList.toggle('rv-cap-excl', !c.checked);
+      tr.classList.toggle('rv-cap-inc', c.checked);
+    });
+    var selChks = all.filter(function (c) { return c.checked; });
+    var sel = selChks.length;
+    // Only unknown posting groups that STILL have a selected order must be classified;
+    // a group whose orders are ALL unticked (excluded) never blocks the push.
+    // NB: '' IS a real key — the '(blank)' posting group — so it must NOT be skipped
+    // (an empty key falsily skipped would let blank-group orders bypass the gate).
+    var selKeys = {};
+    selChks.forEach(function (c) { selKeys[c.getAttribute('data-classkey') || ''] = true; });
+    var keys = classifyKeys();
+    // Safety net: a selected order with a blank key but NO '(blank)' classify row means
+    // its group is unmappable (e.g. a pre-class_key saved-later run) — conservatively
+    // require EVERY unknown group be placed, so nothing slips through unclassified.
+    var orphanBlank = selKeys[''] && keys.indexOf('') === -1;
+    var remaining = keys.filter(function (k) { return !overrides[k] && (selKeys[k] || orphanBlank); }).length;
     if (selN) selN.textContent = sel;
     if (btnN) btnN.textContent = sel;
-    if (remaining > 0) { btn.disabled = true; if (msg) msg.textContent = 'Place the ' + remaining + ' remaining posting group(s) first.'; return; }
+    if (remaining > 0) { btn.disabled = true; if (msg) msg.textContent = 'Place the ' + remaining + " remaining posting group(s) first (excluded ones don't need it)."; return; }
     if (!sel) { btn.disabled = true; if (msg) msg.textContent = 'Tick at least one order to push.'; return; }
     btn.disabled = false; if (msg) msg.textContent = '';
   }
@@ -242,6 +283,19 @@
       if (selAll) selAll.checked = chks().every(function (x) { return x.checked; });
       update();
     });
+  });
+  // ↺ Reset — re-select every order + clear all classifications + restore channels.
+  var resetBtn = document.getElementById('rvCapReset');
+  if (resetBtn) resetBtn.addEventListener('click', function () {
+    chks().forEach(function (c) { c.checked = true; });
+    if (selAll) selAll.checked = true;
+    if (classify) [].slice.call(classify.querySelectorAll('.rv-cap-cl-row')).forEach(function (row) {
+      var seg = row.querySelector('.rv-cap-seg'), mp = row.querySelector('.rv-cap-mp'), child = row.querySelector('.rv-cap-child');
+      seg.value = ''; mp.innerHTML = '<option value="">—</option>'; mp.disabled = true;
+      child.hidden = true; child.innerHTML = '<option value="">—</option>';
+    });
+    collect();
+    if (window.B2B && B2B.toast) B2B.toast('Reset — all selected, classifications cleared.', { type: 'info' });
   });
   update();
 
@@ -287,5 +341,52 @@
   });
   ['dragleave', 'drop'].forEach(function (ev) {
     drop.addEventListener(ev, function () { drop.classList.remove('rv-drop-over'); });
+  });
+})();
+
+/* ── Import / Verify top-level tabs — switch panes over the SAME uploaded
+      Headers+Lines (initial state is set server-side, so no flash on load). ── */
+(function () {
+  var tabs = [].slice.call(document.querySelectorAll('.rv-toptab'));
+  if (!tabs.length) return;
+  var panes = [].slice.call(document.querySelectorAll('[data-toppane]'));
+  function show(name) {
+    tabs.forEach(function (t) {
+      var on = t.getAttribute('data-toptab') === name;
+      t.classList.toggle('on', on);
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    panes.forEach(function (p) { p.hidden = (p.getAttribute('data-toppane') !== name); });
+  }
+  tabs.forEach(function (t) {
+    t.addEventListener('click', function () { show(t.getAttribute('data-toptab')); });
+  });
+})();
+
+/* ── Per-tab discard — drop ONLY the import OR the verification (AJAX), leaving the
+      other tab intact. Bound once on document so it survives shell-nav re-runs. ── */
+(function () {
+  if (window.__rvPartDiscardBound) return;
+  window.__rvPartDiscardBound = true;
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest && e.target.closest('.rv-discard-part');
+    if (!btn) return;
+    var url = btn.getAttribute('data-url'), part = btn.getAttribute('data-part') || '';
+    if (!url) return;
+    var label = part === 'import' ? 'import (new orders)' : 'verification';
+    if (!window.confirm('Discard the ' + label + ' only? The other tab stays. Nothing is recorded.')) return;
+    var orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = 'Discarding…';
+    B2B.postForm(url, { part: part }).then(function (j) {
+      if (j && j.ok) {
+        if (window.B2B && B2B.toast) B2B.toast(j.message || 'Discarded.', { type: 'info' });
+        window.location.href = (j && j.redirect) || window.location.href;
+      } else {
+        btn.disabled = false; btn.innerHTML = orig;
+        if (window.B2B && B2B.toast) B2B.toast((j && j.error) || 'Could not discard.', { type: 'error' });
+      }
+    }).catch(function () {
+      btn.disabled = false; btn.innerHTML = orig;
+      if (window.B2B && B2B.toast) B2B.toast('Network error.', { type: 'error' });
+    });
   });
 })();

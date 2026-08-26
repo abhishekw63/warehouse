@@ -99,22 +99,36 @@
   <!-- Today's fulfilment KPI strip — PERSISTENT (outside #trk-body): updated in
        place via AJAX by tracker.js, so a filter change never resets/flashes it. -->
   <div class="trk-kpis" data-scope="today">
-    <div class="trk-kpi k1"><div class="k-ic">▦</div><div class="k-body">
-      <div class="k-n" id="kpiOrdersN"><span class="trk-bill-wait">···</span></div><div class="k-l">Orders Today</div>
+    <div class="trk-kpi k1" data-metric="orders" role="button" tabindex="0" aria-expanded="false" title="Click for the AHD · BLR · North split">
+      <div class="k-ic">▦</div><div class="k-body">
+      <div class="k-n" id="kpiOrdersN"><span class="trk-bill-wait">···</span></div><div class="k-l">Orders Today <span class="k-fc-cue" aria-hidden="true">▾ FC</span></div>
       <div class="k-sub" id="kpiOrdersSub">uploaded today</div>
       <div class="k-split" data-kpi="orders"></div></div></div>
-    <div class="trk-kpi k3"><div class="k-ic">₹</div><div class="k-body">
-      <div class="k-n" id="kpiValN"><span class="trk-bill-wait">···</span></div><div class="k-l">Value Today</div>
+    <div class="trk-kpi k3" data-metric="value" role="button" tabindex="0" aria-expanded="false" title="Click for the AHD · BLR · North split">
+      <div class="k-ic">₹</div><div class="k-body">
+      <div class="k-n" id="kpiValN"><span class="trk-bill-wait">···</span></div><div class="k-l">Value Today <span class="k-fc-cue" aria-hidden="true">▾ FC</span></div>
       <div class="k-sub" id="kpiValSub">order value in</div>
       <div class="k-split" data-kpi="value"></div></div></div>
-    <div class="trk-kpi k-bill"><div class="k-ic">◧</div><div class="k-body">
-      <div class="k-n" id="kpiBillVal"><span class="trk-bill-wait">···</span></div><div class="k-l">Billable Today</div>
+    <div class="trk-kpi k-bill" data-metric="bill" role="button" tabindex="0" aria-expanded="false" title="Click for the AHD · BLR · North split">
+      <div class="k-ic">◧</div><div class="k-body">
+      <div class="k-n" id="kpiBillVal"><span class="trk-bill-wait">···</span></div><div class="k-l">Billable Today <span class="k-fc-cue" aria-hidden="true">▾ FC</span></div>
       <div class="k-sub" id="kpiBillSub">from current stock</div>
       <div class="k-split" data-kpi="bill"></div></div></div>
-    <div class="trk-kpi k-risk"><div class="k-ic">⚠</div><div class="k-body">
-      <div class="k-n" id="kpiRiskN"><span class="trk-bill-wait">···</span></div><div class="k-l">At-Risk Today</div>
+    <div class="trk-kpi k-risk" data-metric="risk" role="button" tabindex="0" aria-expanded="false" title="Click for the AHD · BLR · North split">
+      <div class="k-ic">⚠</div><div class="k-body">
+      <div class="k-n" id="kpiRiskN"><span class="trk-bill-wait">···</span></div><div class="k-l">At-Risk Today <span class="k-fc-cue" aria-hidden="true">▾ FC</span></div>
       <div class="k-sub" id="kpiRiskSub">fill &lt; 60%</div>
       <div class="k-split" data-kpi="risk"></div></div></div>
+  </div>
+
+  {# Facility (AHD/BLR/North) breakdown drawer — opens below the KPI strip when a #}
+  {# card is clicked; scoped to that card's metric. Populated by tracker.js. #}
+  <div class="trk-fac-drawer" id="trkFacDrawer" hidden>
+    <div class="tfd-head">
+      <span class="tfd-title">By facility · <b id="tfdMetric"></b></span>
+      <button type="button" class="tfd-x" id="tfdX" title="Close" aria-label="Close facility split">✕</button>
+    </div>
+    <div class="tfd-body" id="tfdBody"></div>
   </div>
 
   {# Insights charts (collapsible, self-contained, removable) #}

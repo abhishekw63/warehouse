@@ -25,6 +25,7 @@ urlpatterns = [
     path('record-verify/<str:token>/capture/', _rv.RecordVerificationCaptureView.as_view(), name='b2b_record_verify_capture'),
     path('record-verify/<str:token>/save-later/', _rv.RecordVerificationSaveLaterView.as_view(), name='b2b_record_verify_save_later'),
     path('record-verify/<str:token>/discard/', _rv.RecordVerificationDiscardView.as_view(), name='b2b_record_verify_discard'),
+    path('record-verify/<str:token>/discard-part/', _rv.RecordVerificationDiscardPartView.as_view(), name='b2b_record_verify_discard_part'),
     path('record-verify/<str:token>/download/', _rv.RecordVerificationDownloadView.as_view(),
          name='b2b_record_verify_download'),
     # ── Batch Run — Phase 0/1: read-only file→MP detect + confirm grid (records

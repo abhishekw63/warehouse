@@ -1,4 +1,4 @@
-{% load static b2b_extras %}
+{% load static b2b_extras %}{% now "Y-m-d" as today_iso %}
 {% comment %}
   Daily-Intake tab body — rendered inline on first paint and re-fetched via
   AJAX (?partial=daily) on every filter change. Root carries the current filter
@@ -14,6 +14,7 @@
     </div>
     <div class="daily-controls">
       <span class="range-toggle">
+        <a href="#" data-daily-today class="rg{% if start and start == end and start == today_iso %} on{% endif %}">Today</a>
         <a href="#" data-daily-days="7"  class="rg{% if not start and days == 7 %} on{% endif %}">7d</a>
         <a href="#" data-daily-days="30" class="rg{% if not start and days == 30 %} on{% endif %}">30d</a>
         <a href="#" data-daily-days="90" class="rg{% if not start and days == 90 %} on{% endif %}">90d</a>
@@ -53,10 +54,42 @@
     <div id="daily-chart"><div class="chart-ph">Loading chart…</div></div>
   </div>
 
-  <!-- tree-branch breakdown: segment → marketplace → child -->
-  <div>
+  <!-- Facility breakdown (AHD · BLR · North) — text table + ApexCharts small multiples -->
+  {{ facilities|json_script:"fac-data" }}
+  <div class="chart-card an-fc" id="an-fc">
+    <div class="chart-head">
+      <span class="chart-title">By facility · AHD · BLR · North</span>
+      <span class="chart-toggle an-fc-metric">
+        <button type="button" class="ctg on" data-fcm="value">Value</button>
+        <button type="button" class="ctg" data-fcm="qty">Qty</button>
+        <button type="button" class="ctg" data-fcm="pos">POs</button>
+      </span>
+      <button type="button" class="an-fc-full" id="an-fc-full" title="Full screen">⛶</button>
+    </div>
+    <div class="an-fc-body">
+    <table class="an-fc-table">
+      <thead><tr><th>Facility</th><th class="r">POs</th><th class="r">Qty</th><th class="r">Value</th><th class="r">Share of value</th></tr></thead>
+      <tbody>
+        {% for f in facilities.facilities %}
+        <tr class="fc-{{ f.code|lower }}">
+          <td class="an-fc-name"><span class="an-fc-chip"></span>{{ f.code }}</td>
+          <td class="r">{{ f.pos }}</td>
+          <td class="r">{{ f.qty|compact }}</td>
+          <td class="r"><b>{{ f.value|inr_short }}</b></td>
+          <td class="r an-fc-share">{{ f.share }}%<span class="an-fc-bar"><span style="width:{{ f.share }}%"></span></span></td>
+        </tr>
+        {% empty %}<tr><td colspan="5" class="muted">No facility data in this period.</td></tr>{% endfor %}
+        {% if facilities.facilities %}<tr class="an-fc-tot"><td class="an-fc-name">Total</td><td class="r">{{ facilities.total.pos }}</td><td class="r">{{ facilities.total.qty|compact }}</td><td class="r"><b>{{ facilities.total.value|inr_short }}</b></td><td class="r">100%</td></tr>{% endif %}
+      </tbody>
+    </table>
+    <div class="an-fc-donutwrap"><div class="an-fc-chart" id="an-fc-donut"></div></div>
+    </div>
+  </div>
+
+  <!-- tree-branch breakdown: segment → marketplace → child (collapsible; collapsed by default) -->
+  <div class="an-bd-section an-bd-collapsed">
     <div class="sec-head">
-      <h2>Breakdown {% if start and end %}· {{ start }}{% if start != end %} → {{ end }}{% endif %}{% else %}· last {{ days }} days{% endif %}</h2>
+      <h2 class="an-bd-h2" role="button" tabindex="0" aria-expanded="false" title="Show / hide the breakdown"><span class="an-bd-caret" aria-hidden="true">▸</span> Breakdown {% if start and end %}· {{ start }}{% if start != end %} → {{ end }}{% endif %}{% else %}· last {{ days }} days{% endif %}</h2>
       <span class="an-bd-tools">
         <span class="muted an-bd-total">{{ hier.total.pos }} POs · {{ hier.total.value|inr_short }} · {{ hier.total.items }} items</span>
         {# metric switch — applies to Sunburst + Treemap sizing #}
@@ -79,6 +112,7 @@
         </span>
       </span>
     </div>
+    <div class="an-bd-body">
     {{ breakdown|json_script:"bd-data" }}
     <div id="an-sunburst" class="an-bd-pane" data-orders-url="{% url 'b2b_tracker' %}" hidden></div>
     <div id="an-treemap" class="an-bd-pane" data-orders-url="{% url 'b2b_tracker' %}" hidden></div>
@@ -120,6 +154,7 @@
         </div>
       </details>
       {% empty %}<p class="muted">No orders received {% if start and end %}in {{ start }}{% if start != end %} → {{ end }}{% endif %}{% else %}in this period{% endif %}.</p>{% endfor %}
+    </div>
     </div>
   </div>
 

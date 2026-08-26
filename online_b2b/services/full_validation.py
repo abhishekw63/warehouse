@@ -15,6 +15,7 @@ never writes to the business DB.
 """
 from __future__ import annotations
 
+import re as _re
 from collections import defaultdict
 
 TOL_PCT, TOL_ABS = 0.005, 1.0   # value tolerance band: <=0.5% or <=Rs1
@@ -29,6 +30,16 @@ def _num(s):
 
 def _vmatch(a, b) -> bool:
     return b == 0 or abs(a - b) <= TOL_ABS or abs(a - b) / max(abs(b), 1) <= TOL_PCT
+
+
+def _nk(s) -> str:
+    return _re.sub(r'[^a-z0-9]', '', str(s or '').lower())
+
+
+# Channels we do NOT upload a unit price for — D365 auto-prices them from its master,
+# so our recorded CP ≠ D365's is EXPECTED and must NOT flag as a value mismatch; only
+# qty + SKU are meaningful for these (GT Mass; MT SOs also leave unit price blank).
+_NO_UNIT_PRICE = {_nk('GT Mass')}
 
 
 def _gst_rate(code) -> float:
@@ -207,7 +218,8 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
         R['pos'] += 1; R['qd'] += D['qty']; R['vd'] += D['val']
         qok = bool(o) and abs(D['qty'] - o['qty']) < 0.5
         q_expl = bool(o) and abs((o['qty'] - excl_qty) - D['qty']) < 0.5
-        vok = bool(o) and _vmatch(D['val'], our_val_eff)
+        # no value check for no-unit-price channels (GT Mass etc.) — see _NO_UNIT_PRICE
+        vok = bool(o) and (_nk(mp) in _NO_UNIT_PRICE or _vmatch(D['val'], our_val_eff))
         if o:
             R['qo'] += o['qty']; R['vo'] += our_val_eff
         R['excl'] += excl_qty
@@ -249,8 +261,12 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
                     status, reason = 'MISSING_IN_D365', f"in our record, not in D365 (status {ov['status']})"
             else:
                 status, reason = 'EXTRA_IN_D365', 'in D365, not in our record'
-            val_ok = ('YES' if (ov and dv and _vmatch(dval or 0, oval or 0))
-                      else ('n/a' if status in ('EXCLUDED', 'MISSING_IN_D365', 'EXTRA_IN_D365') else 'NO'))
+            # No value/CP check for no-unit-price channels (GT Mass etc.): we don't
+            # upload the price, so our CP ≠ D365's is expected — qty + SKU only.
+            val_ok = ('n/a' if _nk(mp) in _NO_UNIT_PRICE
+                      else 'YES' if (ov and dv and _vmatch(dval or 0, oval or 0))
+                      else 'n/a' if status in ('EXCLUDED', 'MISSING_IN_D365', 'EXTRA_IN_D365')
+                      else 'NO')
             # per-unit CP (ex-GST) on each side — exposes WHERE a value gap comes from
             # (same qty but a different unit price = a stale/deal CP on one side).
             our_cp = round(oval / oq, 2) if (oval is not None and oq) else None

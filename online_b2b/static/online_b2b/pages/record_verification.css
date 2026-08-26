@@ -149,3 +149,64 @@ td.rv-mis{background:color-mix(in srgb,var(--red) 8%,transparent);}
 .rv-otable tr.rv-empty > td.rv-caret-col{text-decoration:none;}
 .rv-otable tr.rv-empty .rv-ext,
 .rv-otable tr.rv-empty .mono{text-decoration:none;}
+
+/* ── Import / Verify top-level tabs — pill switcher over the SAME upload ── */
+.rv-toptabs{display:flex;gap:8px;margin:0 0 16px;flex-wrap:wrap;}
+.rv-toptab{display:inline-flex;align-items:center;gap:9px;padding:9px 18px;border:1px solid var(--border);
+  border-radius:999px;background:var(--surface);color:var(--text-2,var(--muted));font-family:inherit;
+  font-size:14px;font-weight:700;cursor:pointer;transition:background .14s,color .14s,border-color .14s,box-shadow .14s;}
+.rv-toptab:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--text);}
+.rv-toptab.on{background:var(--accent);border-color:var(--accent);color:#fff;
+  box-shadow:0 6px 16px -7px color-mix(in srgb,var(--accent) 70%,transparent);}
+.rv-toptab .rv-ttc{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;
+  padding:0 7px;border-radius:999px;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;
+  background:color-mix(in srgb,var(--muted) 18%,transparent);color:var(--text-2,var(--muted));}
+.rv-toptab.on .rv-ttc{background:rgba(255,255,255,.24);color:#fff;}
+[data-toppane][hidden]{display:none;}
+
+/* ── "↻ New check" — restart on the tab bar (upload box is hidden after a run) ── */
+.rv-newcheck{margin-left:auto;display:inline-flex;align-items:center;gap:6px;align-self:center;
+  padding:7px 14px;border:1px solid var(--border);border-radius:999px;background:var(--surface);
+  color:var(--text-2,var(--muted));font-size:12.5px;font-weight:700;text-decoration:none;
+  transition:border-color .14s,color .14s,background .14s;}
+.rv-newcheck:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--accent);
+  background:color-mix(in srgb,var(--accent) 6%,var(--surface));}
+
+/* ── Import table — include/exclude reflected on the row (like the review page) ── */
+.rv-cap-otbl tr{transition:opacity .14s,background .14s;}
+.rv-cap-otbl tr.rv-cap-excl > td{color:var(--muted);text-decoration:line-through;opacity:.55;}
+.rv-cap-otbl tr.rv-cap-excl > td.chk-col{text-decoration:none;opacity:1;}
+.rv-cap-otbl tbody tr:not(.rv-cap-excl):hover{background:color-mix(in srgb,var(--accent) 4%,transparent);}
+
+/* CHANNEL cell live-preview: when a group is (re)classified, the pill turns accent
+   so the user SEES the change that will be recorded, vs the greyed default channel. */
+.rv-cap-ch.rv-cap-ch-new{background:color-mix(in srgb,var(--accent) 15%,transparent);
+  color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);font-weight:800;}
+
+/* ── FE polish — tighten the capture panel + reset button ── */
+.rv-cap-actions{display:flex;align-items:center;gap:10px;margin-top:14px;}
+.rv-cap-actions .rv-cap-msg{margin-right:auto;font-size:12px;font-weight:600;color:var(--muted);}
+.rv-cap-reset{white-space:nowrap;}
+.rv-cap-classify{border-radius:12px;}
+.rv-cap-list-h{display:flex;align-items:center;gap:14px;margin:14px 0 8px;}
+.rv-cap-selc{font-size:12px;font-weight:600;color:var(--muted);}
+
+/* ── Run-level actions on the tab bar (New check · Save later · Discard) ── */
+.rv-topactions{margin-left:auto;display:flex;align-items:center;gap:8px;}
+.rv-newcheck{margin-left:0;}
+.rv-topbtn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border:1px solid var(--border);
+  border-radius:999px;background:var(--surface);color:var(--text-2,var(--muted));font-family:inherit;
+  font-size:12.5px;font-weight:700;cursor:pointer;transition:border-color .14s,color .14s,background .14s;}
+.rv-topbtn:hover{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--text);
+  background:color-mix(in srgb,var(--accent) 5%,var(--surface));}
+.rv-topbtn.danger:hover{border-color:color-mix(in srgb,var(--red,#e11d48) 55%,var(--border));
+  color:var(--red,#e11d48);background:color-mix(in srgb,var(--red,#e11d48) 7%,var(--surface));}
+@media(max-width:720px){.rv-topactions{width:100%;margin-left:0;flex-wrap:wrap;}}
+
+/* ── Include (green) / Exclude (red) selection coloring — state at a glance ── */
+.rv-cap-otbl tr.rv-cap-inc > td{background:color-mix(in srgb,var(--green,#10b981) 8%,transparent);}
+.rv-cap-otbl tr.rv-cap-inc > td.chk-col{box-shadow:inset 3px 0 0 var(--green,#10b981);}
+.rv-cap-otbl tr.rv-cap-excl > td{background:color-mix(in srgb,var(--red,#e11d48) 7%,transparent);
+  color:var(--muted);text-decoration:line-through;opacity:.72;}
+.rv-cap-otbl tr.rv-cap-excl > td.chk-col{box-shadow:inset 3px 0 0 var(--red,#e11d48);
+  text-decoration:none;opacity:1;}

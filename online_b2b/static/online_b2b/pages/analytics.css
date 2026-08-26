@@ -11,9 +11,17 @@
     margin-bottom:-1px;transition:color .14s,border-color .14s;font-family:inherit;white-space:nowrap;}
   .an-tab:hover{color:var(--text);}
   .an-tab.on{color:var(--accent);border-bottom-color:var(--accent);}
-  .an-pane{animation:anfade .28s ease both;}
+  .an-pane{animation:anfade .28s ease both;transition:opacity .2s ease;position:relative;}
+  /* loading cue — a slim indeterminate bar slides across the top of the pane while
+     it fetches, so a slow (~2s) query reads as "working", not a frozen pause. The
+     ::after lives on the pane element, so it survives the innerHTML swap. */
+  .an-pane.an-busy::after{content:'';position:absolute;top:0;left:0;right:0;height:3px;z-index:6;border-radius:3px;
+    background:linear-gradient(90deg,transparent,var(--accent),color-mix(in srgb,var(--accent) 50%,transparent),transparent);
+    background-size:45% 100%;background-repeat:no-repeat;animation:anprog 1.1s ease-in-out infinite;}
+  @keyframes anprog{0%{background-position:-45% 0;}100%{background-position:145% 0;}}
+  @media (prefers-reduced-motion: reduce){.an-pane.an-busy::after{animation-duration:2.6s;}}
   @keyframes anfade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
-  .an-pane.an-busy{opacity:.45;pointer-events:none;transition:opacity .15s;}
+  .an-pane.an-busy{opacity:.5;pointer-events:none;}
   .an-loading{padding:60px 0;text-align:center;color:var(--muted);font-size:13px;}
   .an-loader{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:72px 0;text-align:center;}
   .an-spin{width:34px;height:34px;border-radius:50%;border:3px solid color-mix(in srgb,var(--accent) 20%,transparent);border-top-color:var(--accent);animation:anspin .8s linear infinite;}
@@ -263,3 +271,50 @@
     font-size:11.5px;font-weight:600;padding:5px 11px;border-radius:8px;cursor:pointer;font-family:inherit;}
   .an-bd-reset:hover{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 45%,var(--border));}
   .an-bd-reset[hidden]{display:none;}
+
+/* Breakdown card — collapsible (collapsed by default on landing; click header) */
+.an-bd-h2{display:inline-flex;align-items:center;gap:7px;cursor:pointer;user-select:none;}
+.an-bd-h2:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px;}
+.an-bd-caret{font-size:12px;color:var(--muted);transition:transform .2s ease;display:inline-block;}
+.an-bd-section:not(.an-bd-collapsed) .an-bd-caret{transform:rotate(90deg);}
+.an-bd-body{overflow:hidden;transition:max-height .34s cubic-bezier(.4,0,.2,1),opacity .26s ease;}
+.an-bd-collapsed .an-bd-body{max-height:0;opacity:0;}
+.an-bd-collapsed .an-bd-tools{display:none;}
+@media (prefers-reduced-motion:reduce){.an-bd-body{transition:none;}}
+
+/* ── Layout stability: reserve chart heights so a range swap (7d↔30d↔90d) never
+   collapses the container to 0 while ApexCharts re-inits (which jumped the page).
+   Only the data inside the fixed-size card changes. ── */
+#daily-chart{min-height:380px;}
+.chart-ph{min-height:380px;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:13px;}
+
+/* ── By-facility breakdown (AHD/BLR/North) — text table + ApexCharts small multiples ── */
+.an-fc{margin:0 0 26px;padding:20px 24px 24px;}
+.an-fc .chart-head{margin-bottom:12px;}
+.an-fc-full{margin-left:8px;appearance:none;border:1px solid var(--border);background:var(--surface);color:var(--muted);
+  width:30px;height:28px;border-radius:8px;cursor:pointer;font-size:14px;line-height:1;transition:border-color .13s,color .13s;}
+.an-fc-full:hover{border-color:var(--accent);color:var(--accent);}
+.an-fc-table{width:100%;border-collapse:collapse;margin:8px 0 18px;font-size:13px;}
+.an-fc-table th{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);text-align:left;padding:7px 12px;border-bottom:1px solid var(--border);}
+.an-fc-table th.r,.an-fc-table td.r{text-align:right;}
+.an-fc-table td{padding:9px 12px;border-bottom:1px solid var(--border-2,var(--border));font-variant-numeric:tabular-nums;color:var(--text);}
+.an-fc-name{display:flex;align-items:center;gap:8px;font-weight:700;}
+.an-fc-chip{width:11px;height:11px;border-radius:3px;flex:none;background:var(--muted);display:inline-block;}
+.fc-ahd .an-fc-chip{background:#4f46e5;} .fc-blr .an-fc-chip{background:#11998e;} .fc-north .an-fc-chip{background:#f59e0b;}
+.an-fc-share{white-space:nowrap;}
+.an-fc-bar{display:block;height:5px;border-radius:999px;background:color-mix(in srgb,var(--muted) 16%,transparent);overflow:hidden;margin-top:4px;max-width:160px;margin-left:auto;}
+.an-fc-bar>span{display:block;height:100%;border-radius:999px;background:var(--accent);}
+.fc-ahd .an-fc-bar>span{background:#4f46e5;} .fc-blr .an-fc-bar>span{background:#11998e;} .fc-north .an-fc-bar>span{background:#f59e0b;}
+.an-fc-tot td{font-weight:800;border-top:2px solid var(--border);border-bottom:none;}
+.an-fc-body{display:grid;grid-template-columns:1.5fr 1fr;gap:38px;align-items:center;padding:8px 4px 14px;}
+@media(max-width:900px){.an-fc-body{grid-template-columns:1fr;gap:22px;}}
+.an-fc-body .an-fc-table{margin:0;}
+.an-fc-donutwrap{display:flex;align-items:center;justify-content:center;min-height:320px;padding:14px 10px;}
+#an-fc-donut{width:100%;max-width:380px;}
+.an-fc-panel{border:1px solid var(--border);border-radius:12px;background:var(--surface);padding:11px 12px 6px;min-width:0;}
+.an-fc-phead{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text);margin-bottom:2px;flex-wrap:wrap;}
+.an-fc-pmeta{font-size:10.5px;color:var(--muted);font-weight:600;margin-left:auto;}
+.an-fc-chart{min-height:134px;width:100%;}
+/* full screen */
+.an-fc-fs{background:var(--surface);padding:28px 34px;overflow:auto;}
+.an-fc-fs .an-fc-chart{min-height:320px;}

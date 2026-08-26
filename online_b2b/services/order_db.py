@@ -395,6 +395,45 @@ def daily_intake(days: int = 30, start: str = '', end: str = '') -> dict:
     return out
 
 
+def facility_intake(days: int = 30, start: str = '', end: str = '') -> dict:
+    """Per-facility (AHD / BLR / North) order intake for the Daily-Intake tab —
+    DISTINCT POs / qty / value / % of value. Same window as :func:`daily_intake`,
+    but grouped by facility ONLY (no date) so the PO count is truly distinct and the
+    totals tie out to the Breakdown / KPI cards. One query. Read-only; never raises."""
+    out = {'facilities': [], 'total': {'pos': 0, 'qty': 0, 'value': 0.0}}
+    try:
+        with _conn() as (cur, d):
+            ot, ph = d['orders'], d['ph']
+            sel = (f"SELECT warehouse, COUNT(DISTINCT po), COALESCE(SUM(qty),0), "
+                   f"COALESCE(SUM(order_value),0) FROM {ot} WHERE ")
+            if start and end:
+                cur.execute(sel + f"DATE(created_at) BETWEEN {ph} AND {ph} GROUP BY warehouse",
+                            (start, end))
+            else:
+                cur.execute(sel + f"created_at >= (CURDATE() - INTERVAL {int(days) - 1} DAY) "
+                            f"GROUP BY warehouse")
+            fac_tot = {}                        # canon facility → [pos, qty, value]
+            for wh, pos, qty, val in cur.fetchall():
+                # several raw warehouses can canon to one facility (PICK + aliases → AHD)
+                t = fac_tot.setdefault(_canon_fac(wh) or '—', [0, 0, 0.0])
+                t[0] += int(pos or 0); t[1] += int(qty or 0); t[2] += float(val or 0)
+            fac_order = {'AHD': 0, 'BLR': 1, 'North': 2}
+            codes = sorted(fac_tot.keys(), key=lambda k: (fac_order.get(k, 9), k))
+            facilities, gtot = [], [0, 0, 0.0]
+            for code in codes:
+                t = fac_tot[code]
+                gtot[0] += t[0]; gtot[1] += t[1]; gtot[2] += t[2]
+                facilities.append({'code': code, 'pos': t[0], 'qty': t[1], 'value': round(t[2], 2)})
+            tv = gtot[2] or 1
+            for f in facilities:
+                f['share'] = round(f['value'] / tv * 100, 1)
+            out = {'facilities': facilities,
+                   'total': {'pos': gtot[0], 'qty': gtot[1], 'value': round(gtot[2], 2)}}
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
 def intake_hierarchy(days: int = 30, date: str = '', start: str = '',
                      end: str = '') -> dict:
     """segment → parent marketplace → child breakdown (pos/value/items) for the
@@ -1076,23 +1115,30 @@ def today_orders(day: str, segment='', marketplace='', warehouse='', q='') -> di
                 aliases = _facility_maps()[1].get(warehouse, [warehouse])
                 w.append(f"h.warehouse IN ({','.join([ph] * len(aliases))})"); a += aliases
             cur.execute(
-                f"SELECT h.po, h.order_value, h.segment FROM order_headers h JOIN ("
+                f"SELECT h.po, h.order_value, h.segment, h.warehouse FROM order_headers h JOIN ("
                 f"  SELECT marketplace, po, MAX(run_ts) mx FROM order_headers "
                 f"  GROUP BY marketplace, po) t ON h.marketplace=t.marketplace "
                 f"AND h.po=t.po AND h.run_ts=t.mx WHERE {' AND '.join(w)}", tuple(a))
             seen, pos, val = set(), [], 0.0
             segs: dict = {}          # segment code → {count, value, pos} (B2B vs Offline)
-            for po, ov, seg in cur.fetchall():
+            facs: dict = {}          # facility (AHD/BLR/North) → {count, value, pos}
+            for po, ov, seg, wh in cur.fetchall():
                 v = float(ov or 0); val += v
                 po = str(po); seg = str(seg or 'Other')
+                fac = _canon_fac(str(wh or '')) or '—'
                 sg = segs.setdefault(seg, {'count': 0, 'value': 0.0, 'pos': []})
+                fc = facs.setdefault(fac, {'count': 0, 'value': 0.0, 'pos': []})
                 sg['value'] += v
+                fc['value'] += v
                 if po not in seen:
                     seen.add(po); pos.append(po)
                     sg['count'] += 1; sg['pos'].append(po)
-            for s in segs.values():
-                s['value'] = round(s['value'], 2)
-            out.update(ok=True, count=len(seen), value=round(val, 2), pos=pos, segments=segs)
+                    fc['count'] += 1; fc['pos'].append(po)
+            for _grp in (segs, facs):
+                for _v in _grp.values():
+                    _v['value'] = round(_v['value'], 2)
+            out.update(ok=True, count=len(seen), value=round(val, 2), pos=pos,
+                       segments=segs, facilities=facs)
     except Exception as e:  # noqa: BLE001
         out['error'] = f"{type(e).__name__}: {e}"
     return out
@@ -1108,7 +1154,8 @@ def tracker_insights(segment='', marketplace='', warehouse='', q='',
     import datetime as _dt2
     out = {'ok': False, 'daily': {'labels': [], 'series': {}},
            'marketplaces': [], 'facilities': [],
-           'arrival': {'markets': [], 'dow': [], 'data': [], 'max': 0}}
+           'arrival': {'markets': [], 'dow': [], 'data': [], 'max': 0},
+           'intraday': {'day': '', 'markets': [], 'points': [], 'max_qty': 0}}
     try:
         with _conn() as (cur, d):
             ph = d['ph']
@@ -1215,6 +1262,37 @@ def tracker_insights(segment='', marketplace='', warehouse='', q='',
             out['arrival'] = {'markets': [k for k, _ in tops],
                               'dow': ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
                               'data': data, 'max': 100}
+
+            # 5) intraday timeline — the SELECTED day's arrivals by HOUR of run_ts
+            #    (when the order entered our system) × marketplace, with qty + value.
+            #    "GT Select landed at 6, 7, 12 with N qty / ₹V" → a per-MP bubble
+            #    timeline. Honors segment/marketplace/warehouse/q; own day, not the
+            #    upload-date range.
+            try:
+                iday = _dt2.date.fromisoformat(day) if day else _dt2.date.today()
+            except Exception:  # noqa: BLE001
+                iday = _dt2.date.today()
+            cur.execute(
+                f"SELECT h.marketplace, HOUR(h.run_ts), COUNT(DISTINCT h.po), "
+                f"COALESCE(SUM(h.qty),0), COALESCE(SUM(h.order_value),0) FROM {latest} "
+                f"WHERE DATE(h.run_ts) = {ph}{wsql} "
+                f"GROUP BY h.marketplace, HOUR(h.run_ts)",
+                tuple([iday.isoformat()] + args))
+            imap = {}                              # parent-MP → {hour: [orders, qty, value]}
+            for mkt, hr, cnt, qty, val in cur.fetchall():
+                name = disp.get(mkt, mkt or '—')
+                agg = imap.setdefault(name, {}).setdefault(int(hr or 0), [0, 0, 0.0])
+                agg[0] += int(cnt or 0); agg[1] += int(qty or 0); agg[2] += float(val or 0)
+            im_tot = {k: sum(v[1] for v in hrs.values()) for k, hrs in imap.items()}
+            imarkets = sorted(imap.keys(), key=lambda k: -im_tot[k])
+            ipoints, maxq = [], 0
+            for mi, name in enumerate(imarkets):
+                for hr, (cnt, qty, val) in sorted(imap[name].items()):
+                    ipoints.append({'mp': name, 'mi': mi, 'hour': hr,
+                                    'orders': cnt, 'qty': qty, 'value': round(val, 2)})
+                    maxq = max(maxq, qty)
+            out['intraday'] = {'day': iday.isoformat(), 'markets': imarkets,
+                               'points': ipoints, 'max_qty': maxq}
         out['ok'] = True
     except Exception as e:  # noqa: BLE001
         out['error'] = f"{type(e).__name__}: {e}"

@@ -77,6 +77,12 @@ _LOG_COLS = ['po', 'marketplace', 'status', 'our_qty', 'd365_qty', 'excluded_qty
              'qty_delta', 'our_val', 'd365_val', 'val_delta', 'our_pin', 'd365_pin',
              'pin_ok', 'mismatch_fields', 'checked_by', 'checked_at']
 
+# Channels auto-punched into D365 outside this app and CAPTURED back by us — their
+# recorded lines ARE the D365 lines, so reconciling them against D365 is circular and
+# only yields phantom SKU/value mismatches. Matched on _nk(marketplace); always
+# classified EXTERNAL (beyond our cross-check), never a red mismatch.
+_BEYOND_COMPARE = {_nk('GT Select')}
+
 
 def preview(headers_path, lines_path) -> dict:
     """PHASE 1 — compute the DB↔D365 reconciliation per PO. Writes NOTHING (review
@@ -123,11 +129,24 @@ def preview(headers_path, lines_path) -> dict:
     for r in rows:
         d365_pin = str(r.get('pin_d365') or '').strip()
 
-        # ── EXTERNAL: in D365 but NOT in our records (GT Select / Testers etc. are
-        #    uploaded outside this app) — recorded, but beyond our cross-check ──
-        if r.get('our_qty') is None:
+        # ── EXTERNAL — recorded, but BEYOND our cross-check ──
+        #   (a) in D365 but NOT in our records (nothing of ours to compare), OR
+        #   (b) an auto-punched channel we CAPTURE rather than process line-by-line
+        #       (GT Select — punched into D365 from DMS and captured back by us, so
+        #       its recorded lines ARE the D365 lines; reconciling is circular). See
+        #       _BEYOND_COMPARE.
+        if r.get('our_qty') is None or _nk(r.get('mp')) in _BEYOND_COMPARE:
+            # surface the recorded qty/value for reference, but render NO verdict
+            if r.get('our_qty') is not None:
+                lv = line_val.get(r['po'], {'our': 0.0, 'd365': 0.0})
+                d365_incl = r.get('d365_val') or 0
+                gst_factor = (d365_incl / lv['d365']) if lv['d365'] else 1.0
+                r['our_val'] = round(lv['our'] * gst_factor, 2)
+                r['d365_val'] = round(d365_incl, 2)
+            r['val_diff'] = 0
             r['our_pin'] = ''; r['pin_ok'] = True
-            r['lines_ok'] = None; r['mismatch_fields'] = []; r['status'] = 'EXTERNAL'
+            r['sku_ok'] = None; r['lines_ok'] = None; r['val_ok'] = True
+            r['mismatch_fields'] = []; r['status'] = 'EXTERNAL'
             n_external += 1
             continue
 

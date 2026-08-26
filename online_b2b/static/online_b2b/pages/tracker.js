@@ -24,6 +24,9 @@
     if (_pending === 0) { if (_progTimer) { clearTimeout(_progTimer); _progTimer = null; } if (topbar) topbar.hidden = true; }
   }
 
+  // last Today-KPI payload (drives the facility drawer) + which metric it's open on
+  var todayData = null, facMetric = null;
+
   var FIELDS = ['segment', 'marketplace', 'warehouse', 'q', 'uploaded_from', 'uploaded_to'];
   function params() {
     var p = new URLSearchParams();
@@ -297,12 +300,91 @@
           }).join('');
           el.innerHTML = '<div class="k-bar">' + bar + '</div><div class="k-barleg">' + leg + '</div>';
         });
+        todayData = d;
+        if (facMetric) { renderFacDrawer(facMetric); positionFacDrawer(facMetric); }   // keep an open drawer in sync
         progDone();
       })
       .catch(function () {
         ['kpiOrdersN', 'kpiValN', 'kpiBillVal', 'kpiRiskN'].forEach(function (id) { if ($(id)) $(id).textContent = '—'; });
         progDone();
       });
+  }
+
+  // ── facility (AHD/BLR/North) breakdown drawer ─────────────────────────────
+  // A KPI card is clickable; clicking opens a drawer right below the strip with
+  // that card's metric split across the 3 facilities (proportional bar + value).
+  // Click the same card (or ✕) to close; clicking another card swaps the metric.
+  var FAC_LABEL = { orders: 'Orders', value: 'Value', bill: 'Billable', risk: 'At-risk' };
+  function facRaw(f, m) { return Number(m === 'orders' ? f.count : m === 'value' ? f.value : m === 'bill' ? f.billable : f.risk) || 0; }
+  function facDisp(f, m) { return m === 'orders' ? (f.count || 0).toLocaleString('en-IN') : m === 'value' ? f.value_fmt : m === 'bill' ? f.billable_fmt : f.risk; }
+  function renderFacDrawer(m) {
+    var body = document.getElementById('tfdBody'), metEl = document.getElementById('tfdMetric');
+    if (!body) return;
+    if (metEl) metEl.textContent = FAC_LABEL[m] || m;
+    var facs = (todayData && todayData.facilities) || [];
+    var total = facs.reduce(function (a, f) { return a + facRaw(f, m); }, 0);
+    if (!facs.length) { body.innerHTML = '<div class="tfd-empty">No orders recorded today.</div>'; return; }
+    body.innerHTML = facs.map(function (f) {
+      var val = facRaw(f, m), pct = total > 0 ? (val / total * 100) : 0;
+      var cls = 'fc-' + String(f.code || '').toLowerCase();
+      return '<div class="tfd-row">' +
+        '<span class="tfd-fac ' + cls + '"><i></i>' + (f.label || f.code) + '</span>' +
+        '<div class="tfd-track"><span class="tfd-fill ' + cls + '" style="width:' + pct.toFixed(1) + '%"></span></div>' +
+        '<span class="tfd-val"><b>' + facDisp(f, m) + '</b><em>' + (f.count || 0) + ' PO' + ((f.count || 0) === 1 ? '' : 's') + ' · ' + Math.round(pct) + '%</em></span>' +
+        '</div>';
+    }).join('');
+  }
+  // Anchor the drawer UNDER the clicked card, matching that card's width + left
+  // offset (not full-width). If the cards have wrapped/stacked (narrow screen),
+  // fall back to full width so it stays readable.
+  function positionFacDrawer(m) {
+    var dr = document.getElementById('trkFacDrawer');
+    var card = document.querySelector('.trk-kpi[data-metric="' + m + '"]');
+    var strip = document.querySelector('.trk-kpis');
+    if (!dr || !card || !strip) return;
+    var s = strip.getBoundingClientRect(), c = card.getBoundingClientRect();
+    if (c.width >= s.width - 4) { dr.style.marginLeft = '0px'; dr.style.width = ''; }  // stacked → full width
+    else { dr.style.marginLeft = (c.left - s.left) + 'px'; dr.style.width = c.width + 'px'; }
+  }
+  function openFacDrawer(m) {
+    var dr = document.getElementById('trkFacDrawer');
+    if (!dr) return;
+    facMetric = m;
+    renderFacDrawer(m);
+    dr.hidden = false;
+    positionFacDrawer(m);        // size + place it under the clicked card
+    // reflect state on the cards (active outline + aria)
+    document.querySelectorAll('.trk-kpi[data-metric]').forEach(function (c) {
+      var on = c.getAttribute('data-metric') === m;
+      c.classList.toggle('kpi-active', on);
+      c.setAttribute('aria-expanded', on ? 'true' : 'false');
+    });
+    requestAnimationFrame(function () { dr.classList.add('open'); });
+  }
+  function closeFacDrawer() {
+    var dr = document.getElementById('trkFacDrawer');
+    facMetric = null;
+    document.querySelectorAll('.trk-kpi[data-metric]').forEach(function (c) { c.classList.remove('kpi-active'); c.setAttribute('aria-expanded', 'false'); });
+    if (!dr) return;
+    dr.classList.remove('open');
+    clearTimeout(dr._t);
+    dr._t = setTimeout(function () { if (!facMetric) dr.hidden = true; }, 260);
+  }
+  function toggleFacDrawer(m) { if (facMetric === m) closeFacDrawer(); else openFacDrawer(m); }
+  function wireFacDrawer() {
+    document.querySelectorAll('.trk-kpi[data-metric]').forEach(function (c) {
+      var m = c.getAttribute('data-metric');
+      c.addEventListener('click', function () { toggleFacDrawer(m); });
+      c.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleFacDrawer(m); } });
+    });
+    var x = document.getElementById('tfdX');
+    if (x) x.addEventListener('click', closeFacDrawer);
+    // re-anchor under its card when the layout reflows (cards are fluid width)
+    var _rt;
+    window.addEventListener('resize', function () {
+      if (!facMetric) return;
+      clearTimeout(_rt); _rt = setTimeout(function () { if (facMetric) positionFacDrawer(facMetric); }, 80);
+    });
   }
 
   // table init (re-run after every AJAX swap): sort + quick-filter
@@ -433,11 +515,12 @@
 
   // collapse / expand the orders table (remembered) — toggled from BOTH the hero
   // button and the header bar sitting right above the table (always reachable).
-  var TKEY = 'trk_table_collapsed', tblBtn = document.getElementById('trkTableToggle'),
+  var tblBtn = document.getElementById('trkTableToggle'),
       tblHead = document.getElementById('trkTableHead');
+  // The orders table starts COLLAPSED on every load (per request). The body class is
+  // the single source of truth; toggled from the hero button or the header bar.
   function applyTableCollapse() {
-    var on = false; try { on = localStorage.getItem(TKEY) === '1'; } catch (e) { }
-    document.body.classList.toggle('trk-tbl-collapsed', on);
+    var on = document.body.classList.contains('trk-tbl-collapsed');
     if (tblBtn) { tblBtn.classList.toggle('on', on); tblBtn.innerHTML = on ? '⊞ Table' : '⊟ Table'; tblBtn.title = on ? 'Show the orders table' : 'Collapse the orders table'; }
     if (tblHead) {
       tblHead.setAttribute('aria-expanded', on ? 'false' : 'true');
@@ -446,8 +529,7 @@
     }
   }
   function toggleTable() {
-    var on = !document.body.classList.contains('trk-tbl-collapsed');
-    try { localStorage.setItem(TKEY, on ? '1' : '0'); } catch (e) { }
+    document.body.classList.toggle('trk-tbl-collapsed');
     applyTableCollapse();
   }
   if (tblBtn) tblBtn.addEventListener('click', toggleTable);
@@ -455,6 +537,7 @@
     tblHead.addEventListener('click', toggleTable);
     tblHead.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleTable(); } });
   }
+  document.body.classList.add('trk-tbl-collapsed');   // default: collapsed on load
   applyTableCollapse();
 
   // add-PO panel toggle
@@ -469,5 +552,6 @@
   initTable();
   loadBilling();          // fill the Est. Billing column after first paint
   loadTodayKPIs();        // fill the Today KPI strip
+  wireFacDrawer();        // KPI cards → facility (AHD/BLR/North) drawer
   renderPills();
 })();

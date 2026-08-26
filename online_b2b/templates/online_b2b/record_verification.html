@@ -33,7 +33,8 @@
     <div class="card"><div><div class="n" style="color:var(--accent)" data-countup>{{ coverage.external }}</div><div class="l">External (not ours)</div></div></div>
   </div>
 
-  {# ── Upload ── #}
+  {% if not data %}
+  {# ── Upload (hidden once a check has run — re-run via "↻ New check" on the tabs) ── #}
   <div class="im-card reveal rv-upload">
     <h2>Run a check</h2>
     <form method="post" action="{% url 'b2b_record_verify_run' %}" enctype="multipart/form-data" data-loading="Verifying against D365 &amp; finding new orders…" data-loading-steps="Reading D365 Headers &amp; Lines|Matching POs to our records|Netting excluded lines|Comparing qty · value · pincode|Classifying new orders to capture|Logging deltas">
@@ -66,29 +67,51 @@
     </div>
   </div>
   {% endif %}
+  {% endif %}{# /not data — upload + resume hidden after a run #}
 
   {# ── Results (last run) ── #}
   {% if data %}
-  {# review → confirm: nothing is recorded until you confirm #}
-  <div class="rv-confirm {% if confirmed %}done{% endif %}">
+  {% with cap_new=capture.summary.new|default:0 %}
+  {# Two workflows on the SAME uploaded Headers + Lines — switch tabs, don't scroll. #}
+  <div class="rv-toptabs" role="tablist" aria-label="Import or Verify orders">
+    <button type="button" class="rv-toptab{% if cap_new %} on{% endif %}" data-toptab="import" role="tab" aria-selected="{% if cap_new %}true{% else %}false{% endif %}"><span class="rv-tt-l">📥 Import Orders</span><span class="rv-ttc">{{ cap_new }}</span></button>
+    <button type="button" class="rv-toptab{% if not cap_new %} on{% endif %}" data-toptab="verify" role="tab" aria-selected="{% if not cap_new %}true{% else %}false{% endif %}"><span class="rv-tt-l">✓ Verify Orders</span><span class="rv-ttc">{{ data.verify_summary.checked }}</span></button>
+    <div class="rv-topactions">
+      <a class="rv-newcheck" href="{% url 'b2b_record_verify' %}" title="Upload a fresh Headers + Lines">↻ New check</a>
+      <button type="button" class="rv-topbtn rv-savelater" data-url="{% url 'b2b_record_verify_save_later' token=token %}" title="Park this check to resume later — nothing recorded">🕒 Save for later</button>
+      <button type="button" class="rv-topbtn danger rv-discard" data-url="{% url 'b2b_record_verify_discard' token=token %}" data-pending="{{ cap_new }}" title="Discard this entire check — nothing recorded">🗑 Discard</button>
+    </div>
+  </div>
+
+  {% if verify_discarded %}
+  <div class="im-card reveal" data-toppane="verify"{% if cap_new %} hidden{% endif %}>
+    <p class="rv-note" style="margin:0;">🗑 <b>Verification discarded</b> — nothing recorded. Your import orders are untouched.</p>
+  </div>
+  {% else %}
+  {# review → confirm (Verify pane): Confirm records; bulk Discard/Save-later are top-level. #}
+  <div class="rv-confirm {% if confirmed %}done{% endif %}" data-toppane="verify"{% if cap_new %} hidden{% endif %}>
     {% if confirmed %}
       <span class="rv-c-text">✓ <b>Verification recorded</b> — {{ data.verify_summary.checked }} PO(s) logged.</span>
     {% else %}
       <span class="rv-c-text">Reviewed <b>{{ data.verify_summary.checked }}</b> PO(s) — <b>nothing is recorded yet.</b>
         Tick the rows to record; <b>External</b> orders (GT Select / Testers) are pushed by ticking them. Then confirm.</span>
       <div class="rv-c-actions">
-        <button type="button" class="btn-ghost rv-discard" data-url="{% url 'b2b_record_verify_discard' token=token %}" title="Discard this check — deletes it, records nothing">🗑 Discard</button>
-        <button type="button" class="btn-ghost rv-savelater" data-url="{% url 'b2b_record_verify_save_later' token=token %}" title="Park this check to resume later — nothing is recorded">🕒 Save for Review Later</button>
+        <button type="button" class="btn-ghost rv-discard-part" data-part="verify" data-url="{% url 'b2b_record_verify_discard_part' token=token %}" title="Discard only the verification — the import stays">🗑 Discard verification</button>
         <form method="post" action="{% url 'b2b_record_verify_confirm' token=token %}" style="margin:0;">{% csrf_token %}
           <button type="submit" class="btn-primary">✓ Confirm &amp; record <span class="rv-selc">0</span></button>
         </form>
       </div>
     {% endif %}
   </div>
+  {% endif %}
 
-  {# ── Capture external orders → TRACKER (separate action from the verification log) ── #}
-  {% if capture and capture.summary.new and not captured %}
-  <div class="im-card reveal rv-capture" id="rvCapture">
+  {# ══ IMPORT ORDERS pane — capture new orders → TRACKER (own action, own state) ══ #}
+  {% if import_discarded %}
+  <div class="im-card reveal" data-toppane="import"{% if not cap_new %} hidden{% endif %}>
+    <p class="rv-note" style="margin:0;">🗑 <b>Import discarded</b> — no new orders captured. The verification is untouched.</p>
+  </div>
+  {% elif capture and capture.summary.new and not captured %}
+  <div class="im-card reveal rv-capture" id="rvCapture" data-toppane="import"{% if not cap_new %} hidden{% endif %}>
     <div class="rv-cap-head">
       <h2>① New orders <span class="count">→ push to tracker</span></h2>
       <p class="rv-note">In D365 but <b>not recorded by us</b> (GT Select auto-punch, testers, …). <b>Tick the ones to push</b> (all selected by default) → recorded into the tracker under their <b>true channel</b> (classified by <b>Gen. Bus. Posting Group</b>, deduped vs everything already captured, testers included). Externals have no delta/match — they're pushed, not verified.</p>
@@ -139,10 +162,10 @@
           {% for o in capture.new_orders %}
           <tr>
             {# key on the UNIQUE SO No (per-SO), not External Doc — two SOs can share one Ext Doc #}
-            <td class="chk-col"><input type="checkbox" class="rv-cap-chk" value="{{ o.so_no|default:o.external_doc }}" checked></td>
+            <td class="chk-col"><input type="checkbox" class="rv-cap-chk" value="{{ o.so_no|default:o.external_doc }}" data-classkey="{{ o.class_key }}" checked></td>
             <td class="mono strong">{{ o.external_doc|default:o.so_no }}</td>
             <td class="mono">{{ o.so_no|default:'—' }}</td>
-            <td><span class="st ok">{{ o.marketplace }}</span></td>
+            <td><span class="st ok rv-cap-ch" data-orig="{{ o.marketplace }}">{{ o.marketplace }}</span></td>
             <td class="desc" title="{{ o.customer_name|default:o.ship_name }}">{{ o.customer_name|default:o.ship_name|default:'—' }}</td>
             <td class="mono">{{ o.cust_no|default:'—' }}</td>
             <td class="r">{{ o.qty }}</td>
@@ -156,19 +179,24 @@
 
     <div class="rv-cap-actions">
       <span class="rv-cap-msg" id="rvCapMsg"></span>
+      <button type="button" class="btn-ghost rv-cap-reset" id="rvCapReset" title="Re-select all orders and clear classifications">↺ Reset</button>
+      <button type="button" class="btn-ghost rv-discard-part" data-part="import" data-url="{% url 'b2b_record_verify_discard_part' token=token %}" title="Discard only the import — the verification stays">🗑 Discard import</button>
       <button type="button" class="btn-primary" id="rvCapBtn" data-url="{% url 'b2b_record_verify_capture' token=token %}">✓ Push <span id="rvCapBtnN">{{ capture.summary.new }}</span> order(s) → tracker</button>
     </div>
   </div>
   {{ taxonomy|json_script:"rvTaxonomy" }}
   {% elif captured %}
-  <div class="im-card reveal rv-capture done">
+  <div class="im-card reveal rv-capture done" data-toppane="import"{% if not cap_new %} hidden{% endif %}>
     <span>✓ <b>External orders captured</b> into the tracker.</span>
     <a class="btn-ghost" href="{% url 'b2b_tracker' %}">View in Tracker →</a>
   </div>
+  {% else %}
+  <div class="im-card reveal" data-toppane="import" hidden><p class="rv-note" style="margin:0;">✓ No new orders to import from this upload — everything here is already captured.</p></div>
   {% endif %}
 
-  {# ── KPI tiles (review-page style) ── #}
-  <div class="iss-kpis rv-kpis reveal">
+  {# ── VERIFY ORDERS pane — reconcile KPIs + result (hidden when verify discarded) ── #}
+  {% if not verify_discarded %}
+  <div class="iss-kpis rv-kpis reveal" data-toppane="verify"{% if cap_new %} hidden{% endif %}>
     <div class="ik"><div class="n" data-countup>{{ data.verify_summary.checked }}</div><div class="l">POs</div></div>
     <div class="ik"><div class="n" data-countup>{{ data.n_lines }}</div><div class="l">Line items</div></div>
     <div class="ik"><div class="n" data-countup>{{ data.tot_qty }}</div><div class="l">Qty</div></div>
@@ -179,7 +207,7 @@
     <div class="ik"><div class="n" style="color:var(--accent)" data-countup>{{ data.verify_summary.external }}</div><div class="l">External</div></div>
   </div>
 
-  <div class="im-card reveal">
+  <div class="im-card reveal" data-toppane="verify"{% if cap_new %} hidden{% endif %}>
     <div class="rv-res-head">
       <h2>Result</h2>
       <a class="btn-ghost" href="{% url 'b2b_record_verify_download' token=token %}" data-download-modal="Preparing the reconciliation Excel">⬇ Excel</a>
@@ -252,6 +280,8 @@
 
     {% if data.excel_error %}<p class="rv-note">Excel note: {{ data.excel_error }}</p>{% endif %}
   </div>
+  {% endif %}{# /not verify_discarded #}
+  {% endwith %}
   {% endif %}
 
   {# ── Verification history now lives on its own page (Verified / Mismatch / External tabs) ── #}

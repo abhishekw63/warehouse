@@ -14,7 +14,7 @@
   var appRoot = base.replace(/tracker\/?$/, '');
   var url = appRoot + 'tracker/insights/';
   var OPEN_KEY = 'trk_insights_open', CACHE_KEY = 'trk_insights_c_';
-  var charts = {}, metric = 'count', lastData = null;
+  var charts = {}, metric = 'count', ivMetric = 'qty', lastData = null;
 
   // ── filters (read the shared bar; date is the client's local day) ──────
   function localToday() {
@@ -82,11 +82,12 @@
         xAxis: { type: 'category', data: fmtLbl, axisLine: { lineStyle: { color: c.border } }, axisLabel: { color: c.text2, fontSize: 9.5, interval: 4 }, axisTick: { show: false } },
         yAxis: { type: 'value', splitLine: { lineStyle: { color: c.border, opacity: .5 } }, axisLabel: { color: c.text2, fontSize: 9.5, formatter: (metric === 'value' ? function (v) { return inrCr(v); } : '{value}') } },
         series: [
-          // smoothMonotone:'x' + gentle smooth keep the spline from OVERSHOOTING
-          // below zero at the sharp intake valleys (the odd teardrop "bulbs" under
-          // the axis); clip:true guarantees nothing paints below the baseline.
-          { name: 'Online B2B', type: 'line', stack: 't', smooth: 0.3, smoothMonotone: 'x', clip: true, symbol: 'none', areaStyle: { opacity: .28 }, lineStyle: { width: 2 }, itemStyle: { color: c.accent }, data: pick('OnlineB2B') },
-          { name: 'Offline', type: 'line', stack: 't', smooth: 0.3, smoothMonotone: 'x', clip: true, symbol: 'none', areaStyle: { opacity: .28 }, lineStyle: { width: 2 }, itemStyle: { color: c.off }, data: pick('Offline') }
+          // Straight segments (no spline). Daily intake legitimately swings 0→peak
+          // (weekend zeros), and a smoothed line MUST overshoot/wiggle through those
+          // points — that overshoot is what read as a "distorted" waveform, worst
+          // when stretched wide in the expand modal. Faithful polyline + clip:true.
+          { name: 'Online B2B', type: 'line', stack: 't', clip: true, symbol: 'none', areaStyle: { opacity: .26 }, lineStyle: { width: 2 }, itemStyle: { color: c.accent }, data: pick('OnlineB2B') },
+          { name: 'Offline', type: 'line', stack: 't', clip: true, symbol: 'none', areaStyle: { opacity: .26 }, lineStyle: { width: 2 }, itemStyle: { color: c.off }, data: pick('Offline') }
         ]
       }, true);
     }
@@ -136,6 +137,47 @@
         yAxis: { type: 'category', data: A.markets, splitArea: { show: true }, axisLabel: { color: c.text2, fontSize: 10 }, axisLine: { show: false }, axisTick: { show: false } },
         visualMap: { min: 0, max: 100, calculable: false, show: false, inRange: { color: [c.surface, c.accent] } },
         series: [{ type: 'heatmap', data: A.data, label: { show: true, formatter: function (p) { return p.value[2] ? p.value[2] + '%' : ''; }, fontSize: 9.5, fontWeight: 600, color: '#1e293b' }, itemStyle: { borderColor: c.surface, borderWidth: 1.5 }, emphasis: { itemStyle: { borderColor: c.text } } }]
+      }, true);
+    }
+    // 6) order timeline — marketplace × hour BUBBLE map; each bubble = an MP that
+    //    landed that hour, sized by qty (or value via the toggle). Tooltip shows qty +
+    //    value + orders. Scroll/pinch zoom (dataZoom 'inside', no scrollbar).
+    var iv = chart('tiIntraday');
+    if (iv) {
+      var I = d.intraday || { markets: [], points: [] };
+      var ivVal = (ivMetric === 'value');
+      var hourFmt = function (h) { h = +h; var ap = h < 12 ? 'a' : 'p'; var hh = h % 12; if (!hh) hh = 12; return hh + ap; };
+      var hs = I.points.map(function (p) { return p.hour; });
+      var hmin = hs.length ? Math.min.apply(null, hs) : 8, hmax = hs.length ? Math.max.apply(null, hs) : 18;
+      var maxM = 1;
+      I.points.forEach(function (p) { var m = ivVal ? p.value : p.qty; if (m > maxM) maxM = m; });
+      iv.setOption({
+        animationDuration: 480,
+        grid: { left: 6, right: 16, top: 10, bottom: 18, containLabel: true },
+        tooltip: {
+          trigger: 'item', formatter: function (p) {
+            var v = p.value;                 // [hour, mi, qty, value, orders, mp]
+            return v[5] + ' · <b>' + hourFmt(v[0]) + '</b><br/>' + v[2] + ' qty · ' + inrCr(v[3]) + ' · ' + v[4] + ' order(s)';
+          }
+        },
+        dataZoom: [{ type: 'inside', filterMode: 'none', xAxisIndex: 0 }],
+        xAxis: {
+          type: 'value', min: Math.max(0, hmin - 1), max: Math.min(24, hmax + 1), interval: 2, axisLine: { show: false },
+          axisLabel: { color: c.text2, fontSize: 9.5, formatter: hourFmt },
+          splitLine: { lineStyle: { color: c.border, opacity: .4 } }
+        },
+        yAxis: {
+          type: 'category', data: I.markets, axisLine: { show: false }, axisTick: { show: false },
+          axisLabel: { color: c.text2, fontSize: 10 },
+          splitLine: { show: true, lineStyle: { color: c.border, opacity: .35 } }
+        },
+        series: [{
+          type: 'scatter',
+          symbolSize: function (v) { return 9 + Math.sqrt((ivVal ? v[3] : v[2]) / maxM) * 26; },
+          itemStyle: { color: c.accent, opacity: .72, borderColor: c.surface, borderWidth: 1 },
+          emphasis: { itemStyle: { opacity: 1 } },
+          data: I.points.map(function (pt) { return [pt.hour, pt.mi, pt.qty, pt.value, pt.orders, pt.mp]; })
+        }]
       }, true);
     }
     bodyEl.classList.remove('ti-loading');   // charts painted → drop the skeleton
@@ -213,6 +255,16 @@
     if (lastData) render(lastData);
   });
 
+  // order-timeline metric toggle (qty / value) — same pattern as the trend toggle
+  var iseg = document.getElementById('tiIntradayMetric');
+  if (iseg) iseg.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('button[data-m]');
+    if (!b) return;
+    ivMetric = b.getAttribute('data-m');
+    iseg.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); });
+    if (lastData) render(lastData);
+  });
+
   // ── expand any chart into a big modal (zoom on cartesian charts) ───────
   var modal = document.getElementById('tiModal'), modalOv = document.getElementById('tiModalOv'),
       modalX = document.getElementById('tiModalX'), modalT = document.getElementById('tiModalT'),
@@ -226,18 +278,13 @@
     modal.hidden = false; modalOv.hidden = false;
     if (!modalChart) modalChart = window.echarts.init(modalChartEl);
     var opt = charts[id].getOption();
-    // Only the long time-series (≈30 days) is worth a zoom slider. A 7-column
-    // weekday heatmap or a ranking bar just looks odd with a scrollbar under it,
-    // so gate the dataZoom on a CATEGORY x-axis with many points.
-    var xa = opt.xAxis && opt.xAxis[0];
-    var zoomable = xa && xa.type === 'category' && xa.data && xa.data.length > 14;
-    if (zoomable) {
-      // scroll/drag zoom + a visible slider; widen the grid so the slider sits
-      // below the axis instead of over the labels.
-      opt.dataZoom = [{ type: 'inside' }, { type: 'slider', bottom: 14, height: 22 }];
-      (Array.isArray(opt.grid) ? opt.grid : [opt.grid || {}]).forEach(function (g) { g.bottom = 64; });
-      if (opt.legend) (Array.isArray(opt.legend) ? opt.legend : [opt.legend]).forEach(function (l) { l.top = 4; });
-    }
+    // Power-BI-style interactivity in the big modal: mouse-wheel ZOOM + drag to PAN
+    // via 'inside' dataZoom (no visible scrollbar — the slider read as clutter). Both
+    // axes for a scatter (category y + value x); x-only for the time-series bars/lines.
+    var ya = opt.yAxis && opt.yAxis[0];
+    var zooms = [{ type: 'inside', xAxisIndex: 0, filterMode: 'none' }];
+    if (ya && ya.type === 'category') zooms.push({ type: 'inside', yAxisIndex: 0, filterMode: 'none' });
+    opt.dataZoom = zooms;
     modalChart.setOption(opt, true);
     setTimeout(function () { modalChart.resize(); }, 30);
   }
@@ -263,8 +310,9 @@
     new ResizeObserver(function () { clearTimeout(_roT); _roT = setTimeout(resize, 60); }).observe(bodyEl);
   }
 
-  // restore open state
-  var wasOpen = false;
-  try { wasOpen = localStorage.getItem(OPEN_KEY) === '1'; } catch (e) { }
-  if (wasOpen) setOpen(true, true);   // instant on page load — animate only on user toggle
+  // Insights starts COLLAPSED on every load (per request) — the panel's initial
+  // markup is already closed, so we simply DON'T auto-open it. Deferring chart init
+  // to an explicit user-open also structurally kills the blank-on-first-load race:
+  // echarts no longer measures a 0-size container mid nav-transition (the "only
+  // shows on refresh" bug). Charts init the moment the panel is opened, layout settled.
 })();

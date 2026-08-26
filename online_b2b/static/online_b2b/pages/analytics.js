@@ -130,9 +130,12 @@
     }
     chart = new ApexCharts(box, cfg);
     chart.render();
-    document.querySelectorAll('.ctg').forEach(function (b) {
+    // Scope to THIS chart's toggle only — exclude the facility card's toggle
+    // (.an-fc-metric also uses .ctg, and a document-wide bind hijacked it → the FC
+    // buttons fired this handler with data-metric=null and blanked the main chart).
+    document.querySelectorAll('.chart-toggle:not(.an-fc-metric) .ctg').forEach(function (b) {
       b.addEventListener('click', function () {
-        document.querySelectorAll('.ctg').forEach(function (x) { x.classList.toggle('on', x === b); });
+        document.querySelectorAll('.chart-toggle:not(.an-fc-metric) .ctg').forEach(function (x) { x.classList.toggle('on', x === b); });
         metric = b.getAttribute('data-metric');
         chart.updateSeries(series(), true);
       });
@@ -144,7 +147,12 @@
     pane.classList.add('an-busy');
     fetch(url(Object.assign({ partial: 'daily' }, params)), { headers: { 'X-Requested-With': 'fetch' } })
       .then(function (r) { return r.text(); })
-      .then(function (html) { pane.innerHTML = html; pane.classList.remove('an-busy'); wireDaily(); syncURL(); })
+      .then(function (html) {
+        pane.innerHTML = html; wireDaily(); syncURL();
+        // let the fresh chart + breakdown paint while still dimmed, THEN fade the
+        // finished pane back in — so the chart re-init never flashes ("refresh" feel).
+        setTimeout(function () { pane.classList.remove('an-busy'); }, 90);
+      })
       .catch(function () { pane.classList.remove('an-busy'); });
   }
 
@@ -308,8 +316,66 @@
     });
   }
 
+  // ── Facility small multiples (AHD/BLR/North) — ApexCharts bars + metric toggle +
+  //    full-screen. Standard ApexCharts (same lib as the daily chart), used fully. ──
+  function buildFacCharts() {
+    var box = document.getElementById('an-fc'); if (!box || !window.ApexCharts) return;
+    var raw = document.getElementById('fac-data'); if (!raw) return;
+    var data; try { data = JSON.parse(raw.textContent); } catch (e) { return; }
+    var facs = data.facilities || [], labels = data.labels || [];
+    var COL = { AHD: '#4f46e5', BLR: '#11998e', North: '#f59e0b' };
+    var inrShort = function (v) { v = +v || 0; if (v >= 1e7) return '₹' + (v / 1e7).toFixed(2) + ' Cr'; if (v >= 1e5) return '₹' + (v / 1e5).toFixed(2) + ' L'; return '₹' + Math.round(v).toLocaleString('en-IN'); };
+    var metricEl = box.querySelector('.an-fc-metric'), fcMetric = 'value';
+    if (metricEl) { var onb = metricEl.querySelector('.on'); if (onb) fcMetric = onb.getAttribute('data-fcm'); }
+    box._fcCharts = [];
+    function render() {
+      box._fcCharts.forEach(function (c) { try { c.destroy(); } catch (e) { } });
+      box._fcCharts = [];
+      var el = document.getElementById('an-fc-donut'); if (!el) return;
+      var isVal = fcMetric === 'value';
+      var fmt = function (v) { return isVal ? inrShort(v) : (+v).toLocaleString('en-IN'); };
+      var vals = facs.map(function (f) { return fcMetric === 'value' ? f.value : (fcMetric === 'qty' ? f.qty : f.pos); });
+      var chart = new ApexCharts(el, {
+        chart: { type: 'donut', height: 300, fontFamily: 'inherit', animations: { enabled: true, speed: 400 } },
+        series: vals,
+        labels: facs.map(function (f) { return f.code; }),
+        colors: facs.map(function (f) { return COL[f.code] || '#94a3b8'; }),
+        stroke: { width: 2, colors: ['#fff'] },
+        dataLabels: { enabled: true, formatter: function (v) { return v.toFixed(1) + '%'; }, style: { fontSize: '11px', fontWeight: '700' }, dropShadow: { enabled: false } },
+        legend: { position: 'bottom', fontSize: '12px', markers: { width: 10, height: 10 } },
+        plotOptions: { pie: { donut: { size: '64%', labels: { show: true,
+          value: { show: true, fontSize: '18px', fontWeight: 800, formatter: fmt },
+          total: { show: true, label: 'Total', fontSize: '11px', formatter: function (w) { return fmt(w.globals.seriesTotals.reduce(function (a, b) { return a + b; }, 0)); } } } } } },
+        tooltip: { y: { formatter: fmt } }
+      });
+      chart.render(); box._fcCharts.push(chart);
+    }
+    render();
+    if (metricEl) metricEl.addEventListener('click', function (e) {
+      var b = e.target.closest && e.target.closest('button[data-fcm]'); if (!b) return;
+      fcMetric = b.getAttribute('data-fcm');
+      metricEl.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); });
+      render();
+    });
+    var fullBtn = document.getElementById('an-fc-full');
+    // full-screen the WHOLE daily view (KPIs + main chart + facility breakdown),
+    // not just this one card — so you get the full picture, no empty space.
+    var fsTarget = document.querySelector('#pane-daily .an-daily') || box;
+    if (fullBtn) fullBtn.addEventListener('click', function () {
+      if (!document.fullscreenElement) { if (fsTarget.requestFullscreen) fsTarget.requestFullscreen(); }
+      else if (document.exitFullscreen) document.exitFullscreen();
+    });
+    if (!document._anFcFsBound) {
+      document._anFcFsBound = true;
+      document.addEventListener('fullscreenchange', function () {
+        setTimeout(function () { try { window.dispatchEvent(new Event('resize')); } catch (e) { } }, 90);
+      });
+    }
+  }
+
   function wireDaily() {
     buildDailyChart();
+    buildFacCharts();
     wireBreakdown();
     var root = document.querySelector('#pane-daily .an-daily');
     if (!root) return;
@@ -331,6 +397,42 @@
     if (en) en.addEventListener('change', function () { if (s.value && en.value) doApply(); });
     var cl = root.querySelector('[data-daily-clear]');
     if (cl) cl.addEventListener('click', function (e) { e.preventDefault(); loadDaily({ days: days }); });
+    // "Today" preset → a single-day range = today (client's local date)
+    var todayBtn = root.querySelector('[data-daily-today]');
+    if (todayBtn) todayBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+      var dt = new Date();
+      var iso = dt.getFullYear() + '-' + ('0' + (dt.getMonth() + 1)).slice(-2) + '-' + ('0' + dt.getDate()).slice(-2);
+      loadDaily({ start: iso, end: iso });
+    });
+    // Breakdown card — collapsed by default; SMOOTH height accordion on toggle
+    var bdSec = root.querySelector('.an-bd-section'), bdH2 = root.querySelector('.an-bd-h2');
+    if (bdSec && bdH2) {
+      var bdBody = bdSec.querySelector('.an-bd-body');
+      var toggleBd = function () {
+        var willCollapse = !bdSec.classList.contains('an-bd-collapsed');
+        bdH2.setAttribute('aria-expanded', willCollapse ? 'false' : 'true');
+        if (!bdBody) { bdSec.classList.toggle('an-bd-collapsed'); return; }
+        clearTimeout(bdBody._t);
+        if (willCollapse) {
+          bdBody.style.maxHeight = bdBody.scrollHeight + 'px'; bdBody.style.opacity = '1';
+          void bdBody.offsetHeight;                        // commit real height, then collapse to 0
+          bdSec.classList.add('an-bd-collapsed');
+          bdBody.style.maxHeight = '0px'; bdBody.style.opacity = '0';
+        } else {
+          bdSec.classList.remove('an-bd-collapsed');
+          bdBody.style.maxHeight = bdBody.scrollHeight + 'px'; bdBody.style.opacity = '1';
+          bdBody._t = setTimeout(function () {             // release the cap so tree/charts grow freely
+            if (!bdSec.classList.contains('an-bd-collapsed')) {
+              bdBody.style.maxHeight = 'none';
+              try { window.dispatchEvent(new Event('resize')); } catch (e) { }
+            }
+          }, 360);
+        }
+      };
+      bdH2.addEventListener('click', toggleBd);
+      bdH2.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleBd(); } });
+    }
   }
 
   // ══ SKU tab ══

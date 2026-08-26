@@ -459,9 +459,11 @@ def _daily_ctx(request):
     if start and end:
         daily = order_db.daily_intake(start=start, end=end)
         hier = order_db.intake_hierarchy(start=start, end=end)
+        facilities = order_db.facility_intake(start=start, end=end)
     else:
         daily = order_db.daily_intake(days)
         hier = order_db.intake_hierarchy(days)
+        facilities = order_db.facility_intake(days)
     if start and end and start == end:               # spotlight the single day
         try:
             daily['focus'] = _dt.date.fromisoformat(start).strftime('%d %b')
@@ -522,7 +524,8 @@ def _daily_ctx(request):
                 seg_node['children'].append(_leaf(m.get('marketplace', ''), m, seg, lbl))
         breakdown.append(seg_node)
     return {'days': days, 'start': start, 'end': end,
-            'hier': hier, 'daily': daily, 'breakdown': breakdown}
+            'hier': hier, 'daily': daily, 'breakdown': breakdown,
+            'facilities': facilities}
 
 
 def _sku_ctx(request):
@@ -855,6 +858,26 @@ class TrackerTodayView(LoginRequiredMixin, View):
                 'risk': s_risk,
             })
         segments.sort(key=lambda s: seg_order.get(s['code'], 9))
+        # facility-wise split (AHD / BLR / North) for the click-to-open FC drawer
+        fac_order = {'AHD': 0, 'BLR': 1, 'North': 2}
+        facilities = []
+        for code, fc in (t.get('facilities') or {}).items():
+            f_est = 0.0
+            f_risk = 0
+            for po in fc['pos']:
+                b = bill.get(po)
+                if not b or b.get('no_stock'):
+                    continue
+                f_est += b['est_value']
+                if b['fill_pct'] < 60:
+                    f_risk += 1
+            facilities.append({
+                'code': code, 'label': code, 'count': fc['count'],
+                'value': fc['value'], 'value_fmt': inr_short(fc['value']),
+                'billable': round(f_est, 2), 'billable_fmt': inr_short(f_est),
+                'risk': f_risk,
+            })
+        facilities.sort(key=lambda x: fac_order.get(x['code'], 9))
         return JsonResponse({
             'ok': t.get('ok', False), 'day': day, 'count': t['count'],
             'value_fmt': inr_short(t['value']), 'value': t['value'],
@@ -862,7 +885,7 @@ class TrackerTodayView(LoginRequiredMixin, View):
             'avg_fill': round(est / ordv * 100) if ordv else 0,
             'risk': risk, 'short_fmt': inr_short(short),
             'as_of_short': fmt(as_of, '%d %b') if as_of else '',
-            'segments': segments,
+            'segments': segments, 'facilities': facilities,
         })
 
 
