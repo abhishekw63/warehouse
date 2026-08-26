@@ -41,6 +41,7 @@
     <div class="card c6"><span class="ic">{% include 'online_b2b/_icons.html' with i='hash' %}</span><div><div class="n">{{ affected_qty|default:0|compact }}</div><div class="l">Affected qty</div></div></div>
     <div class="card {% if ok_qty_pct >= 98 %}c2{% else %}c6{% endif %}"><span class="ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><div><div class="n">{{ ok_qty_pct }}%</div><div class="l">OK qty</div></div></div>
     <div class="card c8"><span class="ic">{% include 'online_b2b/_icons.html' with i='refresh' %}</span><div><div class="n">{{ s.skipped|default:0 }}</div><div class="l">Already up.</div></div></div>
+    {% if s.blocked %}<div class="card c6"><span class="ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><div><div class="n">{{ s.blocked }}</div><div class="l">Held back</div></div></div>{% endif %}
   </div>
 
   {# ── channel-specific slot (under KPIs): dark for channels that don't set it ── #}

@@ -9,78 +9,119 @@
   <link rel="alternate icon" href="{% static 'core/favicon.ico' %}" />
   <style>
     :root{
-      --bg:#f4f5f8; --card:#ffffff; --border:#e3e6ee; --field:#f7f8fb;
-      --text:#1a1e2c; --text-2:#5b6478; --muted:#9aa1b2;
-      --accent:#4f46e5; --accent-d:#4338ca; --err:#d64545; --err-bg:#fdecec;
-      --r:10px;
+      --ink:#161a27; --ink-2:#5b6478; --muted:#98a1b3;
+      --field:#f3f5fa; --border:#e4e7f0; --accent:#4f46e5; --accent-d:#4338ca;
+      --err:#d64545; --err-bg:#fdecec; --r:10px;
     }
     *{box-sizing:border-box;}
-    html,body{margin:0;height:100%;}
+    html,body{margin:0;min-height:100%;height:100%;}
     body{
       font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif;
-      background:var(--bg);color:var(--text);
-      display:flex;align-items:center;justify-content:center;padding:24px;
+      background:linear-gradient(135deg,#e9edf7 0%,#f3f2fb 100%);color:var(--ink);
+      display:flex;align-items:center;justify-content:center;padding:26px;
       -webkit-font-smoothing:antialiased;
     }
-    .auth{width:100%;max-width:380px;}
-    .brand{display:flex;align-items:center;gap:9px;justify-content:center;margin-bottom:22px;}
-    .brand .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent),#7c3aed);
-      display:grid;place-items:center;color:#fff;font-weight:800;font-size:17px;}
-    .brand .bt{font-weight:800;letter-spacing:.04em;font-size:15px;}
-    .brand .bs{display:block;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:700;}
-    .card{background:var(--card);border:1px solid var(--border);border-radius:16px;
-      padding:28px 26px;box-shadow:0 10px 30px -18px rgba(20,24,44,.25);}
-    h1{font-size:21px;margin:0 0 4px;font-weight:800;}
-    .sub{margin:0 0 20px;color:var(--text-2);font-size:13.5px;}
-    .field{margin-bottom:14px;}
-    .field label{display:block;font-size:11px;font-weight:700;letter-spacing:.05em;
-      text-transform:uppercase;color:var(--text-2);margin:0 0 6px;}
-    .field input[type=text],.field input[type=password]{
-      width:100%;padding:11px 12px;border:1px solid var(--border);border-radius:var(--r);
-      background:var(--field);font-size:14px;color:var(--text);transition:border-color .15s,box-shadow .15s;}
-    .field input:focus{outline:none;border-color:var(--accent);
-      box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent);background:#fff;}
-    .pw-wrap{position:relative;}
-    .pw-wrap input{padding-right:42px;}
-    .eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:none;
-      cursor:pointer;padding:6px;color:var(--muted);border-radius:8px;}
-    .eye:hover{color:var(--accent);}
-    .row{display:flex;align-items:center;justify-content:space-between;margin:2px 0 18px;}
-    .remember{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--text-2);cursor:pointer;}
-    .btn{width:100%;padding:12px;border:0;border-radius:var(--r);background:var(--accent);color:#fff;
-      font-size:14.5px;font-weight:700;cursor:pointer;transition:background .15s;}
-    .btn:hover{background:var(--accent-d);}
-    .btn[disabled]{opacity:.7;cursor:default;}
+    .shell{width:100%;max-width:1000px;min-height:min(600px,88vh);background:#fff;border-radius:20px;
+      overflow:hidden;box-shadow:0 40px 90px -40px rgba(28,26,64,.45);display:grid;grid-template-columns:1.08fr 1fr;}
+
+    /* ── LEFT · brand panel ── */
+    .side{position:relative;overflow:hidden;color:#fff;padding:40px 42px;display:flex;flex-direction:column;
+      background:
+        radial-gradient(120% 90% at 12% 8%,rgba(255,255,255,.16) 0%,transparent 42%),
+        radial-gradient(90% 90% at 100% 100%,rgba(124,58,237,.55) 0%,transparent 55%),
+        linear-gradient(155deg,#6d5efc 0%,#4f46e5 46%,#3d34c4 100%);}
+    .side::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.5;
+      background-image:radial-gradient(rgba(255,255,255,.22) 1px,transparent 1.4px);background-size:22px 22px;
+      -webkit-mask-image:linear-gradient(160deg,#000,transparent 70%);mask-image:linear-gradient(160deg,#000,transparent 70%);}
+    .brand{position:relative;z-index:1;display:flex;align-items:center;gap:11px;}
+    .brand .logo{width:38px;height:38px;border-radius:11px;background:rgba(255,255,255,.16);
+      border:1px solid rgba(255,255,255,.28);display:grid;place-items:center;font-weight:800;font-size:19px;}
+    .brand b{font-weight:800;letter-spacing:.05em;font-size:16px;display:block;line-height:1.1;}
+    .brand span{font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:rgba(255,255,255,.72);font-weight:700;}
+    .pitch{position:relative;z-index:1;margin-top:auto;}
+    .pitch h1{font-size:30px;line-height:1.18;font-weight:800;margin:0 0 12px;letter-spacing:-.01em;max-width:12ch;}
+    .pitch p{font-size:13.5px;line-height:1.7;color:rgba(255,255,255,.82);margin:0;max-width:34ch;}
+    .stats{position:relative;z-index:1;margin-top:28px;display:grid;grid-template-columns:1fr 1fr;gap:11px;}
+    .stat{background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.18);border-radius:13px;padding:12px 14px;
+      transition:transform .18s,background .18s;}
+    .stat:hover{transform:translateY(-2px);background:rgba(255,255,255,.15);}
+    .stat .n{font-size:19px;font-weight:800;letter-spacing:-.01em;font-variant-numeric:tabular-nums;}
+    .stat .l{font-size:10px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:rgba(255,255,255,.72);margin-top:3px;}
+
+    /* ── RIGHT · form ── */
+    .form-wrap{padding:46px 46px;display:flex;flex-direction:column;justify-content:center;}
+    .eyebrow{font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin:0 0 8px;}
+    h2{font-size:24px;font-weight:800;margin:0 0 6px;}
+    .sub{margin:0 0 24px;color:var(--ink-2);font-size:13.5px;}
     .err{display:flex;align-items:center;gap:8px;background:var(--err-bg);color:var(--err);
       border:1px solid color-mix(in srgb,var(--err) 28%,#fff);font-size:13px;font-weight:600;
       padding:10px 12px;border-radius:var(--r);margin:0 0 16px;}
-    .alt{text-align:center;margin-top:18px;font-size:13.5px;color:var(--text-2);}
-    .alt a{color:var(--accent);font-weight:600;text-decoration:none;}
-    .alt a:hover{text-decoration:underline;}
-    .who{font-size:13.5px;color:var(--text-2);margin-bottom:14px;}
-    .who b{color:var(--text);}
-    .ghost{padding:9px 14px;border:1px solid var(--border);background:#fff;border-radius:var(--r);
-      cursor:pointer;font-weight:600;font-size:13.5px;color:var(--text);}
-    .foot{text-align:center;margin-top:20px;font-size:11.5px;color:var(--muted);}
+    .field{margin-bottom:15px;}
+    .field label{display:block;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);margin:0 0 6px;}
+    .field input[type=text],.field input[type=password]{
+      width:100%;padding:12px 13px;border:1px solid var(--border);border-radius:var(--r);
+      background:var(--field);font-size:14px;color:var(--ink);transition:border-color .15s,box-shadow .15s,background .15s;}
+    .field input:focus{outline:none;border-color:var(--accent);background:#fff;
+      box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent);}
+    .pw-wrap{position:relative;}.pw-wrap input{padding-right:42px;}
+    .eye{position:absolute;right:7px;top:50%;transform:translateY(-50%);border:0;background:none;cursor:pointer;padding:6px;color:var(--muted);border-radius:8px;}
+    .eye:hover{color:var(--accent);}
+    .row{display:flex;align-items:center;justify-content:space-between;margin:4px 0 20px;font-size:13px;}
+    .remember{display:flex;align-items:center;gap:7px;color:var(--ink-2);cursor:pointer;font-weight:600;}
+    .remember input{accent-color:var(--accent);width:15px;height:15px;}
+    .btn{width:100%;padding:13px;border:0;border-radius:var(--r);color:#fff;font-size:14.5px;font-weight:700;cursor:pointer;
+      background:linear-gradient(100deg,var(--accent),#7c3aed);box-shadow:0 14px 30px -12px color-mix(in srgb,var(--accent) 80%,transparent);
+      transition:filter .15s,transform .05s;}
+    .btn:hover{filter:brightness(1.06);}.btn:active{transform:translateY(1px);}.btn[disabled]{opacity:.75;cursor:default;}
+    .alt{text-align:center;margin-top:20px;font-size:13.5px;color:var(--ink-2);}
+    .alt a{color:var(--accent);font-weight:700;text-decoration:none;}.alt a:hover{text-decoration:underline;}
+    .who{font-size:14px;color:var(--ink-2);margin-bottom:16px;}.who b{color:var(--ink);}
+    .ghost{width:100%;padding:11px;border:1px solid var(--border);background:#fff;border-radius:var(--r);cursor:pointer;font-weight:700;color:var(--ink);}
+
+    @media (max-width:800px){
+      .shell{grid-template-columns:1fr;max-width:440px;min-height:0;}
+      .side{padding:26px 28px;}
+      .pitch h1{font-size:23px;}.pitch p,.stats{display:none;}
+      .pitch{margin-top:18px;}
+      .form-wrap{padding:32px 30px;}
+    }
   </style>
 </head>
 <body>
-  <div class="auth">
-    <div class="brand">
-      <span class="logo">R</span>
-      <span><span class="bt">RENÉE</span><span class="bs">Order Management</span></span>
-    </div>
+  <div class="shell">
+    <!-- LEFT · brand -->
+    <aside class="side">
+      <div class="brand">
+        <span class="logo">R</span>
+        <span><b>RENÉE</b><span>Order Management</span></span>
+      </div>
+      <div class="pitch">
+        <h1>Every order, reconciled end-to-end.</h1>
+        <p>Upload marketplace POs, review &amp; lock, and push clean orders to D365 — with live dashboards that make Excel optional.</p>
+        {% if stats.pos %}
+        <div class="stats">
+          <div class="stat"><div class="n">{{ stats.pos|floatformat:0 }}</div><div class="l">Orders</div></div>
+          {% if stats.value_disp %}<div class="stat"><div class="n">{{ stats.value_disp }}</div><div class="l">Value tracked</div></div>{% endif %}
+          {% if stats.marketplaces %}<div class="stat"><div class="n">{{ stats.marketplaces }}</div><div class="l">Marketplaces</div></div>{% endif %}
+          {% if stats.lines %}<div class="stat"><div class="n">{{ stats.lines|floatformat:0 }}</div><div class="l">Line items</div></div>{% endif %}
+        </div>
+        {% endif %}
+      </div>
+    </aside>
 
-    <div class="card">
+    <!-- RIGHT · form -->
+    <div class="form-wrap">
       {% if user.is_authenticated %}
-        <h1>Welcome back</h1>
-        <div class="who">Signed in as <b>{{ user.username }}</b>.</div>
+        <p class="eyebrow">Signed in</p>
+        <h2>Welcome back</h2>
+        <div class="who">You're signed in as <b>{{ user.username }}</b>.</div>
         <a href="{% url 'departments' %}" class="btn" style="display:block;text-align:center;text-decoration:none;">Go to dashboard</a>
         <form action="{% url 'logout' %}" method="post" style="margin-top:12px;">{% csrf_token %}
-          <button type="submit" class="ghost" style="width:100%;">Log out</button></form>
+          <button type="submit" class="ghost">Log out</button></form>
       {% else %}
-        <h1>Sign in</h1>
-        <p class="sub">Sign in to your RENÉE workspace.</p>
+        <p class="eyebrow">Welcome back</p>
+        <h2>Sign in</h2>
+        <p class="sub">Sign in to your RENÉE workspace to continue.</p>
 
         <div class="err" id="lgErr"{% if not form.username.errors and not form.password.errors and not form.non_field_errors %} hidden{% endif %}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/></svg>
@@ -111,7 +152,6 @@
         <div class="alt">Need an account? <a href="{% url 'signup' %}">Create one</a></div>
       {% endif %}
     </div>
-    <div class="foot">RENÉE Order Management</div>
   </div>
 
   <script>
@@ -120,29 +160,20 @@
       if(e&&p)e.addEventListener('click',function(){var s=p.type==='password';p.type=s?'text':'password';
         e.title=s?'Hide password':'Show password';e.setAttribute('aria-label',e.title);e.style.color=s?'var(--accent)':'';});})();
 
-    // submit → AJAX sign-in so a wrong password shows the error inline (no full-page
-    // reload). Success follows the redirect into the app; any network error falls
-    // back to a normal POST so the user is never stuck.
+    // AJAX sign-in: wrong password shows inline (no full reload); success follows the
+    // redirect; a network error falls back to a normal POST so the user is never stuck.
     (function(){
-      var f=document.getElementById('lgForm'),b=document.getElementById('lgSubmit'),
-          err=document.getElementById('lgErr');
+      var f=document.getElementById('lgForm'),b=document.getElementById('lgSubmit'),err=document.getElementById('lgErr');
       if(!f||!b) return;
       function setLoading(on){b.disabled=on;b.textContent=on?'Signing in…':'Sign in';}
       f.addEventListener('submit',function(ev){
         if(f.checkValidity&&!f.checkValidity())return;
         if(!window.fetch||!window.FormData){setLoading(true);return;}
-        ev.preventDefault();
-        if(err) err.hidden=true;
-        setLoading(true);
-        fetch(f.action,{method:'POST',body:new FormData(f),credentials:'same-origin',
-                        headers:{'X-Requested-With':'XMLHttpRequest'}})
+        ev.preventDefault(); if(err) err.hidden=true; setLoading(true);
+        fetch(f.action,{method:'POST',body:new FormData(f),credentials:'same-origin',headers:{'X-Requested-With':'XMLHttpRequest'}})
           .then(function(r){ if(r.redirected){window.location.href=r.url;return null;} return r.text(); })
-          .then(function(html){
-            if(html===null) return;
-            setLoading(false);
-            if(err) err.hidden=false;
-            var p=document.getElementById('password'); if(p){p.value='';p.focus();}
-          })
+          .then(function(html){ if(html===null) return; setLoading(false); if(err) err.hidden=false;
+            var p=document.getElementById('password'); if(p){p.value='';p.focus();} })
           .catch(function(){ f.submit(); });
       });
     })();

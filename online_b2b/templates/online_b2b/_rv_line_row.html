@@ -4,10 +4,12 @@
   <td class="mono strong">{{ ln.item }}</td>
   <td class="mono">{{ ln.ean|default:'—' }}</td>
   <td class="rv-desc" title="{{ ln.desc }}">{{ ln.desc|default:'—' }}</td>
-  <td class="r{% if ln.status == 'QTY_MISMATCH' %} rv-mis{% endif %}">{% if ln.our_qty != None %}{{ ln.our_qty }}{% else %}—{% endif %}</td>
-  <td class="r{% if ln.status == 'QTY_MISMATCH' %} rv-mis{% endif %}">{% if ln.d365_qty != None %}{{ ln.d365_qty }}{% else %}—{% endif %}</td>
-  <td class="r{% if ln.val_ok == 'NO' %} rv-mis{% endif %}">{% if ln.our_val != None %}{{ ln.our_val|inr_short }}{% else %}—{% endif %}</td>
-  <td class="r{% if ln.val_ok == 'NO' %} rv-mis{% endif %}">{% if ln.d365_val != None %}{{ ln.d365_val|inr_short }}{% else %}—{% endif %}</td>
+  <td class="r{% if ln.status == 'QTY_MISMATCH' %} rv-mis{% elif ln.qty_ok == 'YES' %} rv-match{% endif %}">{% if ln.our_qty != None %}{{ ln.our_qty }}{% else %}—{% endif %}</td>
+  <td class="r{% if ln.status == 'QTY_MISMATCH' %} rv-mis{% elif ln.qty_ok == 'YES' %} rv-match{% endif %}">{% if ln.d365_qty != None %}{{ ln.d365_qty }}{% else %}—{% endif %}</td>
+  <td class="r{% if ln.val_ok == 'NO' %} rv-mis{% elif ln.val_ok == 'YES' %} rv-match{% endif %}">{% if ln.our_cp != None %}₹{{ ln.our_cp|floatformat:2 }}{% else %}—{% endif %}</td>
+  <td class="r{% if ln.val_ok == 'NO' %} rv-mis{% elif ln.val_ok == 'YES' %} rv-match{% endif %}"{% if ln.cp_diff %} title="Per-unit CP gap: Δ ₹{{ ln.cp_diff|floatformat:2 }} (our vs D365) — the source of the value difference."{% endif %}>{% if ln.d365_cp != None %}₹{{ ln.d365_cp|floatformat:2 }}{% else %}—{% endif %}</td>
+  <td class="r{% if ln.val_ok == 'NO' %} rv-mis{% elif ln.val_ok == 'YES' %} rv-match{% endif %}">{% if ln.our_val != None %}{{ ln.our_val|inr_short }}{% else %}—{% endif %}</td>
+  <td class="r{% if ln.val_ok == 'NO' %} rv-mis{% elif ln.val_ok == 'YES' %} rv-match{% endif %}">{% if ln.d365_val != None %}{{ ln.d365_val|inr_short }}{% else %}—{% endif %}</td>
   <td>
     {% if ln.foc %}<span class="rv-foc" title="{{ ln.foc }} free unit(s) excluded from the qty check">+{{ ln.foc }} FOC</span> {% endif %}{% if ln.status == 'OK' %}{% if ln.val_ok == 'NO' %}<span class="rv-lchip qty" title="Qty reconciles, but the line VALUE differs > tolerance (our {{ ln.our_val|inr_short }} vs D365 {{ ln.d365_val|inr_short }}) — this is what trips the header ‘value’ flag.">✓ qty · ⚠ value</span>{% else %}<span class="rv-ok">✓ OK</span>{% endif %}
     {% elif ln.status == 'EXCLUDED' %}<span class="rv-lchip excl">excluded</span>

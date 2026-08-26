@@ -18,7 +18,7 @@
     <div class="rv-detail-wrap">
       {% if r.lines %}
       <table class="grid compact rv-ltable">
-        <thead><tr><th>PO</th><th>Item</th><th>EAN</th><th>Description</th><th class="r">Qty ours</th><th class="r">Qty D365</th><th class="r">Val ours</th><th class="r">Val D365</th><th>Line status</th></tr></thead>
+        <thead><tr><th>PO</th><th>Item</th><th>EAN</th><th>Description</th><th class="r">Qty ours</th><th class="r">Qty D365</th><th class="r">CP ours</th><th class="r">CP D365</th><th class="r">Val ours</th><th class="r">Val D365</th><th>Line status</th></tr></thead>
         <tbody>{% for ln in r.lines %}{% include 'online_b2b/_rv_line_row.html' %}{% endfor %}</tbody>
       </table>
       {% else %}<div class="rv-detail-none">No line items for this PO.</div>{% endif %}

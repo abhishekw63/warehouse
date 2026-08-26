@@ -31,7 +31,7 @@
 
   <!-- period totals -->
   <div class="hub-kpis" style="grid-template-columns:repeat(4,1fr);">
-    <a class="hk" href="{% url 'b2b_orders' %}"><div class="n">{{ hier.total.pos }}</div><div class="l">POs · {% if start and end %}{% if start == end %}{{ start }}{% else %}range{% endif %}{% else %}last {{ days }}d{% endif %}</div></a>
+    <a class="hk" href="{% url 'b2b_tracker' %}"><div class="n">{{ hier.total.pos }}</div><div class="l">POs · {% if start and end %}{% if start == end %}{{ start }}{% else %}range{% endif %}{% else %}last {{ days }}d{% endif %}</div></a>
     <div class="hk"><div class="n">{{ hier.total.qty|compact }}</div><div class="l">Total Qty</div></div>
     <div class="hk"><div class="n">{{ hier.total.value|inr_short }}</div><div class="l">Order Value</div></div>
     <a class="hk" href="{% url 'b2b_lines' %}"><div class="n">{{ hier.total.items|compact }}</div><div class="l">Line Items</div></a>
@@ -56,10 +56,33 @@
   <!-- tree-branch breakdown: segment → marketplace → child -->
   <div>
     <div class="sec-head">
-      <h2>Breakdown tree {% if start and end %}· {{ start }}{% if start != end %} → {{ end }}{% endif %}{% else %}· last {{ days }} days{% endif %}</h2>
-      <span class="muted">{{ hier.total.pos }} POs · {{ hier.total.value|inr_short }} · {{ hier.total.items }} items</span>
+      <h2>Breakdown {% if start and end %}· {{ start }}{% if start != end %} → {{ end }}{% endif %}{% else %}· last {{ days }} days{% endif %}</h2>
+      <span class="an-bd-tools">
+        <span class="muted an-bd-total">{{ hier.total.pos }} POs · {{ hier.total.value|inr_short }} · {{ hier.total.items }} items</span>
+        {# metric switch — applies to Sunburst + Treemap sizing #}
+        <span class="an-seg an-bd-metric" hidden>
+          <button type="button" class="an-sbtn on" data-metric="value">₹ Value</button>
+          <button type="button" class="an-sbtn" data-metric="qty">Qty</button>
+          <button type="button" class="an-sbtn" data-metric="pos">POs</button>
+          <button type="button" class="an-sbtn" data-metric="items">Items</button>
+        </span>
+        {# colour mode — by segment, or by growth vs previous period #}
+        <span class="an-seg an-bd-color" hidden>
+          <button type="button" class="an-sbtn on" data-color="seg">By segment</button>
+          <button type="button" class="an-sbtn" data-color="growth" title="Colour by % change vs the previous period">By growth</button>
+        </span>
+        <button type="button" class="an-bd-reset" id="an-sun-reset" hidden title="Zoom out to all">⟲ Reset</button>
+        <span class="an-bd-toggle" role="tablist" aria-label="Breakdown view">
+          <button type="button" class="an-bd-btn on" data-bd="tree">Tree</button>
+          <button type="button" class="an-bd-btn" data-bd="sun">Sunburst</button>
+          <button type="button" class="an-bd-btn" data-bd="map">Treemap</button>
+        </span>
+      </span>
     </div>
-    <div class="tree">
+    {{ breakdown|json_script:"bd-data" }}
+    <div id="an-sunburst" class="an-bd-pane" data-orders-url="{% url 'b2b_tracker' %}" hidden></div>
+    <div id="an-treemap" class="an-bd-pane" data-orders-url="{% url 'b2b_tracker' %}" hidden></div>
+    <div class="tree an-bd-pane" data-bd-pane="tree">
       {% for s in hier.segments %}
       <details class="tnode tseg" open>
         <summary>
@@ -78,7 +101,7 @@
               </summary>
               <div class="tchildren">
                 {% for c in m.children %}
-                <a class="tnode tleaf tlink" href="{% url 'b2b_orders' %}?marketplace={{ c.label|urlencode }}" title="View {{ c.label }} orders">
+                <a class="tnode tleaf tlink" href="{% url 'b2b_tracker' %}?marketplace={{ c.label|urlencode }}" title="View {{ c.label }} orders">
                   <span class="tname">{{ c.label }}</span>
                   <span class="tmeta">{{ c.pos }} POs · {{ c.qty|compact }} qty · {{ c.value|inr_short }} <span class="tgo">→</span></span>
                   <span class="tbar"><span style="width:{{ c.bar }}%"></span></span>
@@ -87,7 +110,7 @@
               </div>
             </details>
             {% else %}
-            <a class="tnode tleaf tlink" href="{% url 'b2b_orders' %}?marketplace={{ m.children.0.label|urlencode }}" title="View {{ m.marketplace }} orders">
+            <a class="tnode tleaf tlink" href="{% url 'b2b_tracker' %}?marketplace={{ m.children.0.label|urlencode }}" title="View {{ m.marketplace }} orders">
               <span class="tname">{{ m.marketplace }}</span>
               <span class="tmeta">{{ m.pos }} POs · {{ m.qty|compact }} qty · <b>{{ m.value|inr_short }}</b> <span class="tgo">→</span></span>
               <span class="tbar"><span style="width:{{ m.bar }}%"></span></span>

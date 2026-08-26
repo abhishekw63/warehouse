@@ -23,7 +23,7 @@
     </div>
     <div class="head-actions">
       <a href="{% url 'b2b_lines' %}" class="btn-ghost">Line Items →</a>
-      <a href="{% url 'b2b_orders' %}?segment={% if branch.kind == 'offline' %}Offline{% else %}OnlineB2B{% endif %}" class="btn-ghost">View {{ branch.label }} orders →</a>
+      <a href="{% url 'b2b_tracker' %}?segment={% if branch.kind == 'offline' %}Offline{% else %}Online%20B2B{% endif %}" class="btn-ghost">View {{ branch.label }} orders →</a>
       {% if branch.kind == 'offline' %}
         <a href="/offline/gt-mass-dump/" class="btn-ghost">GT Mass</a>
         <a href="/offline/mt-flow/" class="btn-primary">＋ MT Select</a>
@@ -85,14 +85,14 @@
   <div class="reveal">
     <div class="sec-head">
       <h2>By Marketplace</h2>
-      <a href="{% url 'b2b_orders' %}?segment={% if branch.kind == 'offline' %}Offline{% else %}OnlineB2B{% endif %}" class="seelink">All orders →</a>
+      <a href="{% url 'b2b_tracker' %}?segment={% if branch.kind == 'offline' %}Offline{% else %}Online%20B2B{% endif %}" class="seelink">All orders →</a>
     </div>
     <table class="grid">
       <thead><tr><th>Marketplace</th><th>Trend</th><th class="r">POs</th><th class="r">Qty</th><th class="r">Value</th></tr></thead>
       <tbody>
         {% for m in d.by_marketplace %}
         <tr>
-          <td><a href="{% url 'b2b_orders' %}?segment={% if branch.kind == 'offline' %}Offline{% else %}OnlineB2B{% endif %}&marketplace={{ m.marketplace|urlencode }}" class="mp">{{ m.marketplace }}</a></td>
+          <td><a href="{% url 'b2b_tracker' %}?segment={% if branch.kind == 'offline' %}Offline{% else %}Online%20B2B{% endif %}&marketplace={{ m.marketplace|urlencode }}" class="mp">{{ m.marketplace }}</a></td>
           <td style="width:120px;">{% if m.spark %}<svg class="mpspark" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"><path d="{{ m.spark }}" fill="none" stroke="currentColor" stroke-width="1.5" vector-effect="non-scaling-stroke" stroke-linejoin="round"/></svg>{% endif %}</td>
           <td class="r">{{ m.pos }}</td><td class="r">{{ m.qty|compact }}</td><td class="r">{{ m.value|inr_short }}</td>
         </tr>

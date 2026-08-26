@@ -148,8 +148,169 @@
       .catch(function () { pane.classList.remove('an-busy'); });
   }
 
+  // ── Breakdown views: Tree · Sunburst · Treemap · metric switch · growth colour ──
+  var BD = { view: 'tree', metric: 'value', color: 'seg' };
+  function bdColors() {                              // ECharts can't read CSS vars → resolve --accent to a real hex
+    var acc = (getComputedStyle(document.body).getPropertyValue('--accent') || '').trim() || '#4f46e5';
+    return [acc, '#11998e', '#f7971e', '#cb2d3e', '#2193b0', '#7b4397', '#16a34a', '#db2777'];
+  }
+  function bdInr(v) {
+    v = Number(v) || 0; var s = v < 0 ? '-' : ''; v = Math.abs(v);
+    if (v >= 1e7) return s + '₹' + (v / 1e7).toFixed(2) + ' Cr';
+    if (v >= 1e5) return s + '₹' + (v / 1e5).toFixed(2) + ' L';
+    if (v >= 1000) return s + '₹' + Math.round(v).toLocaleString('en-IN');
+    return s + '₹' + Math.round(v);
+  }
+  function bdNum(v) {
+    v = Number(v) || 0;
+    if (v >= 1e5) return (v / 1e5).toFixed(2) + ' L';
+    if (v >= 1000) return (v / 1000).toFixed(1) + 'k';
+    return Math.round(v).toLocaleString('en-IN');
+  }
+  function bdFmt(v) { return BD.metric === 'value' ? bdInr(v) : bdNum(v); }
+  function growthColor(g) {                          // green ↑ · red ↓ · grey new
+    if (g === null || g === undefined) return '#c7ccd6';
+    if (g >= 25) return '#059669'; if (g >= 5) return '#34d399';
+    if (g <= -25) return '#dc2626'; if (g <= -5) return '#f87171';
+    return '#cbd5e1';
+  }
+  function bdData() {
+    var el = document.getElementById('bd-data'); if (!el) return null;
+    try { return JSON.parse(el.textContent); } catch (e) { return null; }
+  }
+  function toE(nodes) {                               // raw → ECharts data for current metric + colour
+    return nodes.map(function (n) {
+      var out = { name: n.name };
+      if (n.children) { out.children = toE(n.children); }
+      else {
+        out.value = (n.m && n.m[BD.metric]) || 0;
+        out.mp = n.mp; out.growth = n.growth;
+        if (BD.color === 'growth') out.itemStyle = { color: growthColor(n.growth) };
+      }
+      return out;
+    });
+  }
+  function bdTooltip(p) {
+    var g = p.data && p.data.growth;
+    var gt = (g === null || g === undefined) ? '' :
+      '<br/><span style="color:' + (g >= 0 ? '#059669' : '#dc2626') + '">' + (g >= 0 ? '▲ ' : '▼ ') + Math.abs(g) + '% vs prev</span>';
+    return '<b>' + p.name + '</b><br/>' + bdFmt(p.value) + gt;
+  }
+  var BD_TOOLBOX = { feature: { saveAsImage: { title: 'Save PNG', name: 'breakdown', pixelRatio: 2 } }, right: 8, top: 2 };
+  function bdChart(box) {                             // fresh ECharts instance for a container
+    if (box._chart) { try { box._chart.dispose(); } catch (e) { } }
+    box._chart = echarts.init(box); return box._chart;
+  }
+  function bdReady(box) {
+    if (!box) return null;
+    var raw = bdData();
+    if (!window.echarts) { box.innerHTML = '<div class="chart-empty">Charts library unavailable.</div>'; return null; }
+    if (!raw || !raw.length) { box.innerHTML = '<div class="chart-empty">No orders in this period.</div>'; return null; }
+    return raw;
+  }
+  function bdClick(chart, box) {
+    var url = box.getAttribute('data-orders-url') || '';
+    chart.off('click');
+    chart.on('click', function (p) {
+      if (p.data && p.data.mp && url) window.location.href = url + '?marketplace=' + encodeURIComponent(p.data.mp);
+    });
+  }
+  function buildSunburst() {
+    var box = document.getElementById('an-sunburst'); var raw = bdReady(box); if (!raw) return;
+    var chart = bdChart(box);
+    chart.setOption({
+      tooltip: { formatter: bdTooltip }, toolbox: BD_TOOLBOX,
+      color: BD.color === 'growth' ? ['#94a3b8'] : bdColors(),
+      series: [{
+        type: 'sunburst', data: toE(raw), radius: ['12%', '98%'],
+        emphasis: { focus: 'ancestor' },
+        label: { rotate: 'radial', minAngle: 8, fontSize: 11, color: '#fff' },
+        levels: [
+          {},
+          { r0: '12%', r: '44%', itemStyle: { borderWidth: 2 }, label: { fontWeight: 700, fontSize: 12 } },
+          { r0: '44%', r: '73%', label: { fontSize: 11 } },
+          { r0: '73%', r: '98%', label: { fontSize: 10 }, itemStyle: { borderWidth: 1 } }
+        ]
+      }]
+    }, true);
+    bdClick(chart, box);
+  }
+  function buildTreemap() {
+    var box = document.getElementById('an-treemap'); var raw = bdReady(box); if (!raw) return;
+    var chart = bdChart(box);
+    var shade = BD.color === 'growth' ? [] : [{ colorSaturation: [.35, .55] }, { colorSaturation: [.3, .5] }];
+    chart.setOption({
+      tooltip: { formatter: bdTooltip }, toolbox: BD_TOOLBOX,
+      color: BD.color === 'growth' ? ['#94a3b8'] : bdColors(),
+      series: [{
+        type: 'treemap', data: toE(raw), roam: false, nodeClick: 'zoomToNode', drillDownIcon: '▸',
+        top: 30, left: 2, right: 2, bottom: 2,   // fill the container (override ECharts' default 80% centered → no gap)
+        breadcrumb: {
+          show: true, top: 4, left: 'center', height: 22, emptyItemWidth: 26,
+          itemStyle: {
+            color: '#eef1f5', borderColor: '#e3e6ee', borderWidth: 1, gapWidth: 3,
+            textStyle: { color: '#5b6478', fontSize: 11 }
+          },
+          emphasis: { itemStyle: { color: '#e2e8f0' } }
+        },
+        itemStyle: { borderColor: '#fff', gapWidth: 2, borderWidth: 2 },
+        levels: [{ itemStyle: { gapWidth: 4, borderWidth: 0 } }].concat(shade),
+        label: { show: true, formatter: '{b}', fontSize: 12 },
+        upperLabel: { show: true, height: 24, fontSize: 12, fontWeight: 600, color: '#fff' }
+      }]
+    }, true);
+    bdClick(chart, box);
+  }
+  function bdRenderActive() { if (BD.view === 'sun') buildSunburst(); else if (BD.view === 'map') buildTreemap(); }
+  function wireBreakdown() {
+    var views = [].slice.call(document.querySelectorAll('.an-bd-btn')); if (!views.length) return;
+    BD.view = 'tree'; BD.metric = 'value'; BD.color = 'seg';          // reset each partial load
+    var tree = document.querySelector('.tree[data-bd-pane="tree"]');
+    var sun = document.getElementById('an-sunburst'), map = document.getElementById('an-treemap');
+    var mBox = document.querySelector('.an-bd-metric'), cBox = document.querySelector('.an-bd-color');
+    var reset = document.getElementById('an-sun-reset');
+    function paint() {
+      if (tree) tree.hidden = BD.view !== 'tree';
+      if (sun) sun.hidden = BD.view !== 'sun';
+      if (map) map.hidden = BD.view !== 'map';
+      var chartView = BD.view !== 'tree';
+      if (mBox) mBox.hidden = !chartView;
+      if (cBox) cBox.hidden = !chartView;
+      if (reset) reset.hidden = BD.view !== 'sun';
+      bdRenderActive();
+    }
+    views.forEach(function (b) {
+      b.addEventListener('click', function () {
+        views.forEach(function (x) { x.classList.toggle('on', x === b); });
+        BD.view = b.getAttribute('data-bd'); paint();
+      });
+    });
+    function segToggle(sel, key) {
+      var bs = [].slice.call(document.querySelectorAll(sel));
+      bs.forEach(function (b) {
+        b.addEventListener('click', function () {
+          bs.forEach(function (x) { x.classList.toggle('on', x === b); });
+          BD[key] = b.getAttribute('data-' + key); bdRenderActive();
+        });
+      });
+    }
+    segToggle('.an-bd-metric .an-sbtn', 'metric');
+    segToggle('.an-bd-color .an-sbtn', 'color');
+    if (reset) reset.addEventListener('click', function () { buildSunburst(); });  // rebuild = zoom back to root
+  }
+  if (!window.__bdResizeBound) {                     // resize the visible breakdown chart (bound once)
+    window.__bdResizeBound = true;
+    window.addEventListener('resize', function () {
+      ['an-sunburst', 'an-treemap'].forEach(function (id) {
+        var b = document.getElementById(id);
+        if (b && b._chart && !b.hidden) { try { b._chart.resize(); } catch (e) { } }
+      });
+    });
+  }
+
   function wireDaily() {
     buildDailyChart();
+    wireBreakdown();
     var root = document.querySelector('#pane-daily .an-daily');
     if (!root) return;
     var days = root.dataset.days || 30;

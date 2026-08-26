@@ -240,10 +240,16 @@ def validate(headers_path, lines_path, *, excel_out=None) -> dict:
                 status, reason = 'EXTRA_IN_D365', 'in D365, not in our record'
             val_ok = ('YES' if (ov and dv and _vmatch(dval or 0, oval or 0))
                       else ('n/a' if status in ('EXCLUDED', 'MISSING_IN_D365', 'EXTRA_IN_D365') else 'NO'))
+            # per-unit CP (ex-GST) on each side — exposes WHERE a value gap comes from
+            # (same qty but a different unit price = a stale/deal CP on one side).
+            our_cp = round(oval / oq, 2) if (oval is not None and oq) else None
+            d365_cp = round(dval / dq, 2) if (dval is not None and dq) else None
             line_rows.append({'mp': mp, 'po': po, 'item': it, 'ean': ean, 'desc': desc,
                               'our_qty': oq, 'd365_qty': dq, 'foc': foc,
                               'qty_ok': ('YES' if (ov and dv and oq == dq) else ('n/a' if not (ov and dv) else 'NO')),
                               'our_val': oval, 'd365_val': dval, 'val_ok': val_ok,
+                              'our_cp': our_cp, 'd365_cp': d365_cp,
+                              'cp_diff': (round(our_cp - d365_cp, 2) if (our_cp is not None and d365_cp is not None) else None),
                               'status': status, 'reason': reason})
             R['ln_ok'] += status == 'OK'
             R['ln_excl'] += status == 'EXCLUDED'

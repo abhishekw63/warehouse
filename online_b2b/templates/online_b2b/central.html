@@ -24,7 +24,7 @@
     <div class="head-actions">
       <a href="{% url 'b2b_analytics' %}" class="btn-primary">📊 Analytics</a>
       <a href="{% url 'b2b_rules' %}" class="btn-ghost">📋 Rules</a>
-      <a href="{% url 'b2b_orders' %}" class="btn-ghost">All orders →</a>
+      <a href="{% url 'b2b_tracker' %}" class="btn-ghost">All orders →</a>
       <a href="{% url 'b2b_lines' %}" class="btn-ghost">Line Items →</a>
       <a href="{% url 'b2b_issues' %}" class="btn-ghost">Issues</a>
     </div>
@@ -81,14 +81,14 @@
 
   <!-- recent activity — fills the page, gives an at-a-glance live feed -->
   <div class="hub-recent reveal">
-    <div class="hr-head"><h2>Recent activity</h2><a href="{% url 'b2b_orders' %}" class="seelink">All orders →</a></div>
+    <div class="hr-head"><h2>Recent activity</h2><a href="{% url 'b2b_tracker' %}" class="seelink">All orders →</a></div>
     <table class="grid compact">
       <thead><tr><th>Recorded</th><th>Channel</th><th>Segment</th><th>PO / SO</th><th class="r">Qty</th><th class="r">Value</th></tr></thead>
       <tbody>
         {% for r in recent %}
         <tr>
           <td class="muted">{{ r.when|date:"d M, H:i" }}</td>
-          <td><a href="{% url 'b2b_orders' %}?marketplace={{ r.marketplace|urlencode }}" class="mp">{{ r.marketplace }}</a></td>
+          <td><a href="{% url 'b2b_tracker' %}?marketplace={{ r.marketplace|urlencode }}" class="mp">{{ r.marketplace }}</a></td>
           <td><span class="seg-tag {% if r.segment == 'Offline' %}off{% else %}on{% endif %}">{{ r.segment }}</span></td>
           <td class="mono">{% if r.run_id %}<a href="{% url 'b2b_run_detail' run_id=r.run_id %}" class="po">{{ r.po }}</a>{% else %}{{ r.po }}{% endif %}</td>
           <td class="r">{{ r.qty }}</td>

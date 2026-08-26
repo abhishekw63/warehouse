@@ -8,6 +8,9 @@
 .rv-file input{font-size:13px;padding:9px;border:1px dashed var(--border);border-radius:10px;background:var(--surface-2);cursor:pointer;}
 .rv-res-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
 .rv-ok{color:var(--green);font-weight:700;} .rv-mis{color:var(--red);font-weight:700;}
+/* line-cell match/mismatch highlight: green = our==D365, red = differs */
+td.rv-match{color:var(--green);font-weight:600;background:color-mix(in srgb,var(--green) 8%,transparent);}
+td.rv-mis{background:color-mix(in srgb,var(--red) 8%,transparent);}
 .rv-ext{color:var(--accent);font-weight:700;}
 .rv-bad td{background:color-mix(in srgb,var(--red) 5%,transparent);}
 .rv-ext-row td{background:color-mix(in srgb,var(--accent) 4%,transparent);}

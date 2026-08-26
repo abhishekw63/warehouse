@@ -1133,6 +1133,11 @@ class Processor:
                           # operator chose to INCLUDE / OVERRIDE: KEPT in the order,
                           # never dropped. Shown so "we included this" reads clearly
                           # instead of the qty silently sitting inside Final Qty.
+        pushed: dict = {}  # NEW — inc-GST VALUE of the lines that actually reach D365
+                           # (everything NOT dropped), so the Summary can show the
+                           # final pushed amount next to Final Qty. Same value basis
+                           # as the SKU Summary sheet: our-CP × GST × qty, or the
+                           # already-inc-GST landing when no unit price.
         for l in lines:
             # build_lines() stamps the operator decision as a TOP-LEVEL 'action'
             # (INCLUDE/OVERRIDE/EXCLUDE); keep the legacy 'decision' dict as a
@@ -1148,6 +1153,19 @@ class Processor:
                 excl[po] = excl.get(po, 0) + int(l.get('qty') or 0)
             elif st in _ISSUE_STATUSES and act in ('INCLUDE', 'OVERRIDE'):
                 incl[po] = incl.get(po, 0) + int(l.get('qty') or 0)
+            if not dropped:                       # value that actually reaches D365
+                q = int(l.get('qty') or 0)
+                up = l.get('unit_price')
+                try:
+                    if up not in (None, ''):
+                        v = float(up) * self._gst_mult(l.get('gst_code')) * q
+                    elif l.get('our_landing') is not None:
+                        v = float(l['our_landing']) * q   # landing already inc-GST
+                    else:
+                        v = 0.0
+                except (TypeError, ValueError):
+                    v = 0.0
+                pushed[po] = pushed.get(po, 0.0) + v
         wb = openpyxl.load_workbook(path)
         if 'Summary' not in wb.sheetnames:
             return
@@ -1157,15 +1175,21 @@ class Processor:
             return
         c_po = hdr.index('PO') + 1
         c_qty = hdr.index('Total Qty') + 1 if 'Total Qty' in hdr else None
+        c_amt = hdr.index('Total Amount') + 1 if 'Total Amount' in hdr else None
+        amt_fmt = ws.cell(2, c_amt).number_format if c_amt else '#,##0.00'
         _base = ws.max_column
-        c_inc, c_exc, c_fin, c_stat = _base + 1, _base + 2, _base + 3, _base + 4
+        c_inc, c_exc, c_fin, c_famt, c_stat = (_base + 1, _base + 2, _base + 3,
+                                               _base + 4, _base + 5)
         ws.cell(1, c_inc, 'Included Qty')
         ws.cell(1, c_exc, 'Excluded/Dropped Qty')
         ws.cell(1, c_fin, 'Final Qty (to D365)')
+        # Final Amount = value (inc-GST) of the lines that actually reach D365 —
+        # the "final pushed amount", the money analog of Final Qty.
+        ws.cell(1, c_famt, 'Final Amount (to D365)')
         # CLEAN = nothing dropped, 100% of the PO goes to D365 as-is; AFFECTED =
         # some qty was excluded. Lets the operator scan the Summary for clean POs.
         ws.cell(1, c_stat, 'Status')
-        for cc in (c_inc, c_exc, c_fin, c_stat):
+        for cc in (c_inc, c_exc, c_fin, c_famt, c_stat):
             h = ws.cell(1, cc)
             h.font = Font(bold=True, color='FFFFFF')
             h.fill = PatternFill('solid', fgColor='B45309')
@@ -1189,6 +1213,8 @@ class Processor:
                 ws.cell(r, c_inc, total_i).font = Font(bold=True)
                 ws.cell(r, c_exc, total_e)
                 ws.cell(r, c_fin, totf - total_e)
+                fa = ws.cell(r, c_famt, round(sum(pushed.values()), 2))
+                fa.font = Font(bold=True); fa.number_format = amt_fmt
                 sc = ws.cell(r, c_stat, f'{n_clean} CLEAN · {n_aff} AFFECTED')
                 sc.font = Font(bold=True)
                 continue
@@ -1202,6 +1228,8 @@ class Processor:
             e = excl.get(po, 0)
             ws.cell(r, c_exc, e)
             ws.cell(r, c_fin, totf - e)
+            fa = ws.cell(r, c_famt, round(pushed.get(po, 0.0), 2))
+            fa.number_format = amt_fmt
             clean = (e == 0)
             sc = ws.cell(r, c_stat, 'CLEAN' if clean else 'AFFECTED')
             sc.font = Font(bold=True, color='0A7D33' if clean else 'B91C1C')
@@ -1214,7 +1242,22 @@ class Processor:
         ws.column_dimensions[openpyxl.utils.get_column_letter(c_inc)].width = 15
         ws.column_dimensions[openpyxl.utils.get_column_letter(c_exc)].width = 18
         ws.column_dimensions[openpyxl.utils.get_column_letter(c_fin)].width = 18
+        ws.column_dimensions[openpyxl.utils.get_column_letter(c_famt)].width = 22
         ws.column_dimensions[openpyxl.utils.get_column_letter(c_stat)].width = 20
+        # Centre-align the Summary DATA cells (what the operator otherwise does by
+        # hand). Header row is left as the exporter styled it; the meta/footer note
+        # row (non-numeric Total Qty, not the TOTAL row) is skipped so it stays put.
+        for r in range(2, ws.max_row + 1):
+            is_total = str(ws.cell(r, c_po).value or '').upper().startswith('TOTAL')
+            if not is_total:
+                try:
+                    float(ws.cell(r, c_qty).value if c_qty else None)
+                except (TypeError, ValueError):
+                    continue
+            for cc in range(1, c_stat + 1):
+                cell = ws.cell(r, cc)
+                keep = bool(cell.alignment and cell.alignment.wrap_text)
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=keep)
         wb.save(path)
 
     @staticmethod
