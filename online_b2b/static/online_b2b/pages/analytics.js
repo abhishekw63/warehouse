@@ -373,6 +373,64 @@
     }
   }
 
+  // ── Single-calendar range picker (CSP-safe, no external lib): one popup, click a
+  //    start day then an end day, range highlighted, Apply loads it. ──
+  function _pad(n) { return (n < 10 ? '0' : '') + n; }
+  function _iso(y, m, d) { return y + '-' + _pad(m + 1) + '-' + _pad(d); }
+  function renderCal(container, vy, vm, sel) {
+    var MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    var DOW = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+    var firstDow = new Date(vy, vm, 1).getDay(), dim = new Date(vy, vm + 1, 0).getDate();
+    var h = '<div class="rp2-hd"><button type="button" class="rp2-nav" data-rp2-prev aria-label="Previous month">‹</button>' +
+      '<span class="rp2-my">' + MON[vm] + ' ' + vy + '</span>' +
+      '<button type="button" class="rp2-nav" data-rp2-next aria-label="Next month">›</button></div><div class="rp2-grid">';
+    for (var i = 0; i < 7; i++) h += '<span class="rp2-dow">' + DOW[i] + '</span>';
+    for (var e = 0; e < firstDow; e++) h += '<span class="rp2-day empty"></span>';
+    for (var d = 1; d <= dim; d++) {
+      var iso = _iso(vy, vm, d), cls = 'rp2-day';
+      if (sel.start && iso === sel.start) cls += ' start';
+      if (sel.end && iso === sel.end) cls += ' end';
+      if (sel.start && sel.end && iso > sel.start && iso < sel.end) cls += ' inrange';
+      h += '<button type="button" class="' + cls + '" data-rp2-d="' + iso + '">' + d + '</button>';
+    }
+    container.innerHTML = h + '</div>';
+  }
+  function wireRangePicker() {
+    var rp = document.getElementById('dailyRP'); if (!rp) return;
+    var btn = rp.querySelector('[data-rp2-btn]'), pop = rp.querySelector('[data-rp2-pop]');
+    var cal = rp.querySelector('[data-rp2-cal]'), applyBtn = rp.querySelector('[data-rp2-apply]');
+    var selEl = rp.querySelector('[data-rp2-sel]');
+    var sInp = rp.querySelector('[data-daily-start]'), eInp = rp.querySelector('[data-daily-end]');
+    var sel = { start: sInp.value || null, end: eInp.value || null };
+    var base = sel.start ? new Date(sel.start + 'T00:00:00') : new Date();
+    var vy = base.getFullYear(), vm = base.getMonth();
+    function draw() {
+      renderCal(cal, vy, vm, sel);
+      selEl.textContent = sel.start ? (sel.start + (sel.end ? '  →  ' + sel.end : '  →  …')) : 'Pick a start date';
+      applyBtn.disabled = !(sel.start && sel.end);
+    }
+    btn.addEventListener('click', function (ev) { ev.stopPropagation(); if (pop.hidden) { pop.hidden = false; draw(); } else pop.hidden = true; });
+    cal.addEventListener('click', function (ev) {
+      var nav = ev.target.closest('[data-rp2-prev],[data-rp2-next]');
+      if (nav) { vm += nav.hasAttribute('data-rp2-next') ? 1 : -1; if (vm < 0) { vm = 11; vy--; } if (vm > 11) { vm = 0; vy++; } draw(); return; }
+      var day = ev.target.closest('[data-rp2-d]'); if (!day) return;
+      var iso = day.getAttribute('data-rp2-d');
+      if (!sel.start || sel.end) { sel.start = iso; sel.end = null; }   // begin a fresh range
+      else if (iso < sel.start) { sel.end = sel.start; sel.start = iso; }
+      else sel.end = iso;
+      draw();
+    });
+    applyBtn.addEventListener('click', function () { if (sel.start && sel.end) { pop.hidden = true; loadDaily({ start: sel.start, end: sel.end }); } });
+    // close on outside click — bound ONCE on document, re-finds the live picker
+    if (!document._rp2DocBound) {
+      document._rp2DocBound = true;
+      document.addEventListener('click', function (ev) {
+        var el = document.getElementById('dailyRP');
+        if (el && !el.contains(ev.target)) { var p = el.querySelector('[data-rp2-pop]'); if (p) p.hidden = true; }
+      });
+    }
+  }
+
   function wireDaily() {
     buildDailyChart();
     buildFacCharts();
@@ -384,17 +442,8 @@
     root.querySelectorAll('[data-daily-days]').forEach(function (a) {
       a.addEventListener('click', function (e) { e.preventDefault(); loadDaily({ days: a.getAttribute('data-daily-days') }); });
     });
-    // custom from–to range
-    var s = root.querySelector('[data-daily-start]'), en = root.querySelector('[data-daily-end]');
-    var apply = root.querySelector('[data-daily-apply]');
-    function doApply() {
-      if (s.value && en.value) loadDaily({ start: s.value, end: en.value });
-      else (s.value ? en : s).focus();               // need both ends
-    }
-    if (apply) apply.addEventListener('click', doApply);
-    // auto-apply once the second date is filled
-    if (s) s.addEventListener('change', function () { if (s.value && en.value) doApply(); });
-    if (en) en.addEventListener('change', function () { if (s.value && en.value) doApply(); });
+    // custom single-calendar range picker (one popup, click start -> end)
+    wireRangePicker();
     var cl = root.querySelector('[data-daily-clear]');
     if (cl) cl.addEventListener('click', function (e) { e.preventDefault(); loadDaily({ days: days }); });
     // "Today" preset → a single-day range = today (client's local date)

@@ -19,13 +19,18 @@
         <a href="#" data-daily-days="30" class="rg{% if not start and days == 30 %} on{% endif %}">30d</a>
         <a href="#" data-daily-days="90" class="rg{% if not start and days == 90 %} on{% endif %}">90d</a>
       </span>
-      <span class="range-picker{% if start %} on{% endif %}">
-        <svg class="rp-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
-        <input type="date" data-daily-start value="{{ start }}" aria-label="From date">
-        <span class="rp-sep">→</span>
-        <input type="date" data-daily-end value="{{ end }}" aria-label="To date">
-        <button type="button" class="rp-apply" data-daily-apply>Apply</button>
+      <span class="rp2{% if start %} on{% endif %}" id="dailyRP">
+        <button type="button" class="rp2-btn" data-rp2-btn aria-haspopup="dialog">
+          <svg class="rp-ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+          <span class="rp2-label">{% if start and end %}{% if start == end %}{{ start }}{% else %}{{ start }} → {{ end }}{% endif %}{% else %}Pick dates{% endif %}</span>
+        </button>
         {% if start %}<a href="#" data-daily-clear class="rp-clear" title="Clear range — back to last {{ days }} days">✕</a>{% endif %}
+        <input type="hidden" data-daily-start value="{{ start }}">
+        <input type="hidden" data-daily-end value="{{ end }}">
+        <div class="rp2-pop" data-rp2-pop hidden role="dialog" aria-label="Pick a date range">
+          <div class="rp2-cal" data-rp2-cal></div>
+          <div class="rp2-foot"><span class="rp2-sel" data-rp2-sel></span><button type="button" class="rp2-apply" data-rp2-apply disabled>Apply</button></div>
+        </div>
       </span>
     </div>
   </div>
