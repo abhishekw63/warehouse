@@ -2893,37 +2893,72 @@ def _gts_token_dir(token: str) -> Path:
 
 
 class GtSelectView(LoginRequiredMixin, TemplateView):
-    """`/b2b/gt-select/` — upload the D365 Sales Orders + Sales Lines exports."""
+    """`/b2b/gt-select/` — single-page D365 import: upload Sales Orders + Sales
+    Lines, preview (classify + dedup) and confirm all inline (see gt_select.js)."""
     template_name = 'online_b2b/gt_select.html'
 
     def get_context_data(self, **kwargs):
+        from .services import marketplaces as mkt
         ctx = super().get_context_data(**kwargs)
         ctx['kpis'] = order_db.segment_kpis('Offline')
+        ctx['taxonomy'] = mkt.classification_options()
         return ctx
 
 
-@login_required
-@require_POST
-def gt_select_upload(request):
-    """Stash the two D365 exports under a token → preview."""
-    hf = request.FILES.get('headers_file')
-    lf = request.FILES.get('lines_file')
-    if not hf or not lf:
-        messages.error(request, "Choose BOTH files — Sales Orders (headers) and "
-                                "Sales Lines.")
-        return redirect('b2b_gt_select')
-    token = uuid.uuid4().hex[:12]
-    d = _GTS_UPLOADS / token
-    d.mkdir(parents=True, exist_ok=True)
-    hp = d / ('headers' + Path(hf.name).suffix)
-    lp = d / ('lines' + Path(lf.name).suffix)
-    for f, dest in ((hf, hp), (lf, lp)):
-        common.save_upload(f, dest)
-    (d / 'meta.json').write_text(json.dumps({
-        'headers_name': hf.name, 'lines_name': lf.name,
-        'headers_path': hp.name, 'lines_path': lp.name,
-    }), encoding='utf-8')
-    return redirect('b2b_gt_select_preview', token=token)
+def _gts_is_ajax(request) -> bool:
+    return request.headers.get('X-Requested-With') in ('XMLHttpRequest', 'fetch')
+
+
+class GtSelectPreviewView(LoginRequiredMixin, View):
+    """POST both D365 exports → stash under a token → parse · classify · dedup.
+    AJAX (single page) → JSON preview; plain form (no-JS) → the fallback page."""
+
+    def post(self, request):
+        hf = request.FILES.get('headers_file')
+        lf = request.FILES.get('lines_file')
+        if not hf or not lf:
+            if _gts_is_ajax(request):
+                return JsonResponse({'ok': False, 'error':
+                    "Choose BOTH files — Sales Orders (headers) and Sales Lines."}, status=400)
+            messages.error(request, "Choose BOTH files.")
+            return redirect('b2b_gt_select')
+        token = uuid.uuid4().hex[:12]
+        d = _GTS_UPLOADS / token
+        d.mkdir(parents=True, exist_ok=True)
+        hp = d / ('headers' + Path(hf.name).suffix)
+        lp = d / ('lines' + Path(lf.name).suffix)
+        for f, dest in ((hf, hp), (lf, lp)):
+            common.save_upload(f, dest)
+        (d / 'meta.json').write_text(json.dumps({
+            'headers_name': hf.name, 'lines_name': lf.name,
+            'headers_path': hp.name, 'lines_path': lp.name,
+        }), encoding='utf-8')
+        if not _gts_is_ajax(request):
+            return redirect('b2b_gt_select_preview', token=token)   # no-JS fallback
+        from .services import gt_select_import as gts
+        pv = gts.preview(str(hp), str(lp))
+        if not pv.get('ok'):
+            return JsonResponse({'ok': False, 'error':
+                pv.get('error', 'Could not read the files.')}, status=400)
+        new_orders = []
+        for h in pv['headers']:
+            if not h['is_new']:
+                continue
+            new_orders.append({
+                'so_no': h['so_no'], 'external_doc': h['external_doc'],
+                'marketplace': h['marketplace'], 'segment': h['segment'],
+                'posting_group': h['posting_group'], 'ship_name': h['ship_name'],
+                'postcode': h['postcode'], 'warehouse': h['warehouse'],
+                'line_count': h['line_count'], 'qty': h['qty'],
+                'order_value': h['order_value'],
+                'po_date': h['po_date'].isoformat() if h['po_date'] else '',
+            })
+        return JsonResponse({
+            'ok': True, 'token': token, 'meta': {'headers_name': hf.name, 'lines_name': lf.name},
+            'summary': pv['summary'], 'channels': pv['channels'],
+            'needs_class': pv['needs_class'], 'warnings': pv['warnings'],
+            'new_orders': new_orders[:500],
+        })
 
 
 @login_required
@@ -2944,30 +2979,47 @@ def gt_select_preview(request, token):
     })
 
 
-@login_required
-@require_POST
-def gt_select_confirm(request, token):
-    """Import the NEW GT Select orders + lines under one IMPORT run."""
-    d = _gts_token_dir(token)
-    mp = d / 'meta.json'
-    if not mp.exists():
-        raise Http404("Upload not found or expired.")
-    meta = json.loads(mp.read_text(encoding='utf-8'))
-    from .services import gt_select_import as gts
-    res = gts.do_import(str(d / meta['headers_path']), str(d / meta['lines_path']))
-    if not res.get('ok'):
-        messages.error(request, res.get('error', 'Import failed.'))
-        return redirect('b2b_gt_select_preview', token=token)
-    shutil.rmtree(d, ignore_errors=True)
-    if not res.get('imported'):
-        messages.info(request, "All orders were already imported — nothing new.")
-        return redirect('b2b_tracker')
-    messages.success(
-        request, f"✓ Imported {res['imported']} GT Select order(s) · "
-        f"{res['lines']} line(s) ({res.get('skipped', 0)} already present).")
-    if res.get('run_id'):
-        return redirect('b2b_run_detail', run_id=res['run_id'])
-    return redirect('b2b_tracker')
+class GtSelectImportView(LoginRequiredMixin, View):
+    """Import the NEW orders + lines under one run — each under its own channel.
+    Accepts operator classifications for unknown posting groups (persisted).
+    AJAX → JSON; plain form → redirect."""
+
+    def post(self, request, token):
+        d = _gts_token_dir(token)
+        mp = d / 'meta.json'
+        if not mp.exists():
+            if _gts_is_ajax(request):
+                return JsonResponse({'ok': False, 'error': 'Upload not found or expired.'}, status=404)
+            raise Http404("Upload not found or expired.")
+        meta = json.loads(mp.read_text(encoding='utf-8'))
+        overrides = {}
+        if _gts_is_ajax(request):
+            try:
+                overrides = (json.loads(request.body or '{}') or {}).get('overrides') or {}
+            except (ValueError, TypeError):
+                overrides = {}
+        from .services import gt_select_import as gts
+        res = gts.do_import(str(d / meta['headers_path']), str(d / meta['lines_path']),
+                            overrides=overrides, user=request.user.username)
+        if not res.get('ok'):
+            if _gts_is_ajax(request):
+                return JsonResponse({'ok': False, 'error': res.get('error', 'Import failed.')}, status=400)
+            messages.error(request, res.get('error', 'Import failed.'))
+            return redirect('b2b_gt_select_preview', token=token)
+        shutil.rmtree(d, ignore_errors=True)
+        from django.urls import reverse
+        target = (reverse('b2b_run_detail', args=[res['run_id']]) if res.get('run_id')
+                  else reverse('b2b_tracker'))
+        if _gts_is_ajax(request):
+            return JsonResponse({'ok': True, 'imported': res['imported'],
+                                 'lines': res['lines'], 'skipped': res.get('skipped', 0),
+                                 'redirect': target})
+        if not res.get('imported'):
+            messages.info(request, "All orders were already captured — nothing new.")
+        else:
+            messages.success(request, f"✓ Imported {res['imported']} order(s) · "
+                             f"{res['lines']} line(s) ({res.get('skipped', 0)} already present).")
+        return redirect(target)
 
 
 @login_required

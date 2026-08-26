@@ -1,5 +1,5 @@
 {% load b2b_extras %}
-<tr class="rv-orow {% if r.status == 'MISMATCH' %}rv-bad{% elif r.status == 'EXTERNAL' %}rv-ext-row{% endif %}" data-po="{{ r.po }}">
+<tr class="rv-orow {% if r.status == 'MISMATCH' %}rv-bad{% elif r.status == 'EXTERNAL' %}rv-ext-row{% endif %}{% if r.is_empty %} rv-empty{% endif %}" data-po="{{ r.po }}"{% if r.is_empty %} title="Empty D365 SO — no qty/value/lines. Nothing to capture — ignore."{% endif %}>
   <td class="rv-chk-col"><input type="checkbox" class="rv-chk" value="{{ r.po }}" {% if r.status != 'EXTERNAL' %}checked{% endif %} title="Tick to record on confirm"></td>
   <td class="rv-caret-col"><button type="button" class="rv-caret" title="Show line items" aria-label="Show line items">▸</button></td>
   <td class="mono strong">{{ r.po }}</td>

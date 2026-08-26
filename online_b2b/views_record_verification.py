@@ -28,6 +28,8 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from .services import common
+from .services import gt_select_import as gts   # external-order capture (classify + dedup)
+from .services import marketplaces as mkt
 from .services import record_verification as rv
 
 _UP = Path(settings.MEDIA_ROOT) / 'b2b_recordcheck'
@@ -99,6 +101,12 @@ def _augment(data: dict) -> dict:
     for h in headers:
         h['lines'] = by_po.get(h.get('po'), [])
         h['bad_lines'] = sum(1 for ln in h['lines'] if _affected(ln))
+        # An empty D365 SO shell — ZERO qty AND value (blank customer/pincode too).
+        # Nothing to reconcile or capture → struck through so it reads as skippable.
+        # NB: test qty+value, NOT lines — a GT Select external legitimately has qty/
+        # value but NO associated lines in the reconcile (its header keys on External
+        # Doc while its lines key on the SO No), so it must NOT be treated as empty.
+        h['is_empty'] = not (h.get('d365_qty') or 0) and not (h.get('d365_val') or 0)
     data['orders'] = [h for h in headers if h.get('status') != 'EXTERNAL']
     data['externals'] = [h for h in headers if h.get('status') == 'EXTERNAL']
     data['affected_lines'] = [ln for ln in lines if _affected(ln)]
@@ -147,6 +155,9 @@ class RecordVerificationView(LoginRequiredMixin, TemplateView):
             if res.get('ok'):
                 ctx['data'] = _augment(res['data'])
                 ctx['confirmed'] = res.get('confirmed', False)
+                ctx['capture'] = res.get('capture')          # external-order capture panel
+                ctx['captured'] = res.get('captured', False)
+                ctx['taxonomy'] = mkt.classification_options()
         return ctx
 
 
@@ -185,6 +196,42 @@ class RecordVerificationRunView(LoginRequiredMixin, View):
         res = rv.preview(headers, lines)
         if res.get('ok'):
             res['confirmed'] = False
+            # ── Capture pass: classify the EXTERNAL (in-D365, not-recorded) orders
+            #    by Gen. Bus. Posting Group + dedup vs everything recorded, so the
+            #    operator can RECORD them into the tracker via the separate Capture
+            #    action. Files persist under the token → the capture view re-reads.
+            res['headers_path'] = headers
+            res['lines_path'] = lines
+            try:
+                cap = gts.preview(headers, lines)
+                if cap.get('ok'):
+                    new_orders = [{
+                        'so_no': h['so_no'], 'external_doc': h['external_doc'],
+                        'marketplace': h['marketplace'], 'segment': h['segment'],
+                        'posting_group': h['posting_group'], 'ship_name': h['ship_name'],
+                        'customer_name': h['customer_name'], 'cust_no': h['cust_no'],
+                        'ship_code': h['ship_code'], 'postcode': h['postcode'],
+                        'warehouse': h['warehouse'], 'line_count': h['line_count'],
+                        'qty': h['qty'], 'order_value': h['order_value'],
+                        'po_date': h['po_date'].isoformat() if h['po_date'] else '',
+                    } for h in cap['headers'] if h['is_new']]
+                    res['capture'] = {'summary': cap['summary'], 'channels': cap['channels'],
+                                      'needs_class': cap['needs_class'], 'new_orders': new_orders[:500]}
+                    # Externals show their TRUE channel (from Gen. Bus. Posting
+                    # Group) instead of 'UNKNOWN' — the D365 file classifies them
+                    # even when they aren't in our records yet.
+                    cls = {}
+                    for hh in cap['headers']:
+                        for k in (hh['external_doc'], hh['so_no']):
+                            if k:
+                                cls[str(k).upper()] = hh['marketplace']
+                    for row in res['data'].get('headers', []):
+                        if row.get('status') == 'EXTERNAL':
+                            m = cls.get(str(row.get('po') or '').upper())
+                            if m:
+                                row['mp'] = m
+            except Exception as e:  # noqa: BLE001 — capture is additive; never blocks verify
+                res['capture_error'] = f'{type(e).__name__}: {e}'
             try:
                 rv.build_workbook(res['data'], str(d / 'record_verification.xlsx'))
             except Exception as e:  # noqa: BLE001 — Excel is a convenience
@@ -218,6 +265,35 @@ class RecordVerificationConfirmView(LoginRequiredMixin, View):
         n = out.get('confirmed', 0)
         return _done(request, token, f"✓ Verification recorded — {n} PO(s) logged.",
                      confirmed=n)
+
+
+class RecordVerificationCaptureView(LoginRequiredMixin, View):
+    """Record the EXTERNAL (in-D365, not-recorded) orders into the TRACKER
+    (order_headers / order_lines) via the classify + dedup importer — the separate
+    'Capture' action. Distinct from the verification-log confirm. AJAX → JSON;
+    ``overrides`` places unknown posting groups (segment / marketplace / child)."""
+
+    def post(self, request, token):
+        rp, res = _load_result(token)
+        if not res.get('ok') or not res.get('headers_path'):
+            return JsonResponse({'ok': False, 'error': 'Nothing to capture for this check.'}, status=400)
+        overrides, only_pos = {}, None
+        try:
+            body = json.loads(request.body or '{}') or {}
+            overrides = body.get('overrides') or {}
+            only_pos = body.get('only_pos')          # None = push every new order
+        except (ValueError, TypeError):
+            pass
+        out = gts.do_import(res['headers_path'], res['lines_path'],
+                            overrides=overrides, user=_actor(request), only_pos=only_pos)
+        if not out.get('ok'):
+            return JsonResponse({'ok': False, 'error': out.get('error', 'Capture failed.')}, status=400)
+        res['captured'] = True
+        res['capture_result'] = {'imported': out['imported'], 'lines': out['lines'],
+                                 'skipped': out.get('skipped', 0)}
+        _save_result(rp, res)
+        return JsonResponse({'ok': True, 'imported': out['imported'], 'lines': out['lines'],
+                             'skipped': out.get('skipped', 0), 'redirect': reverse('b2b_tracker')})
 
 
 class RecordVerificationSaveLaterView(LoginRequiredMixin, View):

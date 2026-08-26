@@ -163,6 +163,114 @@
   });
 })();
 
+/* ── Capture external orders → tracker (separate action) — classify any unknown
+      posting group (Segment → Marketplace → MT child), then record into the DB. ── */
+(function () {
+  var panel = document.getElementById('rvCapture');
+  if (!panel) return;
+  var btn = document.getElementById('rvCapBtn'), msg = document.getElementById('rvCapMsg');
+  var classify = document.getElementById('rvCapClassify');
+  var taxEl = document.getElementById('rvTaxonomy');
+  var TAX = taxEl ? JSON.parse(taxEl.textContent) : { online: [], offline: [], mt_children: [] };
+  var overrides = {}, needsN = 0;
+  var selAll = document.getElementById('rvCapAll'),
+      selN = document.getElementById('rvCapSel'),
+      btnN = document.getElementById('rvCapBtnN');
+  function chks() { return [].slice.call(panel.querySelectorAll('.rv-cap-chk')); }
+  function selectedPos() { return chks().filter(function (c) { return c.checked; }).map(function (c) { return c.value; }); }
+
+  function opts(list) {
+    return '<option value="">—</option>' + list.map(function (o) {
+      return '<option value="' + o.value + '">' + o.label + '</option>';
+    }).join('');
+  }
+  function csrf() {
+    var el = document.querySelector('[name=csrfmiddlewaretoken]');
+    if (el) return el.value;
+    var m = document.cookie.match(/csrftoken=([^;]+)/); return m ? m[1] : '';
+  }
+  function collect() {
+    overrides = {};
+    if (classify) [].slice.call(classify.querySelectorAll('.rv-cap-cl-row')).forEach(function (row) {
+      var seg = row.querySelector('.rv-cap-seg').value, mpEl = row.querySelector('.rv-cap-mp'),
+          chEl = row.querySelector('.rv-cap-child');
+      var mp = mpEl.value; if (!seg || !mp) return;
+      var isMT = (mp === 'MT'), childV = chEl.hidden ? '' : chEl.value; if (isMT && !childV) return;
+      var mpText = mpEl.options[mpEl.selectedIndex] ? mpEl.options[mpEl.selectedIndex].text : mp;
+      var chText = chEl.hidden || !chEl.options[chEl.selectedIndex] ? '' : chEl.options[chEl.selectedIndex].text;
+      overrides[row.getAttribute('data-key')] = { posting_group: row.getAttribute('data-pg'),
+        segment: seg, marketplace: mp, marketplace_label: isMT ? chText : mpText };
+    });
+    update();
+  }
+  function update() {
+    var sel = selectedPos().length, remaining = needsN - Object.keys(overrides).length;
+    if (selN) selN.textContent = sel;
+    if (btnN) btnN.textContent = sel;
+    if (remaining > 0) { btn.disabled = true; if (msg) msg.textContent = 'Place the ' + remaining + ' remaining posting group(s) first.'; return; }
+    if (!sel) { btn.disabled = true; if (msg) msg.textContent = 'Tick at least one order to push.'; return; }
+    btn.disabled = false; if (msg) msg.textContent = '';
+  }
+  if (classify) {
+    var rowsC = [].slice.call(classify.querySelectorAll('.rv-cap-cl-row'));
+    needsN = rowsC.length;
+    rowsC.forEach(function (row) {
+      var seg = row.querySelector('.rv-cap-seg'), mp = row.querySelector('.rv-cap-mp'),
+          child = row.querySelector('.rv-cap-child');
+      seg.addEventListener('change', function () {
+        var mps = seg.value === 'Offline' ? TAX.offline : (seg.value === 'OnlineB2B' ? TAX.online : []);
+        mp.innerHTML = opts(mps); mp.disabled = !mps.length;
+        child.hidden = true; child.innerHTML = '<option value="">—</option>'; collect();
+      });
+      mp.addEventListener('change', function () {
+        var mps = seg.value === 'Offline' ? TAX.offline : TAX.online, isMT = false;
+        mps.forEach(function (o) { if (o.value === mp.value && o.mt) isMT = true; });
+        if (isMT) { child.hidden = false; child.innerHTML = opts(TAX.mt_children); }
+        else { child.hidden = true; child.innerHTML = '<option value="">—</option>'; }
+        collect();
+      });
+      child.addEventListener('change', collect);
+    });
+  }
+  // selectable order list — select-all + per-row ticks drive the live count.
+  if (selAll) selAll.addEventListener('change', function () {
+    chks().forEach(function (c) { c.checked = selAll.checked; }); update();
+  });
+  chks().forEach(function (c) {
+    c.addEventListener('change', function () {
+      if (selAll) selAll.checked = chks().every(function (x) { return x.checked; });
+      update();
+    });
+  });
+  update();
+
+  btn.addEventListener('click', function () {
+    var url = btn.getAttribute('data-url'); if (!url) return;
+    var picked = selectedPos();
+    if (!picked.length) return;
+    var orig = btn.innerHTML; btn.disabled = true; btn.innerHTML = 'Pushing…';
+    fetch(url, { method: 'POST', credentials: 'same-origin',
+      headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrf(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ overrides: overrides, only_pos: picked }) })
+      .then(function (r) { return r.json(); }).then(function (j) {
+        if (j && j.ok) {
+          panel.classList.add('done');
+          panel.innerHTML = '<span>✓ <b>Captured ' + j.imported + ' order(s) · ' + j.lines +
+            ' line(s)</b> into the tracker (' + j.skipped + ' already present).</span> ' +
+            '<a class="btn-ghost" href="' + j.redirect + '">View in Tracker →</a>';
+          if (window.B2B && B2B.toast) B2B.toast('Captured ' + j.imported + ' order(s) into the tracker.', { type: 'success', title: 'Captured' });
+          if (window.confetti) { try { confetti({ particleCount: 80, spread: 70, origin: { y: .5 } }); } catch (e) {} }
+        } else {
+          btn.disabled = false; btn.innerHTML = orig;
+          if (window.B2B && B2B.toast) B2B.toast((j && j.error) || 'Capture failed.', { type: 'error' });
+        }
+      }).catch(function () {
+        btn.disabled = false; btn.innerHTML = orig;
+        if (window.B2B && B2B.toast) B2B.toast('Network error during capture.', { type: 'error' });
+      });
+  });
+})();
+
 /* ── Upload dropzone — show picked filenames + a drag-over state ── */
 (function () {
   var drop = document.getElementById('rvDrop');

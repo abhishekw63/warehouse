@@ -1,40 +1,97 @@
 {% extends 'online_b2b/base_b2b.html' %}
 {% load static b2b_extras %}
-{% block title %}GT Select — Order Management{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+{% block title %}GT Select — D365 Import{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<link rel="stylesheet" href="{% static 'online_b2b/pages/gt_select.css' %}">{% endblock %}
 
 {% block breadcrumb %}
     <a href="{% url 'departments' %}">Departments</a>
-    <a href="{% url 'b2b_offline' %}"> / Offline</a> <span>/ GT Select</span>
+    <a href="{% url 'b2b_offline' %}"> / Offline</a> <span>/ GT Select · D365 Import</span>
 {% endblock %}
 
 {% block content %}
-<div class="b2b-wrap">
+<div class="b2b-wrap b2b-wide gts-wrap">
   <div class="b2b-head">
     <div>
-      <h1>GT Select <span>· Offline</span></h1>
-      <p class="src">Orders are finalised in <b>D365</b> — no engine step. Upload the two exports and they're loaded straight into the order DB for the dashboard.</p>
+      <h1>GT Select <span>· D365 Import</span></h1>
+      <p class="src">GT Select is <b>auto-punched into D365</b> (staged → DMS), so it never reaches the tracker and today's total is understated. Upload the D365 <b>Sales Orders + Sales Lines</b> — we skip everything already captured and import only the <b>NEW</b> orders, each under its true channel.</p>
     </div>
     <a href="{% url 'b2b_offline' %}" class="back">← Offline</a>
   </div>
 
-  <div class="im-card reveal">
-    <h2>Import Sales Orders + Lines</h2>
-    <p class="im-sub">Export both from D365 for GT Select. We join lines to headers on <span class="mono">Document No.</span>, dedup on <b>External Document No.</b> (SO No regenerates each export), and tag everything <b>GT Select · Offline</b>.</p>
-    <form method="post" action="{% url 'b2b_gt_select_upload' %}" enctype="multipart/form-data" class="im-up">
-      {% csrf_token %}
-      <label class="im-file">
-        <span class="imf-l">① Sales Orders (headers)</span>
+  {{ taxonomy|json_script:"gtsTaxonomy" }}
+  <script type="application/json" id="gtsConfig">{"uploadUrl": "{% url 'b2b_gt_select_upload' %}", "gtBase": "{% url 'b2b_gt_select' %}", "tracker": "{% url 'b2b_tracker' %}"}</script>
+
+  {# ── Step 1 · upload ── #}
+  <form id="gtsForm" class="gts-up im-card" method="post" action="{% url 'b2b_gt_select_upload' %}" enctype="multipart/form-data">
+    {% csrf_token %}
+    <div class="gts-files">
+      <label class="gts-file">
+        <span class="gf-n">① Sales Orders</span>
         <input type="file" name="headers_file" accept=".xlsx,.xls" required>
-        <span class="imf-h">No., External Doc, Ship-to, Total Qty / Amount…</span>
+        <span class="gf-h">headers — No., External Doc, Gen. Bus. Posting Group, Total Qty / Amount…</span>
       </label>
-      <label class="im-file">
-        <span class="imf-l">② Sales Lines</span>
+      <label class="gts-file">
+        <span class="gf-n">② Sales Lines</span>
         <input type="file" name="lines_file" accept=".xlsx,.xls" required>
-        <span class="imf-h">Document No., Item No., GTIN, Qty, Line Amount…</span>
+        <span class="gf-h">lines — Document No., GTIN, Qty, Line Amount…</span>
       </label>
-      <button type="submit" class="btn-primary">Preview &amp; import →</button>
-    </form>
-  </div>
+    </div>
+    <div class="gts-up-act">
+      <button type="submit" class="btn-primary" id="gtsPreviewBtn">Preview →</button>
+      <span class="gts-hint">All channels in one file is fine — only NEW orders import. Nothing is written until you confirm.</span>
+    </div>
+  </form>
+
+  <div id="gtsLoading" class="gts-loading" hidden><span class="trk-spin"></span> Parsing · classifying · deduping against every recorded order…</div>
+  <div id="gtsError" class="banner err" hidden></div>
+
+  {# ── Step 2 · preview (JS-filled) ── #}
+  <section id="gtsPreview" hidden>
+    <div class="gts-src" id="gtsSrc"></div>
+
+    <div class="hub-kpis">
+      <div class="hk"><div class="n" id="gtsKNew">–</div><div class="l">New orders</div></div>
+      <div class="hk"><div class="n" id="gtsKLines">–</div><div class="l">New lines</div></div>
+      <div class="hk"><div class="n" id="gtsKQty">–</div><div class="l">New qty</div></div>
+      <div class="hk"><div class="n" id="gtsKVal">–</div><div class="l">New value</div></div>
+      <div class="hk"><div class="n" id="gtsKDup">–</div><div class="l">Already captured</div></div>
+    </div>
+
+    <div id="gtsWarn" class="warnbox" hidden></div>
+
+    {# unknown posting groups → operator places each (Segment → Marketplace → MT child) #}
+    <div id="gtsClassify" class="gts-classify" hidden>
+      <div class="gts-cl-h">⚠ <b id="gtsClCount"></b> unknown posting group(s) — place each below before importing. Your choice is <b>remembered</b>, so the next upload auto-maps it.</div>
+      <div id="gtsClList" class="gts-cl-list"></div>
+    </div>
+
+    <div class="im-card">
+      <h2>By channel <span class="count" id="gtsChanCount"></span></h2>
+      <div class="scroll"><table class="grid compact" id="gtsChanTbl">
+        <thead><tr><th>Segment</th><th>Marketplace</th><th class="r">New</th><th class="r">Already captured</th><th class="r">New qty</th><th class="r">New value</th></tr></thead>
+        <tbody></tbody></table></div>
+    </div>
+
+    <div class="im-card">
+      <h2>New orders <span class="count" id="gtsNewCount"></span></h2>
+      <div class="scroll"><table class="grid compact" id="gtsOrdersTbl">
+        <thead><tr><th>SO No</th><th>External Doc</th><th>Channel</th><th>Customer / Ship-to</th><th>Whse</th><th>Date</th><th class="r">Lines</th><th class="r">Qty</th><th class="r">Value</th></tr></thead>
+        <tbody></tbody></table></div>
+    </div>
+
+    <div class="confirm-bar gts-confirm">
+      <div class="cb-text" id="gtsConfirmText"></div>
+      <div class="cb-actions">
+        <button type="button" class="btn-discard" id="gtsDiscard">Discard</button>
+        <button type="button" class="btn-primary" id="gtsConfirm">✓ Confirm &amp; import</button>
+      </div>
+    </div>
+  </section>
+
+  {# ── Step 3 · done (JS-filled) ── #}
+  <div id="gtsDone" class="gts-done" hidden></div>
 </div>
 {% endblock %}
+
+{% block extra_js %}<script defer data-page-js src="{% static 'online_b2b/pages/gt_select.js' %}"></script>{% endblock %}

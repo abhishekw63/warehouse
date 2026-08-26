@@ -7,7 +7,7 @@
 {% block breadcrumb %}
   <a href="{% url 'departments' %}">Departments</a>
   <a href="{% url 'b2b_dashboard' %}"> / Order Management</a>
-  <a href="{% url 'b2b_record_verify' %}"> / Record Verification</a> <span>/ History</span>
+  <a href="{% url 'b2b_record_verify' %}"> / D365 Verify &amp; Capture</a> <span>/ History</span>
 {% endblock %}
 
 {% block content %}
@@ -20,7 +20,7 @@
       <p class="src">Every PO that's been verified &amp; recorded, with its delta - split into
         <b>Verified</b>, <b>Mismatch</b> and <b>External</b>. Read-only.</p>
     </div>
-    <a href="{% url 'b2b_record_verify' %}" class="btn-ghost">← Back to Record Verify</a>
+    <a href="{% url 'b2b_record_verify' %}" class="btn-ghost">← Back to Verify &amp; Capture</a>
   </div>
 
   {% if messages %}<div class="rv-msgs">{% for m in messages %}<div class="rv-msg {{ m.tags }}">{{ m }}</div>{% endfor %}</div>{% endif %}
@@ -72,7 +72,7 @@
         <tbody>{% for r in external %}{% include 'online_b2b/_rv_log_row.html' %}{% empty %}<tr><td colspan="9" class="rv-tabhint">No external POs logged.</td></tr>{% endfor %}</tbody>
       </table></div>
     </div>
-    {% else %}<p class="rv-note">No POs checked yet — run a verification on the Record Verify page.</p>{% endif %}
+    {% else %}<p class="rv-note">No POs checked yet — run a check on the D365 Verify &amp; Capture page.</p>{% endif %}
   </div>
 
 </div>

@@ -1,12 +1,12 @@
 {% extends 'online_b2b/base_b2b.html' %}
 {% load static b2b_extras %}
-{% block title %}Record Verification · RENÉE{% endblock %}
+{% block title %}D365 Verify &amp; Capture · RENÉE{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
 <link rel="stylesheet" href="{% static 'online_b2b/pages/record_verification.css' %}">{% endblock %}
 
 {% block breadcrumb %}
   <a href="{% url 'departments' %}">Departments</a>
-  <a href="{% url 'b2b_dashboard' %}"> / Order Management</a> <span>/ Record Verification</span>
+  <a href="{% url 'b2b_dashboard' %}"> / Order Management</a> <span>/ D365 Verify &amp; Capture</span>
 {% endblock %}
 
 {% block content %}
@@ -15,10 +15,10 @@
   <div class="b2b-head">
     <div>
       <span class="pill" style="margin-bottom:10px;"><span class="dot"></span>Integrity</span>
-      <h1>Record Verification</h1>
-      <p class="src">Upload the D365 <b>Sales Orders (Headers)</b> + <b>Sales Lines</b> — we reconcile them
-        against our recorded data (<b>recorded + excluded</b>) per PO and flag any <b>mismatch</b> in
-        qty, value or ship-to pincode. Every checked PO is logged with its delta.</p>
+      <h1>D365 Verify &amp; Capture</h1>
+      <p class="src">Upload the D365 <b>Sales Orders (Headers)</b> + <b>Sales Lines</b> — we <b>verify</b> our
+        recorded orders against D365 per PO (flagging any qty / value / ship-to mismatch), <b>and capture</b>
+        the ones D365 has but we don't (GT Select auto-punch, testers…) into the tracker under their true channel.</p>
     </div>
   </div>
 
@@ -36,7 +36,7 @@
   {# ── Upload ── #}
   <div class="im-card reveal rv-upload">
     <h2>Run a check</h2>
-    <form method="post" action="{% url 'b2b_record_verify_run' %}" enctype="multipart/form-data" data-loading="Reconciling against D365…" data-loading-steps="Reading D365 Headers &amp; Lines|Matching POs to our records|Netting excluded lines|Comparing qty · value · pincode|Logging deltas">
+    <form method="post" action="{% url 'b2b_record_verify_run' %}" enctype="multipart/form-data" data-loading="Verifying against D365 &amp; finding new orders…" data-loading-steps="Reading D365 Headers &amp; Lines|Matching POs to our records|Netting excluded lines|Comparing qty · value · pincode|Classifying new orders to capture|Logging deltas">
       {% csrf_token %}
       <label class="rv-drop" id="rvDrop">
         <input type="file" name="rv_files" accept=".xlsx,.xls" multiple required class="rv-drop-input">
@@ -85,6 +85,86 @@
       </div>
     {% endif %}
   </div>
+
+  {# ── Capture external orders → TRACKER (separate action from the verification log) ── #}
+  {% if capture and capture.summary.new and not captured %}
+  <div class="im-card reveal rv-capture" id="rvCapture">
+    <div class="rv-cap-head">
+      <h2>① New orders <span class="count">→ push to tracker</span></h2>
+      <p class="rv-note">In D365 but <b>not recorded by us</b> (GT Select auto-punch, testers, …). <b>Tick the ones to push</b> (all selected by default) → recorded into the tracker under their <b>true channel</b> (classified by <b>Gen. Bus. Posting Group</b>, deduped vs everything already captured, testers included). Externals have no delta/match — they're pushed, not verified.</p>
+    </div>
+    <div class="iss-kpis rv-cap-kpis">
+      <div class="ik"><div class="n">{{ capture.summary.new }}</div><div class="l">New orders</div></div>
+      <div class="ik"><div class="n">{{ capture.summary.new_lines }}</div><div class="l">New lines</div></div>
+      <div class="ik"><div class="n">{{ capture.summary.qty|compact }}</div><div class="l">New qty</div></div>
+      <div class="ik"><div class="n">{{ capture.summary.value|inr_short }}</div><div class="l">New value</div></div>
+    </div>
+    <div class="scroll rv-cap-chan">
+    <table class="grid compact">
+      <thead><tr><th>Segment</th><th>Marketplace</th><th class="r">New</th><th class="r">Already captured</th><th class="r">New qty</th><th class="r">New value</th></tr></thead>
+      <tbody>
+        {% for c in capture.channels %}
+        <tr class="{% if not c.new %}rnim{% endif %}"><td>{{ c.segment }}</td><td><b>{{ c.marketplace }}</b></td>
+          <td class="r">{% if c.new %}<span class="st ok">{{ c.new }}</span>{% else %}0{% endif %}</td>
+          <td class="r muted">{{ c.dup }}</td><td class="r">{{ c.new_qty }}</td><td class="r">{{ c.new_value|inr_short }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+
+    {% if capture.needs_class %}
+    <div class="rv-cap-classify" id="rvCapClassify">
+      <div class="rv-cap-cl-h">⚠ <b>{{ capture.needs_class|length }}</b> unknown posting group(s) — place each (Segment → Marketplace → MT child) before capturing. Your choice is <b>remembered</b> for next time.</div>
+      {% for u in capture.needs_class %}
+      <div class="rv-cap-cl-row" data-key="{{ u.key }}" data-pg="{{ u.posting_group }}">
+        <div class="rv-cap-cl-pg"><b>{{ u.posting_group }}</b><span>{{ u.count }} order(s) · {{ u.qty }} qty</span></div>
+        <select class="rv-cap-seg"><option value="">— segment —</option>{% for s in taxonomy.segments %}<option value="{{ s.value }}">{{ s.label }}</option>{% endfor %}</select>
+        <select class="rv-cap-mp" disabled><option value="">—</option></select>
+        <select class="rv-cap-child" hidden><option value="">—</option></select>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {# selectable order list — tick which externals to push (all selected by default) #}
+    <div class="rv-cap-list">
+      <div class="rv-cap-list-h">
+        <label class="rv-cap-selall"><input type="checkbox" id="rvCapAll" checked> Select all</label>
+        <span class="rv-cap-selc"><b id="rvCapSel">{{ capture.new_orders|length }}</b> of {{ capture.summary.new }} selected</span>
+      </div>
+      <div class="scroll rv-cap-scroll">
+      <table class="grid compact rv-cap-otbl">
+        <thead><tr><th class="chk-col"></th><th>PO / Ext Doc</th><th>SO No</th><th>Channel</th><th>Customer</th><th>Sell-to</th><th class="r">Order Qty</th><th class="r">Value (incl GST)</th></tr></thead>
+        <tbody>
+          {% for o in capture.new_orders %}
+          <tr>
+            <td class="chk-col"><input type="checkbox" class="rv-cap-chk" value="{{ o.external_doc|default:o.so_no }}" checked></td>
+            <td class="mono strong">{{ o.external_doc|default:o.so_no }}</td>
+            <td class="mono">{{ o.so_no|default:'—' }}</td>
+            <td><span class="st ok">{{ o.marketplace }}</span></td>
+            <td class="desc" title="{{ o.customer_name|default:o.ship_name }}">{{ o.customer_name|default:o.ship_name|default:'—' }}</td>
+            <td class="mono">{{ o.cust_no|default:'—' }}</td>
+            <td class="r">{{ o.qty }}</td>
+            <td class="r">{{ o.order_value|inr_short }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+
+    <div class="rv-cap-actions">
+      <span class="rv-cap-msg" id="rvCapMsg"></span>
+      <button type="button" class="btn-primary" id="rvCapBtn" data-url="{% url 'b2b_record_verify_capture' token=token %}">✓ Push <span id="rvCapBtnN">{{ capture.summary.new }}</span> order(s) → tracker</button>
+    </div>
+  </div>
+  {{ taxonomy|json_script:"rvTaxonomy" }}
+  {% elif captured %}
+  <div class="im-card reveal rv-capture done">
+    <span>✓ <b>External orders captured</b> into the tracker.</span>
+    <a class="btn-ghost" href="{% url 'b2b_tracker' %}">View in Tracker →</a>
+  </div>
+  {% endif %}
 
   {# ── KPI tiles (review-page style) ── #}
   <div class="iss-kpis rv-kpis reveal">

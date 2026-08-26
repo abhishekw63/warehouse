@@ -1,19 +1,19 @@
 {% extends 'online_b2b/base_b2b.html' %}
 {% load static b2b_extras %}
-{% block title %}GT Select — Preview{% endblock %}
+{% block title %}D365 Import — Preview{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
 
 {% block breadcrumb %}
     <a href="{% url 'departments' %}">Departments</a>
-    <a href="{% url 'b2b_gt_select' %}"> / GT Select</a> <span>/ Preview</span>
+    <a href="{% url 'b2b_gt_select' %}"> / D365 Import</a> <span>/ Preview</span>
 {% endblock %}
 
 {% block content %}
 <div class="b2b-wrap b2b-wide">
   <div class="b2b-head">
     <div>
-      <h1>GT Select <span>· Preview</span></h1>
-      <p class="src">{{ meta.headers_name }} + {{ meta.lines_name }} · nothing is written until you confirm.</p>
+      <h1>D365 Import <span>· Preview</span></h1>
+      <p class="src">{{ meta.headers_name }} + {{ meta.lines_name }} · only NEW orders are imported — nothing is written until you confirm.</p>
     </div>
     <a href="{% url 'b2b_gt_select' %}" class="back">← New upload</a>
   </div>
@@ -21,17 +21,17 @@
   <div class="hub-kpis reveal">
     <div class="hk"><div class="n">{{ r.summary.new }}</div><div class="l">New orders</div></div>
     <div class="hk"><div class="n">{{ r.summary.new_lines }}</div><div class="l">New lines</div></div>
-    <div class="hk"><div class="n">{{ r.summary.qty|compact }}</div><div class="l">Qty</div></div>
-    <div class="hk"><div class="n">{{ r.summary.value|inr_short }}</div><div class="l">Value</div></div>
-    <div class="hk"><div class="n">{{ r.summary.dup }}</div><div class="l">Already imported</div></div>
+    <div class="hk"><div class="n">{{ r.summary.qty|compact }}</div><div class="l">New qty</div></div>
+    <div class="hk"><div class="n">{{ r.summary.value|inr_short }}</div><div class="l">New value</div></div>
+    <div class="hk"><div class="n">{{ r.summary.dup }}</div><div class="l">Already captured</div></div>
   </div>
 
   <form method="post" action="{% url 'b2b_gt_select_confirm' token=token %}">
     {% csrf_token %}
     <div class="confirm-bar">
       <div class="cb-text">
-        {% if r.summary.new %}Import <b>{{ r.summary.new }} order(s)</b> · <b>{{ r.summary.new_lines }} line(s)</b> as <b>GT Select · Offline</b>.
-        {% else %}<span class="cb-warn">Nothing new</span> — all {{ r.summary.total }} order(s) were already imported.{% endif %}
+        {% if r.summary.new %}Import <b>{{ r.summary.new }} new order(s)</b> · <b>{{ r.summary.new_lines }} line(s)</b> — each recorded under its own channel.
+        {% else %}<span class="cb-warn">Nothing new</span> — all {{ r.summary.total }} order(s) are already captured.{% endif %}
         {% if r.summary.dup %}<span class="cb-muted">({{ r.summary.dup }} already present → skipped)</span>{% endif %}
       </div>
       <div class="cb-actions">
@@ -48,25 +48,47 @@
   </div>
   {% endif %}
 
+  {# per-channel breakdown — proves the classify + dedup: only genuinely-new rows import #}
   <div class="im-card reveal">
-    <h2>Orders <span class="count">{{ r.headers|length }}</span></h2>
+    <h2>By channel <span class="count">{{ r.channels|length }}</span></h2>
     <div class="scroll">
     <table class="grid compact">
-      <thead><tr><th>SO No</th><th>External Doc</th><th>Customer</th><th>Whse</th><th>Date</th><th class="r">Lines</th><th class="r">Qty</th><th class="r">Value</th><th>Status</th></tr></thead>
+      <thead><tr><th>Segment</th><th>Marketplace</th><th class="r">New</th><th class="r">Already captured</th><th class="r">New qty</th><th class="r">New value</th></tr></thead>
       <tbody>
-        {% for h in r.headers %}
-        <tr class="{% if not h.is_new %}rnim{% endif %}">
+        {% for c in r.channels %}
+        <tr class="{% if not c.new %}rnim{% endif %}">
+          <td>{{ c.segment }}</td>
+          <td><b>{{ c.marketplace }}</b></td>
+          <td class="r">{% if c.new %}<span class="st ok">{{ c.new }}</span>{% else %}0{% endif %}</td>
+          <td class="r muted">{{ c.dup }}</td>
+          <td class="r">{{ c.new_qty }}</td>
+          <td class="r">{{ c.new_value|inr_short }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="im-card reveal">
+    <h2>New orders <span class="count">{{ r.summary.new }}</span></h2>
+    <div class="scroll">
+    <table class="grid compact">
+      <thead><tr><th>SO No</th><th>External Doc</th><th>Channel</th><th>Customer / Ship-to</th><th>Whse</th><th>Date</th><th class="r">Lines</th><th class="r">Qty</th><th class="r">Value</th></tr></thead>
+      <tbody>
+        {% for h in r.headers %}{% if h.is_new %}
+        <tr>
           <td class="mono">{{ h.so_no }}</td>
           <td class="mono">{{ h.external_doc|default:'—' }}</td>
-          <td class="desc" title="{{ h.location }}">{{ h.location }}</td>
+          <td><span class="st ok">{{ h.marketplace }}</span></td>
+          <td class="desc" title="{{ h.ship_name }}{% if h.postcode %} · {{ h.postcode }}{% endif %}">{{ h.ship_name|default:'—' }}</td>
           <td class="mono">{{ h.warehouse }}</td>
           <td class="muted">{% if h.po_date %}{{ h.po_date|date:"d M Y" }}{% else %}—{% endif %}</td>
           <td class="r">{{ h.line_count }}</td>
           <td class="r">{{ h.qty }}</td>
           <td class="r">{{ h.order_value|inr_short }}</td>
-          <td>{% if h.is_new %}<span class="st ok">NEW</span>{% else %}<span class="st">dup</span>{% endif %}</td>
         </tr>
-        {% endfor %}
+        {% endif %}{% endfor %}
       </tbody>
     </table>
     </div>

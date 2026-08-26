@@ -108,3 +108,44 @@ td.rv-mis{background:color-mix(in srgb,var(--red) 8%,transparent);}
 .rv-selc{display:inline-block;min-width:16px;padding:0 5px;margin-left:2px;border-radius:999px;
   background:#ffffff2b;font-variant-numeric:tabular-nums;font-weight:800;}
 .rv-confirm form button:disabled{opacity:.5;cursor:not-allowed;}
+
+/* ── Capture external orders → tracker (separate action) ── */
+.rv-capture{border:1px solid color-mix(in srgb,var(--accent) 30%,var(--border));
+  box-shadow:0 6px 22px -14px color-mix(in srgb,var(--accent) 60%,transparent);}
+.rv-capture.done{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  border-color:#a7f3d0;background:linear-gradient(180deg,#f0fdf7,#fff);}
+.rv-cap-head h2{display:flex;align-items:center;gap:8px;}
+.rv-cap-head .count{color:var(--accent);}
+.rv-cap-kpis{margin-top:6px;}
+.rv-cap-chan{margin-top:12px;}
+.rv-cap-classify{margin-top:14px;border:1px solid #f5b74a;border-left:4px solid #f59e0b;
+  border-radius:12px;background:#fff8ed;padding:12px 14px;}
+.rv-cap-cl-h{font-size:13px;color:#7a4a06;line-height:1.5;margin-bottom:10px;}
+.rv-cap-cl-row{display:grid;grid-template-columns:minmax(170px,1.4fr) 1fr 1fr 1fr;gap:8px;
+  align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:10px;
+  padding:8px 10px;margin-bottom:8px;}
+@media(max-width:760px){.rv-cap-cl-row{grid-template-columns:1fr;}}
+.rv-cap-cl-pg{display:flex;flex-direction:column;min-width:0;}
+.rv-cap-cl-pg b{font-size:12.5px;font-family:Consolas,monospace;color:var(--text);}
+.rv-cap-cl-pg span{font-size:10.5px;color:var(--muted);}
+.rv-cap-cl-row select{padding:6px 8px;border:1px solid var(--border);border-radius:8px;
+  font-size:12.5px;background:var(--surface);color:var(--text);font-family:inherit;}
+.rv-cap-cl-row select[hidden]{display:none;}
+.rv-cap-actions{display:flex;align-items:center;gap:12px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap;}
+.rv-cap-msg{font-size:12px;color:var(--muted);margin-right:auto;}
+/* selectable push list — tick which externals to record */
+.rv-cap-list{margin-top:16px;}
+.rv-cap-list-h{display:flex;align-items:center;gap:14px;margin-bottom:8px;font-size:12.5px;}
+.rv-cap-selall{display:inline-flex;align-items:center;gap:6px;font-weight:700;color:var(--text);cursor:pointer;}
+.rv-cap-selc{color:var(--muted);}
+.rv-cap-scroll{max-height:360px;overflow:auto;border-radius:var(--radius,10px);}
+.rv-cap-otbl .chk-col{width:34px;text-align:center;}
+.rv-cap-otbl thead th{position:sticky;top:0;z-index:1;background:var(--surface-2,#f8fafc);}
+
+/* Empty D365 SO shells (0 qty · 0 value · no lines) — struck through + dimmed so
+   they read as skippable, not real orders. */
+.rv-otable tr.rv-empty > td{color:var(--muted);text-decoration:line-through;opacity:.62;}
+.rv-otable tr.rv-empty > td.rv-chk-col,
+.rv-otable tr.rv-empty > td.rv-caret-col{text-decoration:none;}
+.rv-otable tr.rv-empty .rv-ext,
+.rv-otable tr.rv-empty .mono{text-decoration:none;}

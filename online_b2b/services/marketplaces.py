@@ -144,6 +144,30 @@ def db_key_to_display() -> dict:
     return {c.db_key: c.display for c in CHANNELS if c.db_key}
 
 
+def classification_options() -> dict:
+    """Options for the D365-import "place this unknown posting group" control —
+    Segment → Marketplace → (MT child). Values are what we STORE in
+    ``order_headers`` (segment / marketplace / marketplace_label), so the JS can
+    send them straight back. MT is the one parent with children."""
+    online, offline, mt_children = [], [], []
+    for c in CHANNELS:
+        if c.parent == 'mt_select':
+            mt_children.append({'value': c.db_label or c.display, 'label': c.display})
+        elif c.segment == 'Online':
+            online.append({'value': c.db_key or c.display, 'label': c.display})
+        elif c.segment == 'Offline' and c.key != 'mt_select':
+            offline.append({'value': c.db_key or c.display, 'label': c.display, 'mt': False})
+    offline.append({'value': 'MT', 'label': 'MT Select', 'mt': True})   # parent of the children
+    online.sort(key=lambda o: o['label'])
+    offline.sort(key=lambda o: o['label'])
+    mt_children.sort(key=lambda o: o['label'])
+    return {
+        'segments': [{'value': 'OnlineB2B', 'label': 'Online B2B'},
+                     {'value': 'Offline', 'label': 'Offline'}],
+        'online': online, 'offline': offline, 'mt_children': mt_children,
+    }
+
+
 def children_of(key: str) -> list[Channel]:
     """The child channels nested under ``key`` (in display order); [] if none."""
     return [c for c in CHANNELS if c.parent == key]

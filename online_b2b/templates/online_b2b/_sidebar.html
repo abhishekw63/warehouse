@@ -53,8 +53,8 @@
     reach it directly at /b2b/full-validation/ if ever needed.{% endcomment %}
     {# STANDALONE Record Verification (removable) #}
     {# Record Verify — FLAT links (Verify + History): plain <a> like every other nav item, no collapsible JS. #}
-    <a href="{% url 'b2b_record_verify' %}" class="sn{% if '/record-verify' in request.path and '/record-verify/log' not in request.path %} on{% endif %}" title="Record Verify — reconcile recorded data vs D365">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='verify' %}</span><span class="side-label">Record Verify</span></a>
+    <a href="{% url 'b2b_record_verify' %}" class="sn{% if '/record-verify' in request.path and '/record-verify/log' not in request.path %} on{% endif %}" title="D365 Verify &amp; Capture — reconcile recorded orders vs D365, and capture the uncaptured (GT Select / external) into the tracker">
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='verify' %}</span><span class="side-label">Verify &amp; Capture</span></a>
     <a href="{% url 'b2b_record_verify_log' %}" class="sn sn-dim{% if '/record-verify/log' in request.path %} on{% endif %}" title="Verification history — Verified / Mismatch / External">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='history' %}</span><span class="side-label">RV History</span></a>
 
