@@ -1183,30 +1183,65 @@ def tracker_insights(segment='', marketplace='', warehouse='', q='',
                         w.append(f"DATE(h.run_ts) <= {ph}"); a.append(uploaded_to)
                 return ((' AND ' + ' AND '.join(w)) if w else ''), a
 
-            # 1) daily trend — last `days`, segment-split (ignores date filter)
+            # 1) daily trend — segment-split. Adapts granularity to the selection:
+            #      • a SINGLE selected day  → HOURLY (x = hours of that day)
+            #      • an explicit multi-day range → that range, by DAY
+            #      • no range → the last `days` days, by DAY
+            #    (Was hardcoded last-30 ignoring the filter; a single day showed 1 dot.)
             wsql, args = flt(False)
-            cur.execute(
-                f"SELECT DATE(h.run_ts), h.segment, COUNT(DISTINCT h.po), "
-                f"COALESCE(SUM(h.order_value),0) FROM {latest} WHERE "
-                f"DATE(h.run_ts) >= (CURDATE() - INTERVAL {int(days)} DAY){wsql} "
-                f"GROUP BY DATE(h.run_ts), h.segment", tuple(args))
-            dmap = {}
-            for dt, seg, cnt, v in cur.fetchall():
-                ds = dt.isoformat() if hasattr(dt, 'isoformat') else str(dt)
-                dmap.setdefault(ds, {})[str(seg or 'Other')] = (int(cnt or 0), float(v or 0))
-            try:
-                end = _dt2.date.fromisoformat(day) if day else _dt2.date.today()
-            except Exception:  # noqa: BLE001
-                end = _dt2.date.today()
-            labels = [(end - _dt2.timedelta(days=i)).isoformat()
-                      for i in range(int(days), -1, -1)]
+            rng = bool(uploaded_from and uploaded_to)
+            single_day = rng and uploaded_from == uploaded_to
+            if single_day:
+                cur.execute(
+                    f"SELECT HOUR(h.run_ts), h.segment, COUNT(DISTINCT h.po), "
+                    f"COALESCE(SUM(h.order_value),0) FROM {latest} WHERE "
+                    f"DATE(h.run_ts) = {ph}{wsql} GROUP BY HOUR(h.run_ts), h.segment",
+                    tuple([uploaded_from] + args))
+                dmap = {}
+                for hr, seg, cnt, v in cur.fetchall():
+                    dmap.setdefault('%02d' % int(hr or 0), {})[str(seg or 'Other')] = (int(cnt or 0), float(v or 0))
+                hrs = [int(h) for h in dmap]
+                lo, hi = (min(hrs), max(hrs)) if hrs else (0, 23)
+                labels = ['%02d' % h for h in range(lo, hi + 1)]
+                gran = 'hour'
+            else:
+                if rng:
+                    dwhere, dargs = f"DATE(h.run_ts) BETWEEN {ph} AND {ph}", [uploaded_from, uploaded_to]
+                else:
+                    dwhere, dargs = f"DATE(h.run_ts) >= (CURDATE() - INTERVAL {int(days)} DAY)", []
+                cur.execute(
+                    f"SELECT DATE(h.run_ts), h.segment, COUNT(DISTINCT h.po), "
+                    f"COALESCE(SUM(h.order_value),0) FROM {latest} WHERE "
+                    f"{dwhere}{wsql} GROUP BY DATE(h.run_ts), h.segment", tuple(dargs + args))
+                dmap = {}
+                for dt, seg, cnt, v in cur.fetchall():
+                    ds = dt.isoformat() if hasattr(dt, 'isoformat') else str(dt)
+                    dmap.setdefault(ds, {})[str(seg or 'Other')] = (int(cnt or 0), float(v or 0))
+                if rng:
+                    try:
+                        s0 = _dt2.date.fromisoformat(uploaded_from)
+                        e0 = _dt2.date.fromisoformat(uploaded_to)
+                        if s0 > e0:
+                            s0, e0 = e0, s0
+                        span = min((e0 - s0).days, 400)
+                        labels = [(s0 + _dt2.timedelta(days=i)).isoformat() for i in range(span + 1)]
+                    except ValueError:
+                        labels = sorted(dmap.keys())
+                else:
+                    try:
+                        end = _dt2.date.fromisoformat(day) if day else _dt2.date.today()
+                    except Exception:  # noqa: BLE001
+                        end = _dt2.date.today()
+                    labels = [(end - _dt2.timedelta(days=i)).isoformat()
+                              for i in range(int(days), -1, -1)]
+                gran = 'day'
             series = {}
             for sc in ('OnlineB2B', 'Offline'):
                 series[sc] = {
                     'count': [dmap.get(l, {}).get(sc, (0, 0))[0] for l in labels],
                     'value': [round(dmap.get(l, {}).get(sc, (0, 0))[1], 2) for l in labels],
                 }
-            out['daily'] = {'labels': labels, 'series': series}
+            out['daily'] = {'labels': labels, 'series': series, 'gran': gran}
 
             # Parent-level roll-up: group by the COARSE ``marketplace`` column,
             # which already folds families (every Flipkart label → 'Flipkart', all

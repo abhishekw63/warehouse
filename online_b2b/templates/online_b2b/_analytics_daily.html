@@ -135,7 +135,7 @@
               </summary>
               <div class="tchildren">
                 {% for c in m.children %}
-                <a class="tnode tleaf tlink" href="{% url 'b2b_tracker' %}?marketplace={{ c.label|urlencode }}" title="View {{ c.label }} orders">
+                <a class="tnode tleaf tlink" href="{% url 'b2b_tracker' %}?marketplace={{ c.label|urlencode }}{% if start and end %}&uploaded_from={{ start }}&uploaded_to={{ end }}{% endif %}" title="View {{ c.label }} orders{% if start and end %} · {{ start }}{% if start != end %} → {{ end }}{% endif %}{% endif %}">
                   <span class="tname">{{ c.label }}</span>
                   <span class="tmeta">{{ c.pos }} POs · {{ c.qty|compact }} qty · {{ c.value|inr_short }} <span class="tgo">→</span></span>
                   <span class="tbar"><span style="width:{{ c.bar }}%"></span></span>
@@ -144,7 +144,7 @@
               </div>
             </details>
             {% else %}
-            <a class="tnode tleaf tlink" href="{% url 'b2b_tracker' %}?marketplace={{ m.children.0.label|urlencode }}" title="View {{ m.marketplace }} orders">
+            <a class="tnode tleaf tlink" href="{% url 'b2b_tracker' %}?marketplace={{ m.children.0.label|urlencode }}{% if start and end %}&uploaded_from={{ start }}&uploaded_to={{ end }}{% endif %}" title="View {{ m.marketplace }} orders{% if start and end %} · {{ start }}{% if start != end %} → {{ end }}{% endif %}{% endif %}">
               <span class="tname">{{ m.marketplace }}</span>
               <span class="tmeta">{{ m.pos }} POs · {{ m.qty|compact }} qty · <b>{{ m.value|inr_short }}</b> <span class="tgo">→</span></span>
               <span class="tbar"><span style="width:{{ m.bar }}%"></span></span>

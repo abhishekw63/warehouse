@@ -72,7 +72,10 @@
     if (tr) {
       var dl = (d.daily && d.daily.labels) || [], ser = (d.daily && d.daily.series) || {};
       var pick = function (code) { return ((ser[code] || {})[metric]) || []; };
-      var fmtLbl = dl.map(function (s) { return s.slice(5); });   // MM-DD
+      // day granularity → MM-DD; a single selected day comes back HOURLY → format 9a/12p
+      var gran = (d.daily && d.daily.gran) || 'day';
+      var hourFmt = function (h) { h = +h; var ap = h < 12 ? 'a' : 'p'; var hh = h % 12; if (!hh) hh = 12; return hh + ap; };
+      var fmtLbl = dl.map(function (s) { return gran === 'hour' ? hourFmt(s) : s.slice(5); });
       tr.setOption({
         grid: { left: 6, right: 12, top: 14, bottom: 4, containLabel: true },
         tooltip: {
@@ -199,6 +202,12 @@
     else if (lbls.length) txt = lbls[0] + '  →  ' + lbls[lbls.length - 1] + ' · last 30d';
     else txt = 'last 30 days';
     el.textContent = '📅 ' + txt;
+    // keep the trend card's own note honest (a single day comes back hourly)
+    var note = document.getElementById('tiTrendNote');
+    if (note) {
+      var single = from && to && from === to;
+      note.textContent = (single ? 'hourly · ' + from : (from || to ? 'selected range' : 'last 30 days')) + ' · dept-split';
+    }
   }
 
   var inflight = false;
