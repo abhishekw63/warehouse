@@ -195,7 +195,10 @@ html.enh-on #toast-container .toast{display:none !important;}
   cursor:pointer;user-select:none;white-space:nowrap;}
 .enh-table thead th.enh-nosort{cursor:default;}
 .enh-table thead th.enh-nosort .enh-arrow{display:none;}
-.enh-table thead th .enh-arrow{opacity:.5;font-size:11px;margin-left:5px;color:var(--accent,#4f46e5);transition:opacity .12s;}
+/* Arrow is absolutely positioned (th is position:sticky = its containing block) so
+   injecting it post-load adds ZERO layout width → no column re-width / reflow. It
+   sits inside the existing header right-padding, so no padding change is needed. */
+.enh-table thead th .enh-arrow{position:absolute;right:7px;top:50%;transform:translateY(-50%);opacity:.5;font-size:11px;color:var(--accent,#4f46e5);transition:opacity .12s;}
 .enh-table thead th:hover .enh-arrow{opacity:.85;}
 .enh-table thead th[aria-sort="ascending"]  .enh-arrow{opacity:1;font-weight:700;}
 .enh-table thead th[aria-sort="descending"] .enh-arrow{opacity:1;font-weight:700;}
@@ -229,7 +232,7 @@ html.enh-on #toast-container .toast{display:none !important;}
    ───────────────────────────────────────────────────────────────────────── */
 @view-transition { navigation: auto; }
 
-@keyframes enhPageIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+@keyframes enhPageIn { from { opacity:0; } to { opacity:1; } }   /* opacity-only — no rise */
 #MainContent { animation: enhPageIn .30s cubic-bezier(.2,.7,.3,1) both; }
 
 /* Smooth interactive feedback on the common controls (colour/border/shadow —
@@ -286,7 +289,7 @@ table.skux th:nth-child(7),table.skux td:nth-child(7){width:11%;text-align:cente
 .skux td.barcell{position:relative;overflow:hidden;}
 .skux td.barcell .bar{position:absolute;left:50%;transform:translateX(-50%) scaleX(1);bottom:5px;top:auto;right:auto;height:3px;border-radius:3px;z-index:0;min-width:6px;max-width:calc(100% - 24px);background:linear-gradient(90deg,color-mix(in srgb,#10b981 55%,transparent),color-mix(in srgb,var(--green) 75%,transparent));transform-origin:center;animation:skuxbar .7s cubic-bezier(.2,.85,.25,1) both;}
 @keyframes skuxbar{from{transform:translateX(-50%) scaleX(0);opacity:.3;}to{transform:translateX(-50%) scaleX(1);opacity:1;}}
-table.skux tbody{animation:skuxrows .45s ease both;} @keyframes skuxrows{from{opacity:0;transform:translateY(6px);}to{opacity:1;transform:none;}}
+table.skux tbody{animation:skuxrows .45s ease both;} @keyframes skuxrows{from{opacity:0;}to{opacity:1;}}   /* opacity-only */
 .skux td.barcell b{position:relative;z-index:1;}
 @media (prefers-reduced-motion: reduce){.skux td.barcell .bar,table.skux tbody{animation:none;}}
 
@@ -416,7 +419,7 @@ table.skux tbody{animation:skuxrows .45s ease both;} @keyframes skuxrows{from{op
 .enh-table tbody tr:nth-child(10){animation-delay:.29s}
 .enh-table tbody tr:nth-child(11){animation-delay:.32s}
 .enh-table tbody tr:nth-child(12){animation-delay:.35s}
-@keyframes enhRowIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+@keyframes enhRowIn{from{opacity:0;}to{opacity:1;}}   /* opacity-only — rows don't slide/settle */
 /* Row-reveal must NOT re-fire when a hidden tab becomes visible: showing a
    display:none pane restarts its CSS animations, which flickered the rows on
    EVERY tab switch (the "flash" on switching to/from Already uploaded). The pane

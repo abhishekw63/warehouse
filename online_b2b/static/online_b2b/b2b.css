@@ -30,12 +30,12 @@
 /* The content region carries the motion — old lifts out, new rises in. */
 ::view-transition-old(b2b-main){ animation: b2b-main-out .20s ease-in both; }
 ::view-transition-new(b2b-main){ animation: b2b-main-in  .44s cubic-bezier(.2,.7,.2,1) both; }
-::view-transition-group(b2b-main){ animation-duration:.44s; }
+::view-transition-group(b2b-main){ animation:none; }   /* no box size/position morph → no resize between pages */
 
 @keyframes b2b-fade-out{ to{ opacity:0; } }
 @keyframes b2b-fade-in { from{ opacity:0; } to{ opacity:1; } }
-@keyframes b2b-main-out{ to  { opacity:0; transform:translateY(-8px); } }
-@keyframes b2b-main-in { from{ opacity:0; transform:translateY(16px); } to{ opacity:1; transform:none; } }
+@keyframes b2b-main-out{ to  { opacity:0; } }
+@keyframes b2b-main-in { from{ opacity:0; } to{ opacity:1; } }   /* opacity-only — no slide/resize */
 
 @media (prefers-reduced-motion: reduce){
   ::view-transition-old(root), ::view-transition-new(root),
@@ -66,7 +66,7 @@ body.b2b-app #MainContent{ opacity:1 !important; animation:none !important; }
    header DOM are never re-rendered. This is the content's fade-in on each swap
    (must out-specify the animation:none above). */
 body.b2b-app #MainContent.nav-in{ animation:navIn .24s cubic-bezier(.2,.7,.2,1) !important; }
-@keyframes navIn{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:none; } }
+@keyframes navIn{ from{ opacity:0; } to{ opacity:1; } }   /* opacity-only — no slide on partial nav */
 @media (prefers-reduced-motion: reduce){ body.b2b-app #MainContent.nav-in{ animation:none !important; } }
 
 /* No sidebar transition may play on page LOAD — only on real user interaction.
@@ -220,7 +220,7 @@ section h2 .export:hover{background:#d8f0e4;}
 /* tables ------------------------------------------------------- */
 table.grid{width:100%;border-collapse:separate;border-spacing:0;font-size:13px;background:var(--surface);
   border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);}
-table.grid th{background:var(--surface-2);color:var(--text-2);text-align:left;padding:11px 13px;
+table.grid th{background:var(--surface-2);color:var(--text-2);text-align:left;padding:11px 13px;white-space:nowrap;
   font-weight:600;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;
   border-bottom:1px solid var(--border);white-space:nowrap;}
 th.srt{cursor:pointer;user-select:none;} th.srt:hover{color:var(--accent);}
@@ -350,7 +350,7 @@ tr.rexcl td{background:#f6f7f9;color:#8b94a3;} tr.rexcl td.mono,tr.rexcl td.desc
 .orders-panel{margin-top:2px;}
 
 /* entrance animation (landing only — static blocks) */
-@keyframes fadeUp{from{opacity:0;transform:translateY(12px);}to{opacity:1;transform:none;}}
+@keyframes fadeUp{from{opacity:0;}to{opacity:1;}}   /* opacity-only — no rise */
 .reveal{animation:fadeUp .5s ease both;animation-delay:calc(var(--i,0)*.06s);}
 .kpis.reveal{animation:none;}
 .kpis.reveal .card{animation:fadeUp .45s ease both;}
