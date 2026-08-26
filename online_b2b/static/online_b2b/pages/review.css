@@ -69,13 +69,21 @@
      4 cols are sticky). Included = green, Excluded = grey + strikethrough. The
      > td selector (specificity beats the sticky-cell background) tints frozen
      cells too; a left accent bar sits on the always-visible checkbox column. */
-  .aff-tbl tr.dec-included > td{background:color-mix(in srgb,#16a34a 10%,var(--surface));}
-  .aff-tbl tr.dec-included > td.chk-col{box-shadow:inset 3px 0 0 #16a34a;}
+  /* Include (our CP) = OVERRIDE → GREEN (we price it at OUR CP) */
+  .aff-tbl tr.dec-ourcp > td{background:color-mix(in srgb,#16a34a 10%,var(--surface));}
+  .aff-tbl tr.dec-ourcp > td.chk-col{box-shadow:inset 3px 0 0 #16a34a;}
+  /* Include (their CP) = INCLUDE → AMBER (we accept the VENDOR's CP — flag it apart) */
+  .aff-tbl tr.dec-theircp > td{background:color-mix(in srgb,#d97706 13%,var(--surface));}
+  .aff-tbl tr.dec-theircp > td.chk-col{box-shadow:inset 3px 0 0 #d97706;}
   .aff-tbl tr.dec-excluded > td{background:color-mix(in srgb,var(--muted) 14%,var(--surface));color:var(--muted);text-decoration:line-through;}
   .aff-tbl tr.dec-excluded > td.chk-col{box-shadow:inset 3px 0 0 var(--muted);text-decoration:none;}
   .aff-tbl tr.dec-excluded select,.aff-tbl tr.dec-excluded input{text-decoration:none;color:var(--text);}
   /* Calm the STATUS badge once a line is DECIDED — red MISMATCH means "still open".
      Included → green (resolved), Excluded → grey (dropped, inherits strikethrough).
      So red only ever marks UNDECIDED lines that still need attention. */
-  .aff-tbl tr.dec-included .st{background:color-mix(in srgb,#16a34a 15%,transparent);color:#16a34a;}
+  .aff-tbl tr.dec-ourcp .st{background:color-mix(in srgb,#16a34a 15%,transparent);color:#16a34a;}
+  .aff-tbl tr.dec-theircp .st{background:color-mix(in srgb,#d97706 16%,transparent);color:#b45309;}
+  /* Reset-all — set apart from the apply buttons (a cautious clear) */
+  #affBulk .abk-reset{border-color:#f3b0aa;color:#b91c1c;background:var(--surface);}
+  #affBulk .abk-reset:hover{background:#fdecec;border-color:#e11d48;}
   .aff-tbl tr.dec-excluded .st{background:color-mix(in srgb,var(--muted) 18%,transparent);color:var(--muted);}

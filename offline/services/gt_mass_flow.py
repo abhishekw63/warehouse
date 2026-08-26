@@ -15,6 +15,8 @@ compare, so no Override). Excluded lines are dropped before recording.
 """
 from __future__ import annotations
 
+import os as _os
+
 from .gt_mass_bridge import MARKETPLACE, GTMassRecorder
 
 
@@ -93,6 +95,7 @@ class GTMassProcessor:
                 blocked.append({'po': so, 'location': o.get('location'),
                                 'qty': o['qty'], 'order_value': o['order_value'],
                                 'marketplace_label': MARKETPLACE,
+                                'files': [_os.path.basename(f) for f in (o.get('source_files') or [])],
                                 'reasons': o.get('block_reasons') or []})
                 continue
             if so in existing and phase == 'preview':

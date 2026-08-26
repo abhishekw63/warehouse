@@ -20,8 +20,9 @@ var CFG = JSON.parse(document.getElementById("review-cfg").textContent);
     if (!row) return;
     var cp = row.querySelector('.act-ocp');
     function decorate() {                            // row-wide colour, visible at any scroll
-      row.classList.remove('dec-included', 'dec-excluded');
-      if (sel.value === 'INCLUDE' || sel.value === 'OVERRIDE') row.classList.add('dec-included');
+      row.classList.remove('dec-ourcp', 'dec-theircp', 'dec-excluded');
+      if (sel.value === 'OVERRIDE') row.classList.add('dec-ourcp');       // Include (our CP) → green
+      else if (sel.value === 'INCLUDE') row.classList.add('dec-theircp'); // Include (their CP) → amber
       else if (sel.value === 'EXCLUDE') row.classList.add('dec-excluded');
     }
     function sync() {
@@ -176,8 +177,9 @@ var CFG = JSON.parse(document.getElementById("review-cfg").textContent);
                      : '';
         rowOcp.setAttribute('readonly', 'readonly');
       }
-      tr.classList.remove('dec-included', 'dec-excluded');   // row-wide decision colour
-      if (act === 'INCLUDE' || act === 'OVERRIDE') tr.classList.add('dec-included');
+      tr.classList.remove('dec-ourcp', 'dec-theircp', 'dec-excluded');   // row-wide decision colour
+      if (act === 'OVERRIDE') tr.classList.add('dec-ourcp');        // Include (our CP) → green
+      else if (act === 'INCLUDE') tr.classList.add('dec-theircp');  // Include (their CP) → amber
       else if (act === 'EXCLUDE') tr.classList.add('dec-excluded');
       // collect for ONE batched save (not a POST per row)
       var keyEl = tr.querySelector('input[name=aff_key]'), rem = tr.querySelector('.act-rem');
@@ -205,6 +207,36 @@ var CFG = JSON.parse(document.getElementById("review-cfg").textContent);
     var msg = document.getElementById('affBulkMsg');
     if (msg) { msg.textContent = '✓ EAN filled into ' + filled + ' row(s) — now “Apply & re-validate”'; msg.hidden = false;
       setTimeout(function () { msg.hidden = true; }, 3000); }
+  });
+
+  // ── Reset all — clear EVERY decision on the affected lines (undo an accidental
+  //    bulk apply). Confirms first, then batch-saves the cleared state. ──
+  var bulkReset = document.getElementById('bulkReset');
+  if (bulkReset) bulkReset.addEventListener('click', function () {
+    var trs = Array.prototype.slice.call(document.querySelectorAll('#confirm-form tbody tr'));
+    var setN = trs.filter(function (tr) {
+      var s = tr.querySelector('[name=aff_action]'); return s && !s.disabled && s.value;
+    }).length;
+    var msg = document.getElementById('affBulkMsg');
+    if (!setN) { if (msg) { msg.textContent = 'Nothing to reset.'; msg.hidden = false; setTimeout(function () { msg.hidden = true; }, 1800); } return; }
+    if (!window.confirm('Clear ALL ' + setN + ' decision(s) on the affected lines? They go back to unset.')) return;
+    var items = [];
+    trs.forEach(function (tr) {
+      var sel = tr.querySelector('[name=aff_action]');
+      if (!sel || sel.disabled) return;
+      sel.value = '';
+      var ocp = tr.querySelector('.act-ocp'); if (ocp) { ocp.value = ''; ocp.setAttribute('readonly', 'readonly'); }
+      tr.classList.remove('dec-ourcp', 'dec-theircp', 'dec-excluded');
+      var tick = tr.querySelector('.dec-saved'); if (tick) tick.hidden = true;
+      var keyEl = tr.querySelector('input[name=aff_key]'), rem = tr.querySelector('.act-rem');
+      if (keyEl) items.push({ key: keyEl.value, action: '', override_cp: '', remark: rem ? rem.value : '' });
+    });
+    affChks().forEach(function (c) { c.checked = false; });
+    if (affAll) affAll.checked = false;
+    refreshCount();
+    var bulkSel = document.getElementById('bulkAction'); if (bulkSel) bulkSel.value = '';
+    if (items.length) saveDecisionsBatch(items);
+    if (msg) { msg.textContent = '↺ Cleared ' + setN + ' decision(s)'; msg.hidden = false; setTimeout(function () { msg.hidden = true; }, 2400); }
   });
 
   // ── NOTHING progresses until you click a button ───────────────────────
