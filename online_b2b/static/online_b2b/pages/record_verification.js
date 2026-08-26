@@ -197,9 +197,10 @@
       var mp = mpEl.value; if (!seg || !mp) return;
       var isMT = (mp === 'MT'), childV = chEl.hidden ? '' : chEl.value; if (isMT && !childV) return;
       var mpText = mpEl.options[mpEl.selectedIndex] ? mpEl.options[mpEl.selectedIndex].text : mp;
-      var chText = chEl.hidden || !chEl.options[chEl.selectedIndex] ? '' : chEl.options[chEl.selectedIndex].text;
+      // MT child: the option VALUE is the canonical db_label the tracker keys on
+      // (e.g. 'Health & Glow'), NOT its display text ('H&G').
       overrides[row.getAttribute('data-key')] = { posting_group: row.getAttribute('data-pg'),
-        segment: seg, marketplace: mp, marketplace_label: isMT ? chText : mpText };
+        segment: seg, marketplace: mp, marketplace_label: isMT ? chEl.value : mpText };
     });
     update();
   }

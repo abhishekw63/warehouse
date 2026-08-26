@@ -2995,7 +2995,8 @@ class GtSelectImportView(LoginRequiredMixin, View):
         overrides = {}
         if _gts_is_ajax(request):
             try:
-                overrides = (json.loads(request.body or '{}') or {}).get('overrides') or {}
+                _b = json.loads(request.body or '{}')
+                overrides = (_b.get('overrides') if isinstance(_b, dict) else None) or {}
             except (ValueError, TypeError):
                 overrides = {}
         from .services import gt_select_import as gts

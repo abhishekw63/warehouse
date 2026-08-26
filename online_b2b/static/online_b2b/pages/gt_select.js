@@ -144,9 +144,10 @@
       var isMT = (mp === 'MT'), childV = chEl.hidden ? '' : chEl.value;
       if (isMT && !childV) return;                       // MT needs a child
       var mpText = mpEl.options[mpEl.selectedIndex] ? mpEl.options[mpEl.selectedIndex].text : mp;
-      var chText = chEl.hidden || !chEl.options[chEl.selectedIndex] ? '' : chEl.options[chEl.selectedIndex].text;
+      // MT child: store the option VALUE (canonical db_label, e.g. 'Health & Glow'),
+      // not its display text ('H&G'), so the tracker's channel auto-detect matches.
       ov[key] = { posting_group: pg, segment: seg, marketplace: mp,
-                  marketplace_label: isMT ? chText : mpText };
+                  marketplace_label: isMT ? childV : mpText };
     });
     STATE.overrides = ov;
     updateConfirm();

@@ -138,7 +138,8 @@
         <tbody>
           {% for o in capture.new_orders %}
           <tr>
-            <td class="chk-col"><input type="checkbox" class="rv-cap-chk" value="{{ o.external_doc|default:o.so_no }}" checked></td>
+            {# key on the UNIQUE SO No (per-SO), not External Doc — two SOs can share one Ext Doc #}
+            <td class="chk-col"><input type="checkbox" class="rv-cap-chk" value="{{ o.so_no|default:o.external_doc }}" checked></td>
             <td class="mono strong">{{ o.external_doc|default:o.so_no }}</td>
             <td class="mono">{{ o.so_no|default:'—' }}</td>
             <td><span class="st ok">{{ o.marketplace }}</span></td>

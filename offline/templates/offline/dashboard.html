@@ -41,9 +41,10 @@
                 <span style="font-size: 12px; color: #777; margin-top: 10px; text-transform: uppercase; letter-spacing: 1px;">EBO · Kiosk · Airport → SO/TO — upload · review · record</span>
             </a>
 
-            {# GT Select is AUTO — staged in D365, auto-punched by DMS, so it never runs a
-               standalone flow. It's auto-fetched from the D365 Sales Orders (Headers) + Sales
-               Lines and captured + verified inside Record Verification. Not openable here. #}
+            {% comment %}GT Select is AUTO — staged in D365, auto-punched by DMS, so it never
+               runs a standalone flow. It's auto-fetched from the D365 Sales Orders (Headers) +
+               Sales Lines and captured + verified inside D365 Verify & Capture. Not openable
+               here.{% endcomment %}
             <div class="department-card" style="cursor:default;pointer-events:none;opacity:.92;background:linear-gradient(180deg,#faf9ff,#fff);border-color:#e6e1fb;">
                 <h2>GT Select <span style="font-size:9px;font-weight:800;letter-spacing:.08em;color:#7c3aed;background:#f3f0ff;border:1px solid #ddd6fe;border-radius:5px;padding:2px 6px;vertical-align:middle;">AUTO</span></h2>
                 <span style="font-size: 12px; color: #777; margin-top: 10px; display:block; text-transform: uppercase; letter-spacing: 1px;">Auto-fetched · D365 headers + lines → captured &amp; verified in Record Verification</span>

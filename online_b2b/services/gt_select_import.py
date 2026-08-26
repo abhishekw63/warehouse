@@ -39,7 +39,7 @@ import os
 
 import pandas as pd
 
-from .order_db import _conn
+from .order_db import _conn, _conn_tx
 
 SEGMENT_DEFAULT = 'Offline'
 MARKETPLACE_DEFAULT = 'D365 Import'      # unknown posting group → visible, not silent
@@ -475,7 +475,9 @@ def do_import(headers_path: str, lines_path: str, overrides: dict | None = None,
         return f"{name},{pc}" if (name and pc) else (name or pc)
 
     try:
-        with _conn() as (cur, d):
+        # ATOMIC: run row + headers + lines commit together (no orphan header
+        # without its lines — else dedup would skip it forever on retry).
+        with _conn_tx() as (cur, d):
             ph = d['ph']
             cur.execute(
                 f"INSERT INTO runs (run_ts, mode, source, marketplaces, "
@@ -529,7 +531,7 @@ def do_import(headers_path: str, lines_path: str, overrides: dict | None = None,
                 cur.executemany(
                     f"INSERT INTO order_lines ({', '.join(ln_cols)}) "
                     f"VALUES ({lph})", lpayload)
-            cur.connection.commit()
+            # _conn_tx commits on clean exit / rolls back on any exception above.
         return {'ok': True, 'run_id': run_id, 'imported': len(new_headers),
                 'skipped': len(pv['headers']) - len(new_headers),
                 'lines': len(lpayload)}

@@ -215,8 +215,12 @@ class RecordVerificationRunView(LoginRequiredMixin, View):
                         'qty': h['qty'], 'order_value': h['order_value'],
                         'po_date': h['po_date'].isoformat() if h['po_date'] else '',
                     } for h in cap['headers'] if h['is_new']]
+                    # NB: do NOT cap new_orders — every new order needs a push
+                    # checkbox, else Select-all silently under-captures the tail
+                    # (only_pos would miss them and they'd be mislabelled 'already
+                    # present'). The list is bounded by one D365 dump's new orders.
                     res['capture'] = {'summary': cap['summary'], 'channels': cap['channels'],
-                                      'needs_class': cap['needs_class'], 'new_orders': new_orders[:500]}
+                                      'needs_class': cap['needs_class'], 'new_orders': new_orders}
                     # Externals show their TRUE channel (from Gen. Bus. Posting
                     # Group) instead of 'UNKNOWN' — the D365 file classifies them
                     # even when they aren't in our records yet.
@@ -279,9 +283,10 @@ class RecordVerificationCaptureView(LoginRequiredMixin, View):
             return JsonResponse({'ok': False, 'error': 'Nothing to capture for this check.'}, status=400)
         overrides, only_pos = {}, None
         try:
-            body = json.loads(request.body or '{}') or {}
-            overrides = body.get('overrides') or {}
-            only_pos = body.get('only_pos')          # None = push every new order
+            body = json.loads(request.body or '{}')
+            if isinstance(body, dict):
+                overrides = body.get('overrides') or {}
+                only_pos = body.get('only_pos')      # None = push every new order
         except (ValueError, TypeError):
             pass
         out = gts.do_import(res['headers_path'], res['lines_path'],
