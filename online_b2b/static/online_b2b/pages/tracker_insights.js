@@ -144,7 +144,7 @@
 
   var inflight = false;
   function load(force) {
-    if (bodyEl.hidden) return;                 // only when open
+    if (!panel.classList.contains('open')) return;   // only when open
     var s = sig(), cached = cacheGet(s);
     if (cached && !force) render(cached);      // instant paint from cache
     if (inflight) return;
@@ -155,15 +155,34 @@
       .catch(function () { inflight = false; });
   }
 
-  // ── open / collapse (remembered) ───────────────────────────────────────
-  function setOpen(open) {
-    bodyEl.hidden = !open;
-    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+  // ── open / collapse (remembered) — SMOOTH accordion, not a hard snap ─────
+  var REDUCE = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  function setOpen(open, instant) {
     panel.classList.toggle('open', open);
+    toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
     try { localStorage.setItem(OPEN_KEY, open ? '1' : '0'); } catch (e) { }
-    if (open) load(false);
+    clearTimeout(bodyEl._t);
+    if (open) {
+      bodyEl.hidden = false;
+      load(false);                                   // charts fill the fixed-height cells
+      if (instant || REDUCE) { bodyEl.style.maxHeight = 'none'; bodyEl.style.opacity = '1'; resize(); return; }
+      bodyEl.style.maxHeight = '0px'; bodyEl.style.opacity = '0';
+      void bodyEl.offsetHeight;                       // commit the 0 state, then grow to real height
+      bodyEl.style.maxHeight = bodyEl.scrollHeight + 'px'; bodyEl.style.opacity = '1';
+      bodyEl._t = setTimeout(function () {            // release the cap so filter changes can resize freely
+        if (panel.classList.contains('open')) { bodyEl.style.maxHeight = 'none'; resize(); }
+      }, 360);
+    } else {
+      if (instant || REDUCE) { bodyEl.hidden = true; bodyEl.style.maxHeight = ''; bodyEl.style.opacity = ''; return; }
+      bodyEl.style.maxHeight = bodyEl.scrollHeight + 'px'; bodyEl.style.opacity = '1';
+      void bodyEl.offsetHeight;
+      bodyEl.style.maxHeight = '0px'; bodyEl.style.opacity = '0';
+      bodyEl._t = setTimeout(function () {
+        if (!panel.classList.contains('open')) { bodyEl.hidden = true; bodyEl.style.maxHeight = ''; bodyEl.style.opacity = ''; }
+      }, 360);
+    }
   }
-  toggle.addEventListener('click', function () { setOpen(bodyEl.hidden); });
+  toggle.addEventListener('click', function () { setOpen(!panel.classList.contains('open')); });
 
   // trend metric toggle (orders / value)
   var mseg = document.getElementById('tiTrendMetric');
@@ -188,7 +207,12 @@
     modal.hidden = false; modalOv.hidden = false;
     if (!modalChart) modalChart = window.echarts.init(modalChartEl);
     var opt = charts[id].getOption();
-    if (opt.xAxis && opt.xAxis.length) {
+    // Only the long time-series (≈30 days) is worth a zoom slider. A 7-column
+    // weekday heatmap or a ranking bar just looks odd with a scrollbar under it,
+    // so gate the dataZoom on a CATEGORY x-axis with many points.
+    var xa = opt.xAxis && opt.xAxis[0];
+    var zoomable = xa && xa.type === 'category' && xa.data && xa.data.length > 14;
+    if (zoomable) {
       // scroll/drag zoom + a visible slider; widen the grid so the slider sits
       // below the axis instead of over the labels.
       opt.dataZoom = [{ type: 'inside' }, { type: 'slider', bottom: 14, height: 22 }];
@@ -214,5 +238,5 @@
   // restore open state
   var wasOpen = false;
   try { wasOpen = localStorage.getItem(OPEN_KEY) === '1'; } catch (e) { }
-  if (wasOpen) setOpen(true);
+  if (wasOpen) setOpen(true, true);   // instant on page load — animate only on user toggle
 })();

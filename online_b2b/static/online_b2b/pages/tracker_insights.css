@@ -7,8 +7,12 @@
 .ti-sub{font-size:12px;color:var(--muted);font-weight:600;}
 .ti-caret{margin-left:auto;font-size:12px;color:var(--muted);transition:transform .2s;}
 .ti-panel.open .ti-caret{transform:rotate(180deg);}
-.ti-body{padding:0 16px 16px;border-top:1px solid var(--border-2);}
+/* smooth accordion: JS drives max-height (0 ⇄ real px, then 'none'); overflow
+   clips during the slide. [hidden] keeps it fully gone when closed at rest. */
+.ti-body{padding:0 16px 16px;border-top:1px solid var(--border-2);overflow:hidden;
+  transition:max-height .34s cubic-bezier(.4,0,.2,1),opacity .26s ease;}
 .ti-body[hidden]{display:none;}
+@media (prefers-reduced-motion:reduce){.ti-body{transition:none;}}
 .ti-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:14px;}
 .ti-card{border:1px solid var(--border);border-radius:12px;background:var(--surface);padding:12px 14px 14px;min-width:0;}
 .ti-wide{grid-column:1 / -1;}
