@@ -333,8 +333,13 @@ def existing_recorded(keys: list[str]) -> set:
 
 
 def _order_po(h) -> str:
-    """The order reference we store as ``po`` — the External Document No. (the
-    stable channel PO), falling back to the D365 ``No.`` when it's blank."""
+    """The order reference stored as ``po`` — only two id fields exist (po +
+    external_doc). For **GT Select** the D365 SO ``No.`` (SO/08/26/...) IS the order
+    number, so it's the PO; the External Document No. (the distributor ref) stays in
+    ``external_doc``. Every other channel keeps po = External Doc (== the marketplace
+    PO / order id, which for Online B2B equals the ``No.``), falling back to ``No.``."""
+    if h.get('marketplace_label') == 'GT Select':
+        return h['so_no'] or h['external_doc']
     return h['external_doc'] or h['so_no']
 
 
