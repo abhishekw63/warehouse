@@ -968,6 +968,12 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
     def nk(s):
         return _re.sub(r'[^a-z0-9]', '', str(s or '').lower())
 
+    # tokens for a pasted multi-order list (mirrors _order_search_where): 2+ values →
+    # exact-match any against po/external_doc; a single value stays substring. Used by
+    # the manual-row + facility filters so they agree with the SQL path.
+    _qtoks = [t.strip().lower() for t in _re.split(r'[\n\r,;|\t]+', str(q or '')) if t.strip()]
+    _qmulti = len(set(_qtoks)) >= 2
+
     try:
         with _conn() as (cur, d):
             ph = d['ph']
@@ -991,9 +997,9 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
             if marketplace:
                 base_w.append(f"h.marketplace_label={ph}"); base_a.append(marketplace)
             if q:
-                base_w.append(f"(h.po LIKE {ph} OR h.location LIKE {ph} OR "
-                              f"h.external_doc LIKE {ph} OR h.marketplace_label LIKE {ph})")
-                base_a += [f"%{q}%"] * 4
+                qc, qa = _order_search_where(q, ph)   # pasted multi-order list → exact IN() match
+                if qc:
+                    base_w.append(qc); base_a += qa
             # Uploaded-date window (on the order's run/upload timestamp). Applied to
             # the shared base so the facility chips reflect the same window too.
             if uploaded_from:
@@ -1057,10 +1063,15 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
                     if warehouse and _canon_fac(mm.get('wh')) != warehouse:
                         return False
                     if q:
-                        hay = ' '.join(str(mm.get(k, '')) for k in
-                                       ('po', 'external_doc', 'location', 'marketplace')).lower()
-                        if q.lower() not in hay:
-                            return False
+                        if _qmulti:
+                            if not ({str(mm.get('po', '')).lower(),
+                                     str(mm.get('external_doc', '')).lower()} & set(_qtoks)):
+                                return False
+                        else:
+                            hay = ' '.join(str(mm.get(k, '')) for k in
+                                           ('po', 'external_doc', 'location', 'marketplace')).lower()
+                            if q.lower() not in hay:
+                                return False
                     return True
                 manual = [mm for mm in tracker_store.list_manual() if _keep(mm)]
                 for mm in manual:
@@ -1107,10 +1118,15 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
                     if marketplace and mm.get('marketplace') != marketplace:
                         continue
                     if q:
-                        hay = ' '.join(str(mm.get(k, '')) for k in
-                                       ('po', 'external_doc', 'location', 'marketplace')).lower()
-                        if q.lower() not in hay:
-                            continue
+                        if _qmulti:
+                            if not ({str(mm.get('po', '')).lower(),
+                                     str(mm.get('external_doc', '')).lower()} & set(_qtoks)):
+                                continue
+                        else:
+                            hay = ' '.join(str(mm.get(k, '')) for k in
+                                           ('po', 'external_doc', 'location', 'marketplace')).lower()
+                            if q.lower() not in hay:
+                                continue
                     w = _canon_fac(mm.get('wh'))
                     if w:
                         facs[w] = facs.get(w, 0) + 1
