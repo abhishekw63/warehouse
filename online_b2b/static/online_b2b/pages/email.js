@@ -130,8 +130,6 @@ function emScope(seg, day) {
         t.classList.toggle('on', t.getAttribute('data-seg') === seg);
       });
       EM_DAY = day;                                       // lazy SKU fetch uses the new day
-      var ex = document.getElementById('em-export');      // keep the Excel export on the shown board
-      if (ex && CFG.export) ex.href = CFG.export + '?seg=' + encodeURIComponent(seg) + '&day=' + encodeURIComponent(day);
       try { history.replaceState(null, '', url); } catch (e) {}
       dyn.classList.remove('em-loading-dim');
       emInitNtd();
@@ -139,6 +137,32 @@ function emScope(seg, day) {
     .catch(function () {
       dyn.classList.remove('em-loading-dim');
       window.B2B && B2B.toast('Could not refresh — please retry.', 'error');
+    });
+}
+// Excel export — fetch the multi-sheet workbook as a blob and save it, with the
+// button locked to "Exporting…" while it's in flight so a second click can't fire a
+// duplicate build. Reads the CURRENTLY-shown seg/day at click time.
+function emExport(btn) {
+  if (btn.disabled || !CFG.export) return;
+  var on = document.querySelector('.em-tab.on');
+  var seg = on ? on.getAttribute('data-seg') : (EM_SEG || 'online');
+  var di = document.getElementById('em-day');
+  var day = di ? di.value : EM_DAY;
+  var orig = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '⏳ Exporting…';
+  fetch(CFG.export + '?seg=' + encodeURIComponent(seg) + '&day=' + encodeURIComponent(day),
+        { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    .then(function (r) { if (!r.ok) throw 0; return r.blob(); })
+    .then(function (blob) {
+      var u = URL.createObjectURL(blob), a = document.createElement('a');
+      a.href = u; a.download = 'fulfilment_cockpit_' + seg + '_' + day + '.xlsx';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(u); }, 1500);
+      btn.disabled = false; btn.innerHTML = orig;
+    })
+    .catch(function () {
+      btn.disabled = false; btn.innerHTML = orig;
+      window.B2B && B2B.toast('Export failed — please retry.', 'error');
     });
 }
 // Runs immediately (script is deferred / injected after DOM is ready), so it works
@@ -157,6 +181,8 @@ function emScope(seg, day) {
     var on = document.querySelector('.em-tab.on');
     emScope(on ? on.getAttribute('data-seg') : 'online', day.value);
   });
+  var exp = document.getElementById('em-export');
+  if (exp) exp.addEventListener('click', function () { emExport(exp); });
 })();
 
 (function () {

@@ -31,9 +31,8 @@
         <label for="em-day">Day</label>
         <input type="date" id="em-day" value="{{ d.day }}">
       </div>
-      <a class="btn-ghost em-export" id="em-export" download
-         href="{% url 'b2b_cockpit_export' %}?seg={{ d.seg_filter }}&amp;day={{ d.day }}"
-         title="Export this board to Excel (.xlsx)">⬇ Export Excel</a>
+      <button type="button" class="btn-ghost em-export" id="em-export"
+              title="Export to Excel — Summary · PO-wise · SKU-wise sheets">⬇ Export Excel</button>
     </div>
     {% endif %}
   </div>

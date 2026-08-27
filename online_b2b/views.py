@@ -1440,48 +1440,122 @@ def email_page(request):
 
 @login_required
 def cockpit_export(request):
-    """Excel (.xlsx) of the Fulfilment Cockpit board — per-marketplace fill rate +
-    value breakdown for the current day + segment (the same numbers the page shows,
-    with a per-segment TOTAL row). GET ?day=&seg=. Mirrors the Availability export."""
+    """Multi-sheet Excel of the Fulfilment Cockpit — **Summary** (MP-wise, with a
+    per-segment TOTAL), **PO-wise**, and **SKU-wise** — for the current day + segment,
+    mirroring the Availability export's sheet style. ₹ columns are formatted as INR
+    (Indian grouping), not bare numbers. GET ?day=&seg=."""
+    import io
     import datetime as _dt
-    d = _summary_report(request).data
-    rows = []
-    for s in (d.get('segments') or []):
-        for r in (s.get('rows') or []):
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from .services.summary_email import build_summary
+    day = (request.GET.get('day') or _dt.date.today().isoformat())
+    seg = (request.GET.get('seg') or 'online')
+    data = build_summary(day=day, seg_filter=seg, skip_skus=False)
+
+    INR = '"₹"#,##,##0.00'                       # ₹ with Indian (lakh/crore) grouping
+    hf = Font(bold=True, color='FFFFFF')
+    navy = PatternFill('solid', fgColor='1A237E')
+    tot_font = Font(bold=True)
+    tot_fill = PatternFill('solid', fgColor='E8EAF6')
+
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    def sheet(title, cols, rows, inr_keys=()):
+        ws = wb.create_sheet(title[:31])
+        for ci, (_k, h) in enumerate(cols, 1):
+            c = ws.cell(1, ci, h)
+            c.font = hf; c.fill = navy; c.alignment = Alignment(horizontal='center')
+        iset = set(inr_keys)
+        for ri, row in enumerate(rows, 2):
+            is_total = row.get('__total__')
+            for ci, (k, _h) in enumerate(cols, 1):
+                cell = ws.cell(ri, ci, row.get(k))
+                if k in iset and isinstance(row.get(k), (int, float)):
+                    cell.number_format = INR
+                if is_total:
+                    cell.font = tot_font; cell.fill = tot_fill
+        ws.freeze_panes = 'A2'
+        for col in ws.columns:
+            L = col[0].column_letter
+            w = max((len(str(c.value if c.value is not None else '')) for c in col), default=8)
+            ws.column_dimensions[L].width = min(w + 3, 46)
+
+    smry, po_rows, sku_rows = [], [], []
+    for s in data.get('segments', []):
+        sname = s.get('name', '')
+        for r in s.get('rows', []):
             recv = bool(r.get('received'))
-            rows.append({
-                'segment': s.get('name', ''), 'marketplace': r.get('display', ''),
+            smry.append({
+                'segment': sname, 'marketplace': r.get('display', ''),
                 'status': 'Received' if recv else 'No PO today',
                 'pos': r.get('pos', 0) if recv else 0,
                 'raw_qty': r.get('raw_qty', 0), 'raw_value': r.get('raw_value', 0),
                 'up_qty': r.get('uploaded_qty', 0), 'up_value': r.get('uploaded_value', 0),
                 'ex_qty': r.get('excluded_qty', 0), 'ex_value': r.get('excluded_value', 0),
-                'fill_qty': r.get('billing_qty', 0), 'fill_value': r.get('billing_value', 0),
-                'fill_qty_pct': r.get('fill_qty_pct', ''), 'fill_val_pct': r.get('fill_val_pct', ''),
-                'last_received': '' if recv else r.get('last_received', ''),
+                'bill_qty': r.get('billing_qty', 0), 'bill_value': r.get('billing_value') or 0,
+                'fill_q': r.get('fill_qty_pct', ''), 'fill_v': r.get('fill_val_pct', ''),
+                'last': '' if recv else r.get('last_received', ''),
             })
+            if not recv:
+                continue
+            for p in r.get('pos_detail', []):
+                po_rows.append({
+                    'segment': sname, 'marketplace': r.get('display', ''), 'po': p.get('po', ''),
+                    'raw_qty': p.get('raw_qty', 0), 'raw_value': p.get('raw_value', 0),
+                    'up_qty': p.get('uploaded_qty', 0), 'up_value': p.get('uploaded_value', 0),
+                    'ex_qty': p.get('excluded_qty', 0), 'ex_value': p.get('excluded_value', 0),
+                    'skus': p.get('sku_count', 0),
+                })
+                for sk in p.get('sku_detail', []):
+                    sku_rows.append({
+                        'segment': sname, 'marketplace': r.get('display', ''), 'po': p.get('po', ''),
+                        'item_no': sk.get('item_no', ''), 'ean': sk.get('ean', ''),
+                        'description': sk.get('description', ''),
+                        'raw_qty': sk.get('raw_qty', 0), 'raw_value': sk.get('raw_value', 0),
+                        'up_qty': sk.get('uploaded_qty', 0), 'up_value': sk.get('uploaded_value', 0),
+                        'ex_qty': sk.get('excluded_qty', 0), 'ex_value': sk.get('excluded_value', 0),
+                    })
         t = s.get('totals') or {}
-        rows.append({
-            'segment': s.get('name', ''), 'marketplace': 'TOTAL', 'status': '',
-            'pos': t.get('pos', 0), 'raw_qty': t.get('raw_qty', 0),
-            'raw_value': t.get('raw_value', 0), 'up_qty': t.get('uploaded_qty', 0),
-            'up_value': t.get('uploaded_value', 0), 'ex_qty': t.get('excluded_qty', 0),
-            'ex_value': t.get('excluded_value', 0), 'fill_qty': t.get('billing_qty', 0),
-            'fill_value': t.get('billing_value', 0), 'fill_qty_pct': t.get('fill_qty_pct', ''),
-            'fill_val_pct': t.get('fill_val_pct', ''), 'last_received': '',
+        smry.append({
+            '__total__': True, 'segment': sname, 'marketplace': 'TOTAL', 'status': '',
+            'pos': t.get('pos', 0), 'raw_qty': t.get('raw_qty', 0), 'raw_value': t.get('raw_value', 0),
+            'up_qty': t.get('uploaded_qty', 0), 'up_value': t.get('uploaded_value', 0),
+            'ex_qty': t.get('excluded_qty', 0), 'ex_value': t.get('excluded_value', 0),
+            'bill_qty': t.get('billing_qty', 0), 'bill_value': t.get('billing_value') or 0,
+            'fill_q': t.get('fill_qty_pct', ''), 'fill_v': t.get('fill_val_pct', ''), 'last': '',
         })
-    cols = [('segment', 'Segment'), ('marketplace', 'Marketplace'), ('status', 'Status'),
-            ('pos', 'PO'), ('raw_qty', 'Raw Qty'), ('raw_value', 'Raw Value'),
-            ('up_qty', 'Uploaded Qty'), ('up_value', 'Uploaded Value'),
-            ('ex_qty', 'Excluded Qty'), ('ex_value', 'Excluded Value'),
-            ('fill_qty', 'Billing Qty'), ('fill_value', 'Billing Value'),
-            ('fill_qty_pct', 'Fill Qty %'), ('fill_val_pct', 'Fill Value %'),
-            ('last_received', 'Last Received')]
-    day = d.get('day') or _dt.date.today().isoformat()
-    seg = d.get('seg_filter') or 'all'
-    return common.xlsx_response(
-        'Fulfilment Cockpit', cols, rows, f"fulfilment_cockpit_{seg}_{day}.xlsx",
-        str_cols=('last_received',), freeze=True)
+
+    val_keys = ('raw_value', 'up_value', 'ex_value')
+    sheet('Summary', [
+        ('segment', 'Segment'), ('marketplace', 'Marketplace'), ('status', 'Status'),
+        ('pos', 'PO'), ('raw_qty', 'Raw Qty'), ('raw_value', 'Raw Value'),
+        ('up_qty', 'Uploaded Qty'), ('up_value', 'Uploaded Value'),
+        ('ex_qty', 'Excluded Qty'), ('ex_value', 'Excluded Value'),
+        ('bill_qty', 'Billing Qty'), ('bill_value', 'Billing Value'),
+        ('fill_q', 'Fill Qty %'), ('fill_v', 'Fill Value %'), ('last', 'Last Received'),
+    ], smry, inr_keys=val_keys + ('bill_value',))
+    sheet('PO-wise', [
+        ('segment', 'Segment'), ('marketplace', 'Marketplace'), ('po', 'PO'),
+        ('raw_qty', 'Raw Qty'), ('raw_value', 'Raw Value'),
+        ('up_qty', 'Uploaded Qty'), ('up_value', 'Uploaded Value'),
+        ('ex_qty', 'Excluded Qty'), ('ex_value', 'Excluded Value'), ('skus', 'SKUs'),
+    ], po_rows, inr_keys=val_keys)
+    sheet('SKU-wise', [
+        ('segment', 'Segment'), ('marketplace', 'Marketplace'), ('po', 'PO'),
+        ('item_no', 'Item No'), ('ean', 'EAN'), ('description', 'Description'),
+        ('raw_qty', 'Raw Qty'), ('raw_value', 'Raw Value'),
+        ('up_qty', 'Uploaded Qty'), ('up_value', 'Uploaded Value'),
+        ('ex_qty', 'Excluded Qty'), ('ex_value', 'Excluded Value'),
+    ], sku_rows, inr_keys=val_keys)
+
+    buf = io.BytesIO(); wb.save(buf); buf.seek(0)
+    resp = HttpResponse(
+        buf.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    resp['Content-Disposition'] = f'attachment; filename="fulfilment_cockpit_{seg}_{day}.xlsx"'
+    return resp
 
 
 @method_decorator(login_required, name='dispatch')

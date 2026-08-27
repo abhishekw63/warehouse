@@ -34,16 +34,20 @@
     font-size:14px;background:var(--surface-2);color:var(--text);width:100%;box-sizing:border-box;font-family:inherit;}
   .em-fld input:focus,.em-fld textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);background:var(--surface);}
   /* KPIs */
-  .em-kpis{display:flex;gap:12px;flex-wrap:wrap;margin-top:16px;}
-  .em-kpi{flex:1 1 120px;background:var(--surface);border:1px solid var(--border);border-radius:12px;
-    box-shadow:var(--shadow);padding:12px 14px;display:flex;flex-direction:column;gap:5px;
+  .em-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:12px;margin-top:18px;}
+  .em-kpi{position:relative;overflow:hidden;background:var(--surface);border:1px solid var(--border);border-radius:14px;
+    box-shadow:var(--shadow);padding:15px 16px 14px;display:flex;flex-direction:column;gap:6px;
     transition:transform .14s ease, box-shadow .14s ease;}
   .em-kpi:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg);}
-  .em-kpi .k-lbl{font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);}
-  .em-kpi .k-val{font-size:22px;font-weight:800;color:var(--text);line-height:1;font-variant-numeric:tabular-nums;}
-  .em-kpi .k-sub{font-size:14px;font-weight:600;color:var(--muted);}
+  /* subtle top accent on the grand-strip cards (the value cards carry their own role rail) */
+  .em-kpis:not(.em-vals) > .em-kpi::before{content:'';position:absolute;left:0;right:0;top:0;height:3px;
+    background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 32%,transparent));}
+  .em-kpi .k-lbl{font-size:10px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);}
+  .em-kpi .k-val{font-size:23px;font-weight:800;color:var(--text);line-height:1.02;font-variant-numeric:tabular-nums;letter-spacing:-.01em;}
+  .em-kpi .k-sub{font-size:14px;font-weight:700;color:var(--muted);}
   .em-kpi .k-note{font-size:10.5px;color:var(--muted);font-weight:600;}
-  .em-kpi.k-warn .k-val{color:#b45309;}
+  .em-kpi.k-warn::before{background:var(--amber);}
+  .em-kpi.k-warn .k-val{color:var(--amber);}
   /* section label + value-breakdown cards (accent top-rail per role) */
   .em-section-lbl{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;
     color:var(--muted);margin:20px 2px 8px;}
@@ -60,8 +64,8 @@
   .em-kpi.v-up{border-top-color:#00b894;}
   .em-kpi.v-up .k-val{color:var(--green);}
   .em-kpi.v-ex{border-top-color:#f59e0b;}
-  .em-kpi.v-ex.k-warn .k-val{color:#b45309;}
-  .em-kpi.v-bill{border-top-color:#cbd5e1;border-style:dashed;background:var(--surface-2);}
+  .em-kpi.v-ex.k-warn .k-val{color:var(--amber);}
+  .em-kpi.v-bill{border-top-color:var(--border);border-style:dashed;background:var(--surface-2);}
   .em-kpi.v-bill .k-held{color:var(--muted);}
   .em-soon{color:var(--accent);font-weight:700;text-decoration:none;border-bottom:1px dotted var(--accent);}
   /* board */
@@ -80,8 +84,8 @@
   .em-mp{font-weight:700;color:var(--text);}
   .em-labels{display:block;font-size:10px;color:var(--muted);margin-top:1px;}
   .em-pill{display:inline-block;padding:3px 10px;border-radius:20px;font-weight:700;font-size:11px;white-space:nowrap;}
-  .em-pill.on{color:var(--green);background:#e7f6ef;}
-  .em-pill.off{color:#64748b;background:#eef1f5;}
+  .em-pill.on{color:var(--green);background:color-mix(in srgb,var(--green) 15%,transparent);}
+  .em-pill.off{color:var(--muted);background:color-mix(in srgb,var(--muted) 13%,transparent);}
   .em-pct{color:var(--muted);font-weight:400;font-size:12px;}
   .em-leg .q{font-weight:700;font-size:15px;}
   .em-leg .v{font-size:13px;color:var(--muted);margin-top:3px;}
@@ -118,8 +122,8 @@
   .em-sku-child .v{font-size:10px;}
   .em-raw{color:var(--text);font-weight:600;}
   .em-incl{color:var(--green);font-weight:700;}
-  .em-excl{color:#b45309;font-weight:700;}
-  .em-nim{color:#b91c1c;font-weight:700;}
+  .em-excl{color:var(--amber);font-weight:700;}
+  .em-nim{color:var(--red);font-weight:700;}
   .em-count{display:inline-block;margin-left:6px;padding:1px 9px;border-radius:20px;font-size:12px;
     font-weight:800;color:var(--muted);background:var(--surface-2);border:1px solid var(--border);}
   .em-skutot{padding:10px 18px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--border);}
