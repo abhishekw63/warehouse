@@ -316,8 +316,10 @@
 .an-fc-pmeta{font-size:10.5px;color:var(--muted);font-weight:600;margin-left:auto;}
 .an-fc-chart{min-height:134px;width:100%;}
 /* full screen */
-.an-fc-fs{background:var(--surface);padding:28px 34px;overflow:auto;}
-.an-fc-fs .an-fc-chart{min-height:320px;}
+/* full-screen the whole daily view — PAINT the page background, else the browser's
+   default full-screen backdrop shows through as black. */
+.an-daily:fullscreen,.an-daily:-webkit-full-screen{background:var(--bg);padding:24px 34px;overflow-y:auto;}
+.an-daily:fullscreen::backdrop,.an-daily:-webkit-full-screen::backdrop{background:var(--bg);}
 
 /* ── Single-calendar range picker (replaces the two date inputs) ── */
 .rp2{position:relative;display:inline-flex;align-items:center;gap:6px;}
