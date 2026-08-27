@@ -2476,6 +2476,13 @@ def confirm(request, token):
     meta['run_id'] = run_id
     meta['locked'] = True
     (d / 'meta.json').write_text(json.dumps(meta), encoding='utf-8')
+    # New orders just landed → drop the cached Cockpit summary so it reflects them
+    # at once (else the short TTL would hide the fresh PO for a few seconds).
+    try:
+        from .services import order_db as _odb
+        _odb._stable_bust('summary:')
+    except Exception:  # noqa: BLE001
+        pass
     if was_draft:                    # finalised → no longer a parked draft
         try:
             from .services import draft_store

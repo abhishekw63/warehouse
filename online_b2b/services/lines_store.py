@@ -21,6 +21,13 @@ import datetime as _dt
 
 from .order_db import _conn, _conn_tx
 
+
+def _utc_now() -> _dt.datetime:
+    """Naive UTC 'now' — stamped on run_ts/created_at so the store is uniformly UTC
+    on EVERY host (Render already runs UTC; local dev used to write IST, which made
+    the same row read 5.5h apart). Display converts UTC→IST (see order_db._to_ist)."""
+    return _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+
 # 2-table split (scalable model): order_lines = immutable order FACTS;
 # order_line_validation = the computed validation + operator-decision layer
 # (1:1 by line_id, only for validated lines). Reads go through the join VIEW
@@ -416,7 +423,7 @@ def record_run_headers(result, marketplace, warehouse, output_file='',
     rows = order_rows_from_result(result, marketplace, warehouse or '', output_file)
     if not rows:
         return {'run_id': None, 'new_orders': 0}
-    run_ts = as_of or _dt2.datetime.now()
+    run_ts = as_of or _utc_now()
     source = (f"MANUAL: {_os.path.basename(output_file)}" if output_file
               else 'MANUAL')
     meta = {
@@ -447,7 +454,7 @@ def _insert_run_and_headers(cur, ph, run_ts, source, meta, rows, recorded_by=Non
         (run_ts, source, meta['marketplaces'], meta['total_pos'],
          meta['total_items'], meta['total_qty'], meta['total_value'],
          (str(recorded_by)[:150] if recorded_by else None),
-         _dt.datetime.now()))                # recorded_at = ACTUAL record time
+         _utc_now()))                        # recorded_at = ACTUAL record time (UTC)
     run_id = cur.lastrowid
     hcols = ('run_id, run_ts, created_at, mode, segment, marketplace, '
              'marketplace_label, po, location, warehouse, po_date, exp_date, '
@@ -563,7 +570,7 @@ def record_run_atomic(result, marketplace, warehouse, output_file, line_rows,
     ensure_table()   # create order_lines/validation tables BEFORE the tx (DDL auto-commits)
     with _conn() as (_cur, _d):          # ensure recorded_by col before the tx (DDL)
         _ensure_run_recorded_by(_cur)
-    run_ts = as_of or _dt2.datetime.now()
+    run_ts = as_of or _utc_now()
     source = (f"MANUAL: {_os.path.basename(output_file)}" if output_file else 'MANUAL')
     meta = {
         'marketplaces': 1,
@@ -665,7 +672,7 @@ def build_lines(result, run_id=None, output_file: str = '', actions=None,
     actions = actions or {}
     ean_fixes = ean_fixes or {}
     basis = getattr(result, 'compare_basis', None) or 'landing'
-    run_ts = (as_of or _dt.datetime.now()).strftime('%Y-%m-%d %H:%M:%S')
+    run_ts = (as_of or _utc_now()).strftime('%Y-%m-%d %H:%M:%S')
     otype = 'TO' if getattr(result, 'output_type', 'so') == 'to' else 'SO'
     out: list[dict] = []
     for so in result.rows:

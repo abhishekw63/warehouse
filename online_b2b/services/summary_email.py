@@ -41,6 +41,11 @@ except Exception:                           # noqa: BLE001 — defensive fallbac
 
 _SKU_EMAIL_CAP = 60          # SKU rows shown in the email (rest flagged, not dropped)
 
+import os as _os
+# Cockpit summary is ~1.9 s to assemble; memoise briefly so revisits are instant.
+# Short window → today's data stays fresh; an upload confirm busts it immediately.
+_SUMMARY_TTL = float(_os.environ.get('ORDERDB_SUMMARY_TTL', '25'))
+
 
 def _inr(v) -> str:
     """₹ with Indian digit grouping, no paise — ₹97,76,736."""
@@ -345,8 +350,23 @@ def build_summary(day=None, seg_filter='', segment=None, skip_skus=False) -> dic
     """Assemble the consolidated summary — segment boards + grand totals + embedded
     excluded lines & SKU summary. ``seg_filter`` = 'online' / 'offline' / '' (both)
     picks which segment board(s) to include (the master filter). Shared by the
-    on-screen page AND the email body so they never drift. Read-only; never raises."""
-    iso = (day or _dt.date.today().isoformat())
+    on-screen page AND the email body so they never drift. Read-only; never raises.
+
+    The whole assembly is ~1.9 s (three day-line scans + the inventory fill-rate),
+    so the result is memoised for a short window (env ``ORDERDB_SUMMARY_TTL``, default
+    25 s) keyed by day+segment+skip_skus. This makes re-opening the Cockpit instant;
+    an upload confirm busts the ``'summary:'`` prefix so a new PO shows at once."""
+    iso = (day or order_db._ist_today().isoformat())      # 'today' = IST day
+    sel0 = str(seg_filter or '').strip().lower()
+    key = f"summary:{iso}:{sel0}:{int(bool(skip_skus))}"
+    return order_db._stable(
+        key, lambda: _build_summary(day=day, seg_filter=seg_filter,
+                                    segment=segment, skip_skus=skip_skus),
+        ttl=_SUMMARY_TTL)
+
+
+def _build_summary(day=None, seg_filter='', segment=None, skip_skus=False) -> dict:
+    iso = (day or order_db._ist_today().isoformat())
     try:
         nice = _dt.date.fromisoformat(iso).strftime('%A, %d %b %Y')
     except (ValueError, TypeError):
@@ -808,7 +828,7 @@ class SummaryEmailReport(EmailReport):
     {segments}
     <p style="margin:18px 0 0;font-size:11px;color:#a0a7b4;border-top:1px solid #eef0f4;padding-top:12px;">
       Consolidated summary — auto-generated from Claude AI
-      &middot; {_dt.datetime.now():%d-%b-%Y %H:%M}. Full issue-line + SKU detail: Issues &amp; SKU Summary tabs.
+      &middot; {order_db._ist_now():%d-%b-%Y %H:%M} IST. Full issue-line + SKU detail: Issues &amp; SKU Summary tabs.
     </p>
   </div>
 </div>

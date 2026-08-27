@@ -112,6 +112,14 @@ def _stable(key, builder, ttl=None):
     return val
 
 
+def _stable_bust(prefix: str = '') -> None:
+    """Drop cached ``_stable`` entries whose key starts with ``prefix`` (''=all).
+    Call after a write that changes what a cached view would show (e.g. an upload
+    confirm busts ``'summary:'`` so the cockpit reflects the new PO immediately)."""
+    for k in [k for k in _STABLE if k.startswith(prefix)]:
+        _STABLE.pop(k, None)
+
+
 def _build_loc2geo() -> dict:
     """``nk(location) -> (pincode, state)`` from the ship-to master. Cached."""
     import re as _re3
@@ -284,6 +292,38 @@ _SORT_COLS = {
     'date': 'run_ts', 'po': 'po', 'marketplace': 'marketplace_label',
     'qty': 'qty', 'value': 'order_value', 'items': 'items', 'expiry': 'exp_date',
 }
+
+
+# ── Business timezone (India) ─────────────────────────────────────────────────
+# run_ts is stored in the server's wall clock, which is UTC on Render. The business
+# is India-only, so every run_ts SHOWN to a user (times, timestamps, the intraday
+# timeline) must read as IST (UTC+5:30). We convert on DISPLAY only — stored values
+# stay UTC, so window/latest-run FILTERING (UTC vs UTC) is unchanged. In SQL add
+# ``+ INTERVAL 330 MINUTE``; in Python use ``_to_ist``. (The writer now stamps UTC
+# on every host — see lines_store — so storage is uniformly UTC.)
+import datetime as _dtz
+
+_IST = _dtz.timezone(_dtz.timedelta(hours=5, minutes=30))
+_IST_SQL = '+ INTERVAL 330 MINUTE'      # run_ts <_IST_SQL> → IST wall time
+
+
+def _to_ist(dt):
+    """Naive UTC datetime (as stored) → naive IST datetime for display. Pass-through
+    for None / non-datetimes so callers can wrap blindly."""
+    try:
+        return dt + _dtz.timedelta(hours=5, minutes=30)
+    except (TypeError, AttributeError):
+        return dt
+
+
+def _ist_now():
+    """Current IST wall time (naive) — correct regardless of the server's own tz."""
+    return _dtz.datetime.now(_IST).replace(tzinfo=None)
+
+
+def _ist_today():
+    """Today's date in IST — the business 'today', not the server's UTC day."""
+    return _ist_now().date()
 
 
 def _cutoff(kind: str, days: int):
@@ -1146,7 +1186,7 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
                     'location': m['location'] or '', 'pincode': pin, 'zone': zone,
                     'po_date': m['po_date'], 'exp_date': m['exp_date'],
                     'order_value': round(val, 2), 'qty': qty,
-                    'uploaded': m['run_ts'],
+                    'uploaded': _to_ist(m['run_ts']),          # UTC store → IST display
                     'file_source': _os.path.basename(str(m['output_file'] or '')) if m['output_file'] else '',
                     'run_id': m['run_id'],
                     'omt': '', 'source': 'auto', 'id': None,
@@ -1259,7 +1299,7 @@ def today_orders(day: str, segment='', marketplace='', warehouse='', q='') -> di
     try:
         with _conn() as (cur, d):
             ph = d['ph']
-            w, a = [f"DATE(h.run_ts)={ph}"], [day]
+            w, a = [f"DATE(h.run_ts {_IST_SQL})={ph}"], [day]   # day = client IST date
             if segment:
                 w.append(f"h.segment={ph}"); a.append(segment)
             if marketplace:
@@ -1349,10 +1389,11 @@ def tracker_insights(segment='', marketplace='', warehouse='', q='',
             rng = bool(uploaded_from and uploaded_to)
             single_day = rng and uploaded_from == uploaded_to
             if single_day:
+                _rts = f"(h.run_ts {_IST_SQL})"          # hours read in IST (stored UTC)
                 cur.execute(
-                    f"SELECT HOUR(h.run_ts), h.segment, COUNT(DISTINCT h.po), "
+                    f"SELECT HOUR({_rts}), h.segment, COUNT(DISTINCT h.po), "
                     f"COALESCE(SUM(h.order_value),0) FROM {latest} WHERE "
-                    f"DATE(h.run_ts) = {ph}{wsql} GROUP BY HOUR(h.run_ts), h.segment",
+                    f"DATE({_rts}) = {ph}{wsql} GROUP BY HOUR({_rts}), h.segment",
                     tuple([uploaded_from] + args))
                 dmap = {}
                 for hr, seg, cnt, v in cur.fetchall():
@@ -1362,14 +1403,15 @@ def tracker_insights(segment='', marketplace='', warehouse='', q='',
                 labels = ['%02d' % h for h in range(lo, hi + 1)]
                 gran = 'hour'
             else:
+                _rts = f"(h.run_ts {_IST_SQL})"          # day buckets in IST (stored UTC)
                 if rng:
-                    dwhere, dargs = f"DATE(h.run_ts) BETWEEN {ph} AND {ph}", [uploaded_from, uploaded_to]
+                    dwhere, dargs = f"DATE({_rts}) BETWEEN {ph} AND {ph}", [uploaded_from, uploaded_to]
                 else:
-                    dwhere, dargs = f"DATE(h.run_ts) >= (CURDATE() - INTERVAL {int(days)} DAY)", []
+                    dwhere, dargs = f"DATE({_rts}) >= (CURDATE() - INTERVAL {int(days)} DAY)", []
                 cur.execute(
-                    f"SELECT DATE(h.run_ts), h.segment, COUNT(DISTINCT h.po), "
+                    f"SELECT DATE({_rts}), h.segment, COUNT(DISTINCT h.po), "
                     f"COALESCE(SUM(h.order_value),0) FROM {latest} WHERE "
-                    f"{dwhere}{wsql} GROUP BY DATE(h.run_ts), h.segment", tuple(dargs + args))
+                    f"{dwhere}{wsql} GROUP BY DATE({_rts}), h.segment", tuple(dargs + args))
                 dmap = {}
                 for dt, seg, cnt, v in cur.fetchall():
                     ds = dt.isoformat() if hasattr(dt, 'isoformat') else str(dt)
@@ -1462,15 +1504,17 @@ def tracker_insights(segment='', marketplace='', warehouse='', q='',
             #    hourly blob. A run shares one run_ts, so a batch = one point per MP.
             #    Honors segment/marketplace/warehouse/q; own day, not the upload range.
             try:
-                iday = _dt2.date.fromisoformat(day) if day else _dt2.date.today()
+                iday = _dt2.date.fromisoformat(day) if day else _ist_today()
             except Exception:  # noqa: BLE001
-                iday = _dt2.date.today()
+                iday = _ist_today()
+            # Times shown IST: bucket + day-filter on run_ts shifted +5:30 (stored UTC).
+            _rts = f"(h.run_ts {_IST_SQL})"
             cur.execute(
-                f"SELECT h.marketplace, HOUR(h.run_ts) * 60 + MINUTE(h.run_ts), "
+                f"SELECT h.marketplace, HOUR({_rts}) * 60 + MINUTE({_rts}), "
                 f"COUNT(DISTINCT h.po), COALESCE(SUM(h.qty),0), "
                 f"COALESCE(SUM(h.order_value),0) FROM {latest} "
-                f"WHERE DATE(h.run_ts) = {ph}{wsql} "
-                f"GROUP BY h.marketplace, HOUR(h.run_ts) * 60 + MINUTE(h.run_ts)",
+                f"WHERE DATE({_rts}) = {ph}{wsql} "
+                f"GROUP BY h.marketplace, HOUR({_rts}) * 60 + MINUTE({_rts})",
                 tuple([iday.isoformat()] + args))
             imap = {}                              # parent-MP → {minute-of-day: [orders, qty, value]}
             for mkt, mod, cnt, qty, val in cur.fetchall():
@@ -1565,7 +1609,7 @@ def recent_runs(limit: int = 8) -> list:
                 mps = [m for m in (r[2] or '').split(',') if m]
                 label = (mps[0] if len(mps) <= 1 else f"{mps[0]} +{len(mps) - 1}")
                 out.append({
-                    'run_id': r[0], 'when': r[1],
+                    'run_id': r[0], 'when': _to_ist(r[1]),     # UTC store → IST display
                     'marketplace': label or (r[3] or ''),
                     'marketplaces': r[2] or '',
                     'segment': r[3] or '',
@@ -1586,11 +1630,11 @@ def today_intake() -> dict:
     out = {'pos': 0, 'value': 0.0, 'by_segment': []}
     try:
         with _conn() as (cur, d):
-            ot = d['orders']
+            ot, ph = d['orders'], d['ph']
             cur.execute(
                 f"SELECT segment, COUNT(DISTINCT po), COALESCE(SUM(order_value),0) "
-                f"FROM {ot} WHERE DATE(created_at)=CURDATE() "
-                f"GROUP BY segment ORDER BY 3 DESC")
+                f"FROM {ot} WHERE DATE(created_at {_IST_SQL})={ph} "     # IST 'today'
+                f"GROUP BY segment ORDER BY 3 DESC", (_ist_today().isoformat(),))
             segs, tot_pos, tot_val = [], 0, 0.0
             for s, p, v in cur.fetchall():
                 p = p or 0
@@ -1643,7 +1687,7 @@ def marketplace_daily_intake(segment='OnlineB2B', day=None) -> dict:
     Pure read helper — three ``SELECT``s, no writes, no business logic; the caller
     (``summary_email``) maps each group to a Daily-Tasks channel. Never raises."""
     import datetime as _dt
-    iso = (day or _dt.date.today().isoformat())
+    iso = (day or _ist_today().isoformat())          # 'today' = IST day, not server UTC
     out = {'day': iso, 'today': [], 'last_received': [], 'issues': [],
            'value_legs': [], 'po_legs': [], 'sku_legs': []}
     try:
@@ -1656,22 +1700,22 @@ def marketplace_daily_intake(segment='OnlineB2B', day=None) -> dict:
                 f"SELECT marketplace, marketplace_label, COUNT(DISTINCT po), "
                 f"COALESCE(SUM(items),0), COALESCE(SUM(qty),0), "
                 f"COALESCE(SUM(order_value),0) FROM {ot} "
-                f"WHERE {seg} AND DATE(run_ts)={ph} "
+                f"WHERE {seg} AND DATE(run_ts {_IST_SQL})={ph} "
                 f"GROUP BY marketplace, marketplace_label", tuple(sp + [iso]))
             out['today'] = _rows(cur, ['marketplace', 'marketplace_label',
                                        'pos', 'items', 'qty', 'value'])
             # ── all-time last-received timestamp per marketplace ──
             cur.execute(
-                f"SELECT marketplace, marketplace_label, MAX(run_ts) FROM {ot} "
+                f"SELECT marketplace, marketplace_label, MAX(run_ts {_IST_SQL}) FROM {ot} "
                 f"WHERE {seg} GROUP BY marketplace, marketplace_label", tuple(sp))
             out['last_received'] = _rows(cur, ['marketplace', 'marketplace_label',
-                                               'last_received'])
+                                               'last_received'])          # IST display
             # ── today's issue lines per marketplace (excluded proxy) ──
             try:
                 cur.execute(
                     f"SELECT marketplace, COUNT(*) FROM order_lines_full "
                     f"WHERE status IN ('MISMATCH','NOT_IN_MASTER') "
-                    f"AND DATE(run_ts)={ph} GROUP BY marketplace", (iso,))
+                    f"AND DATE(run_ts {_IST_SQL})={ph} GROUP BY marketplace", (iso,))
                 out['issues'] = _rows(cur, ['marketplace', 'count'])
             except Exception:  # noqa: BLE001 — issues are best-effort
                 out['issues'] = []
@@ -1685,7 +1729,7 @@ def marketplace_daily_intake(segment='OnlineB2B', day=None) -> dict:
                 cur.execute(
                     f"SELECT marketplace, po, item_no, ean, description, qty, "
                     f"our_landing, unit_price, gst_code, status, action "
-                    f"FROM order_lines_full WHERE DATE(run_ts)={ph}", (iso,))
+                    f"FROM order_lines_full WHERE DATE(run_ts {_IST_SQL})={ph}", (iso,))
 
                 def _blank_leg(mk, po=None, item=None, ean=None, desc=None):
                     d = {'marketplace': mk, 'raw_value': 0.0, 'uploaded_value': 0.0,
@@ -1739,7 +1783,7 @@ def po_sku_detail(day, marketplace, po) -> dict:
     cockpit's on-click SKU expand renders identically — but instantly (no fill-rate
     / whole-board build). Read-only; never raises."""
     import datetime as _dt
-    iso = (day or _dt.date.today().isoformat())
+    iso = (day or _ist_today().isoformat())          # IST day (matches daily_intake)
     skus: dict = {}
     if not po:
         return {'skus': skus}
@@ -1747,7 +1791,7 @@ def po_sku_detail(day, marketplace, po) -> dict:
         from .triangular_validation import _line_val, _is_dropped
         with _conn() as (cur, d):
             ph = d['ph']
-            where = f"po={ph} AND DATE(run_ts)={ph}"
+            where = f"po={ph} AND DATE(run_ts {_IST_SQL})={ph}"
             params = [str(po), iso]
             if marketplace:                       # optional narrow (PO no. is unique enough alone)
                 where += f" AND marketplace={ph}"
