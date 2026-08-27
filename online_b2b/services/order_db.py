@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 
 # ── Per-thread warm connection pool for the MySQL/TiDB hot path ───────────────
@@ -49,19 +50,32 @@ def _new_mysql(target):
     )
 
 
+#: A ping() is a full DB round-trip (~100 ms to a remote TiDB); doing it on EVERY
+#: _conn() call doubled the round-trips. Only ping a connection that's been idle
+#: longer than this — within a request (rapid, back-to-back calls) the socket is
+#: known-warm, so we skip the ping and save the RTT. Tune via ORDERDB_PING_IDLE.
+_PING_IDLE = float(os.environ.get('ORDERDB_PING_IDLE', '20'))
+
+
 def _pooled_mysql(target):
     """Return a live thread-local connection, reconnecting if it dropped or the
-    target changed. Falls back to a brand-new connection on any pool hiccup."""
+    target changed. Pings only after an idle gap (see :data:`_PING_IDLE`) so a warm,
+    recently-used connection is reused WITHOUT a per-call round-trip."""
     key = (target.get('host'), int(target.get('port', 3306)), target.get('database'))
     c = getattr(_local, 'oc', None)
+    now = time.monotonic()
     if c is not None and getattr(_local, 'ok', None) == key:
+        if now - getattr(_local, 'ots', 0.0) < _PING_IDLE:
+            _local.ots = now            # used recently → assume alive, skip the ping RTT
+            return c
         try:
-            c.ping(reconnect=True)      # revive an idle/closed socket
+            c.ping(reconnect=True)      # idle a while → revive an idle/closed socket
+            _local.ots = now
             return c
         except Exception:               # noqa: BLE001 — poisoned; rebuild below
             _drop_pooled()
     c = _new_mysql(target)
-    _local.oc, _local.ok = c, key
+    _local.oc, _local.ok, _local.ots = c, key, now
     return c
 
 

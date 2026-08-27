@@ -207,6 +207,13 @@ def _load_orders_db():
         'PORT': str(cfg.get('port', 3306)),
         'OPTIONS': opts,
         'TIME_ZONE': 'UTC',
+        # PERSISTENT connections: without this Django opens a FRESH TLS connection to
+        # TiDB on EVERY request (~700-800 ms handshake to a remote DB) for auth +
+        # sessions — the uniform per-page slowdown. Keep the connection warm across
+        # requests; CONN_HEALTH_CHECKS pings a possibly-stale one once per request
+        # (cheap) and reconnects, so a TiDB idle-timeout drop can't error a request.
+        'CONN_MAX_AGE': int(os.environ.get('DJANGO_CONN_MAX_AGE', '300')),
+        'CONN_HEALTH_CHECKS': True,
     }
 
 
