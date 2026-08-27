@@ -1309,32 +1309,34 @@ def tracker_insights(segment='', marketplace='', warehouse='', q='',
                               'dow': ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
                               'data': data, 'max': 100}
 
-            # 5) intraday timeline — the SELECTED day's arrivals by HOUR of run_ts
-            #    (when the order entered our system) × marketplace, with qty + value.
-            #    "GT Select landed at 6, 7, 12 with N qty / ₹V" → a per-MP bubble
-            #    timeline. Honors segment/marketplace/warehouse/q; own day, not the
-            #    upload-date range.
+            # 5) intraday timeline — the SELECTED day's arrivals by the MINUTE of
+            #    run_ts (when the order entered our system) × marketplace, with qty +
+            #    value. Each (marketplace, minute) is its OWN activity point — GT Mass
+            #    at 9:00 and GT Select at 9:14 stay SEPARATE, never merged into one
+            #    hourly blob. A run shares one run_ts, so a batch = one point per MP.
+            #    Honors segment/marketplace/warehouse/q; own day, not the upload range.
             try:
                 iday = _dt2.date.fromisoformat(day) if day else _dt2.date.today()
             except Exception:  # noqa: BLE001
                 iday = _dt2.date.today()
             cur.execute(
-                f"SELECT h.marketplace, HOUR(h.run_ts), COUNT(DISTINCT h.po), "
-                f"COALESCE(SUM(h.qty),0), COALESCE(SUM(h.order_value),0) FROM {latest} "
+                f"SELECT h.marketplace, HOUR(h.run_ts) * 60 + MINUTE(h.run_ts), "
+                f"COUNT(DISTINCT h.po), COALESCE(SUM(h.qty),0), "
+                f"COALESCE(SUM(h.order_value),0) FROM {latest} "
                 f"WHERE DATE(h.run_ts) = {ph}{wsql} "
-                f"GROUP BY h.marketplace, HOUR(h.run_ts)",
+                f"GROUP BY h.marketplace, HOUR(h.run_ts) * 60 + MINUTE(h.run_ts)",
                 tuple([iday.isoformat()] + args))
-            imap = {}                              # parent-MP → {hour: [orders, qty, value]}
-            for mkt, hr, cnt, qty, val in cur.fetchall():
+            imap = {}                              # parent-MP → {minute-of-day: [orders, qty, value]}
+            for mkt, mod, cnt, qty, val in cur.fetchall():
                 name = disp.get(mkt, mkt or '—')
-                agg = imap.setdefault(name, {}).setdefault(int(hr or 0), [0, 0, 0.0])
+                agg = imap.setdefault(name, {}).setdefault(int(mod or 0), [0, 0, 0.0])
                 agg[0] += int(cnt or 0); agg[1] += int(qty or 0); agg[2] += float(val or 0)
-            im_tot = {k: sum(v[1] for v in hrs.values()) for k, hrs in imap.items()}
+            im_tot = {k: sum(v[1] for v in mins.values()) for k, mins in imap.items()}
             imarkets = sorted(imap.keys(), key=lambda k: -im_tot[k])
             ipoints, maxq = [], 0
             for mi, name in enumerate(imarkets):
-                for hr, (cnt, qty, val) in sorted(imap[name].items()):
-                    ipoints.append({'mp': name, 'mi': mi, 'hour': hr,
+                for mod, (cnt, qty, val) in sorted(imap[name].items()):
+                    ipoints.append({'mp': name, 'mi': mi, 'min': mod, 'hour': mod // 60,
                                     'orders': cnt, 'qty': qty, 'value': round(val, 2)})
                     maxq = max(maxq, qty)
             out['intraday'] = {'day': iday.isoformat(), 'markets': imarkets,

@@ -143,44 +143,46 @@
       }, true);
     }
     // 6) order timeline — an ACTIVITY timeline: a straight spine with a GLOWING
-    //    (rippling) dot at each hour orders landed; hover shows what happened then
-    //    (top marketplaces + qty + value). Qty/Value toggle sizes the dots; scroll zoom.
+    //    (rippling) dot for EACH marketplace's arrival, at its exact clock minute
+    //    (9:00 AM, 9:14 AM…). Marketplaces are NEVER merged — GT Mass and GT Select
+    //    each get their own colored dot even in the same hour. Labels alternate
+    //    above/below the spine so close arrivals stay readable. Qty/Value sizes dots.
     var iv = chart('tiIntraday');
     if (iv) {
       var I = d.intraday || { markets: [], points: [] };
       var ivVal = (ivMetric === 'value');
-      var hourFmt = function (h) { h = +h; var ap = h < 12 ? 'AM' : 'PM'; var hh = h % 12; if (!hh) hh = 12; return hh + ':00 ' + ap; };
-      // aggregate ALL marketplaces per hour → one activity point per hour
-      var byHour = {};
-      I.points.forEach(function (p) {
-        var a = byHour[p.hour] || (byHour[p.hour] = { hour: p.hour, orders: 0, qty: 0, value: 0, mps: {} });
-        a.orders += p.orders; a.qty += p.qty; a.value += p.value;
-        a.mps[p.mp] = (a.mps[p.mp] || 0) + (ivVal ? p.value : p.qty);
-      });
-      var acts = Object.keys(byHour).map(function (h) { return byHour[h]; }).sort(function (a, b) { return a.hour - b.hour; });
+      var minFmt = function (m) {
+        m = Math.round(+m); var h = Math.floor(m / 60), mi = ((m % 60) + 60) % 60;
+        var ap = h < 12 ? 'AM' : 'PM'; var hh = h % 12; if (!hh) hh = 12;
+        return hh + ':' + ('0' + mi).slice(-2) + ' ' + ap;
+      };
+      // one dot per (marketplace, minute) — each MP its own color, sorted along the day
+      var pts = (I.points || []).slice().sort(function (a, b) { return (a.min - b.min) || (a.mi - b.mi); });
+      var palette = [c.accent, '#22c55e', '#f59e0b', '#ec4899', '#06b6d4', '#a855f7', '#ef4444', '#14b8a6', '#eab308', '#6366f1'];
+      var mColor = {};
+      (I.markets || []).forEach(function (m, i) { mColor[m] = palette[i % palette.length]; });
       var maxM = 1;
-      acts.forEach(function (a) {
-        var m = ivVal ? a.value : a.qty; if (m > maxM) maxM = m;
-        var k = Object.keys(a.mps); a.top = k.length ? k.sort(function (x, y) { return a.mps[y] - a.mps[x]; })[0] : '';
-      });
-      var hmin = acts.length ? acts[0].hour : 8, hmax = acts.length ? acts[acts.length - 1].hour : 18;
-      var lo = Math.max(0, hmin - 1), hi = Math.min(24, hmax + 1);
+      pts.forEach(function (p) { var m = ivVal ? p.value : p.qty; if (m > maxM) maxM = m; });
+      var mins = pts.map(function (p) { return p.min; });
+      var lo = mins.length ? Math.max(0, Math.floor((Math.min.apply(null, mins) - 30) / 60) * 60) : 480;
+      var hi = mins.length ? Math.min(1440, Math.ceil((Math.max.apply(null, mins) + 30) / 60) * 60) : 1080;
+      if (hi - lo < 120) hi = lo + 120;            // keep a sensible minimum span
       iv.setOption({
         animationDuration: 480,
-        grid: { left: 6, right: 16, top: 22, bottom: 46, containLabel: true },
+        grid: { left: 6, right: 16, top: 40, bottom: 36, containLabel: true },
         tooltip: {
           trigger: 'item', formatter: function (p) {
             var a = p.data.a;
-            var top = Object.keys(a.mps).sort(function (x, y) { return a.mps[y] - a.mps[x]; }).slice(0, 6)
-              .map(function (mp) { return p.marker + mp + ': <b>' + (ivVal ? inrCr(a.mps[mp]) : a.mps[mp].toLocaleString('en-IN')) + '</b>'; }).join('<br/>');
-            return '<b>' + hourFmt(a.hour) + '</b> · ' + a.orders + ' order(s) · ' + a.qty + ' qty · ' + inrCr(a.value) + '<br/>' + top;
+            return '<b>' + a.mp + '</b> · ' + minFmt(a.min) + '<br/>' +
+              a.orders + ' order' + (a.orders === 1 ? '' : 's') + ' · ' +
+              a.qty.toLocaleString('en-IN') + ' qty · <b>' + inrCr(a.value) + '</b>';
           }
         },
         dataZoom: [{ type: 'inside', filterMode: 'none', xAxisIndex: 0 }],
         xAxis: {
-          type: 'value', min: lo, max: hi, interval: 2, axisTick: { show: false },
+          type: 'value', min: lo, max: hi, interval: 60, axisTick: { show: false },
           axisLine: { lineStyle: { color: c.border } },
-          axisLabel: { color: c.text2, fontSize: 9.5, formatter: hourFmt }, splitLine: { show: false }
+          axisLabel: { color: c.text2, fontSize: 9.5, formatter: minFmt }, splitLine: { show: false }
         },
         yAxis: { type: 'value', min: -1, max: 1, show: false },
         series: [
@@ -188,21 +190,24 @@
             lineStyle: { color: c.border, width: 2 }, data: [[lo, 0], [hi, 0]] },
           { type: 'effectScatter', z: 2, showEffectOn: 'render',
             rippleEffect: { scale: 2.4, brushType: 'stroke' },
-            symbolSize: function (v) { return 12 + Math.sqrt((v[2] || 0) / maxM) * 20; },
-            itemStyle: { color: c.accent, shadowBlur: 14, shadowColor: c.accent },
-            label: {
-              show: true, position: 'bottom', distance: 12,
-              formatter: function (p) {
-                var a = p.data.a;
-                var val = ivVal ? ('₹' + inrCr(a.value)) : (a.qty.toLocaleString('en-IN') + ' qty');
-                return '{v|' + val + '}\n{t|' + a.top + ' · ' + a.orders + ' order' + (a.orders === 1 ? '' : 's') + '}';
-              },
-              rich: {
-                v: { fontSize: 12, fontWeight: 800, color: c.text, align: 'center' },
-                t: { fontSize: 9.5, color: c.text2, align: 'center', padding: [2, 0, 0, 0] }
-              }
-            },
-            data: acts.map(function (a) { return { value: [a.hour, 0, ivVal ? a.value : a.qty], a: a }; }) }
+            symbolSize: function (v) { return 11 + Math.sqrt((v[2] || 0) / maxM) * 18; },
+            data: pts.map(function (p, i) {
+              var col = mColor[p.mp] || c.accent;
+              var val = ivVal ? ('₹' + inrCr(p.value)) : (p.qty.toLocaleString('en-IN') + ' qty');
+              return {
+                value: [p.min, 0, ivVal ? p.value : p.qty], a: p,
+                itemStyle: { color: col, shadowBlur: 14, shadowColor: col },
+                label: {
+                  show: true, position: (i % 2 === 0) ? 'top' : 'bottom', distance: 12,
+                  formatter: '{m|' + p.mp + '}  {t|' + minFmt(p.min) + '}\n{v|' + val + '}',
+                  rich: {
+                    m: { fontSize: 10.5, fontWeight: 800, color: col },
+                    t: { fontSize: 9, color: c.text2 },
+                    v: { fontSize: 11.5, fontWeight: 800, color: c.text, align: 'center', padding: [2, 0, 0, 0] }
+                  }
+                }
+              };
+            }) }
         ]
       }, true);
     }
