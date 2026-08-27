@@ -69,10 +69,13 @@
   </div>
 
 </div>
-
-
-<script src="{% static 'online_b2b/vendor/apexcharts.min.js' %}"></script>
-<script src="{% static 'online_b2b/vendor/echarts.min.js' %}"></script>
 {% endblock %}
 
-{% block extra_js %}<script defer data-page-js src="{% static 'online_b2b/pages/analytics.js' %}"></script>{% endblock %}
+{# Chart libs must live in extra_js (OUTSIDE #MainContent): if declared inside the
+   content block, an app-shell SPA nav injects them via innerHTML (which never runs
+   <script>), and their presence then fools reExecInline + syncSharedScripts into
+   skipping them → 'Charts library unavailable'. shell-nav's syncSharedScripts injects
+   these (non-data-page-js) in order, before the page JS. #}
+{% block extra_js %}<script defer src="{% static 'online_b2b/vendor/apexcharts.min.js' %}"></script>
+<script defer src="{% static 'online_b2b/vendor/echarts.min.js' %}"></script>
+<script defer data-page-js src="{% static 'online_b2b/pages/analytics.js' %}"></script>{% endblock %}
