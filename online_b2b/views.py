@@ -1482,9 +1482,22 @@ def cockpit_export(request):
             w = max((len(str(c.value if c.value is not None else '')) for c in col), default=8)
             ws.column_dimensions[L].width = min(w + 3, 46)
 
+    def _pct(part, whole):
+        try:
+            return round(100.0 * float(part) / float(whole), 1) if whole else 0.0
+        except (TypeError, ValueError, ZeroDivisionError):
+            return 0.0
+
     smry, po_rows, sku_rows = [], [], []
     for s in data.get('segments', []):
         sname = s.get('name', '')
+        ratios = {}                              # per-item in-stock fill ratio → SKU-level fill
+        try:
+            from .services import inventory_fill as _invf
+            _fr = _invf.item_fill_ratios(date_from=day, date_to=day, segment=s.get('key', ''))
+            ratios = _fr if isinstance(_fr, dict) else {}
+        except Exception:  # noqa: BLE001
+            ratios = {}
         for r in s.get('rows', []):
             recv = bool(r.get('received'))
             smry.append({
@@ -1506,16 +1519,24 @@ def cockpit_export(request):
                     'raw_qty': p.get('raw_qty', 0), 'raw_value': p.get('raw_value', 0),
                     'up_qty': p.get('uploaded_qty', 0), 'up_value': p.get('uploaded_value', 0),
                     'ex_qty': p.get('excluded_qty', 0), 'ex_value': p.get('excluded_value', 0),
+                    'bill_qty': p.get('billing_qty') or 0, 'bill_value': p.get('billing_value') or 0,
+                    'fill_q': p.get('fill_qty_pct', ''), 'fill_v': p.get('fill_val_pct', ''),
                     'skus': p.get('sku_count', 0),
                 })
                 for sk in p.get('sku_detail', []):
+                    _uq, _uv = sk.get('uploaded_qty', 0), sk.get('uploaded_value', 0)
+                    _rt = ratios.get(str(sk.get('item_no', '')).strip())
+                    _bq = round((_uq or 0) * _rt, 1) if _rt is not None else 0
+                    _bv = round((_uv or 0) * _rt, 2) if _rt is not None else 0
                     sku_rows.append({
                         'segment': sname, 'marketplace': r.get('display', ''), 'po': p.get('po', ''),
                         'item_no': sk.get('item_no', ''), 'ean': sk.get('ean', ''),
                         'description': sk.get('description', ''),
                         'raw_qty': sk.get('raw_qty', 0), 'raw_value': sk.get('raw_value', 0),
-                        'up_qty': sk.get('uploaded_qty', 0), 'up_value': sk.get('uploaded_value', 0),
+                        'up_qty': _uq, 'up_value': _uv,
                         'ex_qty': sk.get('excluded_qty', 0), 'ex_value': sk.get('excluded_value', 0),
+                        'bill_qty': _bq, 'bill_value': _bv,
+                        'fill_q': _pct(_bq, _uq), 'fill_v': _pct(_bv, _uv),
                     })
         t = s.get('totals') or {}
         smry.append({
@@ -1540,15 +1561,19 @@ def cockpit_export(request):
         ('segment', 'Segment'), ('marketplace', 'Marketplace'), ('po', 'PO'),
         ('raw_qty', 'Raw Qty'), ('raw_value', 'Raw Value'),
         ('up_qty', 'Uploaded Qty'), ('up_value', 'Uploaded Value'),
-        ('ex_qty', 'Excluded Qty'), ('ex_value', 'Excluded Value'), ('skus', 'SKUs'),
-    ], po_rows, inr_keys=val_keys)
+        ('ex_qty', 'Excluded Qty'), ('ex_value', 'Excluded Value'),
+        ('bill_qty', 'Billing Qty'), ('bill_value', 'Billing Value'),
+        ('fill_q', 'Fill Qty %'), ('fill_v', 'Fill Value %'), ('skus', 'SKUs'),
+    ], po_rows, inr_keys=val_keys + ('bill_value',))
     sheet('SKU-wise', [
         ('segment', 'Segment'), ('marketplace', 'Marketplace'), ('po', 'PO'),
         ('item_no', 'Item No'), ('ean', 'EAN'), ('description', 'Description'),
         ('raw_qty', 'Raw Qty'), ('raw_value', 'Raw Value'),
         ('up_qty', 'Uploaded Qty'), ('up_value', 'Uploaded Value'),
         ('ex_qty', 'Excluded Qty'), ('ex_value', 'Excluded Value'),
-    ], sku_rows, inr_keys=val_keys)
+        ('bill_qty', 'Billing Qty'), ('bill_value', 'Billing Value'),
+        ('fill_q', 'Fill Qty %'), ('fill_v', 'Fill Value %'),
+    ], sku_rows, inr_keys=val_keys + ('bill_value',))
 
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     resp = HttpResponse(
