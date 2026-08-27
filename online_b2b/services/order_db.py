@@ -964,6 +964,28 @@ def _order_search_where(q, ph, alias='h'):
             [f"%{raw}%"] * 4)
 
 
+_tracker_index_ensured = False
+
+
+def _ensure_tracker_index(cur):
+    """Ensure the composite index the tracker's latest-run self-JOIN needs
+    (``marketplace, po, run_ts`` — for the ``MAX(run_ts) GROUP BY marketplace,po``).
+    Once per process, best-effort; a missing index just means the query is slower,
+    never an error. Reproduces the index if the DB is ever rebuilt."""
+    global _tracker_index_ensured
+    if _tracker_index_ensured:
+        return
+    _tracker_index_ensured = True
+    try:
+        cur.execute("SHOW INDEX FROM order_headers")
+        names = {r[2] for r in cur.fetchall()}
+        if 'idx_mp_po_ts' not in names:
+            cur.execute("CREATE INDEX idx_mp_po_ts ON order_headers "
+                        "(marketplace, po, run_ts)")
+    except Exception:  # noqa: BLE001 — never block the tracker on index DDL
+        pass
+
+
 def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
                          uploaded_from='', uploaded_to='',
                          limit=8000, display_limit=500) -> dict:
@@ -991,6 +1013,8 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
     try:
         with _conn() as (cur, d):
             ph = d['ph']
+            if d.get('kind') == 'mysql':
+                _ensure_tracker_index(cur)   # composite index for the latest-run JOIN
             # loc -> (pincode, state) from the ship-to master
             cur.execute('SELECT del_location,ship_to,name,city,postcode,state '
                         'FROM ship_to_mapping')
