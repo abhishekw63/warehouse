@@ -582,7 +582,7 @@
   // The orders table starts COLLAPSED on every load (per request). The body class is
   // the single source of truth; toggled from the hero button or the header bar.
   function applyTableCollapse() {
-    var on = document.body.classList.contains('trk-tbl-collapsed');
+    var on = !document.body.classList.contains('trk-tbl-open');   // collapsed = the default (no .trk-tbl-open)
     if (tblBtn) { tblBtn.classList.toggle('on', on); tblBtn.innerHTML = on ? '⊞ Table' : '⊟ Table'; tblBtn.title = on ? 'Show the orders table' : 'Collapse the orders table'; }
     if (tblHead) {
       tblHead.setAttribute('aria-expanded', on ? 'false' : 'true');
@@ -591,7 +591,7 @@
     }
   }
   function toggleTable() {
-    document.body.classList.toggle('trk-tbl-collapsed');
+    document.body.classList.toggle('trk-tbl-open');
     applyTableCollapse();
   }
   if (tblBtn) tblBtn.addEventListener('click', toggleTable);
@@ -599,8 +599,7 @@
     tblHead.addEventListener('click', toggleTable);
     tblHead.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleTable(); } });
   }
-  document.body.classList.add('trk-tbl-collapsed');   // default: collapsed on load
-  applyTableCollapse();
+  applyTableCollapse();   // default is collapsed (CSS: body:not(.trk-tbl-open)) — no class to add, no paint-then-yank flash
 
   // add-PO panel toggle
   var addBtn = document.getElementById('trkAddBtn'), addForm = document.getElementById('trkAdd'),

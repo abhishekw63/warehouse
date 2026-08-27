@@ -16,6 +16,19 @@
   var OPEN_KEY = 'trk_insights_open', CACHE_KEY = 'trk_insights_c_';
   var charts = {}, metric = 'count', ivMetric = 'qty', lastData = null;
 
+  // shell-nav re-runs this file on every SPA re-entry to Tracker. Without teardown,
+  // the PRIOR run's global listeners (→ duplicate /insights/ fetches), echarts
+  // instances (detached-DOM leak) and ResizeObserver (resizing dead charts) all
+  // accumulate. Tear the previous run down before this one wires up.
+  try { (window.__tiCleanup || function () {})(); } catch (e) { }
+  try { var _pc = window.__tiCharts || {}; Object.keys(_pc).forEach(function (k) { try { _pc[k] && _pc[k].dispose(); } catch (e) { } }); } catch (e) { }
+  try { window.__tiModalChart && window.__tiModalChart.dispose(); window.__tiModalChart = null; } catch (e) { }
+  try { window.__tiRO && window.__tiRO.disconnect(); } catch (e) { }
+  window.__tiCharts = charts;
+  var _off = [];
+  function gOn(target, type, fn, opts) { target.addEventListener(type, fn, opts); _off.push(function () { try { target.removeEventListener(type, fn, opts); } catch (e) { } }); }
+  window.__tiCleanup = function () { _off.forEach(function (f) { f(); }); _off = []; };
+
   // ── filters (read the shared bar; date is the client's local day) ──────
   function localToday() {
     var d = new Date();
@@ -43,7 +56,8 @@
       accent: v('--accent', '#4f46e5'), text: v('--text', '#0f172a'),
       text2: v('--text-2', '#64748b'), border: v('--border', '#e6e8f0'),
       surface: v('--surface', '#ffffff'), off: '#11998e',
-      green: '#10b981', red: v('--red', '#e11d48'), amber: '#f59e0b'
+      green: '#10b981', red: v('--red', '#e11d48'), amber: '#f59e0b',
+      muted: v('--muted', '#9aa1b2')
     };
   }
   function chart(id) {
@@ -54,11 +68,11 @@
     return charts[id];
   }
   var BASE = { grid: { left: 6, right: 10, top: 12, bottom: 4, containLabel: true }, animationDuration: 480 };
-  function inrCr(v) {                       // 23.53 Cr · 2.00 Lakh · 1,200 Rs
+  function inrCr(v) {                       // ₹23.53 Cr · ₹2 L · ₹1,200 — mirrors inrShortJs
     v = Number(v) || 0;
-    if (v >= 1e7) return (v / 1e7).toFixed(2) + ' Cr';
-    if (v >= 1e5) return (v / 1e5).toFixed(2) + ' Lakh';
-    return Math.round(v).toLocaleString('en-IN') + ' Rs';
+    if (v >= 1e7) return '₹' + (v / 1e7).toFixed(2).replace(/\.?0+$/, '') + ' Cr';
+    if (v >= 1e5) return '₹' + (v / 1e5).toFixed(2).replace(/\.?0+$/, '') + ' L';
+    return '₹' + Math.round(v).toLocaleString('en-IN');
   }
 
   function render(d) {
@@ -67,6 +81,7 @@
     var c = themeColors();
     var hasAny = (d.marketplaces && d.marketplaces.length) || (d.facilities && d.facilities.length);
     if (emptyEl) emptyEl.hidden = hasAny;
+    var tiGrid = bodyEl.querySelector('.ti-grid'); if (tiGrid) tiGrid.hidden = !hasAny;   // one clean empty state, not 6 blank frames
     // 1) daily trend — stacked area by dept
     var tr = chart('tiTrend');
     if (tr) {
@@ -139,7 +154,7 @@
         xAxis: { type: 'category', data: A.dow, splitArea: { show: true }, axisLabel: { color: c.text2, fontSize: 10 }, axisLine: { show: false }, axisTick: { show: false } },
         yAxis: { type: 'category', data: A.markets, splitArea: { show: true }, axisLabel: { color: c.text2, fontSize: 10 }, axisLine: { show: false }, axisTick: { show: false } },
         visualMap: { min: 0, max: 100, calculable: false, show: false, inRange: { color: [c.surface, c.accent] } },
-        series: [{ type: 'heatmap', data: A.data, label: { show: true, formatter: function (p) { return p.value[2] ? p.value[2] + '%' : ''; }, fontSize: 9.5, fontWeight: 600, color: '#1e293b' }, itemStyle: { borderColor: c.surface, borderWidth: 1.5 }, emphasis: { itemStyle: { borderColor: c.text } } }]
+        series: [{ type: 'heatmap', data: A.data, label: { show: true, formatter: function (p) { return p.value[2] ? p.value[2] + '%' : ''; }, fontSize: 9.5, fontWeight: 600, color: c.text, textBorderColor: c.surface, textBorderWidth: 2 }, itemStyle: { borderColor: c.surface, borderWidth: 1.5 }, emphasis: { itemStyle: { borderColor: c.text } } }]
       }, true);
     }
     // 6) order timeline — an ACTIVITY timeline: a straight spine with a GLOWING
@@ -176,7 +191,7 @@
       var sizeFor = function (v) { return 11 + Math.sqrt((v[2] || 0) / maxM) * 18; };
       var recData = recPts.map(function (p, i) {
         var col = mColor[p.mp] || c.accent;
-        var val = ivVal ? ('₹' + inrCr(p.value)) : (p.qty.toLocaleString('en-IN') + ' qty');
+        var val = ivVal ? inrCr(p.value) : (p.qty.toLocaleString('en-IN') + ' qty');
         return {
           value: [p.min, 0, ivVal ? p.value : p.qty], a: p,
           itemStyle: { color: col, shadowBlur: 14, shadowColor: col },
@@ -193,7 +208,7 @@
       });
       var draftData = draftPts.map(function (p, i) {
         var col = mColor[p.mp] || c.accent;
-        var val = ivVal ? ('₹' + inrCr(p.value)) : (p.qty.toLocaleString('en-IN') + ' qty');
+        var val = ivVal ? inrCr(p.value) : (p.qty.toLocaleString('en-IN') + ' qty');
         return {
           value: [p.min, 0, ivVal ? p.value : p.qty], a: p,
           itemStyle: { color: c.surface, borderColor: col, borderWidth: 2, borderType: 'dashed' },
@@ -217,12 +232,24 @@
         if (a.draft) body += '<br/>not recorded yet' + (note ? ' · ' + note : '');
         return head + '<br/>' + body;
       };
-      var series = [
-        { type: 'line', z: 1, silent: true, showSymbol: false,
-          lineStyle: { color: c.border, width: 2 }, data: [[lo, 0], [hi, 0]] },
-        { type: 'effectScatter', z: 2, showEffectOn: 'render',
-          rippleEffect: { scale: 2.4, brushType: 'stroke' }, symbolSize: sizeFor, data: recData }
-      ];
+      // enhanced spine: a soft gradient rail — brighter through the middle where the
+      // arrivals sit, fading to nothing at both ends, rounded caps + a faint accent
+      // glow — so it reads as a polished timeline axis, not a plain divider line.
+      var spine = { type: 'line', z: 1, silent: true, showSymbol: false,
+        lineStyle: {
+          width: 3, cap: 'round', shadowBlur: 6, shadowColor: c.accent,
+          color: { type: 'linear', x: 0, y: 0, x2: 1, y2: 0, colorStops: [
+            { offset: 0, color: 'transparent' }, { offset: 0.05, color: c.border },
+            { offset: 0.5, color: c.text2 }, { offset: 0.95, color: c.border },
+            { offset: 1, color: 'transparent' }] }
+        }, data: [[lo, 0], [hi, 0]] };
+      // recorded arrivals GLOW; under prefers-reduced-motion the ripple is dropped
+      // (static dots) so motion-sensitive users don't get a perpetual pulse.
+      var recSeries = REDUCE
+        ? { type: 'scatter', z: 2, symbolSize: sizeFor, data: recData }
+        : { type: 'effectScatter', z: 2, showEffectOn: 'render',
+            rippleEffect: { scale: 2.4, brushType: 'stroke' }, symbolSize: sizeFor, data: recData };
+      var series = [spine, recSeries];
       if (draftData.length) series.push(
         { type: 'scatter', z: 3, symbol: 'circle', symbolSize: sizeFor, data: draftData });
       iv.setOption({
@@ -277,7 +304,7 @@
     fetch(url + '?' + s, { headers: { 'X-Requested-With': 'fetch' } })
       .then(function (r) { return r.json(); })
       .then(function (d) { inflight = false; bodyEl.classList.remove('ti-loading');
-        if (d && d.ok) { cacheSet(s, d); render(d); } })
+        if (d && d.ok) { cacheSet(s, d); if (!lastData || JSON.stringify(d) !== JSON.stringify(lastData)) render(d); } })  // skip the redundant re-render when the fresh data equals what the cache already painted (no double-animation)
       .catch(function () { inflight = false; bodyEl.classList.remove('ti-loading'); });
   }
 
@@ -341,7 +368,7 @@
     if (!charts[id] || !window.echarts || !modal) return;
     if (modalT) modalT.textContent = title || 'Chart';
     modal.hidden = false; modalOv.hidden = false;
-    if (!modalChart) modalChart = window.echarts.init(modalChartEl);
+    if (!modalChart) { modalChart = window.echarts.init(modalChartEl); window.__tiModalChart = modalChart; }
     var opt = charts[id].getOption();
     // Power-BI-style interactivity in the big modal: mouse-wheel ZOOM + drag to PAN
     // via 'inside' dataZoom (no visible scrollbar — the slider read as clutter). Both
@@ -354,17 +381,17 @@
     setTimeout(function () { modalChart.resize(); }, 30);
   }
   function closeModal() { if (modal) { modal.hidden = true; modalOv.hidden = true; } }
-  document.addEventListener('click', function (e) {
+  gOn(document, 'click', function (e) {
     var b = e.target.closest && e.target.closest('.ti-exp');
     if (b) { e.preventDefault(); openModal(b.getAttribute('data-exp'), b.getAttribute('data-title')); }
   });
   if (modalX) modalX.addEventListener('click', closeModal);
   if (modalOv) modalOv.addEventListener('click', closeModal);
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeModal(); });
+  gOn(document, 'keydown', function (e) { if (e.key === 'Escape') closeModal(); });
 
   // follow filter changes (a hint from tracker.js; harmless if absent) + resize
-  document.addEventListener('trk:filterchange', function () { load(true); });
-  window.addEventListener('resize', function () { resize(); if (modalChart && modal && !modal.hidden) modalChart.resize(); });
+  gOn(document, 'trk:filterchange', function () { load(true); });
+  gOn(window, 'resize', function () { resize(); if (modalChart && modal && !modal.hidden) modalChart.resize(); });
 
   // ECharts measures a chart's container ONCE at init; a 0-size div (first paint,
   // or a just-expanded panel) makes it render blank until the next resize — the
@@ -372,7 +399,8 @@
   // real size the instant it gets one. Debounced.
   if (window.ResizeObserver) {
     var _roT;
-    new ResizeObserver(function () { clearTimeout(_roT); _roT = setTimeout(resize, 60); }).observe(bodyEl);
+    window.__tiRO = new ResizeObserver(function () { clearTimeout(_roT); _roT = setTimeout(resize, 60); });
+    window.__tiRO.observe(bodyEl);
   }
 
   // Insights starts COLLAPSED on every load (per request) — the panel's initial
