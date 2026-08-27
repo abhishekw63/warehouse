@@ -142,45 +142,52 @@
         series: [{ type: 'heatmap', data: A.data, label: { show: true, formatter: function (p) { return p.value[2] ? p.value[2] + '%' : ''; }, fontSize: 9.5, fontWeight: 600, color: '#1e293b' }, itemStyle: { borderColor: c.surface, borderWidth: 1.5 }, emphasis: { itemStyle: { borderColor: c.text } } }]
       }, true);
     }
-    // 6) order timeline — marketplace × hour BUBBLE map; each bubble = an MP that
-    //    landed that hour, sized by qty (or value via the toggle). Tooltip shows qty +
-    //    value + orders. Scroll/pinch zoom (dataZoom 'inside', no scrollbar).
+    // 6) order timeline — an ACTIVITY timeline: a straight spine with a GLOWING
+    //    (rippling) dot at each hour orders landed; hover shows what happened then
+    //    (top marketplaces + qty + value). Qty/Value toggle sizes the dots; scroll zoom.
     var iv = chart('tiIntraday');
     if (iv) {
       var I = d.intraday || { markets: [], points: [] };
       var ivVal = (ivMetric === 'value');
       var hourFmt = function (h) { h = +h; var ap = h < 12 ? 'a' : 'p'; var hh = h % 12; if (!hh) hh = 12; return hh + ap; };
-      var hs = I.points.map(function (p) { return p.hour; });
-      var hmin = hs.length ? Math.min.apply(null, hs) : 8, hmax = hs.length ? Math.max.apply(null, hs) : 18;
-      var maxM = 1;
-      I.points.forEach(function (p) { var m = ivVal ? p.value : p.qty; if (m > maxM) maxM = m; });
+      // aggregate ALL marketplaces per hour → one activity point per hour
+      var byHour = {};
+      I.points.forEach(function (p) {
+        var a = byHour[p.hour] || (byHour[p.hour] = { hour: p.hour, orders: 0, qty: 0, value: 0, mps: {} });
+        a.orders += p.orders; a.qty += p.qty; a.value += p.value;
+        a.mps[p.mp] = (a.mps[p.mp] || 0) + (ivVal ? p.value : p.qty);
+      });
+      var acts = Object.keys(byHour).map(function (h) { return byHour[h]; }).sort(function (a, b) { return a.hour - b.hour; });
+      var maxM = 1; acts.forEach(function (a) { var m = ivVal ? a.value : a.qty; if (m > maxM) maxM = m; });
+      var hmin = acts.length ? acts[0].hour : 8, hmax = acts.length ? acts[acts.length - 1].hour : 18;
+      var lo = Math.max(0, hmin - 1), hi = Math.min(24, hmax + 1);
       iv.setOption({
         animationDuration: 480,
-        grid: { left: 6, right: 16, top: 10, bottom: 18, containLabel: true },
+        grid: { left: 6, right: 16, top: 24, bottom: 24, containLabel: true },
         tooltip: {
           trigger: 'item', formatter: function (p) {
-            var v = p.value;                 // [hour, mi, qty, value, orders, mp]
-            return v[5] + ' · <b>' + hourFmt(v[0]) + '</b><br/>' + v[2] + ' qty · ' + inrCr(v[3]) + ' · ' + v[4] + ' order(s)';
+            var a = p.data.a;
+            var top = Object.keys(a.mps).sort(function (x, y) { return a.mps[y] - a.mps[x]; }).slice(0, 6)
+              .map(function (mp) { return p.marker + mp + ': <b>' + (ivVal ? inrCr(a.mps[mp]) : a.mps[mp].toLocaleString('en-IN')) + '</b>'; }).join('<br/>');
+            return '<b>' + hourFmt(a.hour) + '</b> · ' + a.orders + ' order(s) · ' + a.qty + ' qty · ' + inrCr(a.value) + '<br/>' + top;
           }
         },
         dataZoom: [{ type: 'inside', filterMode: 'none', xAxisIndex: 0 }],
         xAxis: {
-          type: 'value', min: Math.max(0, hmin - 1), max: Math.min(24, hmax + 1), interval: 2, axisLine: { show: false },
-          axisLabel: { color: c.text2, fontSize: 9.5, formatter: hourFmt },
-          splitLine: { lineStyle: { color: c.border, opacity: .4 } }
+          type: 'value', min: lo, max: hi, interval: 2, axisTick: { show: false },
+          axisLine: { lineStyle: { color: c.border } },
+          axisLabel: { color: c.text2, fontSize: 9.5, formatter: hourFmt }, splitLine: { show: false }
         },
-        yAxis: {
-          type: 'category', data: I.markets, axisLine: { show: false }, axisTick: { show: false },
-          axisLabel: { color: c.text2, fontSize: 10 },
-          splitLine: { show: true, lineStyle: { color: c.border, opacity: .35 } }
-        },
-        series: [{
-          type: 'scatter',
-          symbolSize: function (v) { return 9 + Math.sqrt((ivVal ? v[3] : v[2]) / maxM) * 26; },
-          itemStyle: { color: c.accent, opacity: .72, borderColor: c.surface, borderWidth: 1 },
-          emphasis: { itemStyle: { opacity: 1 } },
-          data: I.points.map(function (pt) { return [pt.hour, pt.mi, pt.qty, pt.value, pt.orders, pt.mp]; })
-        }]
+        yAxis: { type: 'value', min: -1, max: 1, show: false },
+        series: [
+          { type: 'line', z: 1, silent: true, showSymbol: false,
+            lineStyle: { color: c.border, width: 2 }, data: [[lo, 0], [hi, 0]] },
+          { type: 'effectScatter', z: 2, showEffectOn: 'render',
+            rippleEffect: { scale: 2.6, brushType: 'stroke' },
+            symbolSize: function (v) { return 10 + Math.sqrt((v[2] || 0) / maxM) * 22; },
+            itemStyle: { color: c.accent, shadowBlur: 12, shadowColor: c.accent },
+            data: acts.map(function (a) { return { value: [a.hour, 0, ivVal ? a.value : a.qty], a: a }; }) }
+        ]
       }, true);
     }
     bodyEl.classList.remove('ti-loading');   // charts painted → drop the skeleton
