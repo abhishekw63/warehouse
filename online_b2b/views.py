@@ -2723,6 +2723,47 @@ def run_detail(request, run_id):
 
 
 @login_required
+def run_export(request, run_id):
+    """SO-workbook-style Excel of a run's recorded LINE ITEMS, built from the DB — so
+    it works even for MANUAL / file-less runs that have no stored workbook (the SO/
+    Completed/D365 downloads only appear when a workbook file exists). Falls back to
+    the order headers for Tkinter-only runs that carry no lines."""
+    import datetime as _dt
+    data = order_db.run_detail(int(run_id))
+    rows = data.get('lines') or []
+    stamp = _dt.date.today().isoformat()
+    if rows:
+        cols = [('po', 'PO'), ('item_no', 'Item No'), ('ean', 'EAN'),
+                ('description', 'Description'), ('qty', 'Qty'), ('unit_price', 'Unit Price'),
+                ('our_mrp', 'Our MRP'), ('vendor_mrp', 'Their MRP'),
+                ('our_landing', 'Our Landing'), ('vendor_landing', 'Their Landing'),
+                ('our_cp', 'Our CP'), ('vendor_cp', 'Their CP'), ('diff', 'Diff'),
+                ('basis', 'Basis'), ('status', 'Status'), ('action', 'Action'),
+                ('remark', 'Remark')]
+        return common.xlsx_response(
+            f"Run {run_id}", cols, rows, f"run_{run_id}_lines_{stamp}.xlsx",
+            str_cols=('po', 'item_no', 'ean'), freeze=True)
+    ocols = [('marketplace', 'Marketplace'), ('po', 'PO'), ('location', 'Location'),
+             ('warehouse', 'WH'), ('po_date', 'PO Date'), ('exp_date', 'Exp Date'),
+             ('order_type', 'Type'), ('items', 'Items'), ('qty', 'Qty'), ('value', 'Value')]
+    return common.xlsx_response(
+        f"Run {run_id}", ocols, data.get('orders') or [], f"run_{run_id}_{stamp}.xlsx",
+        str_cols=('po', 'po_date', 'exp_date'), freeze=True)
+
+
+class RunsView(LoginRequiredMixin, TemplateView):
+    """The sidebar **Runs** page — every upload run (batch), newest first, one row per
+    run_id (when · marketplace · segment · #POs · qty · value), each linking to its
+    detail and a direct Excel export. Read-only; the runs the tracker is built from."""
+    template_name = 'online_b2b/runs.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx['runs'] = order_db.recent_runs(limit=500)
+        return ctx
+
+
+@login_required
 def download_d365(request, run_id):
     """Re-download the decided D365 dump saved for this run at lock time
     (Excludes dropped, Overrides repriced). A derived static file — serving it

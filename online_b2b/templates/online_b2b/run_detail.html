@@ -17,6 +17,7 @@
       {% if d.run %}<p class="sub">{{ d.run.mode }} · {{ d.run.run_ts }}{% if d.run.recorded_by %} · recorded by <b>{{ d.run.recorded_by }}</b>{% endif %}{% if d.run.recorded_at %} on {{ d.run.recorded_at }}{% endif %}</p>{% endif %}
     </div>
     <div class="rd-actions">
+      <a href="{% url 'b2b_run_export' run_id=run_id %}" class="dl-btn" download title="Export this run's line items to Excel (.xlsx) — built from the recorded data, so it works even for manual / file-less runs">↓ Export Excel</a>
     {% if has_file %}
       <a href="{% url 'b2b_download' run_id=run_id %}" class="dl-btn">↓ Download SO workbook</a>
     {% endif %}

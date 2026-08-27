@@ -28,6 +28,8 @@
     <div class="side-sep">Data</div>
     <a href="{% url 'b2b_tracker' %}" class="sn{% if '/tracker' in request.path or '/orders' in request.path %} on{% endif %}" title="Consolidated Tracker — single source of truth (Online B2B + Offline); click any PO for its full line-level detail">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='route' %}</span><span class="side-label">Tracker</span></a>
+    <a href="{% url 'b2b_runs' %}" class="sn{% if '/b2b/runs' in request.path or '/b2b/run/' in request.path %} on{% endif %}" title="Runs — every upload batch; open one for its line-level detail or export it to Excel">
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='layers' %}</span><span class="side-label">Runs</span></a>
     <a href="{% url 'b2b_tables' %}" class="sn{% if '/b2b/tables' in request.path %} on{% endif %}" title="Tables — editable master data (GT Select status, etc.)">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='table' %}</span><span class="side-label">Tables</span></a>
     <a href="{% url 'b2b_lines' %}" class="sn{% if '/lines' in request.path %} on{% endif %}" title="Line Items">
