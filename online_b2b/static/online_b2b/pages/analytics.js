@@ -357,6 +357,17 @@
       metricEl.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); });
       render();
     });
+    // facility row → expand its marketplace breakdown (which MP lands in which FC)
+    box.querySelectorAll('.an-fc-row').forEach(function (row) {
+      row.addEventListener('click', function () {
+        var det = box.querySelector('[data-fc-detail="' + row.getAttribute('data-fc-row') + '"]');
+        if (!det) return;
+        det.hidden = !det.hidden;
+        row.classList.toggle('an-fc-open', !det.hidden);
+        var caret = row.querySelector('.an-fc-caret');
+        if (caret) caret.textContent = det.hidden ? '▸' : '▾';
+      });
+    });
     var fullBtn = document.getElementById('an-fc-full');
     // full-screen the WHOLE daily view (KPIs + main chart + facility breakdown),
     // not just this one card — so you get the full picture, no empty space.

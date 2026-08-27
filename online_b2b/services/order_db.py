@@ -397,33 +397,44 @@ def daily_intake(days: int = 30, start: str = '', end: str = '') -> dict:
 
 def facility_intake(days: int = 30, start: str = '', end: str = '') -> dict:
     """Per-facility (AHD / BLR / North) order intake for the Daily-Intake tab —
-    DISTINCT POs / qty / value / % of value. Same window as :func:`daily_intake`,
-    but grouped by facility ONLY (no date) so the PO count is truly distinct and the
-    totals tie out to the Breakdown / KPI cards. One query. Read-only; never raises."""
+    DISTINCT POs / qty / value / % of value, PLUS a per-facility MARKETPLACE breakdown
+    (which MP lands in which FC — MT→BLR, GT Mass→AHD, …). Same window as
+    :func:`daily_intake`, grouped by facility (no date) so PO counts are distinct and
+    totals tie out to the Breakdown / KPIs. One query. Read-only; never raises."""
     out = {'facilities': [], 'total': {'pos': 0, 'qty': 0, 'value': 0.0}}
     try:
         with _conn() as (cur, d):
             ot, ph = d['orders'], d['ph']
-            sel = (f"SELECT warehouse, COUNT(DISTINCT po), COALESCE(SUM(qty),0), "
-                   f"COALESCE(SUM(order_value),0) FROM {ot} WHERE ")
+            sel = (f"SELECT warehouse, marketplace_label, COUNT(DISTINCT po), "
+                   f"COALESCE(SUM(qty),0), COALESCE(SUM(order_value),0) FROM {ot} WHERE ")
             if start and end:
-                cur.execute(sel + f"DATE(created_at) BETWEEN {ph} AND {ph} GROUP BY warehouse",
-                            (start, end))
+                cur.execute(sel + f"DATE(created_at) BETWEEN {ph} AND {ph} "
+                            f"GROUP BY warehouse, marketplace_label", (start, end))
             else:
                 cur.execute(sel + f"created_at >= (CURDATE() - INTERVAL {int(days) - 1} DAY) "
-                            f"GROUP BY warehouse")
-            fac_tot = {}                        # canon facility → [pos, qty, value]
-            for wh, pos, qty, val in cur.fetchall():
+                            f"GROUP BY warehouse, marketplace_label")
+            fac_tot, fac_mp = {}, {}            # facility → [pos,qty,val] / {mp: [pos,qty,val]}
+            for wh, mp, pos, qty, val in cur.fetchall():
                 # several raw warehouses can canon to one facility (PICK + aliases → AHD)
-                t = fac_tot.setdefault(_canon_fac(wh) or '—', [0, 0, 0.0])
+                code = _canon_fac(wh) or '—'
+                t = fac_tot.setdefault(code, [0, 0, 0.0])
                 t[0] += int(pos or 0); t[1] += int(qty or 0); t[2] += float(val or 0)
+                m = fac_mp.setdefault(code, {}).setdefault(mp or '—', [0, 0, 0.0])
+                m[0] += int(pos or 0); m[1] += int(qty or 0); m[2] += float(val or 0)
             fac_order = {'AHD': 0, 'BLR': 1, 'North': 2}
             codes = sorted(fac_tot.keys(), key=lambda k: (fac_order.get(k, 9), k))
             facilities, gtot = [], [0, 0, 0.0]
             for code in codes:
                 t = fac_tot[code]
                 gtot[0] += t[0]; gtot[1] += t[1]; gtot[2] += t[2]
-                facilities.append({'code': code, 'pos': t[0], 'qty': t[1], 'value': round(t[2], 2)})
+                fv = t[2] or 1
+                mps = sorted(
+                    [{'label': mp, 'pos': v[0], 'qty': v[1], 'value': round(v[2], 2),
+                      'share': round(v[2] / fv * 100, 1)}
+                     for mp, v in fac_mp.get(code, {}).items()],
+                    key=lambda x: -x['value'])
+                facilities.append({'code': code, 'pos': t[0], 'qty': t[1],
+                                   'value': round(t[2], 2), 'marketplaces': mps})
             tv = gtot[2] or 1
             for f in facilities:
                 f['share'] = round(f['value'] / tv * 100, 1)

@@ -76,12 +76,25 @@
       <thead><tr><th>Facility</th><th class="r">POs</th><th class="r">Qty</th><th class="r">Value</th><th class="r">Share of value</th></tr></thead>
       <tbody>
         {% for f in facilities.facilities %}
-        <tr class="fc-{{ f.code|lower }}">
-          <td class="an-fc-name"><span class="an-fc-chip"></span>{{ f.code }}</td>
+        <tr class="fc-{{ f.code|lower }} an-fc-row" data-fc-row="{{ forloop.counter0 }}" title="Click to see which marketplaces land in {{ f.code }}">
+          <td class="an-fc-name"><span class="an-fc-caret" aria-hidden="true">▸</span><span class="an-fc-chip"></span>{{ f.code }}</td>
           <td class="r">{{ f.pos }}</td>
           <td class="r">{{ f.qty|compact }}</td>
           <td class="r"><b>{{ f.value|inr_short }}</b></td>
           <td class="r an-fc-share">{{ f.share }}%<span class="an-fc-bar"><span style="width:{{ f.share }}%"></span></span></td>
+        </tr>
+        <tr class="an-fc-detail" data-fc-detail="{{ forloop.counter0 }}" hidden>
+          <td colspan="5">
+            <div class="an-fc-mps">
+              {% for m in f.marketplaces %}
+              <div class="an-fc-mp fc-{{ f.code|lower }}">
+                <span class="an-fc-mpname">{{ m.label|default:'—' }}</span>
+                <span class="an-fc-mpbar"><span style="width:{{ m.share }}%"></span></span>
+                <span class="an-fc-mpmeta">{{ m.pos }} PO{{ m.pos|pluralize }} · {{ m.qty|compact }} qty · <b>{{ m.value|inr_short }}</b> · {{ m.share }}%</span>
+              </div>
+              {% empty %}<div class="muted">No marketplaces.</div>{% endfor %}
+            </div>
+          </td>
         </tr>
         {% empty %}<tr><td colspan="5" class="muted">No facility data in this period.</td></tr>{% endfor %}
         {% if facilities.facilities %}<tr class="an-fc-tot"><td class="an-fc-name">Total</td><td class="r">{{ facilities.total.pos }}</td><td class="r">{{ facilities.total.qty|compact }}</td><td class="r"><b>{{ facilities.total.value|inr_short }}</b></td><td class="r">100%</td></tr>{% endif %}
