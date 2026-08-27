@@ -1070,8 +1070,18 @@ def default_warehouse() -> str:
 
 
 def _resolve_master_path():
-    """Mirror the desktop's master resolution: saved ``master_path`` in
-    ``mt_select_config.json`` if it exists, else the bundled ``MT_Masters.xlsx``."""
+    """Resolve the MT master workbook. **DB-backed first** — the authoritative
+    workbook lives in ``offline_master_file`` (no filesystem dependency on the
+    server); it's materialised to a temp file per run. Falls back to a saved
+    ``master_path`` in ``mt_select_config.json``, then the bundled ``MT_Masters.xlsx``
+    (local dev), so behaviour is unchanged where the file exists."""
+    try:
+        from . import offline_master_store as _oms
+        p = _oms.materialize('MT')
+        if p and Path(p).exists():
+            return Path(p)
+    except Exception:  # noqa: BLE001 — never block a run on the DB store
+        pass
     eng = _engine()
     cfg = eng.load_config()
     saved = cfg.get('master_path')
