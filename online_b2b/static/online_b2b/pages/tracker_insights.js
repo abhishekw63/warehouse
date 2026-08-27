@@ -154,7 +154,12 @@
         xAxis: { type: 'category', data: A.dow, splitArea: { show: true }, axisLabel: { color: c.text2, fontSize: 10 }, axisLine: { show: false }, axisTick: { show: false } },
         yAxis: { type: 'category', data: A.markets, splitArea: { show: true }, axisLabel: { color: c.text2, fontSize: 10 }, axisLine: { show: false }, axisTick: { show: false } },
         visualMap: { min: 0, max: 100, calculable: false, show: false, inRange: { color: [c.surface, c.accent] } },
-        series: [{ type: 'heatmap', data: A.data, label: { show: true, formatter: function (p) { return p.value[2] ? p.value[2] + '%' : ''; }, fontSize: 9.5, fontWeight: 600, color: c.text, textBorderColor: c.surface, textBorderWidth: 2 }, itemStyle: { borderColor: c.surface, borderWidth: 1.5 }, emphasis: { itemStyle: { borderColor: c.text } } }]
+        series: [{ type: 'heatmap',
+          // contrast-aware % labels: white on the saturated (high-%) cells, theme text
+          // on the light ones — crisp on both, no 'stickered' text-outline halo.
+          data: (A.data || []).map(function (cell) { var v = cell[2] || 0; return { value: cell, label: { color: v >= 55 ? '#fff' : c.text } }; }),
+          label: { show: true, formatter: function (p) { return p.value[2] ? p.value[2] + '%' : ''; }, fontSize: 10, fontWeight: 700 },
+          itemStyle: { borderColor: c.surface, borderWidth: 1.5 }, emphasis: { itemStyle: { borderColor: c.text } } }]
       }, true);
     }
     // 6) order timeline — an ACTIVITY timeline: a straight spine with a GLOWING
@@ -232,15 +237,16 @@
         if (a.draft) body += '<br/>not recorded yet' + (note ? ' · ' + note : '');
         return head + '<br/>' + body;
       };
-      // enhanced spine: a soft gradient rail — brighter through the middle where the
-      // arrivals sit, fading to nothing at both ends, rounded caps + a faint accent
-      // glow — so it reads as a polished timeline axis, not a plain divider line.
+      // spine: a clean, EVEN hairline that fades softly to nothing at both ends
+      // (rounded caps, uniform weight, no glow/no centre bulge) — a quiet rail that
+      // lets the colourful arrival dots carry the eye.
       var spine = { type: 'line', z: 1, silent: true, showSymbol: false,
         lineStyle: {
-          width: 3, cap: 'round', shadowBlur: 6, shadowColor: c.accent,
+          width: 1.5, cap: 'round',
           color: { type: 'linear', x: 0, y: 0, x2: 1, y2: 0, colorStops: [
-            { offset: 0, color: 'transparent' }, { offset: 0.05, color: c.border },
-            { offset: 0.5, color: c.text2 }, { offset: 0.95, color: c.border },
+            { offset: 0, color: 'transparent' },
+            { offset: 0.035, color: c.border },
+            { offset: 0.965, color: c.border },
             { offset: 1, color: 'transparent' }] }
         }, data: [[lo, 0], [hi, 0]] };
       // recorded arrivals GLOW; under prefers-reduced-motion the ripple is dropped
