@@ -189,6 +189,19 @@
       (I.markets || []).forEach(function (m, i) { mColor[m] = palette[i % palette.length]; });
       var maxM = 1;
       allPts.forEach(function (p) { var m = ivVal ? p.value : p.qty; if (m > maxM) maxM = m; });
+      // same-minute arrivals would stack on one spot (e.g. GT Select + OFF-INST both
+      // at 11:17) → spread them vertically (a small beeswarm) so both dots AND their
+      // labels stay readable instead of congested on top of each other.
+      var _byMin = {};
+      allPts.forEach(function (p) { (_byMin[p.min] || (_byMin[p.min] = [])).push(p); });
+      Object.keys(_byMin).forEach(function (k) {
+        var g = _byMin[k], step = Math.min(0.6, 1.6 / g.length);
+        g.forEach(function (p, i) { p._y = g.length > 1 ? (i - (g.length - 1) / 2) * step : 0; });
+      });
+      var lblPos = function (p, i) {
+        var y = p._y || 0;
+        return y > 0 ? 'top' : (y < 0 ? 'bottom' : (i % 2 === 0 ? 'top' : 'bottom'));
+      };
       var mins = allPts.map(function (p) { return p.min; });
       var lo = mins.length ? Math.max(0, Math.floor((Math.min.apply(null, mins) - 30) / 60) * 60) : 480;
       var hi = mins.length ? Math.min(1440, Math.ceil((Math.max.apply(null, mins) + 30) / 60) * 60) : 1080;
@@ -198,10 +211,10 @@
         var col = mColor[p.mp] || c.accent;
         var val = ivVal ? inrCr(p.value) : (p.qty.toLocaleString('en-IN') + ' qty');
         return {
-          value: [p.min, 0, ivVal ? p.value : p.qty], a: p,
+          value: [p.min, p._y || 0, ivVal ? p.value : p.qty], a: p,
           itemStyle: { color: col, shadowBlur: 14, shadowColor: col },
           label: {
-            show: true, position: (i % 2 === 0) ? 'top' : 'bottom', distance: 12,
+            show: true, position: lblPos(p, i), distance: 12,
             formatter: '{m|' + p.mp + '}  {t|' + minFmt(p.min) + '}\n{v|' + val + '}',
             rich: {
               m: { fontSize: 10.5, fontWeight: 800, color: col },
@@ -215,10 +228,10 @@
         var col = mColor[p.mp] || c.accent;
         var val = ivVal ? inrCr(p.value) : (p.qty.toLocaleString('en-IN') + ' qty');
         return {
-          value: [p.min, 0, ivVal ? p.value : p.qty], a: p,
+          value: [p.min, p._y || 0, ivVal ? p.value : p.qty], a: p,
           itemStyle: { color: c.surface, borderColor: col, borderWidth: 2, borderType: 'dashed' },
           label: {
-            show: true, position: (i % 2 === 0) ? 'bottom' : 'top', distance: 12,
+            show: true, position: lblPos(p, i), distance: 12,
             formatter: '{m|⏳ ' + p.mp + '}  {t|' + minFmt(p.min) + '}\n{v|' + val + '}  {g|pending}',
             rich: {
               m: { fontSize: 10.5, fontWeight: 800, color: col },
@@ -268,7 +281,7 @@
           axisLine: { lineStyle: { color: c.border } },
           axisLabel: { color: c.text2, fontSize: 9.5, formatter: minFmt }, splitLine: { show: false }
         },
-        yAxis: { type: 'value', min: -1, max: 1, show: false },
+        yAxis: { type: 'value', min: -1.4, max: 1.4, show: false },   // headroom for the same-minute beeswarm spread
         series: series
       }, true);
     }
