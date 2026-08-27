@@ -90,6 +90,65 @@ def _drop_pooled():
     _local.oc = None
 
 
+# ── Process-local TTL cache for STABLE reference data ──────────────────────────
+# Data re-read on every page render but that changes rarely (ship-to geo map, the
+# marketplace/segment dropdown universes). Caching it kills those repeated remote
+# round-trips. Short TTL only → a ship-to/marketplace edit shows within the window;
+# NEVER cache live order rows here. Tune/disable via ORDERDB_STABLE_TTL (0 = off).
+_STABLE: dict = {}
+_STABLE_TTL = float(os.environ.get('ORDERDB_STABLE_TTL', '60'))
+
+
+def _stable(key, builder, ttl=None):
+    ttl = _STABLE_TTL if ttl is None else ttl
+    if ttl <= 0:
+        return builder()
+    now = time.monotonic()
+    hit = _STABLE.get(key)
+    if hit and hit[0] > now:
+        return hit[1]
+    val = builder()
+    _STABLE[key] = (now + ttl, val)
+    return val
+
+
+def _build_loc2geo() -> dict:
+    """``nk(location) -> (pincode, state)`` from the ship-to master. Cached."""
+    import re as _re3
+    out: dict = {}
+    try:
+        with _conn() as (cur, d):
+            cur.execute('SELECT del_location,ship_to,name,city,postcode,state '
+                        'FROM ship_to_mapping')
+            for dl, shp, nm, ci, pc, st in cur.fetchall():
+                g = (str(pc or '').strip(), str(st or '').strip())
+                for kk in (dl, shp, nm, ci):
+                    if kk:
+                        out.setdefault(_re3.sub(r'[^a-z0-9]', '', str(kk).lower()), g)
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
+def _build_tracker_dropdowns() -> dict:
+    """The tracker's segment + marketplace filter universes (DISTINCT over
+    order_headers). Cached — the universe barely changes between renders."""
+    out = {'segments': [], 'marketplaces': []}
+    try:
+        with _conn() as (cur, d):
+            cur.execute("SELECT DISTINCT segment FROM order_headers "
+                        "WHERE segment IS NOT NULL")
+            out['segments'] = sorted({_SEG_LABEL.get(x[0], x[0])
+                                      for x in cur.fetchall() if x[0]})
+            cur.execute("SELECT DISTINCT marketplace_label FROM order_headers "
+                        "WHERE marketplace_label IS NOT NULL AND marketplace_label<>'' "
+                        "ORDER BY marketplace_label")
+            out['marketplaces'] = [x[0] for x in cur.fetchall()]
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
 def _backend():
     """Return ('mysql', cfg) or ('sqlite', path) based on the engine config."""
     from online_po_processor.auto.history_db import (
@@ -1015,15 +1074,9 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
             ph = d['ph']
             if d.get('kind') == 'mysql':
                 _ensure_tracker_index(cur)   # composite index for the latest-run JOIN
-            # loc -> (pincode, state) from the ship-to master
-            cur.execute('SELECT del_location,ship_to,name,city,postcode,state '
-                        'FROM ship_to_mapping')
-            loc2geo = {}
-            for dl, shp, nm, ci, pc, st in cur.fetchall():
-                g = (str(pc or '').strip(), str(st or '').strip())
-                for kk in (dl, shp, nm, ci):
-                    if kk:
-                        loc2geo.setdefault(nk(kk), g)
+            # loc -> (pincode, state) from the ship-to master (cached; changes rarely,
+            # so a 1,113-row read isn't repeated on every tracker render)
+            loc2geo = _stable('trk_loc2geo', _build_loc2geo)
 
             # Base conditions (dept / marketplace / search) shared by the main
             # query AND the facility breakdown; the warehouse condition is layered
@@ -1133,13 +1186,10 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
             # always newest-uploaded first (covers merged manual + auto)
             rows.sort(key=lambda r: str(r.get('uploaded') or ''), reverse=True)
 
-            # filter dropdown options (full universe, not just filtered)
-            cur.execute("SELECT DISTINCT segment FROM order_headers WHERE segment IS NOT NULL")
-            out['segments'] = sorted({_SEG_LABEL.get(x[0], x[0]) for x in cur.fetchall() if x[0]})
-            cur.execute("SELECT DISTINCT marketplace_label FROM order_headers "
-                        "WHERE marketplace_label IS NOT NULL AND marketplace_label<>'' "
-                        "ORDER BY marketplace_label")
-            out['marketplaces'] = [x[0] for x in cur.fetchall()]
+            # filter dropdown options (full universe, cached — barely changes)
+            _dd = _stable('trk_dropdowns', _build_tracker_dropdowns)
+            out['segments'] = _dd['segments']
+            out['marketplaces'] = _dd['marketplaces']
             # Facility-wise breakdown — one entry per REAL fulfilment centre
             # (AHD / BLR / North), collapsing D365 codes (PICK / DS_BL_OFF1 /
             # NORTH WH-0) into their facility. Within the current dept/marketplace/
