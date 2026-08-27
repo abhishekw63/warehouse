@@ -933,6 +933,23 @@ class TrackerInsightsView(LoginRequiredMixin, View):
         except Exception:  # noqa: BLE001
             pass
         ins['fill'] = fill
+        # Parked 'Review Later' drafts are activity too — overlay them on the Order
+        # Timeline as PENDING arrivals (still absent from the tracker table + KPIs).
+        try:
+            iv = ins.get('intraday') or {}
+            dpts = _draft_activity_points(day, f)
+            if dpts:
+                mkts = list(iv.get('markets') or [])
+                for p in dpts:
+                    if p['mp'] not in mkts:
+                        mkts.append(p['mp'])
+                iv['points'] = (iv.get('points') or []) + dpts
+                iv['markets'] = mkts
+                iv['max_qty'] = max([iv.get('max_qty') or 0] + [p['qty'] for p in dpts])
+                iv['has_draft'] = True
+                ins['intraday'] = iv
+        except Exception:  # noqa: BLE001
+            pass
         return JsonResponse(ins)
 
 
@@ -2001,6 +2018,63 @@ def _collect_drafts() -> list[dict]:
         })
     rows.sort(key=lambda r: r['draft_at'], reverse=True)
     return rows
+
+
+def _draft_activity_points(day, f):
+    """Parked 'Review Later' drafts as PENDING activity points for the Order
+    Timeline. A parked upload isn't recorded in the tracker/KPIs yet, but an upload
+    IS activity — so surface each on the day it was parked (marketplace · park time ·
+    qty · value), flagged ``draft`` so the timeline paints it as a pending arrival.
+    Honors the marketplace filter; scoped to the timeline's own day. Never raises."""
+    pts = []
+    try:
+        import datetime as _dt
+        from .services import marketplaces as _reg
+        disp = _reg.db_key_to_display()
+        want_mp = (f.get('marketplace') or '').strip()
+        if not _UPLOADS.exists():
+            return pts
+        for d in _UPLOADS.iterdir():
+            if not d.is_dir():
+                continue
+            mp = d / 'meta.json'
+            if not mp.exists():
+                continue
+            try:
+                meta = json.loads(mp.read_text(encoding='utf-8'))
+            except Exception:  # noqa: BLE001
+                continue
+            if not meta.get('draft') or meta.get('locked'):
+                continue
+            da = str(meta.get('draft_at') or '')
+            if da[:10] != day:                    # timeline is per-day → only that day's parks
+                continue
+            try:
+                ts = _dt.datetime.strptime(da[:19], '%Y-%m-%d %H:%M:%S')
+            except (ValueError, TypeError):
+                continue
+            label = disp.get(str(meta.get('marketplace')), meta.get('marketplace') or '—')
+            if want_mp and label != want_mp:
+                continue
+            summ = {}
+            cache = d / 'preview.json'
+            if cache.exists():
+                try:
+                    summ = ((json.loads(cache.read_text(encoding='utf-8'))
+                             .get('res') or {}).get('summary') or {})
+                except Exception:  # noqa: BLE001
+                    summ = {}
+            mod = ts.hour * 60 + ts.minute
+            pts.append({
+                'mp': label, 'min': mod, 'hour': mod // 60,
+                'orders': int(summ.get('pos') or 0),
+                'qty': int(summ.get('qty') or 0),
+                'value': round(float(summ.get('value') or 0), 2),
+                'draft': True, 'note': (meta.get('draft_note') or '')[:120],
+            })
+    except Exception:  # noqa: BLE001
+        return pts
+    return pts
 
 
 class SaveReviewLaterView(LoginRequiredMixin, View):

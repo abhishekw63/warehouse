@@ -156,28 +156,79 @@
         var ap = h < 12 ? 'AM' : 'PM'; var hh = h % 12; if (!hh) hh = 12;
         return hh + ':' + ('0' + mi).slice(-2) + ' ' + ap;
       };
-      // one dot per (marketplace, minute) — each MP its own color, sorted along the day
-      var pts = (I.points || []).slice().sort(function (a, b) { return (a.min - b.min) || (a.mi - b.mi); });
+      // one dot per (marketplace, minute) — each MP its own color, sorted along the
+      // day. Recorded arrivals GLOW; parked 'Review Later' drafts show as a hollow,
+      // dashed PENDING ring (activity, but not yet written to the tracker/KPIs).
+      var allPts = (I.points || []).slice().sort(function (a, b) {
+        return (a.min - b.min) || ((a.mi || 0) - (b.mi || 0));
+      });
+      var recPts = allPts.filter(function (p) { return !p.draft; });
+      var draftPts = allPts.filter(function (p) { return p.draft; });
       var palette = [c.accent, '#22c55e', '#f59e0b', '#ec4899', '#06b6d4', '#a855f7', '#ef4444', '#14b8a6', '#eab308', '#6366f1'];
       var mColor = {};
       (I.markets || []).forEach(function (m, i) { mColor[m] = palette[i % palette.length]; });
       var maxM = 1;
-      pts.forEach(function (p) { var m = ivVal ? p.value : p.qty; if (m > maxM) maxM = m; });
-      var mins = pts.map(function (p) { return p.min; });
+      allPts.forEach(function (p) { var m = ivVal ? p.value : p.qty; if (m > maxM) maxM = m; });
+      var mins = allPts.map(function (p) { return p.min; });
       var lo = mins.length ? Math.max(0, Math.floor((Math.min.apply(null, mins) - 30) / 60) * 60) : 480;
       var hi = mins.length ? Math.min(1440, Math.ceil((Math.max.apply(null, mins) + 30) / 60) * 60) : 1080;
       if (hi - lo < 120) { hi = Math.min(1440, lo + 120); lo = Math.max(0, hi - 120); }  // min span, clamped within the day (no phantom post-midnight ticks)
+      var sizeFor = function (v) { return 11 + Math.sqrt((v[2] || 0) / maxM) * 18; };
+      var recData = recPts.map(function (p, i) {
+        var col = mColor[p.mp] || c.accent;
+        var val = ivVal ? ('₹' + inrCr(p.value)) : (p.qty.toLocaleString('en-IN') + ' qty');
+        return {
+          value: [p.min, 0, ivVal ? p.value : p.qty], a: p,
+          itemStyle: { color: col, shadowBlur: 14, shadowColor: col },
+          label: {
+            show: true, position: (i % 2 === 0) ? 'top' : 'bottom', distance: 12,
+            formatter: '{m|' + p.mp + '}  {t|' + minFmt(p.min) + '}\n{v|' + val + '}',
+            rich: {
+              m: { fontSize: 10.5, fontWeight: 800, color: col },
+              t: { fontSize: 9, color: c.text2 },
+              v: { fontSize: 11.5, fontWeight: 800, color: c.text, align: 'center', padding: [2, 0, 0, 0] }
+            }
+          }
+        };
+      });
+      var draftData = draftPts.map(function (p, i) {
+        var col = mColor[p.mp] || c.accent;
+        var val = ivVal ? ('₹' + inrCr(p.value)) : (p.qty.toLocaleString('en-IN') + ' qty');
+        return {
+          value: [p.min, 0, ivVal ? p.value : p.qty], a: p,
+          itemStyle: { color: c.surface, borderColor: col, borderWidth: 2, borderType: 'dashed' },
+          label: {
+            show: true, position: (i % 2 === 0) ? 'bottom' : 'top', distance: 12,
+            formatter: '{m|⏳ ' + p.mp + '}  {t|' + minFmt(p.min) + '}\n{v|' + val + '}  {g|pending}',
+            rich: {
+              m: { fontSize: 10.5, fontWeight: 800, color: col },
+              t: { fontSize: 9, color: c.text2 },
+              v: { fontSize: 11, fontWeight: 700, color: c.text2, align: 'center', padding: [2, 0, 0, 0] },
+              g: { fontSize: 9, fontWeight: 800, color: c.amber, padding: [0, 0, 0, 4] }
+            }
+          }
+        };
+      });
+      var mkTip = function (p) {
+        var a = p.data.a, note = a.note ? String(a.note).replace(/[<>&]/g, '') : '';
+        var head = '<b>' + a.mp + '</b>' + (a.draft ? ' · ⏳ Review Later (pending)' : '');
+        var body = minFmt(a.min) + ' · ' + a.orders + ' order' + (a.orders === 1 ? '' : 's') + ' · ' +
+          a.qty.toLocaleString('en-IN') + ' qty · <b>' + inrCr(a.value) + '</b>';
+        if (a.draft) body += '<br/>not recorded yet' + (note ? ' · ' + note : '');
+        return head + '<br/>' + body;
+      };
+      var series = [
+        { type: 'line', z: 1, silent: true, showSymbol: false,
+          lineStyle: { color: c.border, width: 2 }, data: [[lo, 0], [hi, 0]] },
+        { type: 'effectScatter', z: 2, showEffectOn: 'render',
+          rippleEffect: { scale: 2.4, brushType: 'stroke' }, symbolSize: sizeFor, data: recData }
+      ];
+      if (draftData.length) series.push(
+        { type: 'scatter', z: 3, symbol: 'circle', symbolSize: sizeFor, data: draftData });
       iv.setOption({
         animationDuration: 480,
         grid: { left: 6, right: 16, top: 40, bottom: 36, containLabel: true },
-        tooltip: {
-          trigger: 'item', formatter: function (p) {
-            var a = p.data.a;
-            return '<b>' + a.mp + '</b> · ' + minFmt(a.min) + '<br/>' +
-              a.orders + ' order' + (a.orders === 1 ? '' : 's') + ' · ' +
-              a.qty.toLocaleString('en-IN') + ' qty · <b>' + inrCr(a.value) + '</b>';
-          }
-        },
+        tooltip: { trigger: 'item', formatter: mkTip },
         dataZoom: [{ type: 'inside', filterMode: 'none', xAxisIndex: 0 }],
         xAxis: {
           type: 'value', min: lo, max: hi, interval: 60, axisTick: { show: false },
@@ -185,30 +236,7 @@
           axisLabel: { color: c.text2, fontSize: 9.5, formatter: minFmt }, splitLine: { show: false }
         },
         yAxis: { type: 'value', min: -1, max: 1, show: false },
-        series: [
-          { type: 'line', z: 1, silent: true, showSymbol: false,
-            lineStyle: { color: c.border, width: 2 }, data: [[lo, 0], [hi, 0]] },
-          { type: 'effectScatter', z: 2, showEffectOn: 'render',
-            rippleEffect: { scale: 2.4, brushType: 'stroke' },
-            symbolSize: function (v) { return 11 + Math.sqrt((v[2] || 0) / maxM) * 18; },
-            data: pts.map(function (p, i) {
-              var col = mColor[p.mp] || c.accent;
-              var val = ivVal ? ('₹' + inrCr(p.value)) : (p.qty.toLocaleString('en-IN') + ' qty');
-              return {
-                value: [p.min, 0, ivVal ? p.value : p.qty], a: p,
-                itemStyle: { color: col, shadowBlur: 14, shadowColor: col },
-                label: {
-                  show: true, position: (i % 2 === 0) ? 'top' : 'bottom', distance: 12,
-                  formatter: '{m|' + p.mp + '}  {t|' + minFmt(p.min) + '}\n{v|' + val + '}',
-                  rich: {
-                    m: { fontSize: 10.5, fontWeight: 800, color: col },
-                    t: { fontSize: 9, color: c.text2 },
-                    v: { fontSize: 11.5, fontWeight: 800, color: c.text, align: 'center', padding: [2, 0, 0, 0] }
-                  }
-                }
-              };
-            }) }
-        ]
+        series: series
       }, true);
     }
     bodyEl.classList.remove('ti-loading');   // charts painted → drop the skeleton
