@@ -149,7 +149,7 @@
     if (iv) {
       var I = d.intraday || { markets: [], points: [] };
       var ivVal = (ivMetric === 'value');
-      var hourFmt = function (h) { h = +h; var ap = h < 12 ? 'a' : 'p'; var hh = h % 12; if (!hh) hh = 12; return hh + ap; };
+      var hourFmt = function (h) { h = +h; var ap = h < 12 ? 'AM' : 'PM'; var hh = h % 12; if (!hh) hh = 12; return hh + ':00 ' + ap; };
       // aggregate ALL marketplaces per hour → one activity point per hour
       var byHour = {};
       I.points.forEach(function (p) {
@@ -158,12 +158,16 @@
         a.mps[p.mp] = (a.mps[p.mp] || 0) + (ivVal ? p.value : p.qty);
       });
       var acts = Object.keys(byHour).map(function (h) { return byHour[h]; }).sort(function (a, b) { return a.hour - b.hour; });
-      var maxM = 1; acts.forEach(function (a) { var m = ivVal ? a.value : a.qty; if (m > maxM) maxM = m; });
+      var maxM = 1;
+      acts.forEach(function (a) {
+        var m = ivVal ? a.value : a.qty; if (m > maxM) maxM = m;
+        var k = Object.keys(a.mps); a.top = k.length ? k.sort(function (x, y) { return a.mps[y] - a.mps[x]; })[0] : '';
+      });
       var hmin = acts.length ? acts[0].hour : 8, hmax = acts.length ? acts[acts.length - 1].hour : 18;
       var lo = Math.max(0, hmin - 1), hi = Math.min(24, hmax + 1);
       iv.setOption({
         animationDuration: 480,
-        grid: { left: 6, right: 16, top: 24, bottom: 24, containLabel: true },
+        grid: { left: 6, right: 16, top: 22, bottom: 46, containLabel: true },
         tooltip: {
           trigger: 'item', formatter: function (p) {
             var a = p.data.a;
@@ -183,9 +187,21 @@
           { type: 'line', z: 1, silent: true, showSymbol: false,
             lineStyle: { color: c.border, width: 2 }, data: [[lo, 0], [hi, 0]] },
           { type: 'effectScatter', z: 2, showEffectOn: 'render',
-            rippleEffect: { scale: 2.6, brushType: 'stroke' },
-            symbolSize: function (v) { return 10 + Math.sqrt((v[2] || 0) / maxM) * 22; },
-            itemStyle: { color: c.accent, shadowBlur: 12, shadowColor: c.accent },
+            rippleEffect: { scale: 2.4, brushType: 'stroke' },
+            symbolSize: function (v) { return 12 + Math.sqrt((v[2] || 0) / maxM) * 20; },
+            itemStyle: { color: c.accent, shadowBlur: 14, shadowColor: c.accent },
+            label: {
+              show: true, position: 'bottom', distance: 12,
+              formatter: function (p) {
+                var a = p.data.a;
+                var val = ivVal ? ('₹' + inrCr(a.value)) : (a.qty.toLocaleString('en-IN') + ' qty');
+                return '{v|' + val + '}\n{t|' + a.top + ' · ' + a.orders + ' order' + (a.orders === 1 ? '' : 's') + '}';
+              },
+              rich: {
+                v: { fontSize: 12, fontWeight: 800, color: c.text, align: 'center' },
+                t: { fontSize: 9.5, color: c.text2, align: 'center', padding: [2, 0, 0, 0] }
+              }
+            },
             data: acts.map(function (a) { return { value: [a.hour, 0, ivVal ? a.value : a.qty], a: a }; }) }
         ]
       }, true);
