@@ -58,6 +58,11 @@ def _engine():
         sys.modules[_MODULE_NAME] = mod
         spec.loader.exec_module(mod)
         _register_web_channels(mod)      # inject web-only channels (RL) at runtime
+        try:
+            from . import offline_seq_store as _seq
+            _seq.patch_engine(mod)       # DB-back the SO counter (survives ephemeral FS)
+        except Exception:  # noqa: BLE001 — never block the engine on the seq store
+            pass
         _engine_mod = mod
     return _engine_mod
 
