@@ -63,14 +63,35 @@
     });
   }
 
+  // Shared external LIBS a page declares in extra_js WITHOUT data-page-js (echarts,
+  // apexcharts, …) live OUTSIDE #MainContent, so the innerHTML swap never carries them
+  // and syncPageJs (data-page-js only) never adds them → a partial nav to a charting
+  // page left window.echarts undefined and every chart blank until a FULL refresh.
+  // Inject any lib the incoming page needs that isn't already resident; async=false so
+  // it executes IN ORDER, before the page-js that depends on it. Base libs (motion,
+  // enhance, …) are already present on every page, so the src-dedup skips them; once a
+  // lib is injected it stays resident for the rest of the shell session (loaded once).
+  function syncSharedScripts(doc) {
+    doc.querySelectorAll('script[src]:not([data-page-js])').forEach(function (s) {
+      var src = s.getAttribute('src'); if (!src) return;
+      if (d.querySelector('script[src="' + src + '"]')) return;   // already loaded (base libs / prior visit)
+      var ns = d.createElement('script');
+      [].forEach.call(s.attributes, function (at) { ns.setAttribute(at.name, at.value); });
+      ns.async = false;                                           // run before the page-js that needs it
+      d.body.appendChild(ns);
+    });
+  }
+
   // Page-specific external JS (extra_js, marked data-page-js): remove the previous
   // page's and (re-)add the incoming page's so it re-runs even on a return visit.
+  // async=false keeps them in declared order AND after the shared libs above.
   function syncPageJs(doc) {
     d.querySelectorAll('script[data-page-js]').forEach(function (s) { s.remove(); });
     doc.querySelectorAll('script[data-page-js]').forEach(function (s) {
       var ns = d.createElement('script');
       [].forEach.call(s.attributes, function (at) { ns.setAttribute(at.name, at.value); });
-      if (!s.getAttribute('src')) ns.textContent = s.textContent;
+      if (s.getAttribute('src')) ns.async = false;
+      else ns.textContent = s.textContent;
       d.body.appendChild(ns);
     });
   }
@@ -144,6 +165,7 @@
           // Swap ONLY the middle — the sidebar + header DOM are never touched.
           main.innerHTML = nm.innerHTML;
           reExecInline(main);
+          syncSharedScripts(doc);
           syncPageJs(doc);
           setActive(doc);
           if (w.B2B) {

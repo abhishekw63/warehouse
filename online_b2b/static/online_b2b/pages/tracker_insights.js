@@ -152,7 +152,7 @@
       var I = d.intraday || { markets: [], points: [] };
       var ivVal = (ivMetric === 'value');
       var minFmt = function (m) {
-        m = Math.round(+m); var h = Math.floor(m / 60), mi = ((m % 60) + 60) % 60;
+        m = Math.round(+m); var mi = ((m % 60) + 60) % 60; var h = ((Math.floor(m / 60) % 24) + 24) % 24;
         var ap = h < 12 ? 'AM' : 'PM'; var hh = h % 12; if (!hh) hh = 12;
         return hh + ':' + ('0' + mi).slice(-2) + ' ' + ap;
       };
@@ -166,7 +166,7 @@
       var mins = pts.map(function (p) { return p.min; });
       var lo = mins.length ? Math.max(0, Math.floor((Math.min.apply(null, mins) - 30) / 60) * 60) : 480;
       var hi = mins.length ? Math.min(1440, Math.ceil((Math.max.apply(null, mins) + 30) / 60) * 60) : 1080;
-      if (hi - lo < 120) hi = lo + 120;            // keep a sensible minimum span
+      if (hi - lo < 120) { hi = Math.min(1440, lo + 120); lo = Math.max(0, hi - 120); }  // min span, clamped within the day (no phantom post-midnight ticks)
       iv.setOption({
         animationDuration: 480,
         grid: { left: 6, right: 16, top: 40, bottom: 36, containLabel: true },
