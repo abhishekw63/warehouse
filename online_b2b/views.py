@@ -1841,7 +1841,16 @@ def _load_meta(token: str):
     d = _token_dir(token)
     p = d / 'meta.json'
     if not p.exists():
-        return None, d
+        # A DB-parked draft that isn't on THIS server's disk (production, or parked
+        # on another machine) → restore the token folder from the DB, then read. Makes
+        # the file-based review/finalise flow work unchanged wherever the draft lives.
+        try:
+            from .services import draft_store
+            draft_store.materialize(token, d)
+        except Exception:  # noqa: BLE001
+            pass
+        if not p.exists():
+            return None, d
     try:
         return json.loads(p.read_text(encoding='utf-8')), d
     except Exception:
@@ -2123,44 +2132,56 @@ def _collect_drafts() -> list[dict]:
     """All parked 'Review Later' runs as API-ready dicts (token, marketplace,
     when, note, PO count, undecided-affected count, file count). Read-only; the
     fat data layer behind :class:`DraftsView` and the JSON endpoint."""
-    rows: list[dict] = []
-    if not _UPLOADS.exists():
-        return rows
-    for d in _UPLOADS.iterdir():
-        if not d.is_dir():
-            continue
-        mp = d / 'meta.json'
-        if not mp.exists():
-            continue
-        try:
-            meta = json.loads(mp.read_text(encoding='utf-8'))
-        except Exception:  # noqa: BLE001
-            continue
-        if not meta.get('draft') or meta.get('locked'):
-            continue
-        npos = undecided = 0
-        cache = d / 'preview.json'
-        if cache.exists():
+    by_token: dict = {}
+    # 1) this server's upload folder
+    if _UPLOADS.exists():
+        for d in _UPLOADS.iterdir():
+            if not d.is_dir():
+                continue
+            mp = d / 'meta.json'
+            if not mp.exists():
+                continue
             try:
-                res = (json.loads(cache.read_text(encoding='utf-8'))
-                       .get('res') or {})
-                npos = len(res.get('headers') or [])
-                dec = meta.get('decisions') or {}
-                for ln in (res.get('affected') or []):
-                    k = (f"{ln.get('po', '')}|{ln.get('item_no', '')}"
-                         f"|{ln.get('ean', '')}")
-                    if not (dec.get(k) or {}).get('action'):
-                        undecided += 1
+                meta = json.loads(mp.read_text(encoding='utf-8'))
+            except Exception:  # noqa: BLE001
+                continue
+            if not meta.get('draft') or meta.get('locked'):
+                continue
+            npos = undecided = 0
+            cache = d / 'preview.json'
+            if cache.exists():
+                try:
+                    res = (json.loads(cache.read_text(encoding='utf-8'))
+                           .get('res') or {})
+                    npos = len(res.get('headers') or [])
+                    dec = meta.get('decisions') or {}
+                    for ln in (res.get('affected') or []):
+                        k = (f"{ln.get('po', '')}|{ln.get('item_no', '')}"
+                             f"|{ln.get('ean', '')}")
+                        if not (dec.get(k) or {}).get('action'):
+                            undecided += 1
+                except Exception:  # noqa: BLE001
+                    pass
+            by_token[d.name] = {
+                'token': d.name, 'marketplace': meta.get('marketplace', ''),
+                'draft_at': meta.get('draft_at', ''), 'note': meta.get('draft_note', ''),
+                'pos': npos, 'undecided': undecided,
+                'files': len(meta.get('files') or []),
+            }
+            try:                     # lazily migrate a local-only draft into the DB
+                from .services import draft_store
+                if not draft_store.has(d.name):
+                    draft_store.snapshot(d.name, d, meta)
             except Exception:  # noqa: BLE001
                 pass
-        rows.append({
-            'token': d.name,
-            'marketplace': meta.get('marketplace', ''),
-            'draft_at': meta.get('draft_at', ''),
-            'note': meta.get('draft_note', ''),
-            'pos': npos, 'undecided': undecided,
-            'files': len(meta.get('files') or []),
-        })
+    # 2) DB draft store — drafts parked on any server / that survived a restart
+    try:
+        from .services import draft_store
+        for r in draft_store.list_drafts():
+            by_token.setdefault(r['token'], r)   # local (fresh) wins; DB fills the rest
+    except Exception:  # noqa: BLE001
+        pass
+    rows = list(by_token.values())
     rows.sort(key=lambda r: r['draft_at'], reverse=True)
     return rows
 
@@ -2242,6 +2263,11 @@ class SaveReviewLaterView(LoginRequiredMixin, View):
         meta['draft_at'] = _dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         meta['draft_note'] = (request.POST.get('note') or '')[:300]
         _save_meta(d, meta)
+        try:
+            from .services import draft_store
+            draft_store.snapshot(token, d, meta)   # persist to DB → survives restart, visible in prod
+        except Exception:  # noqa: BLE001
+            pass
         # Parking a run = an unresolved CP issue → auto-HOLD that channel on
         # today's Daily Tasks so it's not chased as pending until it's resolved
         # (finalizing the run un-holds it). The draft note rides along as the
@@ -2450,6 +2476,12 @@ def confirm(request, token):
     meta['run_id'] = run_id
     meta['locked'] = True
     (d / 'meta.json').write_text(json.dumps(meta), encoding='utf-8')
+    if was_draft:                    # finalised → no longer a parked draft
+        try:
+            from .services import draft_store
+            draft_store.delete(token)
+        except Exception:  # noqa: BLE001
+            pass
     # A parked ("Review Later") run just got finalized → the CP issue is resolved,
     # so auto-UN-HOLD that channel on today's Daily Tasks (mirrors the auto-hold on
     # park). Best-effort. (Uploaded-web will also auto-tick from the new record.)
@@ -2630,6 +2662,11 @@ def discard(request, token):
     d = _token_dir(token)
     if d.exists():
         shutil.rmtree(d, ignore_errors=True)
+    try:                             # also drop any DB-parked copy
+        from .services import draft_store
+        draft_store.delete(token)
+    except Exception:  # noqa: BLE001
+        pass
     messages.info(request, "Upload discarded.")
     return redirect('b2b_dashboard')
 
