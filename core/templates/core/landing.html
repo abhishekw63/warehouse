@@ -56,6 +56,7 @@
     .err{display:flex;align-items:center;gap:8px;background:var(--err-bg);color:var(--err);
       border:1px solid color-mix(in srgb,var(--err) 28%,#fff);font-size:13px;font-weight:600;
       padding:10px 12px;border-radius:var(--r);margin:0 0 16px;}
+    .err[hidden]{display:none;}   /* the class's display:flex was overriding the [hidden] attr → error showed on a fresh GET */
     .field{margin-bottom:15px;}
     .field label{display:block;font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2);margin:0 0 6px;}
     .field input[type=text],.field input[type=password]{
