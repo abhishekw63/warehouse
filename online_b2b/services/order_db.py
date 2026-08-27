@@ -794,23 +794,25 @@ def location_geo_map() -> dict:
     zone). This is the SAME resolution the consolidated tracker uses, so any other
     surface (e.g. the workbook Tracker sheet) shows matching State/Zone. Load once
     and pass into a loop via :func:`geo_for_location`. Read-only; never raises."""
-    out: dict = {}
-    try:
-        with _conn() as (cur, d):
-            cur.execute('SELECT del_location,ship_to,name,city,postcode,state '
-                        'FROM ship_to_mapping')
-            for dl, shp, nm, ci, pc, st in cur.fetchall():
-                pin = str(pc or '').strip()
-                raw = str(st or '').strip()
-                stname = _IN_STATES.get(raw.upper(), raw) if raw else ''
-                zone = _IN_ZONES.get(stname, '') if stname else ''
-                geo = {'pincode': pin, 'state': stname, 'zone': zone}
-                for kk in (dl, shp, nm, ci):
-                    if kk:
-                        out.setdefault(_loc_key(kk), geo)
-    except Exception:  # noqa: BLE001
-        return {}
-    return out
+    def _build():
+        out: dict = {}
+        try:
+            with _conn() as (cur, d):
+                cur.execute('SELECT del_location,ship_to,name,city,postcode,state '
+                            'FROM ship_to_mapping')
+                for dl, shp, nm, ci, pc, st in cur.fetchall():
+                    pin = str(pc or '').strip()
+                    raw = str(st or '').strip()
+                    stname = _IN_STATES.get(raw.upper(), raw) if raw else ''
+                    zone = _IN_ZONES.get(stname, '') if stname else ''
+                    geo = {'pincode': pin, 'state': stname, 'zone': zone}
+                    for kk in (dl, shp, nm, ci):
+                        if kk:
+                            out.setdefault(_loc_key(kk), geo)
+        except Exception:  # noqa: BLE001
+            return {}
+        return out
+    return _stable('location_geo_map', _build)   # ship-to changes rarely → cache it
 
 
 def geo_for_location(location, geo_map=None) -> dict:
