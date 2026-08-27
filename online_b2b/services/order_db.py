@@ -1052,18 +1052,28 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
                 where.append(f"h.warehouse IN ({marks})"); args += aliases
             wsql = (' AND ' + ' AND '.join(where)) if where else ''
 
+            # Deduped latest-run set — shared by the totals aggregate and the display
+            # page. Totals come from a SQL aggregate (1 row) over EVERY matching order,
+            # so the table fetches only the display page instead of all ~7k rows just
+            # to sum them in Python (the tracker's biggest cost). [[tracker perf]]
+            _latest = (
+                "order_headers h JOIN ("
+                "  SELECT marketplace, po, MAX(run_ts) mx FROM order_headers "
+                "  GROUP BY marketplace, po) t ON h.marketplace=t.marketplace "
+                f"AND h.po=t.po AND h.run_ts=t.mx WHERE 1=1{wsql}")
+            cur.execute(
+                "SELECT COUNT(*), COALESCE(SUM(h.order_value),0), "
+                f"COALESCE(SUM(h.qty),0) FROM {_latest}", tuple(args))
+            _agg = cur.fetchone() or (0, 0, 0)
+            auto_n = int(_agg[0] or 0); tv = float(_agg[1] or 0.0); tq = int(_agg[2] or 0)
             cur.execute(
                 "SELECT h.segment, h.warehouse, h.marketplace_label, h.po, "
                 "h.external_doc, h.location, h.po_date, h.exp_date, h.order_value, "
-                "h.qty, h.run_ts, h.output_file, h.run_id FROM order_headers h JOIN ("
-                "  SELECT marketplace, po, MAX(run_ts) mx FROM order_headers "
-                "  GROUP BY marketplace, po) t ON h.marketplace=t.marketplace "
-                f"AND h.po=t.po AND h.run_ts=t.mx WHERE 1=1{wsql} "
-                f"ORDER BY h.run_ts DESC, h.po LIMIT {int(limit)}", tuple(args))
+                f"h.qty, h.run_ts, h.output_file, h.run_id FROM {_latest} "
+                f"ORDER BY h.run_ts DESC, h.po LIMIT {int(display_limit)}", tuple(args))
             cols = ['segment', 'warehouse', 'marketplace_label', 'po', 'external_doc',
                     'location', 'po_date', 'exp_date', 'order_value', 'qty',
                     'run_ts', 'output_file', 'run_id']
-            tv = tq = 0.0
             rows = []
             for r in cur.fetchall():
                 m = dict(zip(cols, r))
@@ -1073,7 +1083,6 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
                 zone = _IN_ZONES.get(stname, '') if stname else ''
                 val = float(m['order_value'] or 0)
                 qty = int(m['qty'] or 0)
-                tv += val; tq += qty
                 rows.append({
                     'dept': _SEG_LABEL.get(m['segment'], m['segment'] or 'Other'),
                     'wh': _canon_fac(m['warehouse']),
@@ -1089,6 +1098,7 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
                 })
 
             # merge manual rows (POs not uploadable via the app, tracked by hand)
+            manual_count = 0
             try:
                 from . import tracker_store
                 seg_lbl = _SEG_LABEL.get(segment, segment)
@@ -1112,6 +1122,7 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
                                 return False
                     return True
                 manual = [mm for mm in tracker_store.list_manual() if _keep(mm)]
+                manual_count = len(manual)
                 for mm in manual:
                     mm['wh'] = _canon_fac(mm.get('wh'))
                     mm['order_value'] = round(float(mm.get('order_value') or 0), 2)
@@ -1177,7 +1188,7 @@ def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
             out['facilities'] = [{'code': w, 'count': facs[w]} for w in ordered]
             out['facility_total'] = sum(facs.values())
             out['warehouses'] = ordered          # dropdown = real facilities only
-            total_n = len(rows)          # KPIs/count cover ALL matching orders…
+            total_n = auto_n + manual_count   # count covers ALL matching orders (SQL agg + manual)
             out.update({'ok': True, 'rows': rows[:int(display_limit)],  # …table renders latest N
                         'total_value': round(tv, 2), 'total_qty': int(tq),
                         'count': total_n, 'shown': min(total_n, int(display_limit))})
