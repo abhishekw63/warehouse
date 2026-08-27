@@ -1438,6 +1438,52 @@ def email_page(request):
     })
 
 
+@login_required
+def cockpit_export(request):
+    """Excel (.xlsx) of the Fulfilment Cockpit board — per-marketplace fill rate +
+    value breakdown for the current day + segment (the same numbers the page shows,
+    with a per-segment TOTAL row). GET ?day=&seg=. Mirrors the Availability export."""
+    import datetime as _dt
+    d = _summary_report(request).data
+    rows = []
+    for s in (d.get('segments') or []):
+        for r in (s.get('rows') or []):
+            recv = bool(r.get('received'))
+            rows.append({
+                'segment': s.get('name', ''), 'marketplace': r.get('display', ''),
+                'status': 'Received' if recv else 'No PO today',
+                'pos': r.get('pos', 0) if recv else 0,
+                'raw_qty': r.get('raw_qty', 0), 'raw_value': r.get('raw_value', 0),
+                'up_qty': r.get('uploaded_qty', 0), 'up_value': r.get('uploaded_value', 0),
+                'ex_qty': r.get('excluded_qty', 0), 'ex_value': r.get('excluded_value', 0),
+                'fill_qty': r.get('billing_qty', 0), 'fill_value': r.get('billing_value', 0),
+                'fill_qty_pct': r.get('fill_qty_pct', ''), 'fill_val_pct': r.get('fill_val_pct', ''),
+                'last_received': '' if recv else r.get('last_received', ''),
+            })
+        t = s.get('totals') or {}
+        rows.append({
+            'segment': s.get('name', ''), 'marketplace': 'TOTAL', 'status': '',
+            'pos': t.get('pos', 0), 'raw_qty': t.get('raw_qty', 0),
+            'raw_value': t.get('raw_value', 0), 'up_qty': t.get('uploaded_qty', 0),
+            'up_value': t.get('uploaded_value', 0), 'ex_qty': t.get('excluded_qty', 0),
+            'ex_value': t.get('excluded_value', 0), 'fill_qty': t.get('billing_qty', 0),
+            'fill_value': t.get('billing_value', 0), 'fill_qty_pct': t.get('fill_qty_pct', ''),
+            'fill_val_pct': t.get('fill_val_pct', ''), 'last_received': '',
+        })
+    cols = [('segment', 'Segment'), ('marketplace', 'Marketplace'), ('status', 'Status'),
+            ('pos', 'PO'), ('raw_qty', 'Raw Qty'), ('raw_value', 'Raw Value'),
+            ('up_qty', 'Uploaded Qty'), ('up_value', 'Uploaded Value'),
+            ('ex_qty', 'Excluded Qty'), ('ex_value', 'Excluded Value'),
+            ('fill_qty', 'Billing Qty'), ('fill_value', 'Billing Value'),
+            ('fill_qty_pct', 'Fill Qty %'), ('fill_val_pct', 'Fill Value %'),
+            ('last_received', 'Last Received')]
+    day = d.get('day') or _dt.date.today().isoformat()
+    seg = d.get('seg_filter') or 'all'
+    return common.xlsx_response(
+        'Fulfilment Cockpit', cols, rows, f"fulfilment_cockpit_{seg}_{day}.xlsx",
+        str_cols=('last_received',), freeze=True)
+
+
 @method_decorator(login_required, name='dispatch')
 class CockpitPOSkusView(View):
     """Lazy 2nd-level drill-down: the SKU rows for ONE po, fetched on click so the

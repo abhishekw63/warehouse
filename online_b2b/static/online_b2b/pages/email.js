@@ -130,6 +130,8 @@ function emScope(seg, day) {
         t.classList.toggle('on', t.getAttribute('data-seg') === seg);
       });
       EM_DAY = day;                                       // lazy SKU fetch uses the new day
+      var ex = document.getElementById('em-export');      // keep the Excel export on the shown board
+      if (ex && CFG.export) ex.href = CFG.export + '?seg=' + encodeURIComponent(seg) + '&day=' + encodeURIComponent(day);
       try { history.replaceState(null, '', url); } catch (e) {}
       dyn.classList.remove('em-loading-dim');
       emInitNtd();

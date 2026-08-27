@@ -109,6 +109,7 @@ urlpatterns = [
     # Fulfilment Cockpit — order-wise fill rate & billing (summary email is one action here).
     # (URL renamed email/ -> cockpit/; internal view names kept so existing {% url %} refs work.)
     path('cockpit/', views.email_page, name='b2b_email'),
+    path('cockpit/export/', views.cockpit_export, name='b2b_cockpit_export'),
     path('cockpit/po-skus/', views.CockpitPOSkusView.as_view(), name='b2b_cockpit_po_skus'),
     path('cockpit/preview/', views.email_preview, name='b2b_email_preview'),
     path('cockpit/send/', views.email_send, name='b2b_email_send'),

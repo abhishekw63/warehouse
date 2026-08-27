@@ -12,15 +12,13 @@
 
 {% block content %}
 <div class="em-wrap">
-  <input type="hidden" id="em-csrf" value="{{ csrf_token }}">
 
   <div class="b2b-head">
     <div>
       <h1>Fulfilment Cockpit</h1>
       <p class="src">Order-wise <b>fill rate &amp; billing</b> from all angles — the received board (drill MP → PO → SKU),
         the <b>value breakdown</b> (total ordered = uploaded + excluded), tentative billing, and per-MP PO / qty / value.
-        The daily <b>summary email</b> is one action here (compose &amp; send below). Full issue-line detail stays on the
-        <a href="{% url 'b2b_issues' %}">Issues</a> tab.</p>
+        Full issue-line detail stays on the <a href="{% url 'b2b_issues' %}">Issues</a> tab.</p>
     </div>
     {% if not chooser %}
     <div class="em-scope">
@@ -33,6 +31,9 @@
         <label for="em-day">Day</label>
         <input type="date" id="em-day" value="{{ d.day }}">
       </div>
+      <a class="btn-ghost em-export" id="em-export" download
+         href="{% url 'b2b_cockpit_export' %}?seg={{ d.seg_filter }}&amp;day={{ d.day }}"
+         title="Export this board to Excel (.xlsx)">⬇ Export Excel</a>
     </div>
     {% endif %}
   </div>
@@ -55,32 +56,6 @@
     </div>
   </div>
   {% else %}
-
-  {# ── Compose (editable): subject · recipients · note ── #}
-  <div class="em-card">
-    <div class="em-frow">
-      <div class="em-fld em-grow">
-        <label>Subject</label>
-        <input type="text" id="em-subject" value="{{ subject }}">
-      </div>
-    </div>
-    <div class="em-frow">
-      <div class="em-fld em-grow">
-        <label>To</label>
-        <input type="text" id="em-to" value="{{ to }}" placeholder="stakeholder@renee… (comma-separated)">
-      </div>
-      <div class="em-fld em-grow">
-        <label>Cc</label>
-        <input type="text" id="em-cc" value="{{ cc }}" placeholder="optional, comma-separated">
-      </div>
-    </div>
-    <div class="em-frow">
-      <div class="em-fld em-grow">
-        <label>Note to recipients <span class="em-opt">(optional)</span></label>
-        <textarea id="em-note" rows="2" placeholder="Add a short covering note that appears at the top of the email…"></textarea>
-      </div>
-    </div>
-  </div>
 
   {# ── Dynamic region — swapped in place on tab / day change (no full reload) ── #}
   <div id="em-dynamic">
@@ -192,42 +167,12 @@
   </div>
   {% endfor %}
   </div>{# /em-dynamic #}
-
-  {# ── Send action ── #}
-  <div class="em-actions">
-    <button type="button" class="btn-primary" id="em-review">Review &amp; Send…</button>
-    <span class="em-hint">Opens a final preview of the exact email before it goes out.</span>
-  </div>
-
-  {# ── Review-then-send modal (mirrors the Issues/Daily preview→confirm flow) ── #}
-  <div class="em-modal" id="em-modal" hidden>
-    <div class="em-modal-card">
-      <div class="em-modal-head">
-        <div>
-          <div class="em-modal-eyebrow">Final review — this is exactly what will be sent</div>
-          <div class="em-modal-subject" id="em-msubject">—</div>
-          <div class="em-modal-recips" id="em-mrecips">—</div>
-        </div>
-        <button type="button" class="em-x" id="em-close" aria-label="Close">✕</button>
-      </div>
-      <div class="em-modal-body">
-        <iframe id="em-frame" title="Email preview" sandbox=""></iframe>
-      </div>
-      <div class="em-modal-foot">
-        <span class="em-sendmsg" id="em-sendmsg"></span>
-        <div class="em-modal-btns">
-          <button type="button" class="btn-clear" id="em-cancel">Cancel</button>
-          <button type="button" class="btn-primary" id="em-send">Send now</button>
-        </div>
-      </div>
-    </div>
-  </div>
   {% endif %}{# /not chooser #}
 </div>
 
 
 <script type="application/json" id="email-cfg">
-{"day": "{{ d.day|escapejs }}", "seg": "{{ d.seg_filter|escapejs }}", "skus_url": "{% url 'b2b_cockpit_po_skus' %}", "email": "{% url 'b2b_email' %}", "preview": "{% url 'b2b_email_preview' %}", "send": "{% url 'b2b_email_send' %}"}
+{"day": "{{ d.day|escapejs }}", "seg": "{{ d.seg_filter|escapejs }}", "skus_url": "{% url 'b2b_cockpit_po_skus' %}", "email": "{% url 'b2b_email' %}", "export": "{% url 'b2b_cockpit_export' %}"}
 </script>
 {% endblock %}
 
