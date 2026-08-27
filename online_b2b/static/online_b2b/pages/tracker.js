@@ -102,6 +102,61 @@
   [dFrom, dTo].forEach(function (el) { if (el) el.addEventListener('change', drLabelUpdate); });
   drLabelUpdate();
 
+  // ── multi-order search (paste a list → filter to exactly those orders) ──
+  // A single-line <input> strips newlines on paste, so a popover textarea holds the
+  // list; on apply we stuff the comma-joined list into q (survives the input's value
+  // sanitisation) and the normal filter + export path carries it. Backend flips to an
+  // exact-match po/external_doc lookup when it sees 2+ separated tokens.
+  (function () {
+    var mBtn = document.getElementById('trkMultiBtn'), mPop = document.getElementById('trkMultiPop'),
+        mWrap = document.getElementById('trkMulti'), mTA = document.getElementById('trkMultiTA'),
+        mCnt = document.getElementById('trkMultiCnt'), mApply = document.getElementById('trkMultiApply'),
+        mClear = document.getElementById('trkMultiClear'), qEl = filter.querySelector('[name=q]');
+    if (!mBtn || !mTA || !qEl) return;
+    function toks(s) {
+      var out = [], seen = {};
+      String(s || '').split(/[\n\r,;|\t]+/).forEach(function (t) {
+        t = t.trim(); var k = t.toLowerCase();
+        if (t && !seen[k]) { seen[k] = 1; out.push(t); }
+      });
+      return out;
+    }
+    function isMulti(s) { return toks(s).length >= 2; }
+    function count() {
+      var n = toks(mTA.value).length;
+      if (mCnt) mCnt.textContent = n + ' order' + (n === 1 ? '' : 's');
+      if (mApply) mApply.disabled = n === 0;
+    }
+    function open(o) {
+      if (!mPop) return;
+      mPop.hidden = !o; mBtn.setAttribute('aria-expanded', o ? 'true' : 'false');
+      if (mWrap) mWrap.classList.toggle('on', o);
+      if (o) { count(); setTimeout(function () { mTA.focus(); }, 20); }
+    }
+    if (isMulti(qEl.value)) mTA.value = toks(qEl.value).join('\n');   // seed from an existing multi q
+    mBtn.addEventListener('click', function (e) { e.stopPropagation(); open(mPop.hidden); });
+    mTA.addEventListener('input', count);
+    document.addEventListener('click', function (e) { if (mWrap && !mWrap.contains(e.target)) open(false); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') open(false); });
+    if (mApply) mApply.addEventListener('click', function () {
+      qEl.value = toks(mTA.value).join(', '); open(false); loadBody();
+    });
+    if (mClear) mClear.addEventListener('click', function () {
+      mTA.value = ''; count();
+      if (qEl.value) { qEl.value = ''; loadBody(); }
+      open(false);
+    });
+    // paste an Excel column straight into the q box → auto-switch to multi
+    qEl.addEventListener('paste', function (e) {
+      var cd = e.clipboardData || window.clipboardData, txt = cd && cd.getData('text');
+      if (txt && isMulti(txt)) {
+        e.preventDefault();
+        var t = toks(txt); qEl.value = t.join(', '); mTA.value = t.join('\n'); count(); loadBody();
+      }
+    });
+    count();
+  })();
+
   // Facility chips live INSIDE the re-rendered body → delegate on the persistent
   // container: a click sets the warehouse filter and reloads (one filter path).
   body.addEventListener('click', function (e) {
@@ -163,7 +218,13 @@
     var html = '';
     PILLDEFS.forEach(function (d) {
       var el = filter.querySelector('[name=' + d.n + ']'), v = el ? (el.value || '').trim() : '';
-      if (v) html += '<span class="trk-pill" data-clear="' + d.n + '"><span class="tp-l">' + d.l + '</span>' + esc(v) + '<button type="button" aria-label="remove ' + d.l + ' filter">×</button></span>';
+      if (!v) return;
+      var disp = v;
+      if (d.n === 'q') {                       // a pasted multi-order list → show a count, not the raw string
+        var parts = v.split(/[\n\r,;|\t]+/).map(function (x) { return x.trim(); }).filter(Boolean);
+        if (parts.length >= 2) disp = parts.length + ' orders';
+      }
+      html += '<span class="trk-pill" data-clear="' + d.n + '"><span class="tp-l">' + d.l + '</span>' + esc(disp) + '<button type="button" aria-label="remove ' + d.l + ' filter">×</button></span>';
     });
     pillsBox.innerHTML = html;
     pillsBox.classList.toggle('has', !!html);
@@ -172,6 +233,7 @@
     var p = e.target.closest('.trk-pill'); if (!p) return;
     var name = p.getAttribute('data-clear'), el = filter.querySelector('[name=' + name + ']');
     if (el) el.value = '';
+    if (name === 'q') { var ta = document.getElementById('trkMultiTA'); if (ta) { ta.value = ''; ta.dispatchEvent(new Event('input')); } }
     if (name === 'segment') resetSeg();
     loadBody();
   });

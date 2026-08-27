@@ -131,6 +131,22 @@
   .trk-dr-range label{display:flex;flex-direction:column;gap:3px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);flex:1;}
   .trk-dr-range input{padding:7px 9px;border:1px solid var(--border);border-radius:8px;font-size:12.5px;background:var(--surface);color:var(--text);font-family:inherit;font-weight:500;}
   .trk-dr-actions{display:flex;justify-content:flex-end;margin-top:11px;}
+  /* multi-order search (button → popover: paste a list of POs / external docs) */
+  .trk-multi{position:relative;display:inline-block;}
+  .trk-multi-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid var(--border);border-radius:9px;background:var(--surface);color:var(--text);font-family:inherit;font-size:12.5px;font-weight:600;cursor:pointer;transition:border-color .13s,color .13s,background .13s;white-space:nowrap;}
+  .trk-multi-btn:hover{border-color:var(--accent);}
+  .trk-multi-btn span{font-size:14px;line-height:1;}
+  .trk-multi.on .trk-multi-btn{border-color:color-mix(in srgb,var(--accent) 45%,var(--border));color:var(--accent);background:color-mix(in srgb,var(--accent) 6%,var(--surface));}
+  .trk-multi-pop{position:absolute;top:calc(100% + 6px);left:0;z-index:60;width:320px;max-width:88vw;background:var(--surface);border:1px solid var(--border);border-radius:12px;box-shadow:0 16px 42px -14px rgba(15,23,42,.42);padding:13px;animation:trkfade .16s ease both;}
+  .trk-multi-pop[hidden]{display:none;}
+  .trk-multi-hd{font-size:12.5px;font-weight:800;color:var(--text);}
+  .trk-multi-hd span{display:block;margin-top:3px;font-size:10.5px;font-weight:500;line-height:1.45;color:var(--muted);}
+  #trkMultiTA{width:100%;box-sizing:border-box;resize:vertical;min-height:96px;margin-top:9px;padding:9px 10px;border:1px solid var(--border);border-radius:9px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;background:var(--surface-2);color:var(--text);}
+  #trkMultiTA:focus{outline:none;border-color:var(--accent);background:var(--surface);}
+  .trk-multi-ft{display:flex;align-items:center;justify-content:space-between;margin-top:10px;gap:10px;}
+  .trk-multi-cnt{font-size:11.5px;font-weight:800;color:var(--accent);white-space:nowrap;}
+  .trk-multi-act{display:flex;gap:7px;}
+  .trk-multi-act button[disabled]{opacity:.5;cursor:not-allowed;}
   /* AJAX body + loader */
   .trk-bodywrap{position:relative;min-height:120px;}
   #trk-body{transition:opacity .18s ease;} #trk-body.fade{opacity:.35;}

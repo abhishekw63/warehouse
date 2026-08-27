@@ -737,11 +737,13 @@ class TrackerView(LoginRequiredMixin, TemplateView):
 
 
 class TrackerExportView(LoginRequiredMixin, View):
-    """CSV of the consolidated tracker honoring the current filters."""
+    """Excel (.xlsx) of the consolidated tracker honoring the current filters —
+    including a pasted multi-order list in ``q`` (so 'export exactly these orders'
+    just works). Styled via the shared xlsx helper (navy header, frozen row)."""
 
     def get(self, request):
-        import csv
-        import io
+        import datetime as _dt
+        from .services import common
         seg = TrackerView.SEG_MAP.get((request.GET.get('segment') or '').strip(), '')
         data = order_db.consolidated_tracker(
             seg, (request.GET.get('marketplace') or '').strip(),
@@ -751,23 +753,34 @@ class TrackerExportView(LoginRequiredMixin, View):
             uploaded_to=(request.GET.get('uploaded_to') or '').strip(),
             limit=100000, display_limit=100000)
         TrackerView._attach_billing(data)   # est. billing from current inventory
-        buf = io.StringIO()
-        w = csv.writer(buf)
-        w.writerow(['Dept', 'WH', 'Marketplace', 'PO', 'External Doc No', 'Location',
-                    'PO Date', 'Exp Date', 'Order Qty', 'Order Value',
-                    'Est. Billing (current stock)', 'Fill %', 'Pincode',
-                    'Zone', 'Uploaded', 'OMT'])
+        rows = []
         for r in data.get('rows', []):
             b = r.get('est_billing') or {}
-            est = '' if (not b or b.get('no_stock')) else b.get('est_value', '')
-            fill = '' if (not b or b.get('no_stock')) else b.get('fill_pct', '')
-            w.writerow([r['dept'], r['wh'], r['marketplace'], r['po'], r['external_doc'],
-                        r['location'], r['po_date'] or '', r['exp_date'] or '',
-                        r['qty'], r['order_value'], est, fill, r['pincode'], r['zone'],
-                        r['uploaded'] or '', r.get('omt', '')])
-        resp = HttpResponse(buf.getvalue(), content_type='text/csv')
-        resp['Content-Disposition'] = 'attachment; filename="consolidated_tracker.csv"'
-        return resp
+            no = (not b) or b.get('no_stock')
+            rows.append({
+                'dept': r['dept'], 'wh': r['wh'], 'marketplace': r['marketplace'],
+                'po': r['po'], 'external_doc': r['external_doc'], 'location': r['location'],
+                'po_date': r['po_date'] or '', 'exp_date': r['exp_date'] or '',
+                'qty': r['qty'], 'order_value': r['order_value'],
+                'est': '' if no else b.get('est_value', ''),
+                'fill': '' if no else b.get('fill_pct', ''),
+                'pincode': r['pincode'], 'zone': r['zone'],
+                'uploaded': r['uploaded'] or '', 'omt': r.get('omt', ''),
+            })
+        cols = [
+            ('dept', 'Dept'), ('wh', 'WH'), ('marketplace', 'Marketplace'),
+            ('po', 'PO'), ('external_doc', 'External Doc No'), ('location', 'Location'),
+            ('po_date', 'PO Date'), ('exp_date', 'Exp Date'),
+            ('qty', 'Order Qty'), ('order_value', 'Order Value'),
+            ('est', 'Est. Billing (current stock)'), ('fill', 'Fill %'),
+            ('pincode', 'Pincode'), ('zone', 'Zone'),
+            ('uploaded', 'Uploaded'), ('omt', 'OMT'),
+        ]
+        fname = f"consolidated_tracker_{_dt.date.today().isoformat()}.xlsx"
+        return common.xlsx_response(
+            'Consolidated Tracker', cols, rows, fname,
+            str_cols=('po', 'external_doc', 'pincode', 'po_date', 'exp_date', 'uploaded'),
+            freeze=True)
 
 
 class TrackerBillingView(LoginRequiredMixin, View):

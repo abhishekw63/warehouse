@@ -24,7 +24,7 @@
       <button type="button" class="trk-btn ghost" id="trkTableToggle" title="Collapse / expand the orders table">⊟ Table</button>
       <button type="button" class="trk-btn ghost" id="trkFull" title="Full-screen view (Esc to exit)">⛶ Full screen</button>
       <button type="button" class="trk-btn primary" id="trkAddBtn">＋ Add PO manually</button>
-      <a class="trk-btn ghost" id="trkExport" href="{% url 'b2b_tracker_export' %}?segment={{ f.seg_label|urlencode }}&marketplace={{ f.marketplace|urlencode }}&warehouse={{ f.warehouse|urlencode }}&q={{ f.q|urlencode }}&uploaded_from={{ f.uploaded_from|urlencode }}&uploaded_to={{ f.uploaded_to|urlencode }}">⬇ Export</a>
+      <a class="trk-btn ghost" id="trkExport" href="{% url 'b2b_tracker_export' %}?segment={{ f.seg_label|urlencode }}&marketplace={{ f.marketplace|urlencode }}&warehouse={{ f.warehouse|urlencode }}&q={{ f.q|urlencode }}&uploaded_from={{ f.uploaded_from|urlencode }}&uploaded_to={{ f.uploaded_to|urlencode }}" title="Download the filtered view as Excel (.xlsx)">⬇ Excel</a>
     </div>
   </div>
 
@@ -69,6 +69,23 @@
       {% for w in t.warehouses %}<option value="{{ w }}" {% if w == f.warehouse %}selected{% endif %}>{{ w }}</option>{% endfor %}
     </select>
     <input type="search" name="q" value="{{ f.q }}" placeholder="Search PO · ext doc · location…">
+    <div class="trk-multi" id="trkMulti">
+      <button type="button" class="trk-multi-btn" id="trkMultiBtn" aria-haspopup="true" aria-expanded="false" title="Search many orders at once — paste a list">
+        <span aria-hidden="true">≣</span> Multi</button>
+      <div class="trk-multi-pop" id="trkMultiPop" hidden>
+        <div class="trk-multi-hd">Multi-order search
+          <span>Paste PO or External-Doc numbers — one per line, or comma-separated (straight from an Excel column).</span></div>
+        <textarea id="trkMultiTA" rows="7" spellcheck="false" autocomplete="off"
+          placeholder="SO/GTM/9232&#10;P5367727&#10;242000123&#10;…"></textarea>
+        <div class="trk-multi-ft">
+          <span class="trk-multi-cnt" id="trkMultiCnt">0 orders</span>
+          <span class="trk-multi-act">
+            <button type="button" class="trk-btn ghost sm" id="trkMultiClear">Clear</button>
+            <button type="button" class="trk-btn primary sm" id="trkMultiApply">Search these</button>
+          </span>
+        </div>
+      </div>
+    </div>
     <div class="trk-dr" id="trkDR">
       <button type="button" class="trk-dr-btn" id="trkDRBtn" aria-haspopup="true" aria-expanded="false">
         <span class="trk-dr-ic" aria-hidden="true">📅</span><span id="trkDRLabel">Any dates</span><span class="trk-dr-caret" aria-hidden="true">▾</span></button>

@@ -921,6 +921,35 @@ def value_concentration(date_from='', date_to='', marketplace='', segment='') ->
     return out
 
 
+def _order_search_where(q, ph, alias='h'):
+    """Build the tracker search WHERE fragment for the ``q`` box.
+
+    ONE value → substring match across po / location / external_doc /
+    marketplace_label (the long-standing behaviour). A PASTED LIST — 2+ values
+    separated by newline / comma / semicolon / pipe / tab, i.e. a column copied out
+    of Excel — flips to an EXACT-match multi-order lookup on po OR external_doc, so
+    you can pull up many specific orders in one shot. Returns ('', []) for blank q.
+    """
+    import re as _re
+    raw = str(q or '').strip()
+    if not raw:
+        return '', []
+    toks, seen = [], set()
+    for t in _re.split(r'[\n\r,;|\t]+', raw):
+        t = t.strip()
+        k = t.lower()
+        if t and k not in seen:
+            seen.add(k)
+            toks.append(t)
+    if len(toks) >= 2:                          # pasted list → exact multi-order match
+        marks = ','.join([ph] * len(toks))
+        return (f"({alias}.po IN ({marks}) OR {alias}.external_doc IN ({marks}))",
+                toks + toks)
+    return (f"({alias}.po LIKE {ph} OR {alias}.location LIKE {ph} OR "
+            f"{alias}.external_doc LIKE {ph} OR {alias}.marketplace_label LIKE {ph})",
+            [f"%{raw}%"] * 4)
+
+
 def consolidated_tracker(segment='', marketplace='', warehouse='', q='',
                          uploaded_from='', uploaded_to='',
                          limit=8000, display_limit=500) -> dict:
@@ -1119,9 +1148,9 @@ def today_orders(day: str, segment='', marketplace='', warehouse='', q='') -> di
             if marketplace:
                 w.append(f"h.marketplace_label={ph}"); a.append(marketplace)
             if q:
-                w.append(f"(h.po LIKE {ph} OR h.location LIKE {ph} OR "
-                         f"h.external_doc LIKE {ph} OR h.marketplace_label LIKE {ph})")
-                a += [f"%{q}%"] * 4
+                qc, qa = _order_search_where(q, ph)
+                if qc:
+                    w.append(qc); a += qa
             if warehouse:
                 aliases = _facility_maps()[1].get(warehouse, [warehouse])
                 w.append(f"h.warehouse IN ({','.join([ph] * len(aliases))})"); a += aliases
@@ -1181,9 +1210,9 @@ def tracker_insights(segment='', marketplace='', warehouse='', q='',
                 if marketplace:
                     w.append(f"h.marketplace_label={ph}"); a.append(marketplace)
                 if q:
-                    w.append(f"(h.po LIKE {ph} OR h.location LIKE {ph} OR "
-                             f"h.external_doc LIKE {ph} OR h.marketplace_label LIKE {ph})")
-                    a += [f"%{q}%"] * 4
+                    qc, qa = _order_search_where(q, ph)
+                    if qc:
+                        w.append(qc); a += qa
                 if warehouse:
                     al = _facility_maps()[1].get(warehouse, [warehouse])
                     w.append(f"h.warehouse IN ({','.join([ph] * len(al))})"); a += al
