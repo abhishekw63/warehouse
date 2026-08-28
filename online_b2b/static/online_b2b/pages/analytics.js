@@ -417,8 +417,13 @@
     var vy = base.getFullYear(), vm = base.getMonth();
     function draw() {
       renderCal(cal, vy, vm, sel);
-      selEl.textContent = sel.start ? (sel.start + (sel.end ? '  →  ' + sel.end : '  →  …')) : 'Pick a start date';
-      applyBtn.disabled = !(sel.start && sel.end);
+      // One click = a single day (Apply enabled right away); click a second day to
+      // extend it into a range. No more needing to click the same date twice.
+      selEl.textContent = sel.start
+        ? (sel.end ? sel.start + '  →  ' + sel.end
+                   : sel.start + '  ·  single day (click another day for a range)')
+        : 'Pick a date';
+      applyBtn.disabled = !sel.start;
     }
     btn.addEventListener('click', function (ev) { ev.stopPropagation(); if (pop.hidden) { pop.hidden = false; draw(); } else pop.hidden = true; });
     cal.addEventListener('click', function (ev) {
@@ -431,7 +436,11 @@
       else sel.end = iso;
       draw();
     });
-    applyBtn.addEventListener('click', function () { if (sel.start && sel.end) { pop.hidden = true; loadDaily({ start: sel.start, end: sel.end }); } });
+    applyBtn.addEventListener('click', function () {
+      if (!sel.start) return;
+      pop.hidden = true;
+      loadDaily({ start: sel.start, end: sel.end || sel.start });   // no end → single day
+    });
     // close on outside click — bound ONCE on document, re-finds the live picker
     if (!document._rp2DocBound) {
       document._rp2DocBound = true;
