@@ -1,7 +1,7 @@
 {% extends 'online_b2b/base_b2b.html' %}
 {% load static %}
 {% load b2b_extras %}
-{% block title %}Inventory · Bins{% endblock %}
+{% block title %}Inventory · Manage bins{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
 <link rel="stylesheet" href="{% static 'online_b2b/pages/inventory_bins.css' %}">{% endblock %}
 
@@ -11,100 +11,76 @@
 {% endblock %}
 
 {% block content %}
-<div class="iv-wrap">
+<div class="iv-wrap ivb2">
   <div class="b2b-head">
     <div>
-      <h1>Bin classification</h1>
-      <p class="src">Which bins count as sellable stock. <b>Include</b> wins over <b>exclude</b>;
-        a bin matching neither is <b>new</b> and held out until you add a rule. This is the
-        tracked, editable list — every counted / excluded bin is auditable below.
+      <h1>Manage bins</h1>
+      <p class="src">A bin's stock counts as sellable only if it's <b>Included</b>. Set each bin
+        <b>Include</b> or <b>Exclude</b> — your choice is saved and applies to future uploads too.
+        A brand-new bin arrives flagged and sits in <b>Exclude</b> until you decide it.
         <a href="{% url 'b2b_inventory' %}">← Back to Inventory</a></p>
     </div>
+    {% if snaps %}
+    <form method="get" class="ivb-whform">
+      <select name="wh" onchange="this.form.submit()" aria-label="Warehouse">
+        {% for w in warehouses %}{% if w.code in snaps %}
+        <option value="{{ w.code }}"{% if target_wh == w.code %} selected{% endif %}>{{ w.short }} — {{ w.name }}</option>
+        {% endif %}{% endfor %}
+      </select>
+    </form>
+    {% endif %}
   </div>
 
   {% if messages %}<div class="iv-msgs">{% for m in messages %}
     <div class="iv-msg {{ m.tags }}">{{ m }}</div>{% endfor %}</div>{% endif %}
 
-  <div class="ivb-grid">
-    {# ── Rules ── #}
-    <div class="iv-card">
-      <div class="iv-cardhead"><h2>Rules</h2><span class="iv-sub">{{ rules|length }} rules</span></div>
-      <form method="post" action="{% url 'b2b_inventory_rule_add' %}" class="ivb-add">
-        {% csrf_token %}
-        <input type="text" name="pattern" placeholder="Pattern e.g. ON- or QC" required>
-        <select name="match_type">
-          <option value="prefix">starts with</option>
-          <option value="segment">first word =</option>
-          <option value="exact">exactly</option>
-        </select>
-        <select name="decision">
-          <option value="include">Include</option>
-          <option value="exclude">Exclude</option>
-        </select>
-        <select name="warehouse" title="Scope this rule to one warehouse, or all">
-          <option value="">All warehouses</option>
-          {% for w in warehouses %}<option value="{{ w.code }}">{{ w.short }} only</option>{% endfor %}
-        </select>
-        <button type="submit" class="btn-primary">Add</button>
-      </form>
-      <div class="iv-tablewrap">
-        <table class="iv-table">
-          <thead><tr><th>Pattern</th><th>Match</th><th>Decision</th><th>Scope</th><th></th></tr></thead>
-          <tbody>
-            {% for r in rules %}
-            <tr>
-              <td class="mono">{{ r.pattern }}</td>
-              <td>{{ r.match_type }}</td>
-              <td>{% if r.decision == 'include' %}<span class="pill good">Include</span>{% else %}<span class="pill bad">Exclude</span>{% endif %}</td>
-              <td>{% if r.warehouse %}<span class="pill wh">{{ r.warehouse }}</span>{% else %}<span class="mut">all</span>{% endif %}</td>
-              <td class="r">
-                <form method="post" action="{% url 'b2b_inventory_rule_delete' r.id %}" onsubmit="return confirm('Remove this rule?')" style="display:inline;">
-                  {% csrf_token %}<button type="submit" class="ivb-del" title="Remove">✕</button>
-                </form>
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+  <div class="ivb-bar">
+    <div class="ivb-sum">
+      <span class="s inc">✓ <b class="c-inc">{{ summary.include.0 }}</b> included · {{ summary.include.1|indnum }} units</span>
+      <span class="s exc">✕ <b class="c-exc">{{ summary.exclude.0 }}</b> excluded · {{ summary.exclude.1|indnum }}</span>
+      <span class="s new"{% if not summary.new.0 %} hidden{% endif %}>⚠ <b class="c-new">{{ summary.new.0 }}</b> new · {{ summary.new.1|indnum }}</span>
     </div>
-
-    {# ── Bin audit for current snapshot ── #}
-    <div class="iv-card">
-      <div class="iv-cardhead">
-        <h2>Bin audit</h2>
-        <form method="get" style="margin:0;">
-          <select name="wh" onchange="this.form.submit()">
-            {% for w in warehouses %}{% if w.code in snaps %}
-            <option value="{{ w.code }}"{% if target_wh == w.code %} selected{% endif %}>{{ w.short }}</option>
-            {% endif %}{% endfor %}
-          </select>
-        </form>
-      </div>
-      <div class="ivb-sum">
-        <span class="s inc">✓ {{ summary.include.0 }} bins · {{ summary.include.1|indnum }} units</span>
-        <span class="s exc">{{ summary.exclude.0 }} excluded · {{ summary.exclude.1|indnum }}</span>
-        <span class="s new">⚠ {{ summary.new.0 }} new · {{ summary.new.1|indnum }}</span>
-      </div>
-      <div class="iv-tablewrap">
-        <table class="iv-table">
-          <thead><tr><th>Bin</th><th>Zone</th><th>Decision</th><th class="r">Lines</th><th class="r">Qty</th></tr></thead>
-          <tbody>
-            {% for b in audit %}
-            <tr class="{% if b.decision == 'new' %}aff{% endif %}">
-              <td class="mono">{{ b.bin_code|default:"—" }}</td>
-              <td>{{ b.zone_code }}</td>
-              <td>{% if b.decision == 'include' %}<span class="pill good">Include</span>{% elif b.decision == 'exclude' %}<span class="mut">Exclude</span>{% else %}<span class="pill bad">New ⚠</span>{% endif %}</td>
-              <td class="r">{{ b.lines|indnum }}</td>
-              <td class="r">{{ b.qty|indnum }}</td>
-            </tr>
-            {% empty %}<tr><td colspan="5" class="iv-none">No snapshot — upload Bin Contents first.</td></tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+    <div class="ivb-actions">
+      <input type="search" class="ivb-search" placeholder="Filter bins…" aria-label="Filter bins">
+      <span class="ivb-dirty" hidden>● unsaved</span>
+      <button type="button" class="btn-primary ivb-apply" data-write hidden>🔒 Lock &amp; apply</button>
     </div>
   </div>
+
+  <div class="iv-tablewrap ivb-tablewrap">
+    <table class="iv-table ivb-table" data-enh-skip>
+      <thead><tr>
+        <th>Bin</th><th>Zone</th><th class="r">Lines</th><th class="r">Qty</th>
+        <th class="c">Decision</th>
+      </tr></thead>
+      <tbody>
+        {% for b in audit %}
+        <tr class="ivb-row{% if b.decision == 'new' %} isnew{% endif %}"
+            data-bin="{{ b.bin_code }}" data-dec="{{ b.decision }}"
+            data-search="{{ b.bin_code|lower }} {{ b.zone_code|lower }}">
+          <td class="mono">{% if b.decision == 'new' %}<span class="newdot" title="New bin — decide it (held out until you Include it)">●</span>{% endif %}{{ b.bin_code|default:"—" }}</td>
+          <td class="ivb-zone">{{ b.zone_code }}</td>
+          <td class="r">{{ b.lines|indnum }}</td>
+          <td class="r">{{ b.qty|indnum }}</td>
+          <td class="c">
+            <div class="ivb-toggle" role="group" aria-label="Include or exclude this bin">
+              <button type="button" class="ivb-opt inc{% if b.decision == 'include' %} on{% endif %}" data-set="include" data-write>Include</button>
+              <button type="button" class="ivb-opt exc{% if b.decision != 'include' %} on{% endif %}" data-set="exclude" data-write>Exclude</button>
+            </div>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="5" class="iv-none">No snapshot yet — upload Bin Contents on the
+          <a href="{% url 'b2b_inventory' %}">Inventory</a> page first.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="ivb-foot"><b>How it works:</b> toggling a bin is saved immediately (and remembered for
+    future uploads). Click <b>Lock &amp; apply</b> to recompute available stock from your choices.</p>
 </div>
 
+{{ cfg|json_script:"inventory-bins-cfg" }}
 {% endblock %}
+
+{% block extra_js %}<script defer data-page-js src="{% static 'online_b2b/pages/inventory_bins.js' %}"></script>{% endblock %}

@@ -317,8 +317,10 @@ def inventory_discard(request, token):
 # ── bin rules (editable include/exclude list) ───────────────────────────────
 @login_required
 def inventory_bins(request):
-    """Bin classification manager: the editable rule list + the current
-    snapshots' per-bin audit (what we counted vs excluded vs flagged new)."""
+    """Manage bins — the PER-BIN Include/Exclude list. Every bin in the selected
+    warehouse's current snapshot is shown with a direct Include/Exclude toggle
+    (durable, applies to future uploads too); a brand-new bin is flagged and sits in
+    Exclude until decided. No patterns — the current classification is the base."""
     wh = (request.GET.get('wh') or '').strip()
     snaps = store.current_snapshots()
     audit = []
@@ -331,10 +333,14 @@ def inventory_bins(request):
         s = summary[b['decision']]
         s[0] += 1
         s[1] += float(b['qty'] or 0)
+    from django.urls import reverse
+    cfg = {'bin_set': reverse('b2b_inventory_bin_set'),
+           'apply': reverse('b2b_inventory_apply'),
+           'wh': target or '', 'new_total': summary['new'][0]}
     return render(request, 'online_b2b/inventory_bins.html', {
-        'rules': store.load_rules(), 'audit': audit, 'summary': summary,
+        'audit': audit, 'summary': summary,
         'snaps': snaps, 'target_wh': target,
-        'warehouses': store.WAREHOUSES,
+        'warehouses': store.WAREHOUSES, 'cfg': cfg,
     })
 
 

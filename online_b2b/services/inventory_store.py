@@ -412,21 +412,37 @@ def _ordered(rules: list[dict]):
     return inc + exc
 
 
+# PER-BIN model (the operator's mental model): classification is a per-bin
+# Include/Exclude decision, NOT patterns. Every bin's choice is its own EXACT rule;
+# a bin with no stored decision is 'new' (flagged, held out = Excluded) until the
+# operator decides it on Manage bins. The prefix/segment PATTERN rules are no longer
+# used to classify — they only ever seeded the FIRST classification, which is now
+# frozen per-bin by :func:`bake_current_classification`. Flip to False to restore
+# pattern-based auto-classification of unknown bins.
+PER_BIN_ONLY = True
+
+
 def _compile(rules: list[dict], warehouse: str = ''):
-    """Compile rules into the ordered match-list for ONE warehouse. Priority, high
-    → low: (1) EXACT per-bin overrides — the explicit "click a bin In/Out" choice
-    must beat any pattern rule, even a prefix-include; (2) pattern rules
-    (prefix/segment). Within each tier: that warehouse's own rules FIRST (e.g.
-    QC=include in BLR beats the global QC=exclude), then global (blank-warehouse)
-    rules, and include-before-exclude (the include-wins tiebreak). ``warehouse=''``
-    → global rules only. First match wins in :func:`classify_bin`."""
+    """Compile rules for ONE warehouse into ``(exact_map, pattern_list)``.
+
+    * ``exact_map`` — ``{BIN_UP: 'include'|'exclude'}`` per-bin decisions, the
+      highest-priority tier, looked up O(1) so thousands of per-bin rules stay fast.
+    * ``pattern_list`` — ordered ``[(pat_up, match_type, decision)]`` prefix/segment
+      rules, consulted ONLY when ``PER_BIN_ONLY`` is False.
+
+    Priority within each tier: this warehouse's own rules FIRST (e.g. QC=include in
+    BLR beats a global QC=exclude), then global (blank-warehouse), include before
+    exclude (include-wins). ``warehouse=''`` → global rules only."""
     wh = str(warehouse or '').strip()
     wh_rules = [r for r in rules if str(r.get('warehouse') or '').strip() == wh and wh]
     g_rules = [r for r in rules if not str(r.get('warehouse') or '').strip()]
     ex = lambda rs: _ordered([r for r in rs if r.get('match_type') == 'exact'])
     pat = lambda rs: _ordered([r for r in rs if r.get('match_type') != 'exact'])
-    # Exact overrides (wh, then global) win over all pattern rules (wh, then global).
-    return ex(wh_rules) + ex(g_rules) + pat(wh_rules) + pat(g_rules)
+    exact_map: dict = {}
+    for p, _mt, dec in ex(wh_rules) + ex(g_rules):     # wh-first, include-first
+        exact_map.setdefault(p, dec)                   # first (highest priority) wins
+    pattern_list = pat(wh_rules) + pat(g_rules)
+    return exact_map, pattern_list
 
 
 def _match(bin_up: str, seg: str, pat: str, mt: str) -> bool:
@@ -438,20 +454,80 @@ def _match(bin_up: str, seg: str, pat: str, mt: str) -> bool:
 
 
 def classify_bin(bin_code: str, compiled=None) -> str:
-    """→ 'include' | 'exclude' | 'new'. Walks the compiled rule list in priority
-    order (warehouse-specific → global, include → exclude); FIRST match wins. A bin
-    matching nothing is 'new' (unknown → flagged, held out of the sellable total).
-    ``compiled`` is the list from :func:`_compile` (defaults to global rules)."""
+    """→ 'include' | 'exclude' | 'new'. Per-bin decision first (O(1) ``exact_map``);
+    a bin with no stored decision is 'new' (held out = Excluded until decided). When
+    ``PER_BIN_ONLY`` is False, unlisted bins fall through to the pattern rules.
+    ``compiled`` is the ``(exact_map, pattern_list)`` from :func:`_compile`."""
     bin_up = str(bin_code or '').strip().upper()
     if not bin_up:
         return 'new'
-    seg = _first_segment(bin_up)
     if compiled is None:
         compiled = _compile(load_rules())
-    for pat, mt, decision in compiled:
+    exact_map, pattern_list = compiled
+    dec = exact_map.get(bin_up)
+    if dec:
+        return dec
+    if PER_BIN_ONLY:
+        return 'new'                                   # unlisted → decide it
+    seg = _first_segment(bin_up)
+    for pat, mt, decision in pattern_list:
         if _match(bin_up, seg, pat, mt):
             return decision
     return 'new'
+
+
+def bake_current_classification(warehouse: str = '') -> dict:
+    """Freeze every current bin's STORED decision into a durable per-bin EXACT rule —
+    the base for the per-bin model, so removing pattern auto-classification keeps the
+    exact same Include/Exclude state. Reads ``inventory_bin_audit.decision`` from the
+    CURRENT snapshots (include/exclude only; 'new' bins are left unruled so they stay
+    flagged). Idempotent (rebuilds the warehouse's exact rules from the live state).
+    FAST: one bulk DELETE + one executemany INSERT per warehouse. Optional ``wh``
+    limits it to one warehouse. Never raises."""
+    out = {'ok': False, 'baked': 0, 'warehouses': []}
+    try:
+        ensure_tables()
+        snaps = current_snapshots()
+        now = _dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        wanted = str(warehouse or '').strip()
+        total = 0
+        with _conn() as (cur, d):
+            ph = d['ph']
+            for code, s in snaps.items():
+                if wanted and code != wanted:
+                    continue
+                # ADDITIVE: keep every existing per-bin (exact) rule — those are the
+                # user's own In/Out overrides — and only add one for a bin that has
+                # none yet, freezing its current pattern-derived decision. Idempotent.
+                cur.execute(
+                    f"SELECT UPPER(pattern) FROM inventory_bin_rule "
+                    f"WHERE match_type='exact' AND warehouse={ph}", (code,))
+                have = {r[0] for r in cur.fetchall()}
+                cur.execute(
+                    f"SELECT bin_code, decision FROM inventory_bin_audit "
+                    f"WHERE snapshot_id={ph}", (s['snapshot_id'],))
+                rows = []
+                for bc, dec in cur.fetchall():
+                    bcu = str(bc or '').strip().upper()
+                    if bcu and dec in ('include', 'exclude') and bcu not in have:
+                        # all-placeholder VALUES so pymysql collapses executemany into
+                        # ONE multi-row INSERT (a literal mid-VALUES defeats that, and
+                        # per-row inserts over remote TiDB are painfully slow).
+                        rows.append((bcu, 'exact', dec, code, 'baked base', 'system', now))
+                if rows:
+                    cur.executemany(
+                        f"INSERT INTO inventory_bin_rule (pattern, match_type, "
+                        f"decision, warehouse, note, updated_by, updated_at) "
+                        f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph})", rows)
+                total += len(rows)
+                out['warehouses'].append(
+                    {'warehouse': code, 'baked': len(rows), 'kept': len(have)})
+            cur.connection.commit()
+        out['ok'] = True
+        out['baked'] = total
+    except Exception as e:  # noqa: BLE001
+        out['error'] = f"{type(e).__name__}: {e}"
+    return out
 
 
 # ── rule CRUD (editable include/exclude list) ───────────────────────────────

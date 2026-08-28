@@ -84,19 +84,7 @@
     ({{ c.item_count|indnum }} SKUs, as per {{ c.captured_at }}).</div>
   {% endfor %}
 
-  {# ── Bin coverage: exactly which bin contents we counted vs excluded ── #}
-  {% if has_any_stock %}
-  <details class="iv-cov">
-    <summary>
-      <span class="iv-cov-t">🗂 Bin coverage — what we counted vs excluded</span>
-      <span class="iv-cov-hint">click to see every bin that fed (or was held out of) the fill-rate</span>
-    </summary>
-    {% comment %}Body is LAZY-LOADED on first open (2000+ bin rows are the page's heaviest payload; deferring keeps the first paint fast). Bin-click Include/Exclude is delegated on document, so it works once injected.{% endcomment %}
-    <div class="iv-cov-body" data-lazy-url="{% url 'b2b_inventory_bin_coverage' %}">
-      <div class="iv-cov-loading">Loading bin coverage…</div>
-    </div>
-  </details>
-  {% endif %}
+  {# Per-bin Include/Exclude now lives on its own page — Manage bins. #}
 
   {# ── New-bin alerts ── #}
   {% if alerts %}
