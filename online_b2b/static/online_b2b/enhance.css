@@ -195,10 +195,19 @@ html.enh-on #toast-container .toast{display:none !important;}
   cursor:pointer;user-select:none;white-space:nowrap;}
 .enh-table thead th.enh-nosort{cursor:default;}
 .enh-table thead th.enh-nosort .enh-arrow{display:none;}
-/* Arrow is absolutely positioned (th is position:sticky = its containing block) so
-   injecting it post-load adds ZERO layout width → no column re-width / reflow. It
-   sits inside the existing header right-padding, so no padding change is needed. */
-.enh-table thead th .enh-arrow{position:absolute;right:7px;top:50%;transform:translateY(-50%);opacity:.5;font-size:11px;color:var(--accent,#4f46e5);transition:opacity .12s;}
+/* Arrow sits INLINE right after the header label (its last child) with a fixed
+   small gap, so every column reads "Label ⇅" uniformly — a wide left-aligned
+   column (Description) no longer floats its arrow to the far cell edge while a
+   narrow one hugs the text. The tiny post-load width it adds is harmless on nowrap
+   headers. */
+.enh-table thead th .enh-arrow{display:inline-block;margin-left:6px;opacity:.5;
+  font-size:11px;line-height:1;vertical-align:middle;color:var(--accent,#4f46e5);transition:opacity .12s;}
+/* Two-line headers (a code + a smaller subtitle below, e.g. AHD / warehouse name)
+   keep the arrow PINNED beside the label — otherwise, being the th's last child, it
+   would drop under the subtitle. Stays vertically centred on the header. */
+.enh-table thead th:has(small) .enh-arrow,
+.enh-table thead th:has(br) .enh-arrow{position:absolute;right:7px;top:50%;
+  transform:translateY(-50%);margin-left:0;}
 .enh-table thead th:hover .enh-arrow{opacity:.85;}
 .enh-table thead th[aria-sort="ascending"]  .enh-arrow{opacity:1;font-weight:700;}
 .enh-table thead th[aria-sort="descending"] .enh-arrow{opacity:1;font-weight:700;}
