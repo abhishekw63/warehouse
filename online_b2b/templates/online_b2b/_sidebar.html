@@ -88,8 +88,8 @@
       <a href="{% url 'users_roles' %}" class="sn sn-dim{% if '/users' in request.path %} on{% endif %}" title="Users &amp; Roles — who can write">
         <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='users' %}</span><span class="side-label">Users &amp; Roles</span></a>
       {% endif %}
-      <a href="{% url 'dev_dashboard' %}" class="sn sn-dim{% if '/dev/' in request.path %} on{% endif %}" title="Dev · Health">
-        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='activity' %}</span><span class="side-label">Dev · Health</span></a>
+      <a href="{% url 'dev_dashboard' %}" class="sn sn-dim{% if '/dev/' in request.path %} on{% endif %}" title="Code Audit — security · standards · big files · duplication (request timing is in the Audit Log)">
+        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='activity' %}</span><span class="side-label">Code Audit</span></a>
       <a href="{% url 'audit_log' %}" class="sn sn-dim{% if '/audit' in request.path %} on{% endif %}" title="Audit Log — who did what">
         <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='scroll' %}</span><span class="side-label">Audit Log</span></a>
     </div>

@@ -1,20 +1,23 @@
 {% extends 'online_b2b/base_b2b.html' %}
 {% load static %}
-{% block title %}Dev · Health{% endblock %}
+{% block title %}Code Audit{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
 
 {% block breadcrumb %}
-    <a href="{% url 'departments' %}">Departments</a> <span>/ Dev · Health</span>
+    <a href="{% url 'departments' %}">Departments</a> <span>/ Code Audit</span>
 {% endblock %}
 
 {% block content %}
 <div class="b2b-wrap b2b-wide">
   <div class="b2b-head">
     <div>
-      <h1>Dev · Health <span>· internal</span></h1>
-      <p class="src">Live request performance (captured on every request) + an all-angles code audit. Staff-only · read-only.</p>
+      <h1>Code Audit <span>· internal</span></h1>
+      <p class="src">All-angles code health — security, standards (ruff), big files/functions,
+        duplication. Staff-only · read-only. Request <b>timing &amp; slowest actions</b> now live
+        (durably) in the <a href="{% url 'audit_log' %}">Audit Log</a>.</p>
     </div>
     <div class="head-actions">
+      <a href="{% url 'audit_log' %}" class="btn-ghost">⏱ Request timing → Audit Log</a>
       <a href="{% url 'dev_map' %}" class="btn-ghost">🗺 Project Map</a>
       <form method="post" action="{% url 'dev_audit' %}" style="display:inline;">{% csrf_token %}
         <button class="btn-primary" type="submit">⟳ Run code audit</button>
@@ -22,65 +25,7 @@
     </div>
   </div>
 
-  <!-- ── Perf KPIs ── -->
-  <div class="kpis" style="grid-template-columns:repeat(5,1fr);">
-    <div class="card c1"><div><div class="n">{{ kpi.requests }}</div><div class="l">Requests logged</div></div></div>
-    <div class="card c3"><div><div class="n">{{ kpi.avg_ms }}<span class="u">ms</span></div><div class="l">Avg latency</div></div></div>
-    <div class="card c6"><div><div class="n">{{ kpi.max_ms }}<span class="u">ms</span></div><div class="l">Slowest</div></div></div>
-    <div class="card c5"><div><div class="n">{{ kpi.queries }}</div><div class="l">SQL queries</div></div></div>
-    <div class="card c8"><div><div class="n">{{ kpi.errors }}</div><div class="l">4xx/5xx</div></div></div>
-  </div>
-
-  <div class="tabs">
-    <button class="tab on" data-tab="routes">Endpoints <span class="tcount">{{ agg|length }}</span></button>
-    <button class="tab" data-tab="recent">Recent <span class="tcount">{{ recent|length }}</span></button>
-    <button class="tab" data-tab="audit">Code audit{% if audit.ruff %} <span class="tcount">{{ audit.ruff.count }}</span>{% endif %}</button>
-  </div>
-
-  <!-- ── Endpoints (aggregated, slowest first) ── -->
-  <div class="tabpane on" data-pane="routes">
-    <div class="scroll">
-    <table class="grid">
-      <thead><tr><th>Method</th><th>Route</th><th class="r">Hits</th><th class="r">Avg ms</th>
-        <th class="r">p95 ms</th><th class="r">Max ms</th><th class="r">Avg q</th><th class="r">Max q</th>
-        <th class="r">Avg KB</th><th class="r">Errors</th><th>Flags</th></tr></thead>
-      <tbody>
-        {% for a in agg %}
-        <tr class="{% if 'slow' in a.flags %}rmis{% endif %}">
-          <td class="mono">{{ a.method }}</td><td class="mono" title="{{ a.route }}">{{ a.route }}</td>
-          <td class="r">{{ a.hits }}</td><td class="r">{{ a.avg_ms }}</td><td class="r">{{ a.p95_ms }}</td>
-          <td class="r"><b>{{ a.max_ms }}</b></td><td class="r">{{ a.avg_q }}</td><td class="r">{{ a.max_q }}</td>
-          <td class="r">{{ a.avg_kb }}</td><td class="r">{{ a.errors }}</td>
-          <td>{% for f in a.flags %}<span class="st {% if f == 'slow' %}mismatch{% else %}not_in_master{% endif %}">{{ f }}</span> {% endfor %}</td>
-        </tr>
-        {% empty %}<tr><td colspan="11" class="muted">No requests captured yet — browse the app, then refresh.</td></tr>{% endfor %}
-      </tbody>
-    </table>
-    </div>
-  </div>
-
-  <!-- ── Recent requests ── -->
-  <div class="tabpane" data-pane="recent" style="display:none;">
-    <div class="scroll">
-    <table class="grid">
-      <thead><tr><th>Time</th><th>Method</th><th>Path</th><th class="r">Status</th><th class="r">ms</th><th class="r">q</th><th class="r">q ms</th><th class="r">KB</th><th>User</th></tr></thead>
-      <tbody>
-        {% for r in recent %}
-        <tr class="{% if r.status >= 400 %}rmis{% elif r.ms > 1000 %}rnim{% endif %}">
-          <td class="mono">{{ r.ts }}</td><td class="mono">{{ r.method }}</td>
-          <td class="mono" title="{{ r.path }}">{{ r.path }}</td>
-          <td class="r"><span class="st {% if r.status >= 400 %}not_in_master{% else %}ok{% endif %}">{{ r.status }}</span></td>
-          <td class="r"><b>{{ r.ms }}</b></td><td class="r">{{ r.q }}</td><td class="r">{{ r.qms }}</td>
-          <td class="r">{{ r.bytes|filesizeformat }}</td><td>{{ r.user|default:'—' }}</td>
-        </tr>
-        {% empty %}<tr><td colspan="9" class="muted">No requests captured yet.</td></tr>{% endfor %}
-      </tbody>
-    </table>
-    </div>
-  </div>
-
-  <!-- ── Code audit ── -->
-  <div class="tabpane" data-pane="audit" style="display:none;">
+  <div class="dev-audit">
     {% if not audit %}
       <p class="muted" style="padding:18px;">No audit yet — click <b>Run code audit</b> above.</p>
     {% else %}
@@ -141,7 +86,6 @@
 </div>
 
 <style>
-  .card .n .u{font-size:13px;color:var(--muted);font-weight:600;margin-left:2px;}
   .aud-meta{font-size:12.5px;color:var(--text-2);margin:4px 0 14px;}
   .aud-sec{margin:0 0 22px;} .aud-sec h3{font-size:14px;margin:0 0 10px;display:flex;align-items:center;gap:8px;}
   .aud-sec h3 .cnt{font-size:11px;font-weight:800;background:var(--accent-soft);color:var(--accent);border-radius:20px;padding:2px 9px;}
@@ -151,16 +95,4 @@
   .rulechip{display:inline-block;font-size:11px;font-weight:700;background:var(--surface-2);border:1px solid var(--border);border-radius:20px;padding:2px 9px;margin:0 6px 6px 0;color:var(--text-2);}
   .aud-rule{margin:0 0 10px;}
 </style>
-
-<script>
-(function () {
-  var tabs = document.querySelectorAll('.tab');
-  tabs.forEach(function (t) { t.addEventListener('click', function () {
-    tabs.forEach(function (x) { x.classList.toggle('on', x === t); });
-    var name = t.getAttribute('data-tab');
-    document.querySelectorAll('.tabpane').forEach(function (p) {
-      p.style.display = (p.getAttribute('data-pane') === name) ? '' : 'none'; });
-  }); });
-})();
-</script>
 {% endblock %}

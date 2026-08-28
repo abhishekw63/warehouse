@@ -12,6 +12,8 @@
   .al-table td.al-time.slow{color:var(--red,#b3261e);}
   .al-table td.al-time .q{font-weight:500;color:var(--muted);font-size:11px;}
   .al-table th.r{text-align:right;}
+  .al-slow{margin-bottom:16px;}
+  .al-slow-hint{font-size:11.5px;color:var(--muted);}
   .al-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:14px;}
   .al-filters input{padding:8px 11px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text);font-size:13.5px;min-width:170px;}
   .al-filters label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
@@ -34,6 +36,29 @@
     <button type="submit" class="btn-primary" style="height:38px;">Filter</button>
     {% if f_user or f_q %}<a href="{% url 'audit_log' %}" class="btn-ghost" style="height:38px;display:inline-flex;align-items:center;">Clear</a>{% endif %}
   </form>
+
+  {% if slowest %}
+  <div class="im-card reveal al-slow">
+    <div class="im-ovh"><h2>Slowest actions <span class="count">last {{ rows|length }}</span></h2>
+      <span class="al-slow-hint">grouped by action · flagged when max &gt; {{ expected_sec }}s</span></div>
+    <div class="scroll im-tablewrap">
+    <table class="grid compact al-table">
+      <thead><tr><th>Method</th><th>Action</th><th class="r">Hits</th><th class="r">Avg</th><th class="r">Max</th></tr></thead>
+      <tbody>
+      {% for s in slowest %}
+        <tr>
+          <td><span class="al-m">{{ s.method }}</span></td>
+          <td><b>{{ s.name }}</b></td>
+          <td class="r">{{ s.hits }}</td>
+          <td class="r al-time">{{ s.avg_sec }}s</td>
+          <td class="r al-time{% if s.over %} slow{% endif %}">{{ s.max_sec }}s</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  {% endif %}
 
   <div class="im-card reveal">
     <div class="im-ovh"><h2>Activity <span class="count">{{ rows|length }}</span></h2></div>

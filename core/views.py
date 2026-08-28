@@ -128,19 +128,14 @@ class _StaffOnly(LoginRequiredMixin, UserPassesTestMixin):
 
 
 class DevDashboardView(_StaffOnly, TemplateView):
-    """Dev · Health — live request perf (from the timing middleware) + an
-    on-demand all-angles code audit. Staff-only; read-only; never touches the
-    business backend."""
+    """Code Audit — an on-demand all-angles code audit. Staff-only; read-only.
+    Request PERF/timing (which used to live here off ephemeral perf.jsonl) now lives
+    durably in the Audit Log (per-request time + slowest-actions rollup)."""
     template_name = 'core/dev_dashboard.html'
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         from . import code_audit
-        from . import observability as obs
-        rows = obs.recent(800)
-        ctx['kpi'] = obs.kpis(rows)
-        ctx['agg'] = obs.aggregate(rows)
-        ctx['recent'] = list(reversed(rows))[:60]
         ctx['audit'] = code_audit.last_audit()
         return ctx
 
@@ -310,6 +305,28 @@ class AuditLogView(_StaffOnly, TemplateView):
             ms = r.get('ms')
             r['sec'] = round(ms / 1000.0, 2) if ms is not None else None
             r['over'] = ms is not None and ms > exp     # slower than expected
+        # Slowest-actions rollup (merged in from the old Dev·Health perf view) —
+        # grouped by action from the SAME rows, so no extra query. Pinpoints which
+        # actions/pages are slow, durably (the old view read ephemeral perf.jsonl).
+        groups: dict = {}
+        for r in rows:
+            ms = r.get('ms')
+            if ms is None:
+                continue
+            key = (r.get('method') or 'GET', r.get('url_name') or r.get('path') or '—')
+            g = groups.setdefault(key, {'method': key[0], 'name': key[1],
+                                        'hits': 0, 'ms': []})
+            g['hits'] += 1
+            g['ms'].append(ms)
+        slowest = []
+        for g in groups.values():
+            ms = g['ms']
+            slowest.append({'method': g['method'], 'name': g['name'], 'hits': g['hits'],
+                            'avg_sec': round(sum(ms) / len(ms) / 1000.0, 2),
+                            'max_sec': round(max(ms) / 1000.0, 2),
+                            'over': max(ms) > exp})
+        slowest.sort(key=lambda x: -x['max_sec'])
+        ctx['slowest'] = slowest[:12]
         ctx['rows'] = rows
         ctx['f_user'] = u
         ctx['f_q'] = q
