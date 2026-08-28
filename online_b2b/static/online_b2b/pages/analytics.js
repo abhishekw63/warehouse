@@ -205,7 +205,12 @@
         if (nd && curD) curD.textContent = nd.textContent;
         if (typeof buildFacCharts === 'function') buildFacCharts();
         facBadge(iso);
-        (document.getElementById('an-fc') || cf).classList.remove('an-busy');
+        var card = document.getElementById('an-fc') || cf;
+        card.classList.remove('an-busy');
+        // smooth fade-in of the swapped card so the drill isn't a hard flip
+        var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+        var body = card.querySelector('.an-fc-body');
+        if (body && !reduce) { body.style.animation = 'none'; void body.offsetWidth; body.style.animation = 'anfade .3s ease both'; }
       })
       .catch(function () { cf.classList.remove('an-busy'); });
   }

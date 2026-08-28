@@ -9,10 +9,10 @@
     <link rel="alternate icon" type="image/png" href="{% static 'core/favicon.png' %}">
     <link rel="shortcut icon" href="{% static 'core/favicon.ico' %}">
     <link rel="stylesheet" href="{% static 'core/css/style.css' %}">
-    {# Global enhance layer CSS — MUST be render-blocking in <head> (not body-end)
-       so the sidebar/tables/theme paint correctly on first frame. Loading it late
-       caused a flash of unstyled HTML + a mispositioned dark sidebar + layout
-       shift. Loaded before page extra_css so a page can still override it. #}
+    {% comment %}Global enhance-layer CSS — MUST be render-blocking here in the head
+    (not at body-end) so the sidebar/tables/theme paint on the first frame; loading
+    it late caused a flash of unstyled HTML + a mispositioned dark sidebar + layout
+    shift. Before page extra_css so a page can still override it.{% endcomment %}
     <link rel="stylesheet" href="{% static 'online_b2b/enhance.css' %}">
     {% block extra_css %}{% endblock %}
     <style>

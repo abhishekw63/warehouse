@@ -85,8 +85,7 @@
         </tr>
         <tr class="an-fc-detail" data-fc-detail="{{ forloop.counter0 }}" hidden>
           <td colspan="5">
-            {# Bifurcate by SEGMENT first (Online B2B / Offline) — each with its own
-               subtotal — then the marketplaces within that segment. #}
+            {# Segment bifurcation (Online B2B / Offline), each with its marketplaces. #}
             {% for sg in f.segments %}
             <div class="an-fc-seg">
               <div class="an-fc-seghd">
