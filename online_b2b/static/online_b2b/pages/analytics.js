@@ -2,6 +2,9 @@
 (function () {
   var AN_URL = location.pathname;
   var activeTab = 'daily';
+  // Remembers the last multi-day Daily view so drilling into a single bar (day)
+  // can reset back to it on a second click.
+  var dailyBaseParams = null;
 
   function url(params) {
     var p = new URLSearchParams();
@@ -111,10 +114,25 @@
     if (!data.segments || !data.segments.length) { box.innerHTML = '<div class="chart-empty">No orders in this period.</div>'; return; }
     box.innerHTML = '';
     var cfg = {
-      chart: { type: 'bar', height: 380, stacked: true, fontFamily: 'Inter, sans-serif', toolbar: { show: false }, animations: { enabled: true, speed: 600, dynamicAnimation: { enabled: true, speed: 450 } } },
+      chart: { type: 'bar', height: 380, stacked: true, fontFamily: 'Inter, sans-serif', toolbar: { show: false },
+        animations: { enabled: true, speed: 600, dynamicAnimation: { enabled: true, speed: 450 } },
+        // Click a bar (day) → drill the whole Daily view (KPIs + By-facility) into
+        // that day; click again (already drilled) → reset to the prior range.
+        events: { dataPointSelection: function (ev, ctx, cfgObj) {
+          var iso = (data.iso || [])[cfgObj.dataPointIndex];
+          if (!iso) return;
+          if (data.focus) loadDaily(dailyBaseParams || { days: 30 });
+          else loadDaily({ start: iso, end: iso });
+        } } },
+      states: { active: { filter: { type: 'none' } } },   // no dimming of other bars on select
       series: series(),
       colors: data.segments.map(function (s) { return COLORS[s] || '#9aa1b2'; }),
-      plotOptions: { bar: { columnWidth: '62%', borderRadius: 3 } },
+      plotOptions: { bar: { columnWidth: '62%', borderRadius: 3,
+        // Total value ON TOP of each stacked bar so the day's total is readable at a
+        // glance (no more summing segments by eye). Uses the active metric's format.
+        dataLabels: { total: { enabled: true, offsetY: -4,
+          formatter: function (v) { return fmt(v); },
+          style: { fontSize: '10px', fontWeight: 700, color: '#6b7280' } } } } },
       dataLabels: { enabled: false },
       xaxis: { categories: data.labels, axisBorder: { show: false }, axisTicks: { show: false }, labels: { style: { colors: '#9aa1b2', fontSize: '10px' } } },
       yaxis: { labels: { style: { colors: '#9aa1b2', fontSize: '10px' }, formatter: function (v) { return fmt(v); } } },
@@ -143,6 +161,9 @@
   }
 
   function loadDaily(params) {
+    // Track the last NON-single-day view so a drilled-in day can reset to it.
+    var single = params && params.start && params.end && params.start === params.end;
+    if (!single) dailyBaseParams = params;
     var pane = document.getElementById('pane-daily');
     pane.classList.add('an-busy');
     fetch(url(Object.assign({ partial: 'daily' }, params)), { headers: { 'X-Requested-With': 'fetch' } })

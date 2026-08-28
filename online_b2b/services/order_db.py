@@ -483,6 +483,7 @@ def daily_intake(days: int = 30, start: str = '', end: str = '') -> dict:
                     items[s].append(it)
                     qty[s].append(q)
             labels = [dd.strftime('%d %b') for dd in day_list]
+            iso_list = [dd.isoformat() for dd in day_list]   # per-bar date for click→drill
             # Trim leading all-zero days so the bars fill the chart from the left
             # instead of clustering at the right edge (orders may start mid-window).
             # Only in last-N-days mode — an explicit range is shown in full.
@@ -496,12 +497,13 @@ def daily_intake(days: int = 30, start: str = '', end: str = '') -> dict:
                     trim_at = max(0, len(labels) - 1)
                 if trim_at > 0:
                     labels = labels[trim_at:]
+                    iso_list = iso_list[trim_at:]
                     for s in segs:
                         value[s] = value[s][trim_at:]
                         pos[s] = pos[s][trim_at:]
                         items[s] = items[s][trim_at:]
                         qty[s] = qty[s][trim_at:]
-            out = {'labels': labels, 'segments': segs,
+            out = {'labels': labels, 'iso': iso_list, 'segments': segs,
                    'value': value, 'pos': pos, 'items': items, 'qty': qty}
     except Exception:  # noqa: BLE001
         pass
