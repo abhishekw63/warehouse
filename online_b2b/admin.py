@@ -99,3 +99,8 @@ class ItemExceptionAdmin(admin.ModelAdmin):
     list_filter = ('kind', 'marketplace', 'source')
     search_fields = ('source_code', 'maps_to', 'marketplace', 'note', 'item_id')
     ordering = ('kind', 'id')
+
+
+# Read-only browse for every OTHER renee_orders table (self-contained; delete
+# admin_extra.py + models_extra.py + this import to remove the whole feature).
+from . import admin_extra  # noqa: E402,F401 — registers the extra read-only admins

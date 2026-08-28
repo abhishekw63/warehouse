@@ -7,16 +7,21 @@ rows, never DDL.
 """
 
 ORDER_DB = 'orders'
-# model_name (lowercase) → these live in MySQL renee_orders (order tables +
-# the DB-sourced master data that retired the bundled Excels).
+# model_name (lowercase) → the ORIGINAL curated set (kept for allow_migrate's
+# explicit belt-and-suspenders block). Read/write routing below is now by the
+# general rule "every online_b2b managed=False model is a renee_orders table",
+# so the read-only admin-browse models (models_extra.py) route here too without
+# having to list all ~35 names.
 ORDER_MODELS = {'run', 'orderheader', 'orderline',
                 'itemmaster', 'channelskumap', 'shiptomapping',
                 'itemexception'}
 
 
 def _is_order(model) -> bool:
+    # Every online_b2b model is managed=False and mapped to a renee_orders table
+    # (the app has no Django-managed models); route them all to the orders DB.
     return (getattr(model._meta, 'app_label', '') == 'online_b2b'
-            and model._meta.model_name in ORDER_MODELS)
+            and model._meta.managed is False)
 
 
 class OrdersRouter:

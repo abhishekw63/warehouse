@@ -203,3 +203,8 @@ class ItemException(models.Model):
 
     def __str__(self):
         return f"[{self.kind}] {self.source_code} ({self.marketplace or 'all'})"
+
+
+# Read-only admin browse for EVERY other renee_orders table (self-contained;
+# delete models_extra.py + admin_extra.py + these two import lines to remove).
+from . import models_extra  # noqa: E402,F401 — registers the extra models
