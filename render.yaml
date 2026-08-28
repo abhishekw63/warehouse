@@ -14,10 +14,14 @@ services:
     # deploys pick this up directly.
     region: singapore
     buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput"
-    # --threads gives each worker I/O concurrency (the app waits on remote TiDB a
-    # lot); --timeout 300 so a large Lock&Record (workbook build for thousands of
-    # lines, ~85s+) is never killed mid-record by the old 120s cap.
-    startCommand: "gunicorn renee_cosmetics.wsgi --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 300"
+    # FREE-TIER TUNING (0.1 CPU · 512 MB RAM): ONE worker, not two — the heavy ops
+    # (upload/confirm/workbook-build) are CPU-bound (GIL-locked), so a 2nd worker
+    # only splits the 0.1 CPU and doubles RAM (risking OOM/swap). One worker gets the
+    # whole CPU slice; --threads 8 still gives I/O concurrency while it waits on TiDB.
+    # On a paid plan with real CPU, bump workers back up (e.g. --workers 2 --threads 4).
+    # --timeout 300 so a large Lock&Record (workbook build for thousands of lines)
+    # is never killed mid-record.
+    startCommand: "gunicorn renee_cosmetics.wsgi --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 300"
     # ── PERSISTENT MEDIA (uploads + generated workbooks survive deploys) ──────
     # Render's disk is EPHEMERAL on the free plan — a redeploy/idle-spin-down drops
     # in-flight uploads/reviews and generated workbooks. To keep them, upgrade the
