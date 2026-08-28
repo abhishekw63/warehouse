@@ -71,7 +71,7 @@
     <label>Where
       <span class="al-envtoggle" role="group" aria-label="Filter by environment">
         <button type="submit" name="env" value="" class="al-envbtn{% if not f_env %} on{% endif %}" title="Both">All</button>
-        <button type="submit" name="env" value="served" class="al-envbtn{% if f_env == 'served' %} on{% endif %}" title="The deployed service (the real prod timings)">Served</button>
+        <button type="submit" name="env" value="served" class="al-envbtn{% if f_env == 'served' %} on{% endif %}" title="The deployed service (the real prod timings)">Prod</button>
         <button type="submit" name="env" value="local" class="al-envbtn{% if f_env == 'local' %} on{% endif %}" title="A dev machine (localhost) — slower due to India→DB latency, not representative">Local</button>
       </span>
     </label>
@@ -102,6 +102,31 @@
   </div>
   {% endif %}
 
+  {% if compare %}
+  <div class="im-card reveal al-slow">
+    <div class="im-ovh"><h2>Local vs Prod <span class="count">by route</span></h2>
+      <span class="al-slow-hint">avg time per route · <b>LOCAL</b> = your machine (India→DB latency) · <b>PROD</b> = the deployed service, split into DB / Code</span></div>
+    <div class="scroll im-tablewrap">
+    <table class="grid compact al-table">
+      <thead><tr><th>Route</th><th class="r">Local</th><th class="r">Prod</th><th class="r">Prod DB</th><th class="r">Prod Code</th><th class="r">Prod speed-up</th></tr></thead>
+      <tbody>
+      {% for c in compare %}
+        <tr>
+          <td><b>{{ c.name }}</b></td>
+          <td class="r al-time">{% if c.local is not None %}{{ c.local }}s{% else %}—{% endif %}</td>
+          <td class="r al-time">{% if c.served is not None %}{{ c.served }}s{% else %}—{% endif %}</td>
+          <td class="r"><span class="al-db dom">{% if c.sdb is not None %}{{ c.sdb }}s{% else %}—{% endif %}</span></td>
+          <td class="r"><span class="al-code dom">{% if c.scode is not None %}{{ c.scode }}s{% else %}—{% endif %}</span></td>
+          <td class="r">{% if c.local and c.served %}<b>{% widthratio c.local c.served 1 %}×</b> faster{% else %}<span class="mut">—</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% if not has_both %}<p class="al-slow-hint" style="padding:10px 16px;">Only one environment captured so far — run a few pages on the other (localhost or the deployed service) to see them side by side.</p>{% endif %}
+  </div>
+  {% endif %}
+
   <div class="im-card reveal">
     <div class="im-ovh"><h2>Activity <span class="count">{{ rows|length }}</span>{% if slow_count %} <span class="al-slowcount">⚠ {{ slow_count }} slow</span>{% endif %}</h2>
       <span class="al-slow-hint">times shown in IST · slow = over {{ expected_sec }}s</span></div>
@@ -113,7 +138,7 @@
         <tr class="{% if r.over %}al-rowslow{% endif %}">
           <td class="al-whencell">
             <span class="al-when1">{{ r.ts|date:"d M · H:i:s"|default:r.ts }}</span>
-            <span class="al-when2">{% if r.ago %}{{ r.ago }}{% endif %}{% if r.env %} <span class="al-env al-env-{{ r.env }}">{{ r.env }}</span>{% endif %}</span>
+            <span class="al-when2">{% if r.ago %}{{ r.ago }}{% endif %}{% if r.env %} <span class="al-env al-env-{{ r.env }}">{% if r.env == 'served' %}PROD{% else %}LOCAL{% endif %}</span>{% endif %}</span>
           </td>
           <td class="al-user"><b>{{ r.username }}</b></td>
           <td class="al-act"><span class="al-m al-{{ r.mcls }}">{{ r.method }}</span> <span class="al-actname" title="{{ r.path }}">{{ r.url_name|default:r.path|default:"—" }}</span></td>

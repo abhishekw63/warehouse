@@ -369,6 +369,39 @@ class AuditLogView(_StaffOnly, TemplateView):
                             'over': max(ms) > exp})
         slowest.sort(key=lambda x: -x['max_sec'])
         ctx['slowest'] = slowest[:12]
+        # LOCAL vs SERVED comparison per route (from ALL rows regardless of the env
+        # filter) — so the two environments sit side by side: local carries the
+        # India→DB latency, served is the real service (with its DB/Code split).
+        cmp_src = rows if not env_f else audit.recent(400, user=u, q=q)
+        cg: dict = {}
+        for r in cmp_src:
+            ms = r.get('ms')
+            if ms is None:
+                continue
+            hh = str(r.get('host') or '')
+            e = ('local' if ('127.0.0.1' in hh or 'localhost' in hh)
+                 else ('served' if hh else None))
+            if not e:
+                continue
+            g = cg.setdefault(r.get('url_name') or r.get('path') or '—',
+                              {'local': [], 'served': [], 'sdb': [], 'scode': []})
+            if e == 'local':
+                g['local'].append(ms)
+            elif r.get('db_ms') is not None:     # served, with the DB/Code split — keep
+                g['served'].append(ms)           # total/DB/Code over the SAME rows so
+                g['sdb'].append(r['db_ms'])      # Prod total == Prod DB + Prod Code
+                g['scode'].append(max(0.0, ms - r['db_ms']))
+
+        def _avg_sec(a):
+            return round(sum(a) / len(a) / 1000.0, 2) if a else None
+        compare = [{
+            'name': name, 'local': _avg_sec(g['local']), 'served': _avg_sec(g['served']),
+            'sdb': _avg_sec(g['sdb']), 'scode': _avg_sec(g['scode']),
+            'nloc': len(g['local']), 'nsrv': len(g['served']),
+        } for name, g in cg.items() if g['local'] or g['served']]
+        compare.sort(key=lambda x: -((x['served'] or 0) + (x['local'] or 0)))
+        ctx['compare'] = compare[:15]
+        ctx['has_both'] = any(c['local'] and c['served'] for c in compare)
         ctx['rows'] = rows
         ctx['f_user'] = u
         ctx['f_q'] = q
