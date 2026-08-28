@@ -51,6 +51,7 @@ def ensure_table() -> None:
                     detail   VARCHAR(500),
                     ms       INT,
                     q        INT,
+                    host     VARCHAR(120),
                     INDEX idx_audit_ts (ts),
                     INDEX idx_audit_user (username)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
@@ -59,36 +60,38 @@ def ensure_table() -> None:
                 CREATE TABLE IF NOT EXISTS audit_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, username TEXT,
                     method TEXT, url_name TEXT, path TEXT, target TEXT, detail TEXT,
-                    ms INTEGER, q INTEGER)""")
-        # Self-migrate an already-existing table: add the timing columns (ms = wall
-        # time, q = SQL query count) if missing. Best-effort — a duplicate-column
-        # error just means they're already there.
-        for _col in ('ms', 'q'):
+                    ms INTEGER, q INTEGER, host TEXT)""")
+        # Self-migrate an already-existing table: add columns if missing (ms = wall
+        # time, q = Django SQL count, host = which server served it — so localhost
+        # timings can be told apart from the deployed service). Best-effort.
+        for _col, _typ in (('ms', 'INT'), ('q', 'INT'), ('host', 'VARCHAR(120)')):
             try:
-                cur.execute(f"ALTER TABLE audit_log ADD COLUMN {_col} INT")
+                cur.execute(f"ALTER TABLE audit_log ADD COLUMN {_col} {_typ}")
             except Exception:  # noqa: BLE001
                 pass
         cur.connection.commit()
     _READY = True
 
 
-def log(username, method, url_name, path, target='', detail='', ms=None, q=None):
+def log(username, method, url_name, path, target='', detail='', ms=None, q=None,
+        host=''):
     """Append one audit row; returns its id (or None). Best-effort — swallows all
     errors. ``ms``/``q`` (wall time + SQL count) are usually stamped LATER via
-    :func:`set_timing` since the duration isn't known until the request finishes."""
+    :func:`set_timing` since the duration isn't known until the request finishes.
+    ``host`` = which server served it (localhost vs the deployed service)."""
     try:
         ensure_table()
         with _conn() as (cur, d):
             ph = d['ph']
             cur.execute(
                 f"INSERT INTO audit_log (ts, username, method, url_name, path, "
-                f"target, detail, ms, q) "
-                f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})",
+                f"target, detail, ms, q, host) "
+                f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})",
                 (_utc_now(), str(username or '')[:150], str(method or '')[:10],
                  str(url_name or '')[:120], str(path or '')[:300],
                  str(target or '')[:300], str(detail or '')[:500],
                  int(ms) if ms is not None else None,
-                 int(q) if q is not None else None))
+                 int(q) if q is not None else None, str(host or '')[:120]))
             cur.connection.commit()
             return cur.lastrowid
     except Exception:  # noqa: BLE001 — audit must never break a request
@@ -116,7 +119,7 @@ def recent(limit: int = 300, user: str = '', q: str = '') -> list[dict]:
     try:
         ensure_table()
         cols = ['id', 'ts', 'username', 'method', 'url_name', 'path', 'target',
-                'detail', 'ms', 'q']
+                'detail', 'ms', 'q', 'host']
         where, params = [], []
         with _conn() as (cur, d):
             ph = d['ph']

@@ -154,8 +154,12 @@ class WriteGuardMiddleware:
                       or request.POST.get('role') or '')[:500]
             # Keep the row id on the request so PerfMiddleware can stamp the
             # elapsed time onto it once the view finishes (duration isn't known yet).
+            try:
+                host = request.get_host()
+            except Exception:  # noqa: BLE001
+                host = ''
             request._audit_id = audit.log(u, request.method, name or '',
-                                          request.path, target, detail)
+                                          request.path, target, detail, host=host)
         except Exception:  # noqa: BLE001 — audit must never break a request
             pass
 

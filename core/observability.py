@@ -102,8 +102,12 @@ class PerfMiddleware:
             elif (request.method == 'GET' and _SLOW_MS and dur_ms >= _SLOW_MS
                   and getattr(getattr(request, 'user', None), 'is_authenticated', False)):
                 m = getattr(request, 'resolver_match', None)
+                try:
+                    host = request.get_host()
+                except Exception:  # noqa: BLE001
+                    host = ''
                 audit.log(user, 'GET', (m.url_name if m else '') or '', path,
-                          '', 'slow load', ms=dur_ms, q=counter['n'])
+                          '', 'slow load', ms=dur_ms, q=counter['n'], host=host)
         except Exception:  # noqa: BLE001 — observability must never break a page
             pass
 

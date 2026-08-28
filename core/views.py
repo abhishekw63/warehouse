@@ -325,6 +325,11 @@ class AuditLogView(_StaffOnly, TemplateView):
             r['sec'] = round(ms / 1000.0, 2) if ms is not None else None
             r['over'] = ms is not None and ms > exp     # slower than expected
             r['mcls'] = str(r.get('method') or 'get').lower()   # method → colour class
+            host = str(r.get('host') or '')
+            # local (dev, India→Singapore latency ⇒ slow, not representative) vs the
+            # deployed service — so the two aren't compared apples-to-oranges.
+            r['env'] = ('local' if ('127.0.0.1' in host or 'localhost' in host)
+                        else ('served' if host else ''))
         ctx['slow_count'] = sum(1 for r in rows if r.get('over'))
         # Slowest-actions rollup (merged in from the old Dev·Health perf view) —
         # grouped by action from the SAME rows, so no extra query. Pinpoints which

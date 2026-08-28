@@ -24,6 +24,18 @@
   /* rows over the expected time get a soft red tint + a red edge */
   .al-rowslow td{background:color-mix(in srgb,var(--red,#b3261e) 5%,transparent);}
   .al-rowslow td:first-child{box-shadow:inset 3px 0 0 var(--red,#b3261e);}
+  /* de-congested rows: more breathing room + stacked when/ago/env */
+  .al-table td{padding-top:11px;padding-bottom:11px;vertical-align:middle;}
+  .al-whencell{line-height:1.35;}
+  .al-when1{display:block;color:var(--text);font-weight:600;font-variant-numeric:tabular-nums;}
+  .al-when2{display:block;font-size:10.5px;color:var(--muted);}
+  .al-env{display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:1px 6px;border-radius:20px;margin-left:3px;}
+  .al-env-served{background:color-mix(in srgb,var(--green,#0a7d5a) 15%,transparent);color:var(--green,#0a7d5a);}
+  .al-env-local{background:color-mix(in srgb,#f59e0b 16%,transparent);color:#b45309;}
+  .al-actname{font-weight:600;color:var(--text);margin-left:4px;}
+  .al-what{max-width:360px;white-space:normal;line-height:1.4;}
+  .al-target{color:var(--text);font-weight:600;} .al-detail{color:var(--muted);}
+  .al-time{white-space:nowrap;}
   .al-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:14px;}
   .al-filters input{padding:8px 11px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text);font-size:13.5px;min-width:170px;}
   .al-filters label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
@@ -75,23 +87,23 @@
       <span class="al-slow-hint">times shown in IST · slow = over {{ expected_sec }}s</span></div>
     <div class="scroll im-tablewrap">
     <table class="grid compact al-table">
-      <thead><tr><th>When</th><th>User</th><th>Method</th><th>Action</th><th>Target</th><th>Detail</th><th class="r" title="Actual time this took, vs an expected ≤{{ expected_sec }}s">Time · exp ≤{{ expected_sec }}s</th><th>Path</th></tr></thead>
+      <thead><tr><th>When</th><th>User</th><th>Action</th><th>What</th><th class="r" title="Actual time this took, vs an expected ≤{{ expected_sec }}s">Time · exp ≤{{ expected_sec }}s</th></tr></thead>
       <tbody>
       {% for r in rows %}
         <tr class="{% if r.over %}al-rowslow{% endif %}">
-          <td class="when">{{ r.ts|date:"d M · H:i:s"|default:r.ts }}{% if r.ago %} <span class="al-ago">{{ r.ago }}</span>{% endif %}</td>
-          <td><b>{{ r.username }}</b></td>
-          <td><span class="al-m al-{{ r.mcls }}">{{ r.method }}</span></td>
-          <td>{{ r.url_name|default:"—" }}</td>
-          <td class="target">{{ r.target|default:"—" }}</td>
-          <td class="detail">{{ r.detail|default:"" }}</td>
+          <td class="al-whencell">
+            <span class="al-when1">{{ r.ts|date:"d M · H:i:s"|default:r.ts }}</span>
+            <span class="al-when2">{% if r.ago %}{{ r.ago }}{% endif %}{% if r.env %} <span class="al-env al-env-{{ r.env }}">{{ r.env }}</span>{% endif %}</span>
+          </td>
+          <td class="al-user"><b>{{ r.username }}</b></td>
+          <td class="al-act"><span class="al-m al-{{ r.mcls }}">{{ r.method }}</span> <span class="al-actname" title="{{ r.path }}">{{ r.url_name|default:r.path|default:"—" }}</span></td>
+          <td class="al-what">{% if r.target %}<span class="al-target">{{ r.target }}</span>{% endif %}{% if r.detail %} <span class="al-detail">{{ r.detail }}</span>{% endif %}{% if not r.target and not r.detail %}<span class="mut">—</span>{% endif %}</td>
           <td class="al-time{% if r.over %} slow{% endif %}" title="Actual {{ r.sec }}s vs expected ≤{{ expected_sec }}s">
             {% if r.sec is not None %}{{ r.sec }}s{% if r.q %} <span class="q">· {{ r.q }}q</span>{% endif %}{% else %}—{% endif %}
           </td>
-          <td class="path">{{ r.path }}</td>
         </tr>
       {% empty %}
-        <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px;">No audit entries yet.</td></tr>
+        <tr><td colspan="5" style="text-align:center;color:var(--muted);padding:24px;">No audit entries yet.</td></tr>
       {% endfor %}
       </tbody>
     </table>
