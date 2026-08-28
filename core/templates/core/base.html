@@ -9,6 +9,11 @@
     <link rel="alternate icon" type="image/png" href="{% static 'core/favicon.png' %}">
     <link rel="shortcut icon" href="{% static 'core/favicon.ico' %}">
     <link rel="stylesheet" href="{% static 'core/css/style.css' %}">
+    {# Global enhance layer CSS — MUST be render-blocking in <head> (not body-end)
+       so the sidebar/tables/theme paint correctly on first frame. Loading it late
+       caused a flash of unstyled HTML + a mispositioned dark sidebar + layout
+       shift. Loaded before page extra_css so a page can still override it. #}
+    <link rel="stylesheet" href="{% static 'online_b2b/enhance.css' %}">
     {% block extra_css %}{% endblock %}
     <style>
       /* Global anti-FOUC: page-specific CSS loads at the bottom of the body, so
@@ -124,7 +129,7 @@
 <script defer src="{% static 'online_b2b/vendor/motion.min.js' %}"></script>
 {# canvas-confetti (window.confetti) — celebratory bursts for big wins (Lock & Record, Backup complete). Vendored, offline-safe. #}
 <script defer src="{% static 'online_b2b/vendor/confetti.min.js' %}"></script>
-<link rel="stylesheet" href="{% static 'online_b2b/enhance.css' %}">
+{# enhance.css moved to <head> (render-blocking) to kill the FOUC; enhance.js stays deferred here. #}
 <script defer src="{% static 'online_b2b/enhance.js' %}"></script>
 {% block body_end %}{% endblock %}
 {% comment %}Per-page JS — separated into static/online_b2b/pages/<page>.js, loaded

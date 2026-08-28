@@ -3,7 +3,7 @@
 # See HOSTING-CLOUD.md for the full walkthrough.
 services:
   - type: web
-    name: renee-b2b
+    name: renee-orders
     runtime: python
     plan: free
     # ⚡ PERF: co-locate the web service with TiDB Cloud, which is in Singapore
@@ -37,10 +37,12 @@ services:
         value: "0"
       - key: DJANGO_SECRET_KEY
         generateValue: true
+      # Render also auto-appends the live RENDER_EXTERNAL_HOSTNAME to both of these
+      # (see settings.py), so the new service URL works even if this drifts.
       - key: DJANGO_ALLOWED_HOSTS
-        value: "warehouse-gi1r.onrender.com"
+        value: "renee-orders.onrender.com"
       - key: DJANGO_CSRF_TRUSTED_ORIGINS
-        value: "https://warehouse-gi1r.onrender.com"
+        value: "https://renee-orders.onrender.com"
       - key: DJANGO_SECURE_SSL
         value: "1"
       # Put Django's auth/sessions in TiDB too (Render's disk is ephemeral, so
