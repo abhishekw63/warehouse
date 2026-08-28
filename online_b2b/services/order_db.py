@@ -169,6 +169,54 @@ def _backend():
     return 'sqlite', default_history_db_path()
 
 
+# ── raw-query counter ────────────────────────────────────────────────────────
+# The app's real DB work is these RAW pymysql queries, NOT Django's ORM — so the
+# per-request SQL count (perf/audit) has to see them. Every cursor from _conn/
+# _conn_tx is wrapped so each execute increments a per-thread counter that
+# PerfMiddleware resets per request and folds into `q`. Delegation is total (only
+# execute/executemany are intercepted) so the money-path behaviour is unchanged.
+def _q_reset():
+    _local.qn = 0
+
+
+def _q_count() -> int:
+    return int(getattr(_local, 'qn', 0) or 0)
+
+
+class _CountingCursor:
+    __slots__ = ('_cur',)
+
+    def __init__(self, cur):
+        object.__setattr__(self, '_cur', cur)
+
+    def execute(self, *a, **k):
+        try:
+            _local.qn = getattr(_local, 'qn', 0) + 1
+        except Exception:  # noqa: BLE001 — counting must never affect a query
+            pass
+        return self._cur.execute(*a, **k)
+
+    def executemany(self, *a, **k):
+        try:
+            _local.qn = getattr(_local, 'qn', 0) + 1
+        except Exception:  # noqa: BLE001
+            pass
+        return self._cur.executemany(*a, **k)
+
+    def __iter__(self):
+        return iter(self._cur)
+
+    def __enter__(self):
+        self._cur.__enter__()
+        return self
+
+    def __exit__(self, *a):
+        return self._cur.__exit__(*a)
+
+    def __getattr__(self, name):
+        return getattr(object.__getattribute__(self, '_cur'), name)
+
+
 @contextmanager
 def _conn():
     """Yield (cursor, dialect) where dialect carries the placeholder + the
@@ -180,14 +228,14 @@ def _conn():
         if os.environ.get('ORDERDB_NO_POOL'):        # kill switch → old behaviour
             c = _new_mysql(target)
             try:
-                yield c.cursor(), dialect
+                yield _CountingCursor(c.cursor()), dialect
             finally:
                 c.close()
             return
         c = _pooled_mysql(target)                    # warm, reused connection
         cur = c.cursor()
         try:
-            yield cur, dialect
+            yield _CountingCursor(cur), dialect
         except pymysql.Error:                        # DB-level error → conn may be
             _drop_pooled()                           # unhealthy; discard so the next
             raise                                    # call reconnects fresh
@@ -200,7 +248,7 @@ def _conn():
         c = sqlite3.connect(str(target))
         dialect = {'ph': '?', 'orders': 'orders', 'kind': 'sqlite'}
         try:
-            yield c.cursor(), dialect
+            yield _CountingCursor(c.cursor()), dialect
         finally:
             c.close()
 
@@ -230,7 +278,7 @@ def _conn_tx():
         dialect = {'ph': '?', 'orders': 'orders', 'kind': 'sqlite'}
     cur = c.cursor()
     try:
-        yield cur, dialect
+        yield _CountingCursor(cur), dialect
         c.commit()                                   # only reached if the body succeeded
     except Exception:
         try:

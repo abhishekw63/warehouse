@@ -40,6 +40,14 @@ class PerfMiddleware:
 
     def __call__(self, request):
         counter = {'n': 0, 't': 0.0}
+        # Reset the app's RAW-pymysql query counter for this request so it can be
+        # folded into `q` (Django's execute_wrapper below only sees ORM queries; the
+        # real work is order_db's raw queries).
+        try:
+            from online_b2b.services import order_db as _odb
+            _odb._q_reset()
+        except Exception:  # noqa: BLE001
+            _odb = None
 
         def _wrap(execute, sql, params, many, context):
             t = time.perf_counter()
@@ -58,6 +66,11 @@ class PerfMiddleware:
                     pass
             response = self.get_response(request)
         dur_ms = (time.perf_counter() - t0) * 1000.0
+        try:                                             # + raw pymysql queries
+            if _odb is not None:
+                counter['n'] += _odb._q_count()
+        except Exception:  # noqa: BLE001
+            pass
         try:
             self._record(request, response, dur_ms, counter)
         except Exception:  # noqa: BLE001 — observability must never break a page
