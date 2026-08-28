@@ -52,6 +52,7 @@ def ensure_table() -> None:
                     ms       INT,
                     q        INT,
                     host     VARCHAR(120),
+                    db_ms    INT,
                     INDEX idx_audit_ts (ts),
                     INDEX idx_audit_user (username)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
@@ -60,11 +61,12 @@ def ensure_table() -> None:
                 CREATE TABLE IF NOT EXISTS audit_log (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT, username TEXT,
                     method TEXT, url_name TEXT, path TEXT, target TEXT, detail TEXT,
-                    ms INTEGER, q INTEGER, host TEXT)""")
-        # Self-migrate an already-existing table: add columns if missing (ms = wall
-        # time, q = Django SQL count, host = which server served it — so localhost
-        # timings can be told apart from the deployed service). Best-effort.
-        for _col, _typ in (('ms', 'INT'), ('q', 'INT'), ('host', 'VARCHAR(120)')):
+                    ms INTEGER, q INTEGER, host TEXT, db_ms INTEGER)""")
+        # Self-migrate an already-existing table: add columns if missing. ms = total
+        # wall time · q = query count (raw + ORM) · db_ms = time IN queries (so
+        # code time = ms − db_ms) · host = which server. Best-effort.
+        for _col, _typ in (('ms', 'INT'), ('q', 'INT'), ('host', 'VARCHAR(120)'),
+                           ('db_ms', 'INT')):
             try:
                 cur.execute(f"ALTER TABLE audit_log ADD COLUMN {_col} {_typ}")
             except Exception:  # noqa: BLE001
@@ -74,41 +76,45 @@ def ensure_table() -> None:
 
 
 def log(username, method, url_name, path, target='', detail='', ms=None, q=None,
-        host=''):
+        host='', db_ms=None):
     """Append one audit row; returns its id (or None). Best-effort — swallows all
-    errors. ``ms``/``q`` (wall time + SQL count) are usually stamped LATER via
-    :func:`set_timing` since the duration isn't known until the request finishes.
-    ``host`` = which server served it (localhost vs the deployed service)."""
+    errors. ``ms``/``q``/``db_ms`` (total time · query count · time IN queries) are
+    usually stamped LATER via :func:`set_timing` since the duration isn't known until
+    the request finishes. ``host`` = which server served it."""
     try:
         ensure_table()
         with _conn() as (cur, d):
             ph = d['ph']
             cur.execute(
                 f"INSERT INTO audit_log (ts, username, method, url_name, path, "
-                f"target, detail, ms, q, host) "
-                f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})",
+                f"target, detail, ms, q, host, db_ms) "
+                f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})",
                 (_utc_now(), str(username or '')[:150], str(method or '')[:10],
                  str(url_name or '')[:120], str(path or '')[:300],
                  str(target or '')[:300], str(detail or '')[:500],
                  int(ms) if ms is not None else None,
-                 int(q) if q is not None else None, str(host or '')[:120]))
+                 int(q) if q is not None else None, str(host or '')[:120],
+                 int(db_ms) if db_ms is not None else None))
             cur.connection.commit()
             return cur.lastrowid
     except Exception:  # noqa: BLE001 — audit must never break a request
         return None
 
 
-def set_timing(row_id, ms, q=None) -> None:
-    """Stamp elapsed ms (+ SQL query count) onto an audit row after the request has
-    finished. The row is written in ``process_view`` (before the view runs), so the
-    duration is only known at the very end — PerfMiddleware calls this. Best-effort."""
+def set_timing(row_id, ms, q=None, db_ms=None) -> None:
+    """Stamp total ms · query count · time-in-queries (db_ms) onto an audit row after
+    the request finishes. The row is written in ``process_view`` (before the view
+    runs), so the duration is only known at the very end — PerfMiddleware calls this.
+    Best-effort."""
     if not row_id:
         return
     try:
         with _conn() as (cur, d):
             ph = d['ph']
-            cur.execute(f"UPDATE audit_log SET ms={ph}, q={ph} WHERE id={ph}",
-                        (int(ms), int(q) if q is not None else None, row_id))
+            cur.execute(
+                f"UPDATE audit_log SET ms={ph}, q={ph}, db_ms={ph} WHERE id={ph}",
+                (int(ms), int(q) if q is not None else None,
+                 int(db_ms) if db_ms is not None else None, row_id))
             cur.connection.commit()
     except Exception:  # noqa: BLE001
         pass
@@ -121,7 +127,7 @@ def recent(limit: int = 300, user: str = '', q: str = '', env: str = '') -> list
     try:
         ensure_table()
         cols = ['id', 'ts', 'username', 'method', 'url_name', 'path', 'target',
-                'detail', 'ms', 'q', 'host']
+                'detail', 'ms', 'q', 'host', 'db_ms']
         where, params = [], []
         with _conn() as (cur, d):
             ph = d['ph']

@@ -177,10 +177,17 @@ def _backend():
 # execute/executemany are intercepted) so the money-path behaviour is unchanged.
 def _q_reset():
     _local.qn = 0
+    _local.qt = 0.0
 
 
 def _q_count() -> int:
     return int(getattr(_local, 'qn', 0) or 0)
+
+
+def _q_time_ms() -> float:
+    """Total wall time (ms) spent inside raw DB queries this request — the DB share
+    of a request's time (round-trip latency + query execution)."""
+    return float(getattr(_local, 'qt', 0.0) or 0.0) * 1000.0
 
 
 class _CountingCursor:
@@ -189,19 +196,22 @@ class _CountingCursor:
     def __init__(self, cur):
         object.__setattr__(self, '_cur', cur)
 
-    def execute(self, *a, **k):
+    def _run(self, fn, a, k):
+        t = time.perf_counter()
         try:
-            _local.qn = getattr(_local, 'qn', 0) + 1
-        except Exception:  # noqa: BLE001 — counting must never affect a query
-            pass
-        return self._cur.execute(*a, **k)
+            return fn(*a, **k)
+        finally:                                     # count + time, never affect the query
+            try:
+                _local.qn = getattr(_local, 'qn', 0) + 1
+                _local.qt = getattr(_local, 'qt', 0.0) + (time.perf_counter() - t)
+            except Exception:  # noqa: BLE001
+                pass
+
+    def execute(self, *a, **k):
+        return self._run(self._cur.execute, a, k)
 
     def executemany(self, *a, **k):
-        try:
-            _local.qn = getattr(_local, 'qn', 0) + 1
-        except Exception:  # noqa: BLE001
-            pass
-        return self._cur.executemany(*a, **k)
+        return self._run(self._cur.executemany, a, k)
 
     def __iter__(self):
         return iter(self._cur)

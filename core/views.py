@@ -328,6 +328,19 @@ class AuditLogView(_StaffOnly, TemplateView):
             r['sec'] = round(ms / 1000.0, 2) if ms is not None else None
             r['over'] = ms is not None and ms > exp     # slower than expected
             r['mcls'] = str(r.get('method') or 'get').lower()   # method → colour class
+            # Bifurcate the time: DB (in queries) vs Code (everything else — Python
+            # processing + template render + CPU). Which dominates tells you where to
+            # optimise; the local/served badge adds the network/infra context.
+            db_ms = r.get('db_ms')
+            r['db_sec'] = round(db_ms / 1000.0, 2) if db_ms is not None else None
+            r['code_sec'] = (round(max(0.0, ms - db_ms) / 1000.0, 2)
+                             if (ms is not None and db_ms is not None) else None)
+            r['bound'] = ''
+            if ms and db_ms is not None:
+                if db_ms >= ms * 0.6:
+                    r['bound'] = 'db'
+                elif (ms - db_ms) >= ms * 0.6:
+                    r['bound'] = 'code'
             host = str(r.get('host') or '')
             # local (dev, India→Singapore latency ⇒ slow, not representative) vs the
             # deployed service — so the two aren't compared apples-to-oranges.

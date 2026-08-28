@@ -66,19 +66,21 @@ class PerfMiddleware:
                     pass
             response = self.get_response(request)
         dur_ms = (time.perf_counter() - t0) * 1000.0
-        try:                                             # + raw pymysql queries
+        db_ms = counter['t'] * 1000.0                    # Django ORM query time
+        try:                                             # + raw pymysql queries + time
             if _odb is not None:
                 counter['n'] += _odb._q_count()
+                db_ms += _odb._q_time_ms()
         except Exception:  # noqa: BLE001
             pass
         try:
-            self._record(request, response, dur_ms, counter)
+            self._record(request, response, dur_ms, counter, db_ms)
         except Exception:  # noqa: BLE001 — observability must never break a page
             pass
         return response
 
     @staticmethod
-    def _record(request, response, dur_ms, counter):
+    def _record(request, response, dur_ms, counter, db_ms=0.0):
         path = request.path or ''
         if path.startswith(_SKIP_PREFIX) or path == '/favicon.ico':
             return
@@ -91,7 +93,7 @@ class PerfMiddleware:
             'ts': datetime.now().isoformat(timespec='seconds'),
             'method': request.method, 'path': path,
             'status': getattr(response, 'status_code', 0),
-            'ms': round(dur_ms, 1), 'q': counter['n'],
+            'ms': round(dur_ms, 1), 'q': counter['n'], 'db_ms': round(db_ms, 1),
             'qms': round(counter['t'] * 1000.0, 1), 'bytes': size, 'user': user,
         }
         PERF_LOG.parent.mkdir(parents=True, exist_ok=True)
@@ -111,7 +113,7 @@ class PerfMiddleware:
             from core import audit
             aid = getattr(request, '_audit_id', None)
             if aid:
-                audit.set_timing(aid, dur_ms, counter['n'])
+                audit.set_timing(aid, dur_ms, counter['n'], db_ms=db_ms)
             elif (request.method == 'GET' and _SLOW_MS and dur_ms >= _SLOW_MS
                   and getattr(getattr(request, 'user', None), 'is_authenticated', False)):
                 m = getattr(request, 'resolver_match', None)
@@ -120,7 +122,8 @@ class PerfMiddleware:
                 except Exception:  # noqa: BLE001
                     host = ''
                 audit.log(user, 'GET', (m.url_name if m else '') or '', path,
-                          '', 'slow load', ms=dur_ms, q=counter['n'], host=host)
+                          '', 'slow load', ms=dur_ms, q=counter['n'], host=host,
+                          db_ms=db_ms)
         except Exception:  # noqa: BLE001 — observability must never break a page
             pass
 
