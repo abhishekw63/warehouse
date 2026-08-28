@@ -21,6 +21,13 @@ import datetime as _dt
 _READY = False
 
 
+def _utc_now() -> _dt.datetime:
+    """Naive UTC 'now' — audit rows are stored UTC on every host (Render is UTC,
+    local dev used to write IST → the same row read 5.5h apart) and DISPLAYED in IST
+    (the view converts via order_db._to_ist), matching the app-wide time convention."""
+    return _dt.datetime.now(_dt.timezone.utc).replace(tzinfo=None)
+
+
 def _conn():
     from online_b2b.services.order_db import _conn as c
     return c()
@@ -77,7 +84,7 @@ def log(username, method, url_name, path, target='', detail='', ms=None, q=None)
                 f"INSERT INTO audit_log (ts, username, method, url_name, path, "
                 f"target, detail, ms, q) "
                 f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})",
-                (_dt.datetime.now(), str(username or '')[:150], str(method or '')[:10],
+                (_utc_now(), str(username or '')[:150], str(method or '')[:10],
                  str(url_name or '')[:120], str(path or '')[:300],
                  str(target or '')[:300], str(detail or '')[:500],
                  int(ms) if ms is not None else None,

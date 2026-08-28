@@ -301,10 +301,31 @@ class AuditLogView(_StaffOnly, TemplateView):
         # same slow-page threshold PerfMiddleware uses. Anything over it is flagged.
         import os as _os
         exp = int(float(_os.environ.get('PERF_SLOW_MS', '1500')))
+        from online_b2b.services import order_db as _odb
+        now_ist = _odb._ist_now()
+
+        def _ago(ts):
+            try:
+                secs = (now_ist - ts).total_seconds()
+            except (TypeError, ValueError):
+                return ''
+            if secs < 0:
+                return 'now'
+            if secs < 60:
+                return '%ds ago' % int(secs)
+            if secs < 3600:
+                return '%dm ago' % int(secs // 60)
+            if secs < 86400:
+                return '%dh ago' % int(secs // 3600)
+            return '%dd ago' % int(secs // 86400)
         for r in rows:
+            r['ts'] = _odb._to_ist(r['ts'])             # stored UTC → shown IST
+            r['ago'] = _ago(r['ts'])
             ms = r.get('ms')
             r['sec'] = round(ms / 1000.0, 2) if ms is not None else None
             r['over'] = ms is not None and ms > exp     # slower than expected
+            r['mcls'] = str(r.get('method') or 'get').lower()   # method → colour class
+        ctx['slow_count'] = sum(1 for r in rows if r.get('over'))
         # Slowest-actions rollup (merged in from the old Dev·Health perf view) —
         # grouped by action from the SAME rows, so no extra query. Pinpoints which
         # actions/pages are slow, durably (the old view read ephemeral perf.jsonl).
