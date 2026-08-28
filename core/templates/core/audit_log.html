@@ -39,6 +39,11 @@
   .al-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:14px;}
   .al-filters input{padding:8px 11px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text);font-size:13.5px;min-width:170px;}
   .al-filters label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+  .al-envtoggle{display:inline-flex;border:1px solid var(--border);border-radius:9px;overflow:hidden;background:var(--surface-2,var(--card));height:38px;}
+  .al-envbtn{appearance:none;border:none;background:none;padding:0 14px;font-size:12.5px;font-weight:700;color:var(--muted);cursor:pointer;font-family:inherit;}
+  .al-envbtn+.al-envbtn{border-left:1px solid var(--border);}
+  .al-envbtn:hover{color:var(--text);}
+  .al-envbtn.on{background:var(--accent);color:#fff;}
 </style>{% endblock %}
 
 {% block breadcrumb %}<a href="{% url 'departments' %}">Departments</a> <span>/ Audit Log</span>{% endblock %}
@@ -55,8 +60,15 @@
   <form class="al-filters" method="get">
     <label>User<input type="text" name="user" value="{{ f_user }}" placeholder="username"></label>
     <label>Search<input type="text" name="q" value="{{ f_q }}" placeholder="path / target / action"></label>
+    <label>Where
+      <span class="al-envtoggle" role="group" aria-label="Filter by environment">
+        <button type="submit" name="env" value="" class="al-envbtn{% if not f_env %} on{% endif %}" title="Both">All</button>
+        <button type="submit" name="env" value="served" class="al-envbtn{% if f_env == 'served' %} on{% endif %}" title="The deployed service (the real prod timings)">Served</button>
+        <button type="submit" name="env" value="local" class="al-envbtn{% if f_env == 'local' %} on{% endif %}" title="A dev machine (localhost) — slower due to India→DB latency, not representative">Local</button>
+      </span>
+    </label>
     <button type="submit" class="btn-primary" style="height:38px;">Filter</button>
-    {% if f_user or f_q %}<a href="{% url 'audit_log' %}" class="btn-ghost" style="height:38px;display:inline-flex;align-items:center;">Clear</a>{% endif %}
+    {% if f_user or f_q or f_env %}<a href="{% url 'audit_log' %}" class="btn-ghost" style="height:38px;display:inline-flex;align-items:center;">Clear</a>{% endif %}
   </form>
 
   {% if slowest %}

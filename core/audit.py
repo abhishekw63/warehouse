@@ -114,8 +114,10 @@ def set_timing(row_id, ms, q=None) -> None:
         pass
 
 
-def recent(limit: int = 300, user: str = '', q: str = '') -> list[dict]:
-    """Most-recent audit rows (newest first) for the staff Audit Log page."""
+def recent(limit: int = 300, user: str = '', q: str = '', env: str = '') -> list[dict]:
+    """Most-recent audit rows (newest first) for the staff Audit Log page.
+    ``env`` filters by where it ran: 'served' = the deployed service, 'local' =
+    a dev machine (127.0.0.1 / localhost); '' = both."""
     try:
         ensure_table()
         cols = ['id', 'ts', 'username', 'method', 'url_name', 'path', 'target',
@@ -128,6 +130,13 @@ def recent(limit: int = 300, user: str = '', q: str = '') -> list[dict]:
             if q:
                 where.append(f"(path LIKE {ph} OR target LIKE {ph} OR url_name LIKE {ph})")
                 params += [f"%{q}%", f"%{q}%", f"%{q}%"]
+            if env == 'local':
+                where.append(f"(host LIKE {ph} OR host LIKE {ph})")
+                params += ['%127.0.0.1%', '%localhost%']
+            elif env == 'served':
+                where.append(f"(host IS NOT NULL AND host<>'' "
+                             f"AND host NOT LIKE {ph} AND host NOT LIKE {ph})")
+                params += ['%127.0.0.1%', '%localhost%']
             wsql = (' WHERE ' + ' AND '.join(where)) if where else ''
             cur.execute(
                 f"SELECT {', '.join(cols)} FROM audit_log{wsql} "
