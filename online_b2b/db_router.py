@@ -7,20 +7,22 @@ rows, never DDL.
 """
 
 ORDER_DB = 'orders'
+# Apps whose managed=False models map to renee_orders tables: online_b2b (the
+# curated CRUD master-data models) + dbtables (the read-only admin browsers for
+# every other table). Routing is by the general rule "managed=False model in one
+# of these apps is a renee_orders table", so no per-model name list to maintain.
+_ORDER_APPS = {'online_b2b', 'dbtables'}
 # model_name (lowercase) → the ORIGINAL curated set (kept for allow_migrate's
-# explicit belt-and-suspenders block). Read/write routing below is now by the
-# general rule "every online_b2b managed=False model is a renee_orders table",
-# so the read-only admin-browse models (models_extra.py) route here too without
-# having to list all ~35 names.
+# explicit belt-and-suspenders block only).
 ORDER_MODELS = {'run', 'orderheader', 'orderline',
                 'itemmaster', 'channelskumap', 'shiptomapping',
                 'itemexception'}
 
 
 def _is_order(model) -> bool:
-    # Every online_b2b model is managed=False and mapped to a renee_orders table
-    # (the app has no Django-managed models); route them all to the orders DB.
-    return (getattr(model._meta, 'app_label', '') == 'online_b2b'
+    # These apps hold only managed=False models mapped to renee_orders tables;
+    # route them all to the orders DB (never the default/SQLite connection).
+    return (getattr(model._meta, 'app_label', '') in _ORDER_APPS
             and model._meta.managed is False)
 
 

@@ -1,8 +1,12 @@
 """
-SELF-CONTAINED, REMOVABLE — registers every model in ``models_extra`` in the
-Django admin, **read-only** (no add / change / delete), so staff can browse the
-remaining ``renee_orders`` tables. See ``models_extra.py`` header for how to
-remove the whole feature.
+SELF-CONTAINED, REMOVABLE app (``dbtables``) — registers every model in
+``dbtables.models`` in the Django admin, **read-only** (no add / change /
+delete), so staff can browse the remaining ``renee_orders`` tables under their
+OWN admin section ("Database — raw tables"), not under Online B2B.
+
+To REMOVE: delete the ``dbtables/`` app folder, its ``'dbtables'`` line in
+INSTALLED_APPS, and drop ``'dbtables'`` from ``_ORDER_APPS`` in
+``online_b2b/db_router.py``.
 
 Read-only is deliberate: these tables carry money-path + operational data, and
 the admin here is a *viewer*, not an editor. Heavy blob/JSON columns (draft file
@@ -13,7 +17,7 @@ browse never pulls megabytes.
 from django.contrib import admin
 from django.db import models as _m
 
-from . import models_extra
+from . import models as models_extra
 
 # Columns that can be large (up to ~4 MB) — never load them into a browse list.
 _HEAVY = {'content', 'payload', 'meta_json', 'order_nos', 'data'}

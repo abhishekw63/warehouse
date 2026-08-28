@@ -81,6 +81,9 @@
     <div class="side-subnav{% if '/setup' in request.path or '/dev/' in request.path or '/users' in request.path %} open{% endif %}" id="adminSub">
       <a href="{% url 'b2b_setup' %}" class="sn sn-dim{% if '/setup' in request.path %} on{% endif %}" title="Setup · switch database (local ↔ server)">
         <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='server' %}</span><span class="side-label">Setup · DB</span></a>
+      {# Django admin — browse EVERY renee_orders table (read-only "Database" section). Opens in a new tab (separate tool). #}
+      <a href="{% url 'admin:index' %}" target="_blank" rel="noopener" class="sn sn-dim" title="Database — browse all DB tables in the Django admin (read-only)">
+        <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='database' %}</span><span class="side-label">Database ↗</span></a>
       {% if is_role_admin %}
       <a href="{% url 'users_roles' %}" class="sn sn-dim{% if '/users' in request.path %} on{% endif %}" title="Users &amp; Roles — who can write">
         <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='users' %}</span><span class="side-label">Users &amp; Roles</span></a>

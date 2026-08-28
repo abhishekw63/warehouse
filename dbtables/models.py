@@ -1,10 +1,12 @@
 """
-SELF-CONTAINED, REMOVABLE — read-only admin browse for the remaining
-``renee_orders`` tables (everything not already mapped in ``models.py``).
+SELF-CONTAINED, REMOVABLE app (``dbtables``) — read-only admin browse for the
+remaining ``renee_orders`` tables (everything not already mapped in
+``online_b2b/models.py``). They live in their OWN app so the admin groups them
+under "Database — raw tables", not under Online B2B.
 
-To REMOVE this feature: delete this file + ``admin_extra.py`` and the single
-``from . import models_extra`` line at the bottom of ``models.py`` (+ the
-``from . import admin_extra`` line at the bottom of ``admin.py``).
+To REMOVE: delete the ``dbtables/`` folder, its ``'dbtables'`` line in
+INSTALLED_APPS, and ``'dbtables'`` from ``_ORDER_APPS`` in
+``online_b2b/db_router.py``.
 
 Every model here is ``managed = False`` (Django NEVER creates/alters/drops these
 tables — the engine + services own them) and is registered **read-only** in the

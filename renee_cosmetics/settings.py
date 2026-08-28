@@ -112,6 +112,7 @@ INSTALLED_APPS = [
     'inventory',
     'other',
     'grn',
+    'dbtables',          # read-only admin browse for the raw renee_orders tables
 ]
 
 MIDDLEWARE = [
