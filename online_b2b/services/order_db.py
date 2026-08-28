@@ -520,36 +520,57 @@ def facility_intake(days: int = 30, start: str = '', end: str = '') -> dict:
     try:
         with _conn() as (cur, d):
             ot, ph = d['orders'], d['ph']
-            sel = (f"SELECT warehouse, marketplace_label, COUNT(DISTINCT po), "
+            sel = (f"SELECT warehouse, segment, marketplace_label, COUNT(DISTINCT po), "
                    f"COALESCE(SUM(qty),0), COALESCE(SUM(order_value),0) FROM {ot} WHERE ")
             if start and end:
                 cur.execute(sel + f"DATE(created_at) BETWEEN {ph} AND {ph} "
-                            f"GROUP BY warehouse, marketplace_label", (start, end))
+                            f"GROUP BY warehouse, segment, marketplace_label", (start, end))
             else:
                 cur.execute(sel + f"created_at >= (CURDATE() - INTERVAL {int(days) - 1} DAY) "
-                            f"GROUP BY warehouse, marketplace_label")
-            fac_tot, fac_mp = {}, {}            # facility → [pos,qty,val] / {mp: [pos,qty,val]}
-            for wh, mp, pos, qty, val in cur.fetchall():
+                            f"GROUP BY warehouse, segment, marketplace_label")
+            # facility → totals · and facility → SEGMENT (Online B2B / Offline) → its
+            # marketplaces, so a facility drills down as a segment bifurcation first.
+            fac_tot, fac_seg = {}, {}
+            for wh, seg, mp, pos, qty, val in cur.fetchall():
                 # several raw warehouses can canon to one facility (PICK + aliases → AHD)
                 code = _canon_fac(wh) or '—'
+                seg = _SEG_LABEL.get(seg, seg or 'Other')
+                pos, qty, val = int(pos or 0), int(qty or 0), float(val or 0)
                 t = fac_tot.setdefault(code, [0, 0, 0.0])
-                t[0] += int(pos or 0); t[1] += int(qty or 0); t[2] += float(val or 0)
-                m = fac_mp.setdefault(code, {}).setdefault(mp or '—', [0, 0, 0.0])
-                m[0] += int(pos or 0); m[1] += int(qty or 0); m[2] += float(val or 0)
+                t[0] += pos; t[1] += qty; t[2] += val
+                sg = fac_seg.setdefault(code, {}).setdefault(
+                    seg, {'tot': [0, 0, 0.0], 'mp': {}})
+                sg['tot'][0] += pos; sg['tot'][1] += qty; sg['tot'][2] += val
+                m = sg['mp'].setdefault(mp or '—', [0, 0, 0.0])
+                m[0] += pos; m[1] += qty; m[2] += val
             fac_order = {'AHD': 0, 'BLR': 1, 'North': 2}
+            seg_order = {'Online B2B': 0, 'Offline': 1}
             codes = sorted(fac_tot.keys(), key=lambda k: (fac_order.get(k, 9), k))
             facilities, gtot = [], [0, 0, 0.0]
             for code in codes:
                 t = fac_tot[code]
                 gtot[0] += t[0]; gtot[1] += t[1]; gtot[2] += t[2]
                 fv = t[2] or 1
-                mps = sorted(
-                    [{'label': mp, 'pos': v[0], 'qty': v[1], 'value': round(v[2], 2),
-                      'share': round(v[2] / fv * 100, 1)}
-                     for mp, v in fac_mp.get(code, {}).items()],
-                    key=lambda x: -x['value'])
+
+                def _mp_rows(mpd):
+                    return sorted(
+                        [{'label': mp, 'pos': v[0], 'qty': v[1], 'value': round(v[2], 2),
+                          'share': round(v[2] / fv * 100, 1)} for mp, v in mpd.items()],
+                        key=lambda x: -x['value'])
+                segments, flat = [], {}
+                for seg, sd in sorted(fac_seg.get(code, {}).items(),
+                                      key=lambda kv: (seg_order.get(kv[0], 9), kv[0])):
+                    st = sd['tot']
+                    segments.append({
+                        'segment': seg, 'pos': st[0], 'qty': st[1],
+                        'value': round(st[2], 2), 'share': round(st[2] / fv * 100, 1),
+                        'marketplaces': _mp_rows(sd['mp'])})
+                    for mp, v in sd['mp'].items():          # flatten for backward compat
+                        fm = flat.setdefault(mp, [0, 0, 0.0])
+                        fm[0] += v[0]; fm[1] += v[1]; fm[2] += v[2]
                 facilities.append({'code': code, 'pos': t[0], 'qty': t[1],
-                                   'value': round(t[2], 2), 'marketplaces': mps})
+                                   'value': round(t[2], 2), 'marketplaces': _mp_rows(flat),
+                                   'segments': segments})
             tv = gtot[2] or 1
             for f in facilities:
                 f['share'] = round(f['value'] / tv * 100, 1)

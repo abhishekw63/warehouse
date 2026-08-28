@@ -85,15 +85,25 @@
         </tr>
         <tr class="an-fc-detail" data-fc-detail="{{ forloop.counter0 }}" hidden>
           <td colspan="5">
-            <div class="an-fc-mps">
-              {% for m in f.marketplaces %}
-              <div class="an-fc-mp fc-{{ f.code|lower }}">
-                <span class="an-fc-mpname">{{ m.label|default:'—' }}</span>
-                <span class="an-fc-mpbar"><span style="width:{{ m.share }}%"></span></span>
-                <span class="an-fc-mpmeta">{{ m.pos }} PO{{ m.pos|pluralize }} · {{ m.qty|compact }} qty · <b>{{ m.value|inr_short }}</b> · {{ m.share }}%</span>
+            {# Bifurcate by SEGMENT first (Online B2B / Offline) — each with its own
+               subtotal — then the marketplaces within that segment. #}
+            {% for sg in f.segments %}
+            <div class="an-fc-seg">
+              <div class="an-fc-seghd">
+                <span class="seg-tag {% if sg.segment == 'Offline' %}off{% else %}on{% endif %}">{{ sg.segment }}</span>
+                <span class="an-fc-segmeta">{{ sg.pos }} PO{{ sg.pos|pluralize }} · {{ sg.qty|compact }} qty · <b>{{ sg.value|inr_short }}</b> · {{ sg.share }}% of {{ f.code }}</span>
               </div>
-              {% empty %}<div class="muted">No marketplaces.</div>{% endfor %}
+              <div class="an-fc-mps">
+                {% for m in sg.marketplaces %}
+                <div class="an-fc-mp fc-{{ f.code|lower }}">
+                  <span class="an-fc-mpname">{{ m.label|default:'—' }}</span>
+                  <span class="an-fc-mpbar"><span style="width:{{ m.share }}%"></span></span>
+                  <span class="an-fc-mpmeta">{{ m.pos }} PO{{ m.pos|pluralize }} · {{ m.qty|compact }} qty · <b>{{ m.value|inr_short }}</b> · {{ m.share }}%</span>
+                </div>
+                {% empty %}<div class="muted">No marketplaces.</div>{% endfor %}
+              </div>
             </div>
+            {% empty %}<div class="muted">No breakdown.</div>{% endfor %}
           </td>
         </tr>
         {% empty %}<tr><td colspan="5" class="muted">No facility data in this period.</td></tr>{% endfor %}

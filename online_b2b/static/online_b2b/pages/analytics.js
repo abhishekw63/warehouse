@@ -2,9 +2,10 @@
 (function () {
   var AN_URL = location.pathname;
   var activeTab = 'daily';
-  // Remembers the last multi-day Daily view so drilling into a single bar (day)
-  // can reset back to it on a second click.
-  var dailyBaseParams = null;
+  // Which single day the By-facility card is drilled into via a BAR CLICK; null = the
+  // full range. This is separate from calendar filtering — a bar click updates ONLY
+  // the By-facility card (the bar chart + KPIs stay on the full range).
+  var facFocusDay = null;
 
   function url(params) {
     var p = new URLSearchParams();
@@ -116,13 +117,13 @@
     var cfg = {
       chart: { type: 'bar', height: 380, stacked: true, fontFamily: 'Inter, sans-serif', toolbar: { show: false },
         animations: { enabled: true, speed: 600, dynamicAnimation: { enabled: true, speed: 450 } },
-        // Click a bar (day) → drill the whole Daily view (KPIs + By-facility) into
-        // that day; click again (already drilled) → reset to the prior range.
+        // Click a bar (day) → update ONLY the By-facility card for that day (the bar
+        // chart + KPIs stay on the full range); click the same bar again → reset.
+        // (Calendar filtering, which reloads the whole view, is separate.)
         events: { dataPointSelection: function (ev, ctx, cfgObj) {
           var iso = (data.iso || [])[cfgObj.dataPointIndex];
           if (!iso) return;
-          if (data.focus) loadDaily(dailyBaseParams || { days: 30 });
-          else loadDaily({ start: iso, end: iso });
+          focusFacility(facFocusDay === iso ? null : iso);
         } } },
       states: { active: { filter: { type: 'none' } } },   // no dimming of other bars on select
       series: series(),
@@ -161,20 +162,66 @@
   }
 
   function loadDaily(params) {
-    // Track the last NON-single-day view so a drilled-in day can reset to it.
-    var single = params && params.start && params.end && params.start === params.end;
-    if (!single) dailyBaseParams = params;
+    facFocusDay = null;   // a whole-view (calendar) reload clears any By-facility drill
     var pane = document.getElementById('pane-daily');
     pane.classList.add('an-busy');
     fetch(url(Object.assign({ partial: 'daily' }, params)), { headers: { 'X-Requested-With': 'fetch' } })
       .then(function (r) { return r.text(); })
       .then(function (html) {
         pane.innerHTML = html; wireDaily(); syncURL();
+        // Replay the pane's entrance animation on the fresh content so a drill
+        // (click a bar) fades + slides in smoothly instead of hard-swapping.
+        var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (!reduce) { pane.style.animation = 'none'; void pane.offsetWidth; pane.style.animation = ''; }
         // let the fresh chart + breakdown paint while still dimmed, THEN fade the
         // finished pane back in — so the chart re-init never flashes ("refresh" feel).
-        setTimeout(function () { pane.classList.remove('an-busy'); }, 90);
+        setTimeout(function () { pane.classList.remove('an-busy'); }, 120);
       })
       .catch(function () { pane.classList.remove('an-busy'); });
+  }
+
+  // The current whole-view range (for resetting the By-facility drill back to it).
+  function currentDailyParams() {
+    var p = new URLSearchParams(location.search);
+    if (p.get('start') && p.get('end')) return { start: p.get('start'), end: p.get('end') };
+    return { days: parseInt(p.get('days'), 10) || 30 };
+  }
+
+  // Drill the By-facility card ONLY (not the bar chart / KPIs) to a single day, or
+  // back to the full range when iso is null. Fetches the day's daily partial and
+  // swaps just #an-fc + #fac-data, then re-inits the facility charts.
+  function focusFacility(iso) {
+    facFocusDay = iso;
+    var params = iso ? { start: iso, end: iso } : currentDailyParams();
+    var cf = document.getElementById('an-fc'); if (!cf) return;
+    cf.classList.add('an-busy');
+    fetch(url(Object.assign({ partial: 'daily' }, params)), { headers: { 'X-Requested-With': 'fetch' } })
+      .then(function (r) { return r.text(); })
+      .then(function (html) {
+        var doc = new DOMParser().parseFromString(html, 'text/html');
+        var nf = doc.getElementById('an-fc'), nd = doc.getElementById('fac-data');
+        var curF = document.getElementById('an-fc'), curD = document.getElementById('fac-data');
+        if (nf && curF) curF.innerHTML = nf.innerHTML;
+        if (nd && curD) curD.textContent = nd.textContent;
+        if (typeof buildFacCharts === 'function') buildFacCharts();
+        facBadge(iso);
+        (document.getElementById('an-fc') || cf).classList.remove('an-busy');
+      })
+      .catch(function () { cf.classList.remove('an-busy'); });
+  }
+
+  // A little "showing <day> · reset" pill in the By-facility header when drilled.
+  function facBadge(iso) {
+    var old = document.getElementById('an-fc-focus'); if (old) old.remove();
+    if (!iso) return;
+    var title = document.querySelector('#an-fc .chart-head .chart-title');
+    if (!title) return;
+    var b = document.createElement('button');
+    b.id = 'an-fc-focus'; b.type = 'button'; b.className = 'an-fc-focusbadge';
+    b.textContent = '● ' + iso + ' · reset';
+    b.title = 'By-facility is showing ' + iso + ' — click to reset to the full range';
+    b.addEventListener('click', function () { focusFacility(null); });
+    title.insertAdjacentElement('afterend', b);
   }
 
   // ── Breakdown views: Tree · Sunburst · Treemap · metric switch · growth colour ──

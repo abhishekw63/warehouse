@@ -11,7 +11,7 @@
     margin-bottom:-1px;transition:color .14s,border-color .14s;font-family:inherit;white-space:nowrap;}
   .an-tab:hover{color:var(--text);}
   .an-tab.on{color:var(--accent);border-bottom-color:var(--accent);}
-  .an-pane{animation:anfade .28s ease both;transition:opacity .2s ease;position:relative;}
+  .an-pane{animation:anfade .34s cubic-bezier(.22,.61,.36,1) both;transition:opacity .28s ease;position:relative;}
   /* loading cue — a slim indeterminate bar slides across the top of the pane while
      it fetches, so a slow (~2s) query reads as "working", not a frozen pause. The
      ::after lives on the pane element, so it survives the innerHTML swap. */
@@ -354,7 +354,20 @@
 .an-fc-caret{display:inline-block;width:13px;font-size:10px;color:var(--muted);}
 .an-fc-row.an-fc-open .an-fc-caret{color:var(--accent);}
 .an-fc-detail > td{padding:2px 12px 12px 36px;background:color-mix(in srgb,var(--muted) 4%,transparent);border-bottom:1px solid var(--border-2,var(--border));}
-.an-fc-mps{display:flex;flex-direction:column;gap:7px;padding:10px 0 4px;}
+/* "showing <day> · reset" pill when By-facility is drilled to one day via a bar click */
+.an-fc-focusbadge{margin-left:10px;border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);
+  color:var(--accent);font-size:11px;font-weight:800;padding:2px 10px;border-radius:20px;cursor:pointer;font-family:inherit;
+  transition:background .12s;}
+.an-fc-focusbadge:hover{background:color-mix(in srgb,var(--accent) 22%,transparent);}
+/* segment bifurcation inside a facility's drill-down (Online B2B / Offline) */
+.an-fc-seg{padding:8px 0 4px;}
+.an-fc-seg + .an-fc-seg{border-top:1px dashed var(--border);margin-top:4px;}
+.an-fc-seghd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:4px 0 2px;}
+.an-fc-segmeta{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;}
+.an-fc-seghd .seg-tag{font-size:11px;font-weight:800;padding:2px 9px;border-radius:20px;}
+.an-fc-seghd .seg-tag.on{background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent);}
+.an-fc-seghd .seg-tag.off{background:color-mix(in srgb,#11998e 16%,transparent);color:#0e8377;}
+.an-fc-mps{display:flex;flex-direction:column;gap:7px;padding:8px 0 4px 10px;}
 .an-fc-mp{display:grid;grid-template-columns:150px 1fr auto;align-items:center;gap:14px;font-size:12px;}
 .an-fc-mpname{font-weight:700;color:var(--text);}
 .an-fc-mpbar{height:6px;border-radius:999px;background:color-mix(in srgb,var(--muted) 15%,transparent);overflow:hidden;}
