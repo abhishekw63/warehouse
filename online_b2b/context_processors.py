@@ -98,8 +98,11 @@ def build_info(request):
     boot = _BOOT.strftime('%d %b %H:%M:%S')
 
     # 1) Local staleness always wins — a changed .py means the live code isn't
-    #    what's on disk, so the build log would be misleading.
-    if _latest_source_mtime() > _BOOT:
+    #    what's on disk, so the build log would be misleading. This is a DEV-only
+    #    aid: on a deployed host (DEBUG off) the process always runs the checked-out
+    #    code (a deploy restarts it), so we SKIP the per-request filesystem scan of
+    #    every watched .py — it was pure wasted I/O + CPU on every page render.
+    if settings.DEBUG and _latest_source_mtime() > _BOOT:
         return {'build_info': mark_safe(
             '<span class="build-badge stale" title="A backend .py changed after '
             f'this server started ({escape(boot)}) — RESTART to load it.">'

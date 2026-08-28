@@ -69,11 +69,25 @@ _ADMIN_POST_NAMES = frozenset({
 
 
 def is_editor(user) -> bool:
-    """True if the user may perform writes (superuser or in the Editors group)."""
-    return bool(
-        user and user.is_authenticated
-        and (user.is_superuser or user.groups.filter(name=EDITORS_GROUP).exists())
-    )
+    """True if the user may perform writes (superuser or in the Editors group).
+
+    The Editors-group check is a DB query; ``is_editor`` is called several times per
+    request (the ``roles`` context processor on every render + the write-guard on
+    POSTs), so memoise the result on the user object — which lives for exactly one
+    request — to collapse those into a single query. Superusers short-circuit with
+    no query at all."""
+    if not (user and user.is_authenticated):
+        return False
+    if user.is_superuser:
+        return True
+    cached = getattr(user, '_is_editor_cache', None)
+    if cached is None:
+        cached = user.groups.filter(name=EDITORS_GROUP).exists()
+        try:
+            user._is_editor_cache = cached
+        except (AttributeError, TypeError):   # e.g. an immutable user stub
+            pass
+    return cached
 
 
 def is_role_admin(user) -> bool:

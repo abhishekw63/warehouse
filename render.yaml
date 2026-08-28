@@ -6,6 +6,13 @@ services:
     name: renee-b2b
     runtime: python
     plan: free
+    # ⚡ PERF: co-locate the web service with TiDB Cloud, which is in Singapore
+    # (ap-southeast-1). If Render is in the US (Oregon default) every DB round-trip
+    # crosses the Pacific (~200ms); in Singapore it's ~10ms — the single biggest
+    # page-speed win. Render pins region at CREATE time, so an EXISTING US service
+    # must be RECREATED in Singapore (see PERF-REGION-MIGRATION.md). New blueprint
+    # deploys pick this up directly.
+    region: singapore
     buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --noinput"
     # --threads gives each worker I/O concurrency (the app waits on remote TiDB a
     # lot); --timeout 300 so a large Lock&Record (workbook build for thousands of
