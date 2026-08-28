@@ -301,7 +301,18 @@ class AuditLogView(_StaffOnly, TemplateView):
         from . import audit
         u = (self.request.GET.get('user') or '').strip()
         q = (self.request.GET.get('q') or '').strip()
-        ctx['rows'] = audit.recent(400, user=u, q=q)
+        rows = audit.recent(400, user=u, q=q)
+        # "Expected" reference the GUI compares each row's ACTUAL time against — the
+        # same slow-page threshold PerfMiddleware uses. Anything over it is flagged.
+        import os as _os
+        exp = int(float(_os.environ.get('PERF_SLOW_MS', '1500')))
+        for r in rows:
+            ms = r.get('ms')
+            r['sec'] = round(ms / 1000.0, 2) if ms is not None else None
+            r['over'] = ms is not None and ms > exp     # slower than expected
+        ctx['rows'] = rows
         ctx['f_user'] = u
         ctx['f_q'] = q
+        ctx['expected_ms'] = exp
+        ctx['expected_sec'] = round(exp / 1000.0, 1)
         return ctx

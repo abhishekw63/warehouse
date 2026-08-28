@@ -152,7 +152,10 @@ class WriteGuardMiddleware:
             target = ' · '.join(str(x) for x in (tk, po) if x)[:300]
             detail = (request.POST.get('aff_action') or request.POST.get('action')
                       or request.POST.get('role') or '')[:500]
-            audit.log(u, request.method, name or '', request.path, target, detail)
+            # Keep the row id on the request so PerfMiddleware can stamp the
+            # elapsed time onto it once the view finishes (duration isn't known yet).
+            request._audit_id = audit.log(u, request.method, name or '',
+                                          request.path, target, detail)
         except Exception:  # noqa: BLE001 — audit must never break a request
             pass
 

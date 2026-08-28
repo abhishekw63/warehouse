@@ -8,6 +8,10 @@
   .al-table td.path,.al-table td.target{max-width:280px;overflow:hidden;text-overflow:ellipsis;color:var(--muted);}
   .al-table td.detail{font-weight:600;}
   .al-m{display:inline-block;padding:1px 7px;border-radius:20px;font-size:11px;font-weight:700;background:color-mix(in srgb,var(--accent) 14%,transparent);color:var(--accent);}
+  .al-table td.al-time{text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:var(--green,#0a7d5a);}
+  .al-table td.al-time.slow{color:var(--red,#b3261e);}
+  .al-table td.al-time .q{font-weight:500;color:var(--muted);font-size:11px;}
+  .al-table th.r{text-align:right;}
   .al-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:14px;}
   .al-filters input{padding:8px 11px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text);font-size:13.5px;min-width:170px;}
   .al-filters label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
@@ -35,7 +39,7 @@
     <div class="im-ovh"><h2>Activity <span class="count">{{ rows|length }}</span></h2></div>
     <div class="scroll im-tablewrap">
     <table class="grid compact al-table">
-      <thead><tr><th>When</th><th>User</th><th>Method</th><th>Action</th><th>Target</th><th>Detail</th><th>Path</th></tr></thead>
+      <thead><tr><th>When</th><th>User</th><th>Method</th><th>Action</th><th>Target</th><th>Detail</th><th class="r" title="Actual time this took, vs an expected ≤{{ expected_sec }}s">Time · exp ≤{{ expected_sec }}s</th><th>Path</th></tr></thead>
       <tbody>
       {% for r in rows %}
         <tr>
@@ -45,10 +49,13 @@
           <td>{{ r.url_name|default:"—" }}</td>
           <td class="target">{{ r.target|default:"—" }}</td>
           <td class="detail">{{ r.detail|default:"" }}</td>
+          <td class="al-time{% if r.over %} slow{% endif %}" title="Actual {{ r.sec }}s vs expected ≤{{ expected_sec }}s">
+            {% if r.sec is not None %}{{ r.sec }}s{% if r.q %} <span class="q">· {{ r.q }}q</span>{% endif %}{% else %}—{% endif %}
+          </td>
           <td class="path">{{ r.path }}</td>
         </tr>
       {% empty %}
-        <tr><td colspan="7" style="text-align:center;color:var(--muted);padding:24px;">No audit entries yet.</td></tr>
+        <tr><td colspan="8" style="text-align:center;color:var(--muted);padding:24px;">No audit entries yet.</td></tr>
       {% endfor %}
       </tbody>
     </table>

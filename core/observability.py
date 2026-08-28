@@ -11,6 +11,7 @@ works regardless of ``DEBUG``.
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from contextlib import ExitStack
@@ -24,6 +25,10 @@ PERF_LOG = Path(settings.BASE_DIR) / 'logs' / 'perf.jsonl'
 _MAX_BYTES = 5_000_000          # cap the log; trim to the last _KEEP lines
 _KEEP = 3000
 _SKIP_PREFIX = ('/static/', '/media/')
+# A GET slower than this (ms) is logged to the audit_log so slow PAGE loads are
+# pinpointable in production (perf.jsonl is ephemeral on Render). Writes are always
+# stamped regardless of speed. Tune/disable via env (0 = never log slow reads).
+_SLOW_MS = float(os.environ.get('PERF_SLOW_MS', '1500'))
 
 
 class PerfMiddleware:
@@ -85,6 +90,21 @@ class PerfMiddleware:
                                           errors='replace').splitlines()[-_KEEP:]
                 PERF_LOG.write_text('\n'.join(tail) + '\n', encoding='utf-8')
         except Exception:  # noqa: BLE001
+            pass
+        # DURABLE capture (survives redeploys, visible in the Audit Log GUI): stamp
+        # the elapsed ms onto the audit row a write already created, and — for a SLOW
+        # page load with no audit row — write one so slow pages can be pinpointed.
+        try:
+            from core import audit
+            aid = getattr(request, '_audit_id', None)
+            if aid:
+                audit.set_timing(aid, dur_ms, counter['n'])
+            elif (request.method == 'GET' and _SLOW_MS and dur_ms >= _SLOW_MS
+                  and getattr(getattr(request, 'user', None), 'is_authenticated', False)):
+                m = getattr(request, 'resolver_match', None)
+                audit.log(user, 'GET', (m.url_name if m else '') or '', path,
+                          '', 'slow load', ms=dur_ms, q=counter['n'])
+        except Exception:  # noqa: BLE001 — observability must never break a page
             pass
 
 
