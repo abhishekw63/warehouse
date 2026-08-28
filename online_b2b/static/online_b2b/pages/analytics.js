@@ -117,14 +117,21 @@
     var cfg = {
       chart: { type: 'bar', height: 380, stacked: true, fontFamily: 'Inter, sans-serif', toolbar: { show: false },
         animations: { enabled: true, speed: 600, dynamicAnimation: { enabled: true, speed: 450 } },
-        // Click a bar (day) → update ONLY the By-facility card for that day (the bar
-        // chart + KPIs stay on the full range); click the same bar again → reset.
-        // (Calendar filtering, which reloads the whole view, is separate.)
-        events: { dataPointSelection: function (ev, ctx, cfgObj) {
-          var iso = (data.iso || [])[cfgObj.dataPointIndex];
-          if (!iso) return;
-          focusFacility(facFocusDay === iso ? null : iso);
-        } } },
+        // Click a bar OR its date label → update ONLY the By-facility card for that
+        // day (the bar chart + KPIs stay on the full range); click the same one again
+        // → reset. (Calendar filtering, which reloads the whole view, is separate.)
+        events: {
+          dataPointSelection: function (ev, ctx, cfgObj) {
+            var iso = (data.iso || [])[cfgObj.dataPointIndex];
+            if (!iso) return;
+            focusFacility(facFocusDay === iso ? null : iso);
+          },
+          xAxisLabelClick: function (ev, ctx, cfgObj) {
+            var iso = (data.iso || [])[cfgObj.labelIndex];
+            if (!iso) return;
+            focusFacility(facFocusDay === iso ? null : iso);
+          }
+        } },
       states: { active: { filter: { type: 'none' } } },   // no dimming of other bars on select
       series: series(),
       colors: data.segments.map(function (s) { return COLORS[s] || '#9aa1b2'; }),

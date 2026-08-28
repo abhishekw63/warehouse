@@ -354,6 +354,8 @@
 .an-fc-caret{display:inline-block;width:13px;font-size:10px;color:var(--muted);}
 .an-fc-row.an-fc-open .an-fc-caret{color:var(--accent);}
 .an-fc-detail > td{padding:2px 12px 12px 36px;background:color-mix(in srgb,var(--muted) 4%,transparent);border-bottom:1px solid var(--border-2,var(--border));}
+/* daily-chart date labels are clickable (drill By-facility to that day) */
+#daily-chart .apexcharts-xaxis-label{cursor:pointer;}
 /* "showing <day> · reset" pill when By-facility is drilled to one day via a bar click */
 .an-fc-focusbadge{margin-left:10px;border:1px solid var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);
   color:var(--accent);font-size:11px;font-weight:800;padding:2px 10px;border-radius:20px;cursor:pointer;font-family:inherit;
