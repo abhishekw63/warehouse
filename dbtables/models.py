@@ -135,6 +135,7 @@ class DailyChecklist(models.Model):
         managed = False
         db_table = 'daily_checklist'
         verbose_name = 'Daily checklist entry'
+        verbose_name_plural = 'Daily checklist entries'
 
 
 class DailyChecklistHoldLog(models.Model):
@@ -173,7 +174,8 @@ class EkaData(models.Model):
     class Meta:
         managed = False
         db_table = 'eka_data'
-        verbose_name = 'EKA store data'
+        verbose_name = 'EKA store row'
+        verbose_name_plural = 'EKA store data'
 
 
 class FlipkartWhMap(models.Model):
@@ -273,7 +275,8 @@ class InventoryStock(models.Model):
     class Meta:
         managed = False
         db_table = 'inventory_stock'
-        verbose_name = 'Inventory stock'
+        verbose_name = 'Inventory stock row'
+        verbose_name_plural = 'Inventory stock'
 
 
 class OfflineMasterFile(models.Model):
@@ -340,6 +343,7 @@ class OrderIssueLines(models.Model):
         managed = False
         db_table = 'order_issue_lines'
         verbose_name = 'Order issue line (legacy)'
+        verbose_name_plural = 'Order issue lines (legacy)'
 
 
 class OrderLineValidation(models.Model):
@@ -388,6 +392,7 @@ class OrderLines(models.Model):
         managed = False
         db_table = 'order_lines'
         verbose_name = 'Order line (facts)'
+        verbose_name_plural = 'Order lines (facts)'
 
 
 class OrderTat(models.Model):
