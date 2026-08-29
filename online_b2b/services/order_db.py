@@ -700,8 +700,14 @@ def intake_hierarchy(days: int = 30, date: str = '', start: str = '',
                                  'items': s['items'], 'qty': s['qty'], 'marketplaces': mkts,
                                  'bar': _bar(s['value'], tv)})
             segments.sort(key=lambda x: -x['value'])
+            # Per-PO averages (order size) surfaced under the KPI cards — avg qty,
+            # value, and line items per PO across the period. Guard divide-by-zero.
+            _p = tp or 0
             out = {'segments': segments,
-                   'total': {'pos': tp, 'value': round(tv, 2), 'items': ti, 'qty': tq}}
+                   'total': {'pos': tp, 'value': round(tv, 2), 'items': ti, 'qty': tq,
+                             'avg_qty': round(tq / _p) if _p else 0,
+                             'avg_value': round(tv / _p, 2) if _p else 0.0,
+                             'avg_items': round(ti / _p, 1) if _p else 0.0}}
     except Exception:  # noqa: BLE001
         pass
     return out

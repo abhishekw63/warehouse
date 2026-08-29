@@ -38,9 +38,9 @@
   <!-- period totals -->
   <div class="hub-kpis" style="grid-template-columns:repeat(4,1fr);">
     <a class="hk" href="{% url 'b2b_tracker' %}"><div class="n">{{ hier.total.pos }}</div><div class="l">POs · {% if start and end %}{% if start == end %}{{ start }}{% else %}range{% endif %}{% else %}last {{ days }}d{% endif %}</div></a>
-    <div class="hk"><div class="n">{{ hier.total.qty|compact }}</div><div class="l">Total Qty</div></div>
-    <div class="hk"><div class="n">{{ hier.total.value|inr_short }}</div><div class="l">Order Value</div></div>
-    <a class="hk" href="{% url 'b2b_lines' %}"><div class="n">{{ hier.total.items|compact }}</div><div class="l">Line Items</div></a>
+    <div class="hk"><div class="n">{{ hier.total.qty|compact }}</div><div class="l">Total Qty</div><div class="hk-avg" title="Average quantity per PO in this period">avg {{ hier.total.avg_qty|compact }} / PO</div></div>
+    <div class="hk"><div class="n">{{ hier.total.value|inr_short }}</div><div class="l">Order Value</div><div class="hk-avg" title="Average order value per PO in this period">avg {{ hier.total.avg_value|inr_short }} / PO</div></div>
+    <a class="hk" href="{% url 'b2b_lines' %}"><div class="n">{{ hier.total.items|compact }}</div><div class="l">Line Items</div><div class="hk-avg" title="Average line items per PO in this period">avg {{ hier.total.avg_items }} / PO</div></a>
   </div>
 
   {{ daily|json_script:"daily-data" }}
