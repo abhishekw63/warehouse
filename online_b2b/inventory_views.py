@@ -122,6 +122,83 @@ def inventory(request):
 
 
 @login_required
+def inventory_export(request):
+    """Download the **Available-Stock** table as a styled ``.xlsx`` — one row per
+    SKU with a qty column per warehouse (AHD / BLR / North) + Total, so you can
+    VLOOKUP a few SKUs' availability.
+
+    Respects the page's search box: ``?q=`` (space / comma / ``|`` separated item
+    nos or EANs) applies the SAME OR-match filter the table uses client-side
+    (token found in item-no / description / EAN). No ``q`` → the full table
+    (default). Read-only GET; part of the removable inventory feature."""
+    import io
+    import re as _re
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+    from django.http import FileResponse
+
+    q = (request.GET.get('q') or '').strip()
+    tokens = [t for t in _re.split(r'[\s,;|]+', q.lower()) if t]
+    wh_codes = [w['code'] for w in store.WAREHOUSES]
+    wh_labels = [(w.get('short') or w['code']) for w in store.WAREHOUSES]
+
+    # Mirror the JS filter EXACTLY: match token(s) against item-no + description +
+    # EAN, OR-match; empty query keeps every row.
+    rows = []
+    for it in store.stock_by_item():
+        s = ('%s %s %s' % (it.get('item_no') or '', it.get('description') or '',
+                           it.get('ean') or '')).lower()
+        if tokens and not any(t in s for t in tokens):
+            continue
+        rows.append(it)
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Available Stock'
+    headers = ['Item No', 'Description', 'EAN', 'UOM'] + wh_labels + ['Total']
+    ws.append(headers)
+    for it in rows:
+        ws.append([it.get('item_no') or '', it.get('description') or '',
+                   it.get('ean') or '', it.get('uom') or '',
+                   *[round(it['wh'].get(c, 0.0)) for c in wh_codes],
+                   round(it.get('total') or 0)])
+
+    navy = PatternFill('solid', fgColor='1A237E')
+    hfont = Font(bold=True, color='FFFFFF')
+    thin = Side(style='thin', color='E6E8EC')
+    bd = Border(thin, thin, thin, thin)
+    for cell in ws[1]:
+        cell.font = hfont
+        cell.fill = navy
+        cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        cell.border = bd
+    n_cols = len(headers)
+    qty_start = 5                              # first WH column (after Item/Desc/EAN/UOM)
+    for i, w in enumerate([16, 46, 16, 8] + [11] * len(wh_labels) + [12], 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+        for cell in row:
+            cell.border = bd
+            if cell.column >= qty_start:
+                cell.alignment = Alignment(horizontal='right')
+    ws.row_dimensions[1].height = 26
+    ws.freeze_panes = 'A2'
+    if ws.max_row >= 1:
+        ws.auto_filter.ref = f"A1:{get_column_letter(n_cols)}{ws.max_row}"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    tag = '_filtered' if tokens else ''
+    fname = f"inventory_stock{tag}_{_dt.datetime.now():%d-%m-%Y_%H%M%S}.xlsx"
+    return FileResponse(
+        buf, as_attachment=True, filename=fname,
+        content_type='application/vnd.openxmlformats-officedocument.'
+                      'spreadsheetml.sheet')
+
+
+@login_required
 def inventory_bin_coverage(request):
     """LAZY-loaded per-bin coverage (Considered vs Excluded lists) for the current
     snapshots — the heavy 2000+ row detail, fetched only when the operator expands

@@ -38,6 +38,7 @@ urlpatterns = [
     # ── Inventory — Fill-Rate cockpit (standalone; delete these lines + the
     #    module/service/templates/sidebar link to remove the whole feature) ────
     path('inventory/', _inv.inventory, name='b2b_inventory'),
+    path('inventory/export/', _inv.inventory_export, name='b2b_inventory_export'),
     path('inventory/bin-coverage/', _inv.inventory_bin_coverage, name='b2b_inventory_bin_coverage'),
     path('inventory/upload/', _inv.inventory_upload, name='b2b_inventory_upload'),
     path('inventory/bins/', _inv.inventory_bins, name='b2b_inventory_bins'),

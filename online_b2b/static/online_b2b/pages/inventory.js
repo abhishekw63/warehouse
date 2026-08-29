@@ -11,6 +11,17 @@ var CFG = JSON.parse(document.getElementById("inventory-cfg").textContent);
   var meta = document.querySelector('.iv-stockmeta');
   var metaHTML = meta ? meta.innerHTML : '';
   var clearBtn = document.querySelector('.iv-clear');
+  // Keep the "⬇ Excel" export link pointed at the CURRENT search, so the download
+  // is exactly what's on screen (empty search → the whole table). The server
+  // applies the SAME OR-match filter (see inventory_export).
+  var exportBtn = document.getElementById('ivExport');
+  var exportBase = exportBtn ? exportBtn.getAttribute('href').split('?')[0] : '';
+  function syncExport() {
+    if (!exportBtn) return;
+    var qv = input.value.trim();
+    exportBtn.href = qv ? (exportBase + '?q=' + encodeURIComponent(qv)) : exportBase;
+  }
+  syncExport();
   var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   // Precompute each row's searchable text (item + description + EAN only).
   rows.forEach(function (r) {
@@ -35,6 +46,7 @@ var CFG = JSON.parse(document.getElementById("inventory-cfg").textContent);
         + (tokens.length > 1 ? ' · ' + tokens.length + ' terms' : '')
       : metaHTML;
     if (clearBtn) clearBtn.hidden = !tokens.length;
+    syncExport();
     if (tokens.length && shown === 0) {
       if (!noRow) {
         noRow = tb.insertRow(); noRow.className = 'iv-nomatch';

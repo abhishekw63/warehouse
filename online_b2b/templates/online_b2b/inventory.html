@@ -120,6 +120,8 @@
       <input id="ivq" type="text" name="q" value="{{ q }}" placeholder="Search or paste item nos / EANs — space, comma or | separated…" autocomplete="off">
       <a class="iv-clear" href="#" title="Clear search"{% if not q %} hidden{% endif %}>✕</a>
     </form>
+    <a class="iv-export" id="ivExport" href="{% url 'b2b_inventory_export' %}"
+       title="Download the stock table as Excel — respects your search (or all SKUs if empty)">⬇ Excel</a>
   </div>
   <div class="iv-stockwrap">
     <table class="iv-stock">
