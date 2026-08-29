@@ -399,26 +399,40 @@ def _fmt_tracker_date(v) -> str:
 
 def _append_tracker_sheet(path, headers, marketplace_label):
     """Append a per-PO 'Tracker' sheet (Segment · Market Place · PO · Location ·
-    PO Date · Exp Date · PO Aging · Order Value · Order Qty), positioned 4th —
-    identical to the online ``Processor._append_tracker_sheet`` so every
-    workbook's Tracker is the same. Segment 'Offline' for MT."""
+    PO Date · Exp Date · PO Aging · Order Value · Order Qty · State · Zone ·
+    Pincode), positioned 4th — identical to the online
+    ``Processor._append_tracker_sheet`` so every workbook's Tracker is the same and
+    online + offline rows paste into the org master with columns aligned. Segment
+    'Offline' for MT."""
     from openpyxl import load_workbook
     from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
     from openpyxl.utils import get_column_letter
     if not headers:
         return
+    # Ship-to → State/Zone/Pincode map (SAME resolver the Online B2B tracker uses),
+    # so MT rows paste into the org master tracker with columns lined up cell-for-cell
+    # (the WH team pastes online + offline into ONE sheet). Best-effort — blanks on miss.
+    try:
+        from online_b2b.services.order_db import geo_for_location, location_geo_map
+        geomap = location_geo_map()
+    except Exception:  # noqa: BLE001
+        geomap = {}
+        def geo_for_location(_loc, _m=None):  # noqa: E306
+            return {'pincode': '', 'state': '', 'zone': ''}
     wb = load_workbook(path)
     if 'Tracker' in wb.sheetnames:
         del wb['Tracker']
     ws = wb.create_sheet('Tracker')
     cols = ['Segment', 'Market Place', 'PO', 'Location', 'PO Date', 'Exp Date',
-            'PO Aging For Exp', 'Order Value', 'Order Qty']
+            'PO Aging For Exp', 'Order Value', 'Order Qty', 'State', 'Zone',
+            'Pincode']
     ws.append(cols)
     for h in headers:
         pod_d = _tracker_date_val(h.get('po_date'))
         exd_d = _tracker_date_val(h.get('exp_date'))
         q = int(h.get('qty') or 0)
         v = round(float(h.get('order_value') or 0), 2)
+        geo = geo_for_location(h.get('location'), geomap)   # State/Zone/Pincode from ship-to
         # Write REAL dates when coercible (so Excel groups them by month in the
         # WH team's filter) — fall back to the plain string only if un-parseable.
         ws.append([h.get('segment') or 'Offline',
@@ -426,7 +440,9 @@ def _append_tracker_sheet(path, headers, marketplace_label):
                    str(h.get('po') or ''), h.get('location') or '',
                    pod_d if pod_d is not None else _fmt_tracker_date(h.get('po_date')),
                    exd_d if exd_d is not None else _fmt_tracker_date(h.get('exp_date')),
-                   '', v, q])
+                   '', v, q,
+                   geo.get('state') or '', geo.get('zone') or '',
+                   geo.get('pincode') or ''])
         rr = ws.max_row
         if pod_d is not None:
             ws.cell(rr, 5).number_format = 'DD-MM-YYYY'
@@ -442,9 +458,9 @@ def _append_tracker_sheet(path, headers, marketplace_label):
         cell.alignment = Alignment(horizontal='center', vertical='center',
                                    wrap_text=True)
         cell.border = bd
-    widths = [13, 16, 18, 42, 13, 13, 16, 15, 11]
+    widths = [13, 16, 18, 42, 13, 13, 16, 15, 11, 16, 11, 12]
     right_cols = {8, 9}
-    center_cols = {5, 6, 7}
+    center_cols = {5, 6, 7, 11, 12}
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
     for row in ws.iter_rows(min_row=2, max_row=ws.max_row):

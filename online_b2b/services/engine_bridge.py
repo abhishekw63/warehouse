@@ -1537,7 +1537,8 @@ class Processor:
         # Receive Date' + 'Picklist Qty' are left blank (filled by hand in the
         # master). No TOTAL row → the whole block pastes cleanly.
         cols = ['Segment', 'Market Place', 'PO', 'Location', 'PO Date', 'Exp Date',
-                'PO Aging For Exp', 'Order Value', 'Order Qty', 'State', 'Zone']
+                'PO Aging For Exp', 'Order Value', 'Order Qty', 'State', 'Zone',
+                'Pincode']
         ws.append(cols)
         for h in headers:
             po = str(h.get('po') or '')
@@ -1556,7 +1557,8 @@ class Processor:
                        pod_d if pod_d is not None else self._fmt_tracker_date(d.get('po_date') or h.get('po_date')),
                        exd_d if exd_d is not None else self._fmt_tracker_date(d.get('exp_date') or h.get('exp_date')),
                        '', v, q,          # PO Aging For Exp = filled manually
-                       geo.get('state') or '', geo.get('zone') or ''])
+                       geo.get('state') or '', geo.get('zone') or '',
+                       geo.get('pincode') or ''])   # Pincode (col L) from ship-to master
             rr = ws.max_row
             if pod_d is not None:
                 ws.cell(rr, 5).number_format = 'DD-MM-YYYY'
@@ -1573,9 +1575,9 @@ class Processor:
             cell.alignment = Alignment(horizontal='center', vertical='center',
                                        wrap_text=True)
             cell.border = bd
-        widths = [13, 16, 18, 42, 13, 13, 16, 15, 11, 16, 11]
-        right_cols = {8, 9}          # Order Value, Order Qty
-        center_cols = {5, 6, 7, 11}  # PO Date, Exp Date, PO Aging For Exp, Zone
+        widths = [13, 16, 18, 42, 13, 13, 16, 15, 11, 16, 11, 12]
+        right_cols = {8, 9}              # Order Value, Order Qty
+        center_cols = {5, 6, 7, 11, 12}  # PO Date, Exp Date, PO Aging For Exp, Zone, Pincode
         for i, w in enumerate(widths, 1):
             ws.column_dimensions[get_column_letter(i)].width = w
         for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
