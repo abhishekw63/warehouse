@@ -326,17 +326,24 @@ def _headers(ws, runs: List, cols: List[str], kind: str) -> None:
 def _lines(ws, runs: List, cols: List[str], kind: str) -> None:
     for c, h in enumerate(cols, 1):
         hdr_cell(ws, 1, c, h)
-    r = 1
-    current_po = None
-    line_no = 0
+    # Flatten every run's rows (carrying each row's per-run loc/override) and
+    # GROUP by PO so a PO's lines are contiguous and Line No. is 10000, 20000, …
+    # unique within each PO. The old reset-on-PO-change logic broke when a punch
+    # interleaved a PO's lines (e.g. Blink) OR when the same PO spanned runs —
+    # both produced duplicate (Document No., Line No.) pairs that D365 OVERWRITES
+    # on import. Grouping restores the correct per-PO numbering.
+    from collections import OrderedDict
+    groups: "OrderedDict[str, list]" = OrderedDict()
     for run in runs:
         res = run.result
         loc = getattr(res, 'warehouse_code', '') or 'PICK'
         override = bool(getattr(res, 'override_unit_price', False))
         for so in res.rows:
-            if so.po_number != current_po:
-                current_po = so.po_number
-                line_no = 0
+            groups.setdefault(so.po_number, []).append((so, loc, override))
+    r = 1
+    for _po, items in groups.items():
+        line_no = 0
+        for so, loc, override in items:
             line_no += _LINE_NO_STEP
             r += 1
             if kind == 'so':

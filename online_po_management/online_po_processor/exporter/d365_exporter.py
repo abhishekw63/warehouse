@@ -159,6 +159,26 @@ _TO_HEADER_COLS: List[str] = list('ABCDEFGHIJKL')
 _TO_LINE_COLS: List[str] = list('ABCDEFGHI')
 
 
+def _group_rows_by_po(rows: List[SORow]) -> List[SORow]:
+    """Return ``rows`` reordered so every PO's lines are **contiguous**,
+    preserving first-seen PO order and the line order within each PO.
+
+    CRITICAL — guards the Sales/Transfer Line No. sequence. Line numbers below
+    reset (to 10000) whenever the PO differs from the *previous* row, which is
+    only correct when a PO's rows are contiguous. Interleaved punches (e.g.
+    Blink's consolidated Excel, grouped by item/store not PO) would otherwise
+    restart the count at 10000 for each scattered occurrence → DUPLICATE
+    (Document No., Line No.) pairs. D365 keys sales lines on that pair and
+    OVERWRITES the earlier lines on import → silent line loss. Grouping makes
+    each order's lines contiguous AND uniquely numbered (10000, 20000, …).
+    """
+    from collections import OrderedDict
+    groups: "OrderedDict[str, List[SORow]]" = OrderedDict()
+    for row in rows:
+        groups.setdefault(row.po_number, []).append(row)
+    return [r for grp in groups.values() for r in grp]
+
+
 class D365Exporter:
     """
     Fill a D365 Sales Order sample template with the rows from a
@@ -595,6 +615,10 @@ class D365Exporter:
         detected_style = self._detect_data_style(
             s2_xml, data_start_row=4, fallback=_LINE_STYLE_ID,
         )
+
+        # Group each PO's lines contiguously so Line No. is 10000, 20000, … per
+        # PO and never duplicates across scattered rows (see _group_rows_by_po).
+        rows = _group_rows_by_po(rows)
 
         s2_xml = self._ensure_enough_rows(
             s2_xml,
@@ -1052,6 +1076,10 @@ class D365Exporter:
         detected_style = self._detect_data_style(
             s2_xml, data_start_row=4, fallback=_LINE_STYLE_ID,
         )
+
+        # Group each PO's lines contiguously so Line No. is 10000, 20000, … per
+        # PO and never duplicates across scattered rows (see _group_rows_by_po).
+        rows = _group_rows_by_po(rows)
 
         s2_xml = self._ensure_enough_rows(
             s2_xml,

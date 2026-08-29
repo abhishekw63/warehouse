@@ -73,6 +73,28 @@ _TO_HEADERS = [
 _LINE_NO_STEP = 10_000
 
 
+def _group_rows_by_po(rows):
+    """Return ``rows`` reordered so every PO's lines are **contiguous**,
+    preserving the first-seen PO order and the original line order within each
+    PO.
+
+    CRITICAL — this guards the Line No. sequence. The per-PO Line No. below
+    (10000, 20000, …) resets whenever the PO differs from the *previous* row.
+    That is only correct when a PO's rows are already contiguous. Some punch
+    files interleave a PO's lines with other POs (e.g. Blink's consolidated
+    Excel is grouped by item/store, not PO), so without this grouping every
+    scattered occurrence of a PO restarts the count at 10000 — producing
+    DUPLICATE (Document No., Line No.) pairs. D365 keys sales lines on exactly
+    that pair, so it OVERWRITES the earlier lines on import → silent line loss.
+    Grouping makes each SO's lines contiguous AND uniquely numbered.
+    """
+    from collections import OrderedDict
+    groups = OrderedDict()
+    for row in rows:
+        groups.setdefault(row.po_number, []).append(row)
+    return [r for grp in groups.values() for r in grp]
+
+
 def write(wb, result: ProcessingResult) -> None:
     """
     Append the 'Lines (SO)' or 'Lines (TO)' sheet to ``wb``.
@@ -114,10 +136,12 @@ def write(wb, result: ProcessingResult) -> None:
         if override and col_idx == 8:
             cell.fill = WARN_FILL
 
-    # Track Line No. per PO. We don't pre-group — we rely on the engine
-    # emitting a PO's rows contiguously, which is true today (rows are in
-    # input-file order, and a PO's lines are always contiguous in punch
-    # files).
+    # Track Line No. per PO. Rows are pre-grouped by PO (see _group_rows_by_po)
+    # so a PO's lines are ALWAYS contiguous here — the reset-on-PO-change below
+    # then yields 10000, 20000, … within each PO and restarts at 10000 for the
+    # next PO. (Older code relied on the punch already being PO-contiguous, which
+    # is false for interleaved punches like Blink → duplicate line numbers.)
+    ordered_rows = _group_rows_by_po(result.rows)
     current_po = None
     line_no = 0
 
@@ -128,7 +152,7 @@ def write(wb, result: ProcessingResult) -> None:
     #   Col 8 (Unit Price) → right (monetary; blank by default for WMS
     #     computation, populated when override toggle is on)
     last_row = 1
-    for r, so_row in enumerate(result.rows, start=2):
+    for r, so_row in enumerate(ordered_rows, start=2):
         if so_row.po_number != current_po:
             current_po = so_row.po_number
             line_no = 0
@@ -208,6 +232,7 @@ def _write_to(wb, result: ProcessingResult) -> None:
     for col_idx, header in enumerate(_TO_HEADERS, start=1):
         hdr_cell(ws, 1, col_idx, header)
 
+    ordered_rows = _group_rows_by_po(result.rows)   # PO-contiguous → correct Line No.
     current_po = None
     line_no = 0
 
@@ -216,7 +241,7 @@ def _write_to(wb, result: ProcessingResult) -> None:
     #   Col 4 (Quantity)                 → center (operational value)
     #   Cols 5-8 (blank pass-throughs)   → center (matches surrounding visual)
     #   Col 9 (Transfer Price)           → right (monetary value)
-    for r, so_row in enumerate(result.rows, start=2):
+    for r, so_row in enumerate(ordered_rows, start=2):
         if so_row.po_number != current_po:
             current_po = so_row.po_number
             line_no = 0
