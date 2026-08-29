@@ -458,6 +458,51 @@ class AuditLogView(_StaffOnly, TemplateView):
         compare.sort(key=lambda x: -((x['served'] or 0) + (x['local'] or 0)))
         ctx['compare'] = compare[:15]
         ctx['has_both'] = any(c['local'] and c['served'] for c in compare)
+        # ── "Where does the time go?" — BACKEND (server DB + Code) vs FRONTEND
+        # (browser load beyond the server) per route, so a slow page is pinned to a
+        # LAYER. Server rows give DB + Code; NAV rows (the enhance.js beacon) give
+        # the whole client load; frontend overhead ≈ client total − server total
+        # (network + download + browser render). Directional (rows are different
+        # requests), but tells you which layer to optimise. Routes with data only.
+        chain: dict = {}
+        for r in rows:
+            ms = r.get('ms')
+            if ms is None:
+                continue
+            name = r.get('url_name') or r.get('path') or '—'
+            c = chain.setdefault(name, {'srv': [], 'db': [], 'cli': []})
+            if r.get('is_nav'):
+                c['cli'].append(ms)
+            elif r.get('db_ms') is not None:
+                c['srv'].append(ms)
+                c['db'].append(r['db_ms'])
+        chain_rows = []
+        for name, c in chain.items():
+            srv = (sum(c['srv']) / len(c['srv'])) if c['srv'] else None
+            db = (sum(c['db']) / len(c['db'])) if c['db'] else None
+            cli = (sum(c['cli']) / len(c['cli'])) if c['cli'] else None
+            code = max(0.0, srv - db) if (srv is not None and db is not None) else None
+            front = max(0.0, cli - srv) if (cli is not None and srv is not None) else None
+            total = cli if cli is not None else srv
+            if not total:
+                continue
+            chain_rows.append({
+                'name': name,
+                'db_sec': round(db / 1000.0, 2) if db is not None else None,
+                'code_sec': round(code / 1000.0, 2) if code is not None else None,
+                'front_sec': round(front / 1000.0, 2) if front is not None else None,
+                'srv_sec': round(srv / 1000.0, 2) if srv is not None else None,
+                'cli_sec': round(cli / 1000.0, 2) if cli is not None else None,
+                'total_sec': round(total / 1000.0, 2),
+                'db_pct': round((db or 0) / total * 100) if total else 0,
+                'code_pct': round((code or 0) / total * 100) if total else 0,
+                'front_pct': round((front or 0) / total * 100) if total else 0,
+                'has_front': front is not None,
+                'nsrv': len(c['srv']), 'ncli': len(c['cli']),
+            })
+        chain_rows.sort(key=lambda x: -x['total_sec'])
+        ctx['chain'] = chain_rows[:15]
+        ctx['has_front'] = any(x['has_front'] for x in chain_rows)
         ctx['rows'] = rows
         ctx['f_user'] = u
         ctx['f_q'] = q

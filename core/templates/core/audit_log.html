@@ -48,6 +48,11 @@
   .al-split span{font-size:9.5px;font-weight:800;padding:1px 7px;border-radius:20px;color:var(--muted);background:color-mix(in srgb,var(--muted) 12%,transparent);}
   .al-db.dom{background:color-mix(in srgb,#2193b0 22%,transparent);color:#0e6b85;}
   .al-code.dom{background:color-mix(in srgb,#f59e0b 22%,transparent);color:#b45309;}
+  /* backend-vs-frontend stacked bar (Where the time goes) */
+  .al-chainbar{display:flex;height:14px;border-radius:7px;overflow:hidden;min-width:110px;
+    background:color-mix(in srgb,var(--muted) 12%,transparent);}
+  .al-chainbar span{display:block;height:100%;}
+  .cb-db{background:#2193b0;} .cb-code{background:#f59e0b;} .cb-front{background:#7c3aed;}
   .al-filters{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-bottom:14px;}
   .al-filters input{padding:8px 11px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text);font-size:13.5px;min-width:170px;}
   .al-filters label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
@@ -103,6 +108,37 @@
       </tbody>
     </table>
     </div>
+  </div>
+  {% endif %}
+
+  {% if chain %}
+  <div class="im-card reveal al-slow">
+    <div class="im-ovh"><h2>Where the time goes <span class="count">backend vs frontend</span></h2>
+      <span class="al-slow-hint"><b>Backend</b> = server <span class="al-db dom">DB</span> + <span class="al-code dom">Code</span> · <b>Frontend</b> = <span class="al-front">browser</span> load past the server (network + download + render){% if not has_front %} · <em>Frontend fills in once the beacon captures a few slow loads</em>{% endif %}</span></div>
+    <div class="scroll im-tablewrap">
+    <table class="grid compact al-table">
+      <thead><tr><th>Route</th><th style="width:34%;">Backend · Frontend split</th><th class="r">DB</th><th class="r">Code</th><th class="r">Frontend</th><th class="r">Total</th></tr></thead>
+      <tbody>
+      {% for c in chain %}
+        <tr>
+          <td><b>{{ c.name }}</b></td>
+          <td>
+            <div class="al-chainbar" title="DB {{ c.db_pct }}% · Code {{ c.code_pct }}% · Frontend {{ c.front_pct }}%">
+              <span class="cb-db" style="width:{{ c.db_pct }}%"></span>
+              <span class="cb-code" style="width:{{ c.code_pct }}%"></span>
+              <span class="cb-front" style="width:{{ c.front_pct }}%"></span>
+            </div>
+          </td>
+          <td class="r"><span class="al-db dom">{% if c.db_sec is not None %}{{ c.db_sec }}s{% else %}—{% endif %}</span></td>
+          <td class="r"><span class="al-code dom">{% if c.code_sec is not None %}{{ c.code_sec }}s{% else %}—{% endif %}</span></td>
+          <td class="r"><span class="al-front">{% if c.front_sec is not None %}{{ c.front_sec }}s{% else %}—{% endif %}</span></td>
+          <td class="r al-time">{{ c.total_sec }}s</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="al-slow-hint" style="padding:10px 16px;">Frontend ≈ client total − server total (a directional estimate from separate requests). If a route's bar is mostly <span class="al-front">violet</span>, optimise the frontend (JS/CSS/payload); mostly <span class="al-code dom">amber</span> → server code / render; <span class="al-db dom">blue</span> → the database.</p>
   </div>
   {% endif %}
 
