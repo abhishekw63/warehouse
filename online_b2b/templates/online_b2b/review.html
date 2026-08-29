@@ -36,7 +36,7 @@
     <div class="card c4"><span class="ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><div><div class="n">{{ s.value|inr_short }}</div><div class="l">Value</div></div></div>
     <div class="card c6"><span class="ic">{% include 'online_b2b/_icons.html' with i='alert' %}</span><div><div class="n">{{ s.affected }}</div><div class="l">Affected lines</div></div></div>
     <div class="card c6"><span class="ic">{% include 'online_b2b/_icons.html' with i='hash' %}</span><div><div class="n">{{ affected_qty|compact }}</div><div class="l">Affected qty</div></div></div>
-    <div class="card {% if ok_qty_pct >= 98 %}c2{% else %}c6{% endif %}"><span class="ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><div><div class="n">{{ ok_qty_pct }}%</div><div class="l">OK qty</div></div></div>
+    <div class="card {% if not s.lines %}c1{% elif ok_qty_pct >= 98 %}c2{% else %}c6{% endif %}"><span class="ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span><div><div class="n">{% if s.lines %}{{ ok_qty_pct }}%{% else %}—{% endif %}</div><div class="l">OK qty</div></div></div>
     <div class="card c8"><span class="ic">{% include 'online_b2b/_icons.html' with i='refresh' %}</span><div><div class="n">{{ s.skipped }}</div><div class="l">Already up.</div></div></div>
   </div>
 
@@ -106,6 +106,8 @@
     <div class="cb-text">
       {% if locked %}
         🔒 <b>Decisions locked &amp; recorded</b> (run #{{ run_id }}). Generate the ERP <b>D365 dump</b>, or download the <b>Completed</b> SO Workbook (accepted lines only — Excludes dropped, Overrides repriced).
+      {% elif not s.pos %}
+        ✓ All <b>{{ s.skipped }} PO(s)</b> in this file are <b>already uploaded</b> — nothing new to record. You can <b>Discard</b> this draft.
       {% else %}
         {% if s.affected %}<span class="cb-warn">⚠ {{ s.affected }} affected line(s)</span> — decide each (Include / Override / Exclude) in the <b>Affected line items</b> tab, then{% endif %}
         lock &amp; record <b>{{ s.pos }} PO(s)</b> · <b>{{ s.lines }} line(s)</b>.
@@ -124,12 +126,14 @@
         <button class="btn-primary" type="submit" formaction="{% url 'b2b_generate_d365' token=token %}" formnovalidate onclick="var b=this;b.innerHTML='<span class=&quot;btn-spin&quot;></span> Generating…';setTimeout(function(){b.innerHTML='⬇ Generate D365 dump';},4500);">⬇ Generate D365 dump</button>
       {% else %}
         <button class="btn-discard" type="submit" form="discard-form" formnovalidate>Discard</button>
+        {% if s.pos %}
         <button class="btn-ghost" type="submit" form="save-later-form" formnovalidate
                 title="Park this whole run — decide the CP issue later (after the team corrects it) without re-uploading">🕒 Save for Review Later</button>
         {% if r.affected %}<button class="btn-ghost" id="emailIssueBtn" type="button"
                 data-url="{% url 'b2b_review_email_issue' token=token %}"
                 title="Email these {{ r.affected|length }} flagged CP-issue line(s) to the ecom team so they can resolve the price / SKU">✉ Email issue</button>{% endif %}
         <button class="btn-primary" id="lockBtn" type="button" data-write>🔒 Lock &amp; Record</button>
+        {% endif %}
       {% endif %}
     </div>
   </div>
