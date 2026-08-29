@@ -148,10 +148,29 @@ def ensure_table() -> None:
                 "AND index_name='idx_lines_po_run'")
             if not cur.fetchone()[0]:
                 cur.execute("ALTER TABLE order_lines ADD INDEX idx_lines_po_run (po, run_id)")
+            # created_at index on order_headers — every analytics / dashboard /
+            # facility query filters order_headers by created_at on each load;
+            # without an index they full-scan. Additive + best-effort (skip if the
+            # table isn't created yet in a brand-new DB, or we lack ALTER rights).
+            try:
+                cur.execute(
+                    "SELECT COUNT(*) FROM information_schema.statistics "
+                    "WHERE table_schema=DATABASE() AND table_name='order_headers' "
+                    "AND index_name='idx_oh_created_at'")
+                if not cur.fetchone()[0]:
+                    cur.execute("ALTER TABLE order_headers "
+                                "ADD INDEX idx_oh_created_at (created_at)")
+            except Exception:  # noqa: BLE001 — order_headers absent / no perms
+                pass
         else:
             cur.execute("DROP VIEW IF EXISTS order_lines_full")
             cur.execute(f"CREATE VIEW order_lines_full AS {view_sql}")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_lines_po_run ON order_lines (po, run_id)")
+            try:
+                cur.execute("CREATE INDEX IF NOT EXISTS idx_oh_created_at "
+                            "ON order_headers (created_at)")
+            except Exception:  # noqa: BLE001
+                pass
         cur.connection.commit()
 
 
