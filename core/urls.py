@@ -22,4 +22,6 @@ urlpatterns = [
     path('users/<int:user_id>/toggle-active/', views.UserToggleActiveView.as_view(), name='user_toggle_active'),
     # Audit trail (staff-only) — who did every write, when.
     path('audit/', views.AuditLogView.as_view(), name='audit_log'),
+    # client Navigation-Timing beacon (frontend load telemetry → NAV audit rows)
+    path('perf/nav/', views.perf_nav, name='perf_nav'),
 ]

@@ -55,6 +55,10 @@ _SAFE_POST_NAMES = frozenset({
     'b2b_availability_record',
     # read-only data fetches that don't match a suffix
     'b2b_cockpit_po_skus',
+    # client Navigation-Timing beacon → a NAV row in the audit_log (frontend
+    # load telemetry). No business write; allowed for everyone so we capture
+    # real page-load timing from Viewers too.
+    'perf_nav',
     # generating the ERP D365 dump is an export of an already-locked run (no DB
     # write) — a Viewer who can see a locked run may pull its dump.
     'b2b_generate_d365',

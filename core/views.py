@@ -4,8 +4,10 @@ from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.auth.models import User
 from django.contrib.auth.views import LoginView, LogoutView, PasswordChangeView
+from django.http import HttpResponse
 from django.shortcuts import redirect
 from django.urls import reverse_lazy
+from django.views.decorators.csrf import csrf_exempt
 from django.views.generic import CreateView, TemplateView, UpdateView, View
 
 
@@ -286,6 +288,51 @@ class UserToggleActiveView(_AdminAction):
                           f"{u.username} is now {state}.")
 
 
+@csrf_exempt
+def perf_nav(request):
+    """Client **Navigation-Timing** beacon → one ``NAV`` row in the audit_log.
+
+    The browser measures the WHOLE page load (network + server TTFB + download +
+    DOM + render); enhance.js posts it here on slow loads so the Audit Log can
+    separate FRONTEND load (network + browser render) from the server code/DB
+    split it already records. Fire-and-forget: always 204, never raises, writes
+    only a best-effort log row. CSRF-exempt (``sendBeacon`` can't carry the token)
+    and write-guard-allowlisted, so Viewers' loads are captured too."""
+    if request.method != 'POST':
+        return HttpResponse(status=405)
+    try:
+        import json as _json
+        from urllib.parse import urlparse
+        body = _json.loads((request.body or b'{}').decode('utf-8') or '{}')
+        total = int(float(body.get('total') or 0))
+        if total <= 0:
+            return HttpResponse(status=204)
+        p = (urlparse(str(body.get('path') or '')).path or '')[:300]
+        ttfb = int(float(body.get('ttfb') or 0))
+        dl = int(float(body.get('dl') or 0))
+        dom = int(float(body.get('dom') or 0))
+        render = int(float(body.get('render') or 0))
+        route = ''
+        try:
+            from django.urls import resolve
+            route = resolve(p).url_name or ''
+        except Exception:  # noqa: BLE001 — unresolved path → blank route
+            route = ''
+        user = getattr(getattr(request, 'user', None), 'username', '') or ''
+        try:
+            host = request.get_host()
+        except Exception:  # noqa: BLE001
+            host = ''
+        detail = ('front: ttfb %dms · download %dms · dom %dms · render %dms'
+                  % (ttfb, dl, dom, render))
+        from core import audit
+        audit.log(user, 'NAV', route, p, target='', detail=detail,
+                  ms=total, q=0, host=host, db_ms=0)
+    except Exception:  # noqa: BLE001 — telemetry must never error the client
+        pass
+    return HttpResponse(status=204)
+
+
 class AuditLogView(_StaffOnly, TemplateView):
     """Staff-only 'who did what, when' trail — every write is logged by the RBAC
     middleware (core.audit). Read-only; filter by user / text."""
@@ -341,6 +388,15 @@ class AuditLogView(_StaffOnly, TemplateView):
                     r['bound'] = 'db'
                 elif (ms - db_ms) >= ms * 0.6:
                     r['bound'] = 'code'
+            # NAV rows are the FRONTEND dimension (browser Navigation Timing from
+            # the enhance.js beacon): ms = whole client load, no server db/code
+            # split. Flag them so the UI shows the front-end breakdown (in detail)
+            # instead of mislabelling the whole thing as "code".
+            if str(r.get('method') or '').upper() == 'NAV':
+                r['is_nav'] = True
+                r['bound'] = 'frontend'
+                r['db_sec'] = None
+                r['code_sec'] = None
             host = str(r.get('host') or '')
             # local (dev, India→Singapore latency ⇒ slow, not representative) vs the
             # deployed service — so the two aren't compared apples-to-oranges.

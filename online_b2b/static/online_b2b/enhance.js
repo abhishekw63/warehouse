@@ -632,3 +632,34 @@
   if (d.readyState === "loading") d.addEventListener("DOMContentLoaded", init);
   else init();
 })(window, document);
+
+/* ── Frontend perf beacon ─────────────────────────────────────────────────
+   Reports the browser's Navigation Timing to the Audit Log on SLOW loads, so the
+   log separates FRONTEND (network + browser render) from the server code/db split
+   it already records. Fire-and-forget via sendBeacon; only fires above a threshold
+   to keep the volume sane. Self-contained — delete this block to disable. */
+(function () {
+  if (!window.performance || !performance.getEntriesByType || !navigator.sendBeacon) return;
+  var THRESHOLD = 700;   // ms — only report loads slower than this
+  function report() {
+    try {
+      var nav = performance.getEntriesByType("navigation")[0];
+      if (!nav || !nav.loadEventEnd) return;
+      var total = Math.round(nav.duration || (nav.loadEventEnd - nav.startTime));
+      if (!total || total < THRESHOLD) return;
+      var span = function (a, b) { var v = Math.round(a - b); return v > 0 ? v : 0; };
+      var payload = JSON.stringify({
+        path: location.pathname,
+        total: total,
+        ttfb: span(nav.responseStart, nav.requestStart),   // network + server round-trip
+        dl: span(nav.responseEnd, nav.responseStart),       // download
+        dom: span(nav.domInteractive, nav.responseEnd),     // parse
+        render: span(nav.loadEventEnd, nav.domInteractive)  // scripts + paint
+      });
+      navigator.sendBeacon("/perf/nav/", new Blob([payload], { type: "application/json" }));
+    } catch (e) { /* telemetry must never break the page */ }
+  }
+  // Delay after load so loadEventEnd is finalised (it's 0 during the load event).
+  if (document.readyState === "complete") setTimeout(report, 300);
+  else window.addEventListener("load", function () { setTimeout(report, 300); });
+})();

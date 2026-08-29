@@ -21,6 +21,10 @@
   .al-m.al-post{background:color-mix(in srgb,var(--green,#0a7d5a) 16%,transparent);color:var(--green,#0a7d5a);}
   .al-m.al-delete{background:color-mix(in srgb,var(--red,#b3261e) 15%,transparent);color:var(--red,#b3261e);}
   .al-m.al-put,.al-m.al-patch{background:color-mix(in srgb,#f59e0b 18%,transparent);color:#b45309;}
+  /* NAV = client-side page-load timing (frontend dimension) */
+  .al-m.al-nav{background:color-mix(in srgb,#7c3aed 16%,transparent);color:#6d28d9;}
+  .al-front{font-size:9.5px;font-weight:800;padding:1px 7px;border-radius:20px;color:#6d28d9;
+    background:color-mix(in srgb,#7c3aed 15%,transparent);}
   /* rows over the expected time get a soft red tint + a red edge */
   .al-rowslow td{background:color-mix(in srgb,var(--red,#b3261e) 5%,transparent);}
   .al-rowslow td:first-child{box-shadow:inset 3px 0 0 var(--red,#b3261e);}
@@ -146,7 +150,9 @@
           <td class="al-timecell{% if r.over %} slow{% endif %}">
             {% if r.sec is not None %}
               <div class="al-total">{{ r.sec }}s</div>
-              {% if r.db_sec is not None %}
+              {% if r.is_nav %}
+              <div class="al-split"><span class="al-front" title="Browser load (Navigation Timing) — {{ r.detail }}">Frontend</span></div>
+              {% elif r.db_sec is not None %}
               <div class="al-split">
                 <span class="al-db{% if r.bound == 'db' %} dom{% endif %}" title="Time spent in DB queries (round-trips + execution)">DB {{ r.db_sec }}s{% if r.q %} · {{ r.q }}q{% endif %}</span>
                 <span class="al-code{% if r.bound == 'code' %} dom{% endif %}" title="Code time = total − DB (Python processing + template render + CPU)">Code {{ r.code_sec }}s</span>
