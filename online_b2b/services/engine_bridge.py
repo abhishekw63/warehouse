@@ -1101,21 +1101,40 @@ class Processor:
         # workbook + all its sheets are untouched). Best-effort — never fails the
         # export.
         if path:
+            # PERF: collapse the three post-export appends into ONE load + ONE save.
+            # Each used to load_workbook + save the WHOLE workbook independently →
+            # 3× full-workbook I/O (costly with a big Raw Data sheet). Same sheets,
+            # same order, same edits — only the persist points are merged. If the
+            # shared load fails, wb stays None and each method falls back to its own
+            # standalone load/save (exactly the previous behaviour). Each append is
+            # still individually guarded so one failing never blocks the others.
             try:
-                self._append_sku_sheet(str(path))
+                from openpyxl import load_workbook as _lwb
+                _wb = _lwb(str(path))
+            except Exception as e:  # noqa: BLE001
+                _wb = None
+                self.warnings.append(f"Workbook shared-load skipped ({type(e).__name__}).")
+            try:
+                self._append_sku_sheet(str(path), wb=_wb)
             except Exception as e:  # noqa: BLE001
                 self.warnings.append(f"SKU Summary sheet skipped ({type(e).__name__}).")
             try:
-                self._append_tracker_sheet(str(path))
+                self._append_tracker_sheet(str(path), wb=_wb)
             except Exception as e:  # noqa: BLE001
                 self.warnings.append(f"Tracker sheet skipped ({type(e).__name__}).")
             try:
-                self._append_excluded_to_summary(str(path), self._lines(actions=actions))
+                self._append_excluded_to_summary(
+                    str(path), self._lines(actions=actions), wb=_wb)
             except Exception as e:  # noqa: BLE001
                 self.warnings.append(f"Summary excluded-qty skipped ({type(e).__name__}).")
+            if _wb is not None:
+                try:
+                    _wb.save(str(path))
+                except Exception as e:  # noqa: BLE001
+                    self.warnings.append(f"Workbook post-append save failed ({type(e).__name__}).")
         return path
 
-    def _append_excluded_to_summary(self, path, lines) -> None:
+    def _append_excluded_to_summary(self, path, lines, wb=None) -> None:
         """Augment the SO Workbook 'Summary' sheet (per-PO) with three columns:
         **Included Qty**, **Excluded/Dropped Qty** and **Final Qty (to D365)**.
         * Excluded = lines the operator EXCLUDEd, plus still-affected lines
@@ -1166,7 +1185,9 @@ class Processor:
                 except (TypeError, ValueError):
                     v = 0.0
                 pushed[po] = pushed.get(po, 0.0) + v
-        wb = openpyxl.load_workbook(path)
+        own = wb is None                     # shared handle (one load/save) vs standalone
+        if own:
+            wb = openpyxl.load_workbook(path)
         if 'Summary' not in wb.sheetnames:
             return
         ws = wb['Summary']
@@ -1258,7 +1279,8 @@ class Processor:
                 cell = ws.cell(r, cc)
                 keep = bool(cell.alignment and cell.alignment.wrap_text)
                 cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=keep)
-        wb.save(path)
+        if own:
+            wb.save(path)
 
     @staticmethod
     def _gst_mult(code) -> float:
@@ -1390,7 +1412,7 @@ class Processor:
         rows.sort(key=lambda r: (-r[8], -r[9], -r[6]))   # mismatch, nim, tot qty
         return rows
 
-    def _append_sku_sheet(self, path):
+    def _append_sku_sheet(self, path, wb=None):
         """Write the per-run **SKU Summary** sheet from the shared
         :meth:`sku_rows` (same data the review 'SKU' tab shows): qty demanded,
         # POs, inc-GST value, unit price (CP), Deal SKU + Overridden flags. Rows
@@ -1400,7 +1422,9 @@ class Processor:
         from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
         from openpyxl.utils import get_column_letter
         rows = self.sku_rows(self._lines())
-        wb = load_workbook(path)
+        own = wb is None                     # shared handle (one load/save) vs standalone
+        if own:
+            wb = load_workbook(path)
         if 'SKU Summary' in wb.sheetnames:
             del wb['SKU Summary']
         ws = wb.create_sheet('SKU Summary')
@@ -1450,7 +1474,8 @@ class Processor:
                     cell.alignment = Alignment(horizontal='center')
         ws.row_dimensions[1].height = 30
         ws.freeze_panes = 'A2'
-        wb.save(path)
+        if own:
+            wb.save(path)
 
     @staticmethod
     def _tracker_date_val(v):
@@ -1498,7 +1523,7 @@ class Processor:
             return d.strftime('%d-%m-%Y')
         return '' if not v else str(v).strip()
 
-    def _append_tracker_sheet(self, path):
+    def _append_tracker_sheet(self, path, wb=None):
         """Append a per-PO **Tracker** sheet to the SO workbook (all marketplaces):
         Platform · PO/RO No · Location · PO Date · Expiry Date · Order Type ·
         Items · Total Qty · Total Amount (inc GST). Dates come from the engine or
@@ -1527,7 +1552,9 @@ class Processor:
             geomap = {}
             def geo_for_location(_loc, _m=None):  # noqa: E306
                 return {'pincode': '', 'state': '', 'zone': ''}
-        wb = load_workbook(path)
+        own = wb is None                     # shared handle (one load/save) vs standalone
+        if own:
+            wb = load_workbook(path)
         if 'Tracker' in wb.sheetnames:
             del wb['Tracker']
         ws = wb.create_sheet('Tracker')
@@ -1593,7 +1620,8 @@ class Processor:
         idx = wb.sheetnames.index('Tracker')
         if len(wb.sheetnames) > 3 and idx != 3:
             wb.move_sheet('Tracker', offset=3 - idx)
-        wb.save(path)
+        if own:
+            wb.save(path)
 
     def _grouped_unmapped(self) -> list:
         """Unmapped ship-tos grouped by location → one row per missing mapping,
