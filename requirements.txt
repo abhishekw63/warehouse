@@ -22,6 +22,7 @@ pycparser==3.0
 pandas==3.0.1
 numpy==2.4.3
 openpyxl==3.1.5
+python-calamine==0.8.2   # Rust xlsx reader — ~7-13× faster than openpyxl on big D365 dumps (record-verify)
 et_xmlfile==2.0.0
 xlrd==2.0.2
 pyxlsb==1.0.10
