@@ -234,14 +234,21 @@ def set_order_value(run_id, value_by_po: dict) -> dict:
     (Landing × qty) in the engine bridge. No-op on empty input."""
     if run_id is None or not value_by_po:
         return {'updated': 0}
-    updated = 0
+    # Batched: ONE UPDATE with a per-PO CASE instead of N round-trips (the enrich
+    # phase was ~1 query per PO → 100+ round-trips on a big run). Same effect:
+    # order_value is overwritten for each listed PO of this run.
+    pairs = [(str(po), _f(val)) for po, val in value_by_po.items()]
     with _conn() as (cur, d):
         ph = d['ph']
-        for po, val in value_by_po.items():
-            cur.execute(
-                f"UPDATE order_headers SET order_value={ph} "
-                f"WHERE run_id={ph} AND po={ph}", (_f(val), run_id, str(po)))
-            updated += cur.rowcount or 0
+        whens = ' '.join(f"WHEN {ph} THEN {ph}" for _ in pairs)
+        case_args = [x for po, val in pairs for x in (po, val)]
+        in_ph = ', '.join([ph] * len(pairs))
+        pos = [po for po, _ in pairs]
+        cur.execute(
+            f"UPDATE order_headers SET order_value = CASE po {whens} "
+            f"ELSE order_value END WHERE run_id={ph} AND po IN ({in_ph})",
+            tuple(case_args) + (run_id,) + tuple(pos))
+        updated = cur.rowcount or 0
         # keep the run's stored aggregate in sync (engine wrote 0).
         cur.execute(
             f"UPDATE runs SET total_value="
@@ -261,23 +268,40 @@ def set_po_dates(run_id, dates_by_po: dict, force=False) -> dict:
     the TAT tracker."""
     if run_id is None or not dates_by_po:
         return {'updated': 0}
-    updated = 0
+    # Batched: ONE UPDATE with a per-column CASE, instead of one round-trip per PO.
+    # Semantics preserved EXACTLY: a PO only touches a column it carries; non-force
+    # uses COALESCE (fill blanks only), force overwrites; POs carrying neither date
+    # are excluded from the WHERE so they're untouched. Each column's ELSE keeps a
+    # listed PO that lacks THAT date unchanged.
+    po_items = [(str(po), dd['po_date']) for po, dd in dates_by_po.items() if dd.get('po_date')]
+    exp_items = [(str(po), dd['exp_date']) for po, dd in dates_by_po.items() if dd.get('exp_date')]
+    all_pos = [str(po) for po, dd in dates_by_po.items()
+               if dd.get('po_date') or dd.get('exp_date')]
+    if not all_pos:
+        return {'updated': 0}
     with _conn() as (cur, d):
         ph = d['ph']
-        for po, dd in dates_by_po.items():
-            sets, args = [], []
-            if dd.get('po_date'):
-                col = ph if force else f"COALESCE(po_date,{ph})"
-                sets.append(f"po_date={col}"); args.append(dd['po_date'])
-            if dd.get('exp_date'):
-                col = ph if force else f"COALESCE(exp_date,{ph})"
-                sets.append(f"exp_date={col}"); args.append(dd['exp_date'])
-            if not sets:
-                continue
-            cur.execute(
-                f"UPDATE order_headers SET {', '.join(sets)} "
-                f"WHERE run_id={ph} AND po={ph}", tuple(args) + (run_id, str(po)))
-            updated += cur.rowcount or 0
+        sets, args = [], []
+        if po_items:
+            case_sql = 'po_date = CASE po '
+            for po, val in po_items:
+                case_sql += (f"WHEN {ph} THEN {ph} " if force
+                             else f"WHEN {ph} THEN COALESCE(po_date,{ph}) ")
+                args += [po, val]
+            sets.append(case_sql + 'ELSE po_date END')
+        if exp_items:
+            case_sql = 'exp_date = CASE po '
+            for po, val in exp_items:
+                case_sql += (f"WHEN {ph} THEN {ph} " if force
+                             else f"WHEN {ph} THEN COALESCE(exp_date,{ph}) ")
+                args += [po, val]
+            sets.append(case_sql + 'ELSE exp_date END')
+        in_ph = ', '.join([ph] * len(all_pos))
+        cur.execute(
+            f"UPDATE order_headers SET {', '.join(sets)} "
+            f"WHERE run_id={ph} AND po IN ({in_ph})",
+            tuple(args) + (run_id,) + tuple(all_pos))
+        updated = cur.rowcount or 0
         cur.connection.commit()
     return {'updated': updated}
 
@@ -291,16 +315,22 @@ def set_location(run_id, loc_by_po: dict) -> dict:
     on empty input or blank values."""
     if run_id is None or not loc_by_po:
         return {'updated': 0}
-    updated = 0
+    # Batched: ONE UPDATE with a per-PO CASE instead of one round-trip per PO.
+    # Blank locations are skipped (same as the old `if not loc: continue`).
+    pairs = [(str(po), loc) for po, loc in loc_by_po.items() if loc]
+    if not pairs:
+        return {'updated': 0}
     with _conn() as (cur, d):
         ph = d['ph']
-        for po, loc in loc_by_po.items():
-            if not loc:
-                continue
-            cur.execute(
-                f"UPDATE order_headers SET location={ph} "
-                f"WHERE run_id={ph} AND po={ph}", (loc, run_id, str(po)))
-            updated += cur.rowcount or 0
+        whens = ' '.join(f"WHEN {ph} THEN {ph}" for _ in pairs)
+        case_args = [x for po, loc in pairs for x in (po, loc)]
+        in_ph = ', '.join([ph] * len(pairs))
+        pos = [po for po, _ in pairs]
+        cur.execute(
+            f"UPDATE order_headers SET location = CASE po {whens} "
+            f"ELSE location END WHERE run_id={ph} AND po IN ({in_ph})",
+            tuple(case_args) + (run_id,) + tuple(pos))
+        updated = cur.rowcount or 0
         cur.connection.commit()
     return {'updated': updated}
 
