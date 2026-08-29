@@ -515,7 +515,7 @@
     if (noteBox && (Date.now() - _startT) > 8000) noteBox.hidden = false;
   }
   function startProgress(){
-    ov.classList.remove('done', 'error'); errBox.textContent = '';
+    ov.classList.remove('done', 'error', 'lo-closing'); errBox.textContent = '';
     if (noteBox) noteBox.hidden = true;
     steps.forEach(function (s){ s.classList.remove('active', 'done'); });
     ov.classList.add('show'); document.body.classList.add('lo-open');
@@ -547,8 +547,11 @@
     clearTimers(); if (noteBox) noteBox.hidden = true; ov.classList.add('error');
     errBox.textContent = msg || 'Recording failed — nothing was recorded. Please try again.';
     timers.push(setTimeout(function (){
-      ov.classList.remove('show', 'error'); document.body.classList.remove('lo-open');
-      if (lockBtn) lockBtn.disabled = false;
+      ov.classList.add('lo-closing');                 // smooth fade-out (see .lo-closing in b2b.css)
+      setTimeout(function (){
+        ov.classList.remove('show', 'lo-closing', 'error'); document.body.classList.remove('lo-open');
+        if (lockBtn) lockBtn.disabled = false;
+      }, 360);
     }, 2400));
   }
   if (lockBtn && form && window.fetch) {

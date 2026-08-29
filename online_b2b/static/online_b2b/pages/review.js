@@ -322,7 +322,7 @@ var CFG = JSON.parse(document.getElementById("review-cfg").textContent);
   }
 
   function startProgress() {
-    ov.classList.remove('done', 'error');
+    ov.classList.remove('done', 'error', 'lo-closing');
     errBox.textContent = '';
     if (noteBox) noteBox.hidden = true;
     steps.forEach(function (s) { s.classList.remove('active', 'done'); });
@@ -374,9 +374,12 @@ var CFG = JSON.parse(document.getElementById("review-cfg").textContent);
     if (window.B2B && B2B.toast) B2B.toast(text, {
       type: 'error', title: 'Not recorded — safe to retry', timeout: 10000 });
     timers.push(setTimeout(function () {
-      ov.classList.remove('show', 'error');
-      document.body.classList.remove('lo-open');
-      if (lockBtn) lockBtn.disabled = false;
+      ov.classList.add('lo-closing');                 // smooth fade-out (matches success)
+      setTimeout(function () {
+        ov.classList.remove('show', 'lo-closing', 'error');
+        document.body.classList.remove('lo-open');
+        if (lockBtn) lockBtn.disabled = false;
+      }, 360);
     }, 2400));
   }
 
@@ -467,10 +470,17 @@ var CFG = JSON.parse(document.getElementById("review-cfg").textContent);
       setTimeout(function () {
         finishProgress();
         setTimeout(function () {
-          ov.classList.remove('show');
-          document.body.classList.remove('lo-open');
+          // Smooth fade-out (see .lo-closing in b2b.css): the overlay dissolves over
+          // ~.34s while the page morphs to its locked state UNDERNEATH — no abrupt
+          // one-frame vanish. Drop .show only AFTER the fade so display:none doesn't
+          // cut it short.
+          ov.classList.add('lo-closing');
           morphLocked(j);
           flourish(j);
+          setTimeout(function () {
+            ov.classList.remove('show', 'lo-closing', 'done');
+            document.body.classList.remove('lo-open');
+          }, 360);
         }, 580);
       }, wait);
     }).catch(function () {

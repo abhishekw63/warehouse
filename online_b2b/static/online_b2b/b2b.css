@@ -718,8 +718,18 @@ details[open]>.tchildren>.tnode{animation:treeIn .26s ease both;}
 /* ── Lock progress overlay + success flourish ───────────────────────────── */
 body.lo-open{overflow:hidden;}
 .lock-overlay{position:fixed;inset:0;display:none;place-items:center;z-index:9999;
-  background:rgba(17,19,38,.55);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);}
+  background:rgba(17,19,38,.55);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
+  opacity:1;transition:opacity .34s ease;}
 .lock-overlay.show{display:grid;}
+/* Smooth dismissal: JS adds .lo-closing (keeps display:grid via .show) so the whole
+   overlay — backdrop + card — fades to 0 over .34s, THEN JS drops .show. Without this
+   the overlay used display:none and vanished in one frame (the "abrupt" pop-out). */
+.lock-overlay.lo-closing{opacity:0;}
+.lock-overlay.lo-closing .lo-card{transition:transform .34s ease,opacity .34s ease;
+  transform:scale(.97);}
+@media (prefers-reduced-motion:reduce){
+  .lock-overlay{transition:none;}
+  .lock-overlay.lo-closing .lo-card{transition:none;transform:none;}}
 .lo-card{background:#fff;border-radius:18px;padding:30px 34px 26px;width:min(430px,92vw);
   box-shadow:0 24px 64px rgba(15,17,40,.34);text-align:center;animation:loPop .32s cubic-bezier(.2,.9,.3,1.25) both;}
 @keyframes loPop{from{transform:scale(.92);opacity:0}to{transform:scale(1);opacity:1}}
