@@ -120,6 +120,21 @@ def set_timing(row_id, ms, q=None, db_ms=None) -> None:
         pass
 
 
+def set_detail(row_id, detail) -> None:
+    """Overwrite an audit row's ``detail`` after the fact (e.g. stamp Lock&Record's
+    phase timing so it shows in the Audit Log). Best-effort."""
+    if not row_id:
+        return
+    try:
+        with _conn() as (cur, d):
+            ph = d['ph']
+            cur.execute(f"UPDATE audit_log SET detail={ph} WHERE id={ph}",
+                        (str(detail or '')[:500], row_id))
+            cur.connection.commit()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def recent(limit: int = 300, user: str = '', q: str = '', env: str = '') -> list[dict]:
     """Most-recent audit rows (newest first) for the staff Audit Log page.
     ``env`` filters by where it ran: 'served' = the deployed service, 'local' =

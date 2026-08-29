@@ -1659,10 +1659,16 @@ class Processor:
 
     # ── phase 2: confirm (push headers + lines) ─────────────────────────
     def confirm(self, actions=None, as_of=None, recorded_by=None) -> dict:
+        import time as _t                       # phase timing (additive; measure only)
+        _tm = {}
+        _p = _t.perf_counter()
         err = self._run()
+        _tm['run_ms'] = round((_t.perf_counter() - _p) * 1000)
         if err:
             return err
+        _p = _t.perf_counter()
         output_path = self._export(actions)   # decisions → Summary Excluded/Final cols
+        _tm['export_ms'] = round((_t.perf_counter() - _p) * 1000)
         if output_path is None:
             return {'ok': False, 'error': "Workbook export failed.",
                     'warnings': self.warnings}
@@ -1680,11 +1686,13 @@ class Processor:
         try:
             # Build the line rows first — the run_id is stamped inside the atomic
             # write. _lines() applies EAN fixes (correct ean + received_ean audit).
+            _p = _t.perf_counter()
             rows = self._lines(output_file=str(output_path), actions=actions,
                                as_of=as_of)
             rec = lines_store.record_run_atomic(
                 self.result, self.marketplace, self.warehouse, str(output_path),
                 rows, as_of=as_of, recorded_by=recorded_by)
+            _tm['record_ms'] = round((_t.perf_counter() - _p) * 1000)
             out['run_id'] = rec.get('run_id')
             out['new_orders'] = rec.get('new_orders', 0)
             out['lines_recorded'] = rec.get('lines_recorded', 0)
@@ -1698,6 +1706,7 @@ class Processor:
         # These polish the ALREADY-COMMITTED run (backfill amount-less TO value,
         # PDF po/exp dates, friendly location). A failure here must NOT flip the
         # run to "not recorded" — the record is safe; just warn.
+        _p = _t.perf_counter()
         try:
             if self._amountless_to():
                 upd = lines_store.set_order_value(
@@ -1715,6 +1724,19 @@ class Processor:
             self.warnings.append(
                 f"Run recorded OK, but a post-record backfill was skipped "
                 f"({type(e).__name__}).")
+        _tm['enrich_ms'] = round((_t.perf_counter() - _p) * 1000)
+        # Phase breakdown so we can see WHERE Lock&Record's time goes (measure-first,
+        # before deciding whether to defer the workbook build off the record path).
+        out['timing'] = _tm
+        out['timing_str'] = (
+            'run %.1fs · export %.1fs · record %.1fs · enrich %.1fs' % (
+                _tm.get('run_ms', 0) / 1000.0, _tm.get('export_ms', 0) / 1000.0,
+                _tm.get('record_ms', 0) / 1000.0, _tm.get('enrich_ms', 0) / 1000.0))
+        try:
+            import logging
+            logging.getLogger(__name__).info('confirm phase timing — %s', out['timing_str'])
+        except Exception:  # noqa: BLE001
+            pass
         return out
 
     #: When True, ``_source_dates_by_po`` OVERWRITES the engine's po_date/exp_date

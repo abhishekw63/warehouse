@@ -2483,6 +2483,17 @@ def confirm(request, token):
         _odb._stable_bust('summary:')
     except Exception:  # noqa: BLE001
         pass
+    # MEASURE-FIRST: surface the Lock&Record phase breakdown (run·export·record·enrich)
+    # on this request's Audit Log row, so we can see WHERE the >1min goes before cutting
+    # anything (e.g. deferring the workbook build off the lock path). Best-effort.
+    try:
+        _ts = res.get('timing_str')
+        _aid = getattr(request, '_audit_id', None)
+        if _ts and _aid:
+            from core import audit as _aud
+            _aud.set_detail(_aid, 'lock ' + _ts)
+    except Exception:  # noqa: BLE001
+        pass
     if was_draft:                    # finalised → no longer a parked draft
         try:
             from .services import draft_store
