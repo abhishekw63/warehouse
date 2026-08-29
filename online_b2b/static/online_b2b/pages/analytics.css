@@ -1,8 +1,10 @@
 /* online_b2b/analytics.html — page styles (separated from template). Uses shared tokens. */
-/* Per-PO average sub-line under the Daily-Intake KPI cards (avg qty/value/items). */
+/* Average sub-lines under the Daily-Intake KPI cards: primary = avg/day (dynamic
+   to the selected window), secondary = avg/PO (lighter). */
 .an-daily .hub-kpis .hk{position:relative;}
 .an-daily .hk-avg{margin-top:5px;font-size:11px;font-weight:700;letter-spacing:.01em;
   color:var(--muted);font-variant-numeric:tabular-nums;}
+.an-daily .hk-avg.hk-avg-po{margin-top:1px;font-size:10.5px;font-weight:600;opacity:.72;}
 .an-tabs{display:flex;gap:0;margin:4px 0 20px;border-bottom:1px solid var(--border);flex-wrap:wrap;align-items:flex-end;}
   /* SCOR pillar groups — a small pillar label sits above each cluster of tabs;
      groups are separated by a faint divider */

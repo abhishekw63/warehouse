@@ -523,7 +523,29 @@ def _daily_ctx(request):
                 lbl = kk[0].get('label') if kk else m.get('marketplace', '')
                 seg_node['children'].append(_leaf(m.get('marketplace', ''), m, seg, lbl))
         breakdown.append(seg_node)
-    return {'days': days, 'start': start, 'end': end,
+
+    # ── Per-DAY averages (avg daily POs / qty / value / line items) ──────────
+    # Divisor = number of CALENDAR days in the selected window, so the figure is
+    # DYNAMIC: 7d → ÷7, 30d → ÷30, a custom range → its span, a single day → ÷1.
+    # Written onto hier.total so the KPI cards render "avg N / day" alongside the
+    # existing "avg N / PO". (Divide-by-zero guarded via max(1, …).)
+    if start and end:
+        try:
+            period_days = (_dt.date.fromisoformat(end)
+                           - _dt.date.fromisoformat(start)).days + 1
+        except ValueError:
+            period_days = 1
+    else:
+        period_days = days
+    period_days = max(1, period_days)
+    _t = hier.get('total') or {}
+    _t['avg_day_pos'] = round((_t.get('pos') or 0) / period_days, 1)
+    _t['avg_day_qty'] = round((_t.get('qty') or 0) / period_days)
+    _t['avg_day_value'] = round((_t.get('value') or 0) / period_days, 2)
+    _t['avg_day_items'] = round((_t.get('items') or 0) / period_days, 1)
+    hier['total'] = _t
+
+    return {'days': days, 'start': start, 'end': end, 'period_days': period_days,
             'hier': hier, 'daily': daily, 'breakdown': breakdown,
             'facilities': facilities}
 
