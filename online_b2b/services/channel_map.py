@@ -104,6 +104,102 @@ def upsert_code(channel: str, sku_code, item_no=None, ean=None,
     return {'ok': True, 'channel': channel, 'sku_code': sku}
 
 
+def _norm_col(c) -> str:
+    return ''.join(ch for ch in str(c).strip().lower() if ch.isalnum())
+
+
+# Candidate column names (normalised) for the vendor SKU code + the EAN, so ONE
+# uploader handles every channel's master layout (HG 'sku_code'/'ENN code',
+# Swiggy 'SkuCode'/'EAN', …) without per-channel code.
+_SKU_COLS = ('skucode', 'sku', 'vendorsku', 'vendorcode', 'code', 'itemcode')
+_EAN_COLS = ('enncode', 'ean', 'eancode', 'gtin', 'barcode', 'eanupccode')
+
+
+def load_master_file(path: str, channel: str) -> dict:
+    """Bulk-upsert a channel's **SKU→EAN** master (any .xlsx/.csv, all sheets)
+    into ``channel_sku_map``. Auto-detects the vendor-SKU-code + EAN columns by
+    name, resolves ``item_no`` from item_master, keeps manual rows, and reports
+    unmapped EANs. ``{ok, parsed, inserted, updated, unmapped, error}``."""
+    import datetime as _dt
+
+    import pandas as pd
+    if not channel:
+        return {'ok': False, 'error': 'Pick a channel first.'}
+    ensure_table()
+    try:
+        pairs: dict = {}                      # {sku_code: ean}, first non-blank wins
+        if str(path).lower().endswith('.csv'):
+            frames = [pd.read_csv(path, dtype=str)]
+        else:
+            frames = []
+            for sh in pd.ExcelFile(path).sheet_names:
+                raw = pd.read_excel(path, sheet_name=sh, header=None, dtype=str)
+                hdr = None
+                for i in range(min(6, len(raw))):
+                    norm = {_norm_col(c) for c in raw.iloc[i]
+                            if c is not None and str(c).strip()}
+                    if (norm & set(_SKU_COLS)) and (norm & set(_EAN_COLS)):
+                        hdr = i
+                        break
+                if hdr is not None:
+                    frames.append(pd.read_excel(path, sheet_name=sh, header=hdr, dtype=str))
+        for df in frames:
+            low = {_norm_col(c): c for c in df.columns}
+            sc = next((low[k] for k in _SKU_COLS if k in low), None)
+            en = next((low[k] for k in _EAN_COLS if k in low), None)
+            if not sc or not en:
+                continue
+            for _, r in df.iterrows():
+                sku = _clean(r[sc])
+                ean = _clean(r[en])
+                if sku and ean and ean.lower() != 'nan' and sku not in pairs:
+                    pairs[sku] = ean
+        if not pairs:
+            return {'ok': False, 'error': 'No sku_code + EAN columns detected in the file.'}
+        now = _dt.datetime.now()
+        ins = upd = unmapped = 0
+        with _conn() as (cur, d):
+            ph = d['ph']
+            cur.execute('SELECT ean, item_no FROM item_master')
+            e2i = {str(a): str(b) for a, b in cur.fetchall()}
+            for sku, ean in pairs.items():
+                item = e2i.get(ean, '')
+                if not item:
+                    unmapped += 1
+                cur.execute(f"SELECT id FROM {_TABLE} WHERE channel={ph} AND sku_code={ph}",
+                            (channel, sku))
+                row = cur.fetchone()
+                if row:
+                    cur.execute(f"UPDATE {_TABLE} SET ean={ph}, item_no={ph}, "
+                                f"source='upload', updated_at={ph} WHERE id={ph}",
+                                (ean, item or None, now, row[0]))
+                    upd += 1
+                else:
+                    cur.execute(f"INSERT INTO {_TABLE} (channel,sku_code,ean,item_no,"
+                                f"source,updated_at) VALUES ({ph},{ph},{ph},{ph},"
+                                f"'upload',{ph})", (channel, sku, ean, item or None, now))
+                    ins += 1
+            cur.connection.commit()
+        return {'ok': True, 'parsed': len(pairs), 'inserted': ins,
+                'updated': upd, 'unmapped': unmapped}
+    except Exception as e:  # noqa: BLE001
+        _log.exception('load_master_file failed')
+        return {'ok': False, 'error': f"{type(e).__name__}: {e}"}
+
+
+def delete_code(row_id) -> dict:
+    """Delete ONE ``channel_sku_map`` row by id."""
+    try:
+        with _conn() as (cur, d):
+            ph = d['ph']
+            cur.execute(f"DELETE FROM {_TABLE} WHERE id={ph}", (int(row_id),))
+            n = cur.rowcount
+            cur.connection.commit()
+        return {'ok': bool(n), 'deleted': n or 0}
+    except Exception as e:  # noqa: BLE001
+        return {'ok': False, 'error': str(e)}
+
+
 def table_count() -> int:
     try:
         with _conn() as (cur, d):

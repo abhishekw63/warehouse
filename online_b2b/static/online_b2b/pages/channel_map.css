@@ -1,0 +1,37 @@
+/* online_b2b/channel_map.html — Channel SKU Map page (separated from template). */
+.cm-kpis{margin:14px 0 20px;}
+.cm-forms{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;margin-bottom:18px;}
+.cm-card{padding:18px 20px;display:flex;flex-direction:column;gap:11px;}
+.cm-card h2{margin:0;font-size:15px;font-weight:800;color:var(--text);letter-spacing:-.01em;}
+.cm-hint{margin:0;font-size:12px;color:var(--muted);line-height:1.5;}
+.cm-fld{display:flex;flex-direction:column;gap:4px;font-size:12px;font-weight:700;color:var(--text-2);}
+.cm-fld span small{font-weight:500;color:var(--muted);}
+.cm-fld input{padding:9px 11px;border:1px solid var(--border);border-radius:9px;background:var(--surface-2);
+  color:var(--text);font-size:13px;font-weight:500;transition:border-color .15s,box-shadow .15s;}
+.cm-fld input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);background:var(--surface);}
+.cm-card .btn-primary{align-self:flex-start;margin-top:4px;}
+
+.cm-list{padding:0;overflow:hidden;}
+.cm-filter{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:14px 18px;border-bottom:1px solid var(--border);
+  background:linear-gradient(180deg,color-mix(in srgb,var(--surface-2) 40%,var(--surface)),var(--surface));}
+.cm-filter select,.cm-filter input{padding:8px 11px;border:1px solid var(--border);border-radius:9px;
+  background:var(--surface);color:var(--text);font-size:13px;}
+.cm-filter input[type=search]{min-width:240px;flex:1 1 240px;}
+.cm-count{margin-left:auto;font-size:12px;color:var(--muted);font-weight:600;}
+
+.cm-scroll{overflow:auto;max-height:64vh;}
+.cm-table{border-collapse:separate;border-spacing:0;width:100%;font-size:13px;}
+.cm-table thead th{position:sticky;top:0;z-index:1;background:var(--surface-2);text-align:left;
+  padding:10px 16px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;
+  color:var(--muted);border-bottom:1px solid var(--border);}
+.cm-table td{padding:9px 16px;border-bottom:1px solid var(--border-2);color:var(--text);vertical-align:middle;}
+.cm-table tbody tr:hover{background:var(--surface-2);}
+.cm-table .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums;}
+.cm-table td.r{text-align:right;}
+.cm-src{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:2px 8px;border-radius:20px;
+  color:var(--muted);background:color-mix(in srgb,var(--muted) 12%,transparent);}
+.cm-src-manual{color:#6d28d9;background:color-mix(in srgb,#7c3aed 14%,transparent);}
+.cm-src-upload,.cm-src-dec25{color:#0e6b85;background:color-mix(in srgb,#2193b0 14%,transparent);}
+.cm-del{background:none;border:none;cursor:pointer;font-size:14px;opacity:.55;transition:opacity .13s,transform .13s;}
+.cm-del:hover{opacity:1;transform:scale(1.12);}
+.cm-none{text-align:center;color:var(--muted);padding:26px;}

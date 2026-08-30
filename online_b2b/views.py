@@ -3432,6 +3432,86 @@ def item_master_add(request):
     return redirect('b2b_item_master')
 
 
+# ── Channel SKU Map — per-channel vendor SKU-code → EAN → item (Swiggy/HG/…) ──
+class ChannelMapView(LoginRequiredMixin, TemplateView):
+    """`/b2b/channel-map/` — browse per-channel vendor SKU codes, upload a channel
+    master (SKU→EAN, any layout), or add one mapping manually. The engine resolves
+    a code-only channel's SKU → EAN → item through this single table."""
+    template_name = 'online_b2b/channel_map.html'
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        from .services import channel_map as cm
+        ch = (self.request.GET.get('channel') or '').strip()
+        q = (self.request.GET.get('q') or '').strip()
+        ctx['status'] = cm.status()
+        ctx['data'] = cm.list_codes(ch, q, limit=500)
+        return ctx
+
+
+@login_required
+@require_POST
+def channel_map_upload(request):
+    """Upload a channel master (SKU→EAN, any .xlsx/.csv) → bulk-upsert into
+    channel_sku_map for the chosen channel."""
+    from django.urls import reverse
+    from .services import channel_map as cm
+    channel = (request.POST.get('channel') or '').strip()
+    f = request.FILES.get('master_file')
+    if not channel or not f:
+        messages.error(request, 'Pick a channel and choose a file.')
+        return redirect('b2b_channel_map')
+    import os as _os
+    import tempfile
+    fd, tmp = tempfile.mkstemp(suffix=(Path(f.name).suffix or '.xlsx'))
+    _os.close(fd)
+    try:
+        common.save_upload(f, Path(tmp))
+        res = cm.load_master_file(tmp, channel)
+    finally:
+        try:
+            _os.remove(tmp)
+        except OSError:
+            pass
+    if res.get('ok'):
+        extra = (f", {res['unmapped']} EAN(s) not in item master"
+                 if res.get('unmapped') else '')
+        messages.success(request, f"{channel}: {res['parsed']} codes loaded "
+                         f"({res['inserted']} new · {res['updated']} updated{extra}).")
+    else:
+        messages.error(request, res.get('error', 'Upload failed.'))
+    return redirect(f"{reverse('b2b_channel_map')}?channel={channel}")
+
+
+@login_required
+@require_POST
+def channel_map_add(request):
+    """Add/replace ONE (channel, sku_code) mapping manually (durable)."""
+    from django.urls import reverse
+    from .services import channel_map as cm
+    channel = (request.POST.get('channel') or '').strip()
+    sku = (request.POST.get('sku_code') or '').strip()
+    ean = (request.POST.get('ean') or '').strip()
+    item = (request.POST.get('item_no') or '').strip()
+    res = cm.upsert_code(channel, sku, item_no=item or None, ean=ean or None,
+                         source='manual')
+    if res.get('ok'):
+        messages.success(request, f"Saved {channel} · {sku}.")
+    else:
+        messages.error(request, res.get('error', 'Could not save — channel and sku_code are required.'))
+    return redirect(f"{reverse('b2b_channel_map')}?channel={channel}")
+
+
+@login_required
+@require_POST
+def channel_map_delete(request, row_id):
+    """Delete ONE channel_sku_map row."""
+    from .services import channel_map as cm
+    cm.delete_code(row_id)
+    messages.info(request, 'Mapping deleted.')
+    return redirect(request.META.get('HTTP_REFERER') or 'b2b_channel_map')
+
+
 # ── Ship-To Mapping (DB-backed; the bundled Ship to B2B.xlsx is retired) ─────
 _STM_UPLOADS = _MEDIA / 'b2b_ship_to'
 

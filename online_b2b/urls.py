@@ -37,6 +37,12 @@ urlpatterns = [
     path('batch/<str:token>/preview/', _batch.BatchPreviewView.as_view(), name='b2b_batch_preview'),
     # ── Inventory — Fill-Rate cockpit (standalone; delete these lines + the
     #    module/service/templates/sidebar link to remove the whole feature) ────
+    # Channel SKU Map — per-channel vendor SKU-code → EAN → item (Swiggy/HG/…)
+    path('channel-map/', views.ChannelMapView.as_view(), name='b2b_channel_map'),
+    path('channel-map/upload/', views.channel_map_upload, name='b2b_channel_map_upload'),
+    path('channel-map/add/', views.channel_map_add, name='b2b_channel_map_add'),
+    path('channel-map/<int:row_id>/delete/', views.channel_map_delete,
+         name='b2b_channel_map_delete'),
     path('inventory/', _inv.inventory, name='b2b_inventory'),
     path('inventory/export/', _inv.inventory_export, name='b2b_inventory_export'),
     path('inventory/bin-coverage/', _inv.inventory_bin_coverage, name='b2b_inventory_bin_coverage'),
