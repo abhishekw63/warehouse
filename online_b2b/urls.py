@@ -38,7 +38,7 @@ urlpatterns = [
     # ── Inventory — Fill-Rate cockpit (standalone; delete these lines + the
     #    module/service/templates/sidebar link to remove the whole feature) ────
     # Channel SKU Map — per-channel vendor SKU-code → EAN → item (Swiggy/HG/…)
-    path('channel-map/', views.ChannelMapView.as_view(), name='b2b_channel_map'),
+    path('channel-map/', views.channel_map_redirect, name='b2b_channel_map'),
     path('channel-map/upload/', views.channel_map_upload, name='b2b_channel_map_upload'),
     path('channel-map/add/', views.channel_map_add, name='b2b_channel_map_add'),
     path('channel-map/<int:row_id>/delete/', views.channel_map_delete,

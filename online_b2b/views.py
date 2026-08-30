@@ -3121,9 +3121,17 @@ class ItemMasterView(LoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
+        from .services import channel_map as cm
         from .services import item_master_loader as iml
         ctx['status'] = iml.status()
         ctx['overview'] = iml.list_items(self.request.GET.get('q', ''), limit=100)
+        # ── Channel SKU Map (second tab on this page) — its own params so they
+        #    never collide with Item Master's own search (`q`). ──
+        g = self.request.GET
+        ctx['active_tab'] = 'channel-map' if g.get('tab') == 'channel-map' else 'item'
+        ctx['cm_status'] = cm.status()
+        ctx['cm_data'] = cm.list_codes((g.get('cm_channel') or '').strip(),
+                                        (g.get('cm_q') or '').strip(), limit=500)
         return ctx
 
 
@@ -3437,20 +3445,24 @@ def item_master_add(request):
 
 
 # ── Channel SKU Map — per-channel vendor SKU-code → EAN → item (Swiggy/HG/…) ──
-class ChannelMapView(LoginRequiredMixin, TemplateView):
-    """`/b2b/channel-map/` — browse per-channel vendor SKU codes, upload a channel
-    master (SKU→EAN, any layout), or add one mapping manually. The engine resolves
-    a code-only channel's SKU → EAN → item through this single table."""
-    template_name = 'online_b2b/channel_map.html'
+@login_required
+def channel_map_redirect(request):
+    """`/b2b/channel-map/` now lives as a tab on the Item Master page. Redirect
+    any old link/bookmark there, carrying a channel filter through as cm_channel.
+    (Kept as a redirect so nothing 404s — the standalone page was retired.)"""
+    from django.urls import reverse
+    ch = (request.GET.get('channel') or request.GET.get('cm_channel') or '').strip()
+    url = f"{reverse('b2b_item_master')}?tab=channel-map"
+    if ch:
+        url += f"&cm_channel={ch}"
+    return redirect(url)
 
-    def get_context_data(self, **kwargs):
-        ctx = super().get_context_data(**kwargs)
-        from .services import channel_map as cm
-        ch = (self.request.GET.get('channel') or '').strip()
-        q = (self.request.GET.get('q') or '').strip()
-        ctx['status'] = cm.status()
-        ctx['data'] = cm.list_codes(ch, q, limit=500)
-        return ctx
+
+def _channel_map_back(channel: str = '') -> str:
+    """The Item Master 'Channel SKU Map' tab URL to return to after a POST."""
+    from django.urls import reverse
+    url = f"{reverse('b2b_item_master')}?tab=channel-map"
+    return url + (f"&cm_channel={channel}" if channel else '')
 
 
 @login_required
@@ -3458,13 +3470,12 @@ class ChannelMapView(LoginRequiredMixin, TemplateView):
 def channel_map_upload(request):
     """Upload a channel master (SKU→EAN, any .xlsx/.csv) → bulk-upsert into
     channel_sku_map for the chosen channel."""
-    from django.urls import reverse
     from .services import channel_map as cm
     channel = (request.POST.get('channel') or '').strip()
     f = request.FILES.get('master_file')
     if not channel or not f:
         messages.error(request, 'Pick a channel and choose a file.')
-        return redirect('b2b_channel_map')
+        return redirect(_channel_map_back())
     import os as _os
     import tempfile
     fd, tmp = tempfile.mkstemp(suffix=(Path(f.name).suffix or '.xlsx'))
@@ -3484,14 +3495,13 @@ def channel_map_upload(request):
                          f"({res['inserted']} new · {res['updated']} updated{extra}).")
     else:
         messages.error(request, res.get('error', 'Upload failed.'))
-    return redirect(f"{reverse('b2b_channel_map')}?channel={channel}")
+    return redirect(_channel_map_back(channel))
 
 
 @login_required
 @require_POST
 def channel_map_add(request):
     """Add/replace ONE (channel, sku_code) mapping manually (durable)."""
-    from django.urls import reverse
     from .services import channel_map as cm
     channel = (request.POST.get('channel') or '').strip()
     sku = (request.POST.get('sku_code') or '').strip()
@@ -3503,7 +3513,7 @@ def channel_map_add(request):
         messages.success(request, f"Saved {channel} · {sku}.")
     else:
         messages.error(request, res.get('error', 'Could not save — channel and sku_code are required.'))
-    return redirect(f"{reverse('b2b_channel_map')}?channel={channel}")
+    return redirect(_channel_map_back(channel))
 
 
 @login_required
@@ -3513,7 +3523,7 @@ def channel_map_delete(request, row_id):
     from .services import channel_map as cm
     cm.delete_code(row_id)
     messages.info(request, 'Mapping deleted.')
-    return redirect(request.META.get('HTTP_REFERER') or 'b2b_channel_map')
+    return redirect(request.META.get('HTTP_REFERER') or _channel_map_back())
 
 
 # ── Ship-To Mapping (DB-backed; the bundled Ship to B2B.xlsx is retired) ─────

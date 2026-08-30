@@ -1,7 +1,8 @@
 {% extends 'online_b2b/base_b2b.html' %}
 {% load static b2b_extras %}
 {% block title %}Item Master — Order Management{% endblock %}
-{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
+<link rel="stylesheet" href="{% static 'online_b2b/pages/channel_map.css' %}">{% endblock %}
 
 {% block breadcrumb %}
     <a href="{% url 'departments' %}">Departments</a>
@@ -18,6 +19,18 @@
     <div class="head-actions">
     </div>
   </div>
+
+  {# ── Tabs: Item Master | Channel SKU Map (pure-CSS radios; server pre-checks
+       from ?tab=). Removable: delete this block + _channel_map_body.html. ── #}
+  <div class="im-tabs">
+    <input type="radio" name="im-tab" id="tab-item" class="im-tabradio"{% if active_tab != 'channel-map' %} checked{% endif %}>
+    <input type="radio" name="im-tab" id="tab-cmap" class="im-tabradio"{% if active_tab == 'channel-map' %} checked{% endif %}>
+    <div class="im-tabbar" role="tablist">
+      <label for="tab-item" class="im-tab" role="tab">Item Master</label>
+      <label for="tab-cmap" class="im-tab" role="tab">Channel SKU Map</label>
+    </div>
+
+    <div class="im-tabpanel im-panel-item" role="tabpanel">
 
   {% if status.ok %}
   <div class="im-kpis reveal">
@@ -120,6 +133,12 @@
     </table>
     </div>
   </div>
+    </div><!-- /im-panel-item -->
+
+    <div class="im-tabpanel im-panel-cmap" role="tabpanel">
+      {% include 'online_b2b/_channel_map_body.html' %}
+    </div>
+  </div><!-- /im-tabs -->
 </div>
 
 <script type="application/json" id="item_master-cfg">

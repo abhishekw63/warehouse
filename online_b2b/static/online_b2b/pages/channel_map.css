@@ -35,3 +35,17 @@
 .cm-del{background:none;border:none;cursor:pointer;font-size:14px;opacity:.55;transition:opacity .13s,transform .13s;}
 .cm-del:hover{opacity:1;transform:scale(1.12);}
 .cm-none{text-align:center;color:var(--muted);padding:26px;}
+.cm-lead{margin:0 0 16px;max-width:70ch;}
+
+/* ── Item Master ⇄ Channel SKU Map tabs (pure-CSS radio switch, no JS) ─────── */
+.im-tabradio{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none;}
+.im-tabbar{display:flex;gap:4px;margin:4px 0 20px;border-bottom:1px solid var(--border);}
+.im-tab{cursor:pointer;padding:9px 16px;font-size:13.5px;font-weight:700;color:var(--muted);
+  border-bottom:2px solid transparent;margin-bottom:-1px;transition:color .14s,border-color .14s;user-select:none;}
+.im-tab:hover{color:var(--text-2);}
+.im-tabpanel{display:none;}
+#tab-item:checked ~ .im-tabbar label[for="tab-item"],
+#tab-cmap:checked ~ .im-tabbar label[for="tab-cmap"]{color:var(--accent);border-bottom-color:var(--accent);}
+#tab-item:checked ~ .im-panel-item{display:block;}
+#tab-cmap:checked ~ .im-panel-cmap{display:block;}
+.im-tab:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px;}

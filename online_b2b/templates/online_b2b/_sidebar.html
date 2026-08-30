@@ -38,12 +38,10 @@
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='warehouse' %}</span><span class="side-label">Inventory</span></a>
     <a href="{% url 'b2b_availability' %}" class="sn{% if '/availability' in request.path %} on{% endif %}" title="Availability Check">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='scan' %}</span><span class="side-label">Availability Check</span></a>
-    <a href="{% url 'b2b_item_master' %}" class="sn{% if '/item-master' in request.path %} on{% endif %}" title="Item Master">
+    <a href="{% url 'b2b_item_master' %}" class="sn{% if '/item-master' in request.path %} on{% endif %}" title="Item Master — items + Channel SKU Map (Swiggy / HG)">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='barcode' %}</span><span class="side-label">Item Master</span></a>
     <a href="{% url 'b2b_ship_to' %}" class="sn{% if '/ship-to' in request.path %} on{% endif %}" title="Ship-To Mapping">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='pin' %}</span><span class="side-label">Ship-To Mapping</span></a>
-    <a href="{% url 'b2b_channel_map' %}" class="sn{% if '/channel-map' in request.path %} on{% endif %}" title="Channel SKU Map — per-channel vendor SKU code → EAN → item (Swiggy / HG)">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='table' %}</span><span class="side-label">Channel SKU Map</span></a>
     <a href="{% url 'b2b_eka_data' %}" class="sn{% if '/eka-data' in request.path %} on{% endif %}" title="EKA Data — margin % · Type (SO/TO) · store registry">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='database' %}</span><span class="side-label">EKA Data</span></a>
     <a href="{% url 'b2b_issues' %}" class="sn{% if '/issues' in request.path %} on{% endif %}" title="Issues">

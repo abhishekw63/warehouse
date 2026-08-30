@@ -1,0 +1,91 @@
+{% comment %}
+Channel SKU Map — shared body. Rendered inside the Item Master page (a tab) and
+nowhere else now (the standalone /channel-map/ route redirects here). Context:
+  cm_status  = channel_map.status()      cm_data = channel_map.list_codes(...)
+Filter params are cm_channel / cm_q (NOT channel / q) so they never collide with
+Item Master's own search on this shared page. Removable: delete this file + the
+tab in item_master.html to drop the feature.
+{% endcomment %}
+{% csrf_token %}
+
+<p class="src cm-lead">Per-channel <b>vendor SKU code → EAN → item</b> for code-only channels (Swiggy, HG…).
+  The engine resolves a channel's SKU through this one table. Upload a master or add a mapping by hand.</p>
+
+{# ── KPI cards: total + per-channel ── #}
+<div class="hub-kpis cm-kpis" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr));">
+  <div class="hk"><div class="n">{{ cm_status.total|default:0 }}</div><div class="l">Total mappings</div></div>
+  {% for c in cm_status.by_channel %}
+  <a class="hk" href="?tab=channel-map&cm_channel={{ c.channel|urlencode }}"><div class="n">{{ c.count }}</div><div class="l">{{ c.channel }}</div></a>
+  {% endfor %}
+</div>
+
+<div class="cm-forms">
+  {# ── Upload a channel master (SKU→EAN) ── #}
+  <form class="im-card cm-card" method="post" action="{% url 'b2b_channel_map_upload' %}" enctype="multipart/form-data">
+    {% csrf_token %}
+    <h2>⬆ Upload a master</h2>
+    <p class="cm-hint">Any .xlsx/.csv with a <b>SKU code</b> column and an <b>EAN</b> column (all sheets scanned). Existing codes update; manual rows are kept.</p>
+    <label class="cm-fld"><span>Channel</span>
+      <input type="text" name="channel" list="cm-channels" placeholder="e.g. HG, Swiggy" required></label>
+    <label class="cm-fld"><span>Master file</span>
+      <input type="file" name="master_file" accept=".xlsx,.xls,.csv" required></label>
+    <button class="btn-primary" type="submit">Upload &amp; update</button>
+  </form>
+
+  {# ── Add ONE mapping manually ── #}
+  <form class="im-card cm-card" method="post" action="{% url 'b2b_channel_map_add' %}">
+    {% csrf_token %}
+    <h2>＋ Add a mapping</h2>
+    <p class="cm-hint">Add/replace one <b>(channel, SKU code)</b>. Give the EAN (item is resolved from the master) or the item no directly.</p>
+    <label class="cm-fld"><span>Channel</span>
+      <input type="text" name="channel" list="cm-channels" placeholder="e.g. HG" required></label>
+    <label class="cm-fld"><span>Vendor SKU code</span>
+      <input type="text" name="sku_code" placeholder="e.g. 565743" required></label>
+    <label class="cm-fld"><span>EAN</span>
+      <input type="text" name="ean" placeholder="e.g. 8906121641769"></label>
+    <label class="cm-fld"><span>Item No <small>(optional)</small></span>
+      <input type="text" name="item_no" placeholder="resolved from EAN if blank"></label>
+    <button class="btn-primary" type="submit">Save mapping</button>
+  </form>
+</div>
+
+<datalist id="cm-channels">
+  {% for c in cm_data.channels %}<option value="{{ c }}">{% endfor %}
+</datalist>
+
+{# ── Browse / filter ── #}
+<div class="im-card cm-list">
+  <form class="cm-filter" method="get">
+    <input type="hidden" name="tab" value="channel-map">
+    <select name="cm_channel" onchange="this.form.submit()">
+      <option value="">All channels</option>
+      {% for c in cm_data.channels %}<option value="{{ c }}"{% if c == cm_data.channel %} selected{% endif %}>{{ c }}</option>{% endfor %}
+    </select>
+    <input type="search" name="cm_q" value="{{ cm_data.q }}" placeholder="Search SKU code / EAN / item…">
+    <button class="btn-ghost" type="submit">Filter</button>
+    <span class="cm-count">{{ cm_data.total }} row{{ cm_data.total|pluralize }}{% if cm_data.channel %} in {{ cm_data.channel }}{% endif %}</span>
+  </form>
+  <div class="cm-scroll">
+    <table class="cm-table">
+      <thead><tr><th>Channel</th><th>Vendor SKU</th><th>EAN</th><th>Item No</th><th>Source</th><th></th></tr></thead>
+      <tbody>
+        {% for r in cm_data.rows %}
+        <tr>
+          <td>{{ r.channel }}</td>
+          <td class="mono">{{ r.sku_code }}</td>
+          <td class="mono">{{ r.ean|default:"—" }}</td>
+          <td class="mono">{{ r.item_no|default:"—" }}</td>
+          <td><span class="cm-src cm-src-{{ r.source|default:'excel' }}">{{ r.source|default:"excel" }}</span></td>
+          <td class="r">
+            <form method="post" action="{% url 'b2b_channel_map_delete' r.id %}" onsubmit="return confirm('Delete this mapping?');" style="display:inline;">
+              {% csrf_token %}<button class="cm-del" type="submit" title="Delete">🗑</button>
+            </form>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="cm-none">No mappings{% if cm_data.channel %} for {{ cm_data.channel }}{% endif %}{% if cm_data.q %} matching “{{ cm_data.q }}”{% endif %}.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
