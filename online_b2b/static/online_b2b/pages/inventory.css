@@ -241,3 +241,8 @@
   @keyframes ivpulse{0%,100%{opacity:1;}50%{opacity:.45;}}
   .iv-cov-apply{font-size:12.5px;padding:6px 14px;}
   @media (prefers-reduced-motion:reduce){.iv-cov-bin.mv-out,.iv-cov-bin.mv-in,.iv-cov-dirty{animation:none;}}
+
+/* Skip layout/paint for off-screen stock rows on the 0.1-CPU tier (mirrors the
+   tracker rule). Only affects rows scrolled out of view; on-screen entrance
+   animations are unaffected. contain-intrinsic-size ≈ real row height. */
+.iv-stock tbody tr{content-visibility:auto;contain-intrinsic-size:0 40px;}

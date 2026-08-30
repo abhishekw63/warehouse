@@ -199,3 +199,6 @@
   .av-ppane.on{animation:avFade .3s cubic-bezier(.22,1,.36,1) both;}
   @media (prefers-reduced-motion:reduce){.av-ppane.on{animation:none;}}
   .av-runs-empty{padding:36px 20px;text-align:center;color:var(--muted);font-size:13.5px;}
+
+/* content-visibility: don't lay out off-screen line rows (0.1-CPU tier win). */
+.av-lines table tbody tr{content-visibility:auto;contain-intrinsic-size:0 34px;}

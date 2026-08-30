@@ -445,23 +445,30 @@
     ".tat-prog__track > span", ".av-bar > span", ".dt-parent-bar > span",
     "#dt-ovfill"
   ].join(", ");
+  // Native IntersectionObserver + a CSS width-transition — replaces the 63 KB
+  // Motion One lib that used to load on EVERY page for just this one effect.
+  // Same graceful fallbacks: reduced-motion OR no IntersectionObserver → bars are
+  // left at full width (we never zero them), so nothing ever hides.
   B2B.revealBars = function (root) {
     var reduce = w.matchMedia && w.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    var M = w.Motion;
-    if (reduce || !M || !M.animate || !M.inView) return;   // graceful: bars stay filled
+    if (reduce || !("IntersectionObserver" in w)) return;  // graceful: bars stay filled
+    var io = new IntersectionObserver(function (entries, obs) {
+      entries.forEach(function (en) {
+        if (!en.isIntersecting) return;
+        var el = en.target;
+        obs.unobserve(el);
+        w.requestAnimationFrame(function () { el.style.width = el._barTarget; });
+      });
+    }, { threshold: 0.15 });
     (root || d).querySelectorAll(BAR_SEL).forEach(function (el) {
       if (el._barred) return;
       var target = (el.style && el.style.width) || "";
       if (target.indexOf("%") < 0) return;                 // only inline-% bars
       el._barred = true;
+      el._barTarget = target;
+      el.style.transition = "width .9s cubic-bezier(.2,.8,.2,1)";
       el.style.width = "0%";
-      var fired = false;
-      var stop = M.inView(el, function () {
-        if (fired) return; fired = true;
-        M.animate(el, { width: ["0%", target] },
-                  { duration: 0.9, easing: [0.2, 0.8, 0.2, 1] });
-        if (stop) stop();
-      }, { amount: 0.15 });
+      io.observe(el);
     });
   };
 
@@ -472,15 +479,35 @@
    * ===================================================================== */
   B2B.celebrate = function (opts) {
     var reduce = w.matchMedia && w.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reduce || typeof w.confetti !== "function") return;
-    opts = opts || {};
-    var end = Date.now() + (opts.ms || 900);
-    var colors = ["#4f46e5", "#10b981", "#f59e0b", "#ec4899", "#06b6d4"];
-    (function frame() {
-      w.confetti({ particleCount: 4, angle: 60, spread: 60, origin: { x: 0 }, colors: colors });
-      w.confetti({ particleCount: 4, angle: 120, spread: 60, origin: { x: 1 }, colors: colors });
-      if (Date.now() < end) w.requestAnimationFrame(frame);
-    })();
+    if (reduce) return;
+    var burst = function () {
+      if (typeof w.confetti !== "function") return;   // load failed → silent no-op
+      var o = opts || {};
+      var end = Date.now() + (o.ms || 900);
+      var colors = ["#4f46e5", "#10b981", "#f59e0b", "#ec4899", "#06b6d4"];
+      (function frame() {
+        w.confetti({ particleCount: 4, angle: 60, spread: 60, origin: { x: 0 }, colors: colors });
+        w.confetti({ particleCount: 4, angle: 120, spread: 60, origin: { x: 1 }, colors: colors });
+        if (Date.now() < end) w.requestAnimationFrame(frame);
+      })();
+    };
+    if (typeof w.confetti === "function") { burst(); return; }
+    // LAZY-LOAD the vendored confetti lib on first celebration, then fire (and
+    // queue any bursts requested while it's still loading). URL comes from the
+    // enhance.js <script data-confetti-src> tag — no global lib load on every page.
+    if (B2B._confettiQ) { B2B._confettiQ.push(burst); return; }
+    B2B._confettiQ = [burst];
+    var tag = d.querySelector("script[data-confetti-src]");
+    var src = tag && tag.getAttribute("data-confetti-src");
+    if (!src) { B2B._confettiQ = null; return; }
+    var s = d.createElement("script");
+    s.src = src; s.defer = true;
+    s.onload = function () {
+      (B2B._confettiQ || []).forEach(function (f) { try { f(); } catch (e) {} });
+      B2B._confettiQ = null;
+    };
+    s.onerror = function () { B2B._confettiQ = null; };   // offline / blocked → no-op
+    d.head.appendChild(s);
   };
 
   /* ── View-only (RBAC) ────────────────────────────────────────────────── *
