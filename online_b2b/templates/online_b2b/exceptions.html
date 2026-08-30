@@ -173,13 +173,15 @@
     </table>
     </div>
   </div>
-</div>
 
-{# ── Merged in: the former "Rules & Exceptions" reference page (one page now) ── #}
-<details class="xrules-ref">
-  <summary>📖 Marketplace Rules reference <span>— margins · basis · item resolution · deals · MT channels (from the live engine config)</span></summary>
-  {% include 'online_b2b/_rules_ref.html' %}
-</details>
+  {# ── Merged in: the former "Rules & Exceptions" reference page (one page now).
+       MUST live INSIDE .xc — #MainContent is a flex row, so a sibling here becomes
+       a second flex item and floats into the right gap. ── #}
+  <details class="xrules-ref">
+    <summary>📖 Marketplace Rules reference <span>— margins · basis · item resolution · deals · MT channels (from the live engine config)</span></summary>
+    {% include 'online_b2b/_rules_ref.html' %}
+  </details>
+</div>
 
 {% endblock %}
 
