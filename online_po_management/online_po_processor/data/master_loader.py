@@ -345,6 +345,10 @@ class MasterLoader:
         # 'Use Vendor CP' flag column (optional).
         vcp_col = _find({'usevendorcp', 'vendorcp', 'usevendorcost',
                          'takevendorcp'})
+        # 'Override Unit Price' column (optional) — a typed ₹ value forced straight
+        # into the D365 Lines Unit Price for that SKU (operator's explicit override).
+        oup_col = _find({'overrideunitprice', 'unitprice', 'overrideprice',
+                         'forceunitprice'})
         # Free-text note column (optional, display-only).
         note_col = _find({'note', 'notes', 'remark', 'remarks', 'comment',
                           'comments', 'reason'})
@@ -353,6 +357,7 @@ class MasterLoader:
 
         self.price_overrides = {}
         self.vendor_cp_overrides = {}
+        self.override_unit_prices = {}
         self.exception_registry = []
         for _, r in df.iterrows():
             src = self._clean_code(r.get(src_col))
@@ -377,6 +382,13 @@ class MasterLoader:
                     use_vcp = True
                     kinds.append('vendor_cp')
                     effects.append('accept vendor CP → Lines Unit Price')
+            # 'Override Unit Price' exception — a typed ₹ value forced straight into
+            # the D365 Lines Unit Price (highest precedence, see _process_row).
+            oup_v = self._to_float(r.get(oup_col)) if oup_col else None
+            if oup_v is not None:
+                self.override_unit_prices[src] = {'value': oup_v, 'marketplace': mp}
+                kinds.append('override_unit_price')
+                effects.append(f'unit price → {oup_v:g}')
             # Item-alias override (Source → Master key).
             dst = ''
             if dst_col:
@@ -415,6 +427,7 @@ class MasterLoader:
                 'override_mrp': mrp_v,
                 'override_margin_pct': margin_pct,
                 'use_vendor_cp': use_vcp,
+                'override_unit_price': oup_v,
                 'marketplace': mp,           # '' = applies to all channels
                 'note': note,
                 'kinds': kinds,
@@ -443,6 +456,26 @@ class MasterLoader:
                 if not s or s == want:
                     return True
         return False
+
+    def override_unit_price(self, *keys, marketplace: str = ''):
+        """The OPERATOR-typed unit price (float) to force into the D365 Lines Unit
+        Price when an 'Override Unit Price' exception applies to any of ``keys``
+        (EAN / Item No) for ``marketplace`` — else ``None``. Blank override
+        marketplace applies everywhere. Mirrors :meth:`use_vendor_cp`."""
+        pool = getattr(self, 'override_unit_prices', None)
+        if not pool:
+            return None
+
+        def _norm(s):
+            return ''.join(str(s).split()).lower()
+        want = _norm(marketplace)
+        for k in keys:
+            hit = pool.get(self._clean_code(k))
+            if hit is not None:
+                s = _norm(hit.get('marketplace', ''))
+                if not s or s == want:
+                    return hit.get('value')
+        return None
 
     @staticmethod
     def _to_float(val):

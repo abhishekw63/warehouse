@@ -15,7 +15,7 @@
 
   <div class="xhero">
     <h1>SKU Exceptions</h1>
-    <p>Per-marketplace overrides the engine applies on every run. Two kinds only — <b>Override&nbsp;CP</b> (price change) and <b>EAN&nbsp;Remap</b>. Everything else runs on the flat marketplace margin.</p>
+    <p>Per-marketplace overrides the engine applies on every run. Two kinds — <b>Override&nbsp;Unit&nbsp;Price</b> (a typed ₹ value forced into the D365 unit price) and <b>EAN&nbsp;Remap</b>. Flagged with a ⚑ on the review page. Everything else runs on the flat marketplace margin.</p>
     <div class="xstats">
       <div class="xstat accent"><b>{{ counts.total }}</b><span>Total exceptions</span></div>
       <div class="xstat"><b>{{ n_mp_with }}</b><span>Marketplaces with rules</span></div>
@@ -34,11 +34,12 @@
         <div class="xf"><label>SKU / Source code</label>
           <input type="text" name="source_code" placeholder="EAN or Item No." required>
           <div class="hint">as the marketplace sends it</div></div>
-        <div class="xf"><label>Use Vendor CP</label>
-          <label class="xvcp"><input type="checkbox" name="use_vendor_cp"> accept the PO's unit price</label></div>
-        <div class="xf"><label>Override MRP</label><input type="text" name="override_mrp" placeholder="optional"></div>
-        <div class="xf"><label>Override margin %</label><input type="text" name="override_margin" placeholder="e.g. 69"></div>
-        <div class="xf"><label>Maps to (EAN remap)</label><input type="text" name="maps_to" placeholder="optional"></div>
+        <div class="xf"><label>Override Unit Price ₹</label>
+          <input type="text" name="override_unit_price" placeholder="e.g. 150">
+          <div class="hint">forced into the D365 Lines Unit Price for this SKU</div></div>
+        <div class="xf"><label>Maps to (EAN remap)</label>
+          <input type="text" name="maps_to" placeholder="optional — remap to another EAN / item">
+          <div class="hint">use one or the other</div></div>
         <div class="xf" style="grid-column:1/-1;"><label>Note</label>
           <input type="text" name="note" placeholder="why this exception — for the record"></div>
         <div class="xf"><button class="xbtn" id="ex-add-btn" type="submit">Add exception</button></div>
@@ -73,6 +74,7 @@
               <tr data-id="{{ r.id }}"
                   data-mp="{{ r.marketplace }}" data-src="{{ r.source }}"
                   data-mrp="{{ r.override_mrp }}" data-margin="{{ r.override_margin }}"
+                  data-oup="{{ r.override_unit_price }}"
                   data-maps="{{ r.maps_to }}" data-note="{{ r.note }}">
                 <td class="nm" title="{{ r.item_name }}">{{ r.item_name|default:"—" }}</td>
                 <td class="code">{{ r.source_code }}{% if r.item_no %}<br><span style="color:#a9b2c3;">#{{ r.item_no }}</span>{% endif %}</td>

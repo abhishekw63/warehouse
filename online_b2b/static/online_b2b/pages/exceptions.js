@@ -47,9 +47,10 @@
     var d = tr.dataset, cols = tr.children.length;
     var er = document.createElement('tr'); er.className = 'edrow';
     er.innerHTML = '<td colspan="' + cols + '"><form class="edform">' +
-      '<div><label>Override MRP</label><input name="override_mrp" value="' + esc(d.mrp) + '"></div>' +
-      '<div><label>Override margin %</label><input name="override_margin" value="' + esc(d.margin) + '"></div>' +
+      '<div><label>Override Unit Price ₹</label><input name="override_unit_price" value="' + esc(d.oup) + '"></div>' +
       '<div><label>Maps to (EAN)</label><input name="maps_to" value="' + esc(d.maps) + '"></div>' +
+      '<div><label>Override MRP <small>(legacy)</small></label><input name="override_mrp" value="' + esc(d.mrp) + '"></div>' +
+      '<div><label>Override margin % <small>(legacy)</small></label><input name="override_margin" value="' + esc(d.margin) + '"></div>' +
       '<div style="grid-column:span 2;"><label>Note</label><input name="note" value="' + esc(d.note) + '"></div>' +
       '<div style="display:flex;gap:8px;"><button type="submit" class="save">Save</button>' +
       '<button type="button" class="cancel">Cancel</button></div></form></td>';

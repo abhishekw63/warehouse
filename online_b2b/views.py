@@ -3979,8 +3979,11 @@ def exceptions_page(request):
         return 1.18
 
     def _eff(r, gdiv=1.18):
-        # Two operator kinds only: EAN Remap, or Override CP. For CP we show the
-        # ACTUAL overridden unit price (₹) — never an internal margin %.
+        # Operator kinds: Override Unit Price (a typed ₹ value, highest precedence),
+        # EAN Remap, or the legacy Override CP (deal/MRP/vendor-CP derivations).
+        oup = _f(r.get('override_unit_price'))
+        if oup is not None:
+            return ('cp', 'Override Unit Price', f"₹{oup:g}")
         if r.get('maps_to'):
             return ('remap', 'EAN Remap', f"→ {r['maps_to']}")
         # Deal SKUs carry a negotiated cost. 'Cost after GST' is already the
@@ -4119,6 +4122,7 @@ def exception_add(request):
         override_mrp=request.POST.get('override_mrp', ''),
         override_margin=request.POST.get('override_margin', ''),
         use_vendor_cp=request.POST.get('use_vendor_cp', ''),
+        override_unit_price=request.POST.get('override_unit_price', ''),
         note=request.POST.get('note', ''))
     return JsonResponse(res)
 
@@ -4129,7 +4133,8 @@ def exception_update(request, row_id):
     from .services import overrides_store as ov
     fields = {k: request.POST[k] for k in
               ('marketplace', 'source_code', 'maps_to', 'override_mrp',
-               'override_margin', 'use_vendor_cp', 'note') if k in request.POST}
+               'override_margin', 'use_vendor_cp', 'note', 'override_unit_price')
+              if k in request.POST}
     return JsonResponse(ov.update_manual(row_id, **fields))
 
 

@@ -40,7 +40,8 @@ KIND_ZEPTO_DEAL = 'zepto_deal'     # Zepto negotiated per-SKU base cost (as-is C
 # override_mrp = 'Override MRP' OR 'Correct MRP'; note = 'Note' OR 'Name'.
 _COLS = ['kind', 'source_code', 'maps_to', 'override_mrp', 'override_margin',
          'use_vendor_cp', 'marketplace', 'note', 'item_id', 'correct_gst',
-         'cost_with_gst', 'cost_after_gst', 'source', 'updated_at']
+         'cost_with_gst', 'cost_after_gst', 'override_unit_price',
+         'source', 'updated_at']
 
 # Excel-header ↔ DB-column maps, per sheet, used by both seed (read) and
 # build_overlay_workbook (regenerate) → one definition, no drift.
@@ -49,6 +50,9 @@ _EXC_MAP = [
     ('override_mrp', 'Override MRP'), ('override_margin', 'Override Margin %'),
     ('marketplace', 'Marketplace'), ('note', 'Note'),
     ('use_vendor_cp', 'Use Vendor CP'),
+    # Direct per-SKU unit price pushed to D365 (the operator types the ₹ value) —
+    # highest-precedence override, mirrors 'Use Vendor CP' but with a typed price.
+    ('override_unit_price', 'Override Unit Price'),
 ]
 _DEAL_MAP = [
     ('item_id', 'Iteam ID'), ('source_code', 'EAN'), ('note', 'Name'),
@@ -73,6 +77,7 @@ CREATE TABLE IF NOT EXISTS item_exceptions (
     use_vendor_cp  VARCHAR(10), marketplace VARCHAR(60), note VARCHAR(500),
     item_id        VARCHAR(40), correct_gst VARCHAR(40),
     cost_with_gst  VARCHAR(40), cost_after_gst VARCHAR(40),
+    override_unit_price VARCHAR(40),
     source         VARCHAR(10) DEFAULT 'excel',
     updated_at     DATETIME,
     INDEX idx_iexc_kind (kind), INDEX idx_iexc_src (source_code)
@@ -84,7 +89,8 @@ CREATE TABLE IF NOT EXISTS item_exceptions (
     kind TEXT DEFAULT 'exception', source_code TEXT, maps_to TEXT,
     override_mrp TEXT, override_margin TEXT, use_vendor_cp TEXT, marketplace TEXT,
     note TEXT, item_id TEXT, correct_gst TEXT, cost_with_gst TEXT,
-    cost_after_gst TEXT, source TEXT DEFAULT 'excel', updated_at TEXT
+    cost_after_gst TEXT, override_unit_price TEXT,
+    source TEXT DEFAULT 'excel', updated_at TEXT
 )
 """
 
@@ -96,7 +102,15 @@ def _s(x) -> str:
     return '' if s.lower() == 'nan' else s
 
 
+_READY = False        # process-local: the fixed DDL below only needs to run ONCE
+
+
 def ensure_tables() -> None:
+    # Short-circuit after the first success — this ran a CREATE + ~6 ALTER + a DROP
+    # on EVERY call (each a wasted round-trip), on the exceptions + review hot paths.
+    global _READY
+    if _READY:
+        return
     with _conn() as (cur, d):
         cur.execute(_MYSQL if d['kind'] == 'mysql' else _SQLITE)
         # Upgrade a pre-existing (separate-tables era) item_exceptions to the
@@ -105,6 +119,7 @@ def ensure_tables() -> None:
                 ('kind', "VARCHAR(16) DEFAULT 'exception'"),
                 ('item_id', 'VARCHAR(40)'), ('correct_gst', 'VARCHAR(40)'),
                 ('cost_with_gst', 'VARCHAR(40)'), ('cost_after_gst', 'VARCHAR(40)'),
+                ('override_unit_price', 'VARCHAR(40)'),
                 ('created_at', 'DATETIME')):
             try:
                 cur.execute(f"ALTER TABLE {_TABLE} ADD COLUMN {col} {ddl}")
@@ -116,6 +131,7 @@ def ensure_tables() -> None:
         except Exception:  # noqa: BLE001
             pass
         cur.connection.commit()
+    _READY = True
 
 
 def _read_sheet(xlsx_path, sheet, colmap, kind):
@@ -322,7 +338,8 @@ def list_all() -> list:
 # already reads every row via build_overlay_workbook(); nothing else changes.
 def add_manual(marketplace: str, source_code: str, *, maps_to: str = '',
                override_mrp: str = '', override_margin: str = '',
-               use_vendor_cp: str = '', note: str = '') -> dict:
+               use_vendor_cp: str = '', note: str = '',
+               override_unit_price: str = '') -> dict:
     """Insert one operator-added exception (kind='exception', source='manual')."""
     source_code = (source_code or '').strip()
     if not source_code:
@@ -334,12 +351,12 @@ def add_manual(marketplace: str, source_code: str, *, maps_to: str = '',
         ph = d['ph']
         cur.execute(
             f"INSERT INTO {_TABLE} (kind, source_code, maps_to, override_mrp, "
-            f"override_margin, use_vendor_cp, marketplace, note, source, "
-            f"created_at, updated_at) "
-            f"VALUES ('exception',{ph},{ph},{ph},{ph},{ph},{ph},{ph},'manual',{ph},{ph})",
+            f"override_margin, use_vendor_cp, marketplace, note, override_unit_price, "
+            f"source, created_at, updated_at) "
+            f"VALUES ('exception',{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},'manual',{ph},{ph})",
             (source_code, (maps_to or '').strip(), (override_mrp or '').strip(),
              (override_margin or '').strip(), vcp, (marketplace or '').strip(),
-             (note or '').strip(), now, now))
+             (note or '').strip(), (override_unit_price or '').strip(), now, now))
         cur.connection.commit()
         return {'ok': True, 'id': cur.lastrowid}
 
@@ -347,7 +364,7 @@ def add_manual(marketplace: str, source_code: str, *, maps_to: str = '',
 def update_manual(row_id, **fields) -> dict:
     """Edit a MANUAL exception row (never an Excel-sourced one)."""
     allowed = {'marketplace', 'source_code', 'maps_to', 'override_mrp',
-               'override_margin', 'use_vendor_cp', 'note'}
+               'override_margin', 'use_vendor_cp', 'note', 'override_unit_price'}
     sets = {k: v for k, v in fields.items() if k in allowed}
     if 'use_vendor_cp' in sets:
         sets['use_vendor_cp'] = 'Y' if str(sets['use_vendor_cp']).strip().lower() in (

@@ -2298,7 +2298,14 @@ class MarketplaceEngine:
             mp = getattr(result, 'marketplace', '')
             mp_norm = ''.join(str(mp).split()).lower()
             ean_c = MasterLoader._clean_code(ean) if ean else ''
-            if fob_price is not None and self.master.use_vendor_cp(
+            _oup = self.master.override_unit_price(ean, item_no, marketplace=mp)
+            if _oup is not None:
+                # Operator's typed 'Override Unit Price' — highest precedence; the
+                # ₹ value goes straight into the D365 Lines Unit Price, and the
+                # label lights the ⚑ EXCEPTION column + row highlight (like a deal).
+                exception_label = 'Override Unit Price'
+                forced_unit_price = _oup
+            elif fob_price is not None and self.master.use_vendor_cp(
                     ean, item_no, marketplace=mp):
                 exception_label = 'Vendor CP (deal)'
                 forced_unit_price = fob_price
@@ -2865,7 +2872,16 @@ class MarketplaceEngine:
         # validates OK instead of MISMATCH, and the Validation 'Our CP' shows
         # the vendor figure. The Lines Unit Price overwrite happens in
         # _process_row (forced_unit_price).
-        if (fob_price is not None and ean_clean
+        _oup2 = self.master.override_unit_price(
+            ean, item_no, marketplace=getattr(result, 'marketplace', ''))
+        if _oup2 is not None:
+            # 'Override Unit Price' — the operator's typed ₹ value is authoritative
+            # for this SKU; accept it so the row validates OK (not MISMATCH) and the
+            # Validation 'Our CP' shows the override. Lines Unit Price overwrite
+            # happens in _process_row (forced_unit_price).
+            _pricing_exception = True
+            calc_price = _oup2
+        elif (fob_price is not None and ean_clean
                 and self.master.use_vendor_cp(
                     ean, item_no, marketplace=getattr(result, 'marketplace', ''))):
             _pricing_exception = True
