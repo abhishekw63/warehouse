@@ -100,12 +100,37 @@ def check_orders(order_nos, wh_override: str = '') -> dict:
 
     with _conn() as (cur, d):
         ph, ot = d['ph'], d['orders']
-        for po in order_nos:
-            # Most recent run for this PO — re-uploads supersede, never double-count.
+        # ── Batched header + line fetch (was 2 queries PER pasted PO — a Singapore
+        #    round-trip each). Two chunked queries total now, same semantics:
+        #    'most recent run per PO supersedes' + lines for that exact run. ──
+        uniq_pos = list(dict.fromkeys(order_nos))          # de-dup, keep paste order
+        hdr_by_po: dict = {}
+        for i in range(0, len(uniq_pos), 900):
+            chunk = uniq_pos[i:i + 900]
+            marks = ','.join([ph] * len(chunk))
             cur.execute(
-                f"SELECT run_id, warehouse, marketplace_label FROM {ot} "
-                f"WHERE po={ph} ORDER BY run_ts DESC LIMIT 1", (po,))
-            hdr = cur.fetchone()
+                f"SELECT h.po, h.run_id, h.warehouse, h.marketplace_label "
+                f"FROM {ot} h JOIN (SELECT po, MAX(run_ts) mx FROM {ot} "
+                f"WHERE po IN ({marks}) GROUP BY po) t "
+                f"ON h.po=t.po AND h.run_ts=t.mx WHERE h.po IN ({marks})",
+                tuple(chunk + chunk))
+            for po_v, run_id, wh_raw, mp_label in cur.fetchall():
+                hdr_by_po.setdefault(po_v, (run_id, wh_raw, mp_label))   # first wins on tie
+        pairs = [(po, hdr_by_po[po][0]) for po in uniq_pos if po in hdr_by_po]
+        lines_by_po: dict = {}
+        for i in range(0, len(pairs), 900):
+            chunk = pairs[i:i + 900]
+            marks = ','.join([f'({ph},{ph})'] * len(chunk))
+            flat = [v for pair in chunk for v in pair]
+            cur.execute(
+                f"SELECT po, item_no, ean, description, qty, unit_price, our_landing "
+                f"FROM order_lines_full WHERE (po, run_id) IN ({marks}) "
+                f"ORDER BY po, item_no", tuple(flat))
+            for row in cur.fetchall():
+                lines_by_po.setdefault(row[0], []).append(row[1:])
+
+        for po in order_nos:
+            hdr = hdr_by_po.get(po)
             if not hdr:
                 not_found.append(po)
                 continue
@@ -115,14 +140,10 @@ def check_orders(order_nos, wh_override: str = '') -> dict:
             wh = override_code or wh_auto
             sm = stock_for(wh)
 
-            cur.execute(
-                f"SELECT item_no, ean, description, qty, unit_price, our_landing "
-                f"FROM order_lines_full WHERE po={ph} AND run_id={ph} ORDER BY item_no",
-                (po, run_id))
             lrows: list[dict] = []
             ord_qty = fill_qty = short_qty = 0.0
             ord_val = fill_val = short_val = 0.0
-            for item_no, ean, desc, qty, unit_price, our_landing in cur.fetchall():
+            for item_no, ean, desc, qty, unit_price, our_landing in lines_by_po.get(po, []):
                 key = str(item_no or '').strip()
                 q = float(qty or 0)
                 # per-unit value: inc-GST landing preferred, else unit price (CP).
