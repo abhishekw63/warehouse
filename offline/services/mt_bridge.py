@@ -331,6 +331,38 @@ def _register_web_channels(eng) -> None:
             expected_landing_ratio=None,      # NO price check (mapping-only)
         )
 
+    # Apollo HealthCo (AHLC) — cust 20850. The vendor sends a per-PO workbook
+    # ('RENEE PO <no>.cleaned.xlsx': raw 'Table 1' + cleaned 'Sheet1'). EAN
+    # lookup; store key = the delivery PIN matched EXACT to the party='Apollo'
+    # Del Location. Mapping-only (MT rule): NO price check. Normalised by
+    # _normalize_ahlc_excel (Sheet1 lines + Table 1 PO No/dates/PIN). SO No is
+    # app-minted (SO/AHLC/MM/…); the D365 External Doc = the vendor PO (PO-A…).
+    # Distinct entity from BN (Apollo Beaute Netrue) — different customer.
+    if 'AHLC' not in eng.CHANNELS:
+        eng.CHANNELS['AHLC'] = eng.ChannelConfig(
+            code='AHLC',
+            display_name='Apollo HealthCo',
+            party='Apollo',                   # ship_to_mapping party (cust 20850)
+            input_folder_name='Input_AHLC',
+            output_folder_name='Output_AHLC',
+            sell_to='20850',                  # Apollo HealthCo Ltd (D365 Sell-to)
+            csv_required_cols=['PO', 'Store', 'EAN', 'Qty'],
+            csv_po_col='PO',                  # vendor PO → D365 External Doc No
+            csv_store_col='Store',            # delivery PIN → Del Location (exact)
+            csv_id_col='EAN',
+            csv_qty_col='Qty',
+            csv_mrp_col='MRP',
+            csv_cost_col='Unit Cost',         # post-GST unit cost (reference only)
+            csv_value_col='Total Value',      # inc-GST line total (in file)
+            csv_date_col='PO Date',
+            csv_expdate_col='Exp Date',
+            lookup_via='EAN',
+            channel_master_sheet=None,
+            store_match='exact',
+            tester_unit_price=None,           # no testers
+            expected_landing_ratio=None,      # NO price check (mapping-only)
+        )
+
     # Lulu (LL): Lulu now sends a clean tabular EXCEL instead of the PDF, so
     # flip LL's input PDF → Excel for 100% accuracy. REVERSIBLE + non-destructive:
     # the frozen PDF config + parse_lulu_pdf are left fully intact — we only clear
@@ -356,7 +388,7 @@ LULU_EXCEL_MODE = True
 # marketplace; these are its children (the operator picks one). Off Institutional
 # (INST) is a SEPARATE parent and is not listed here. SS is verified end-to-end;
 # the others share the same generic pipeline (test each before production use).
-WEB_CHANNELS = ['SS', 'HG', 'NT', 'BN', 'LL', 'RL', 'MET', 'LS', 'PPL', 'RSB', 'HB', 'RBL', 'RRLMT']
+WEB_CHANNELS = ['SS', 'HG', 'NT', 'BN', 'LL', 'RL', 'MET', 'LS', 'PPL', 'RSB', 'HB', 'RBL', 'RRLMT', 'AHLC']
 
 # ── Per-channel input REQUIREMENTS ──────────────────────────────────────
 # Shown on the upload page (so the operator knows what each channel demands)
@@ -405,6 +437,17 @@ CHANNEL_REQUIREMENTS: dict = {
            'optional': '', 'if_absent': 'Mapping-only — NO price check. Records the inc-GST '
            'value; the effective supply ratio (Net price ÷ MRP) is computed and noted. '
            'Unknown Site code → flagged UNMAPPED, never silent (add it to Ship-To B2B, cust 20010).'},
+    'AHLC': {'required': 'Apollo HealthCo per-PO workbook (RENEE PO <no>.cleaned.xlsx) — '
+                         "'Table 1' (raw PO: delivery address+PIN, PO No PO-A…, PO Date, "
+                         "PO Exp Date) + 'Sheet1' (cleaned lines: EAN, Qty., MRP, Unit "
+                         'Cost, Total Value). Lines read from Sheet1 (clean EAN); PO No / '
+                         'dates / PIN scanned from Table 1.',
+             'optional': 'Apollo PO PDF(s) — reference only (kept aside, not parsed).',
+             'if_absent': 'Mapping-only — NO price check. Records the inc-GST value; the '
+             'effective supply ratio (Unit Cost ÷ MRP) is computed and noted. SO No is '
+             'app-minted (SO/AHLC/MM/…); External Doc = the vendor PO. Unknown delivery '
+             'PIN → flagged UNMAPPED, never silent (add the DC under party "Apollo", '
+             'cust 20850).'},
     'RSB': {'required': 'Reliance Smart Bazaar tabular Excel (PurchaseOrders*.xlsx, sheet '
                         '"Purchase Orders") — DC_CODE, PURCH_ORDER_NUMBER, EAN_NO, '
                         'TOTAL_QUANTITY, MRP + dates. DC_CODE (FR73/FRBS/6220/…) is the '
@@ -792,6 +835,128 @@ def _normalize_hb_excel(src_path):
     return path, notes
 
 
+def _normalize_ahlc_excel(src_path):
+    """Apollo HealthCo (AHLC) 'RENEE PO <no>.cleaned.xlsx' → the flat .xlsx the
+    AHLC ChannelConfig reads. The source is a two-sheet workbook:
+      • 'Table 1' — the raw Apollo PO (delivery address + PIN, PO No 'PO-A…',
+        PO Date, PO Exp Date). Cell POSITIONS shift between files, so we scan by
+        CONTENT (regex), never by fixed row/col.
+      • 'Sheet1' — the cleaned line items (clean 13-digit EAN, Qty, MRP, Unit
+        Cost, Total Value). Table 1's own EAN column is unreliable (scientific
+        notation / embedded line breaks), so lines are read from Sheet1.
+    We emit: PO (= the vendor PO → D365 External Doc No), Store (= delivery PIN →
+    ship-to key under party 'Apollo'), EAN, Qty, MRP, Unit Cost, Total Value,
+    PO Date, Exp Date (day-first 'dd-mm-YYYY', matching the engine's dayfirst
+    parse). Returns ``(temp_path, notes)``. Mapping-only — NO price check
+    (MT rule); the effective supply ratio is an informational note. Unknown
+    PIN → ship-to flags UNMAPPED, never silent."""
+    import datetime as _dt
+    import re
+    import tempfile
+
+    import openpyxl
+    import pandas as pd
+
+    def _mon_to_isoday(s):
+        # 'dd-Mon-YYYY' (28-Aug-2026) → day-first 'dd-mm-YYYY'; '' on failure.
+        m = re.search(r'(\d{1,2})[-/ ]([A-Za-z]{3,})[-/ ](\d{4})', str(s or ''))
+        if not m:
+            return ''
+        try:
+            d = _dt.datetime.strptime(
+                f"{int(m.group(1)):02d}-{m.group(2)[:3].title()}-{m.group(3)}",
+                '%d-%b-%Y')
+            return d.strftime('%d-%m-%Y')
+        except ValueError:
+            return ''
+
+    wb = openpyxl.load_workbook(src_path, data_only=True)
+    # ── Table 1: PO No, PO/Exp dates, delivery PIN + GST (scanned by content) ──
+    t1 = wb['Table 1'] if 'Table 1' in wb.sheetnames else wb[wb.sheetnames[0]]
+    po_no = po_date = exp_date = pincode = gst = addr = ''
+    for row in t1.iter_rows(values_only=True):
+        for cell in row:
+            if not isinstance(cell, str):
+                continue
+            s = cell.strip()
+            m = re.search(r'(PO-?A?\d{6,})', s)
+            if m and not po_no:
+                po_no = m.group(1)
+                po_date = po_date or _mon_to_isoday(s)
+            if 'Exp Date' in s and not exp_date:
+                exp_date = _mon_to_isoday(s)
+            if 'PIN-' in s.upper() and 'GST' in s.upper() and not pincode:
+                pm = re.search(r'PIN[-:\s]*(\d{6})', s.upper())
+                gm = re.search(r'GST[:\s]*([0-9]{2}[A-Z0-9]{13})', s.upper())
+                pincode = pm.group(1) if pm else ''
+                gst = gm.group(1) if gm else ''
+                addr = s.split('\n')[0].strip()
+
+    # ── Sheet1: clean line items (header row = the one carrying EAN + Qty.) ──
+    sh = wb['Sheet1'] if 'Sheet1' in wb.sheetnames else wb[wb.sheetnames[-1]]
+    grid = list(sh.iter_rows(values_only=True))
+    hdr_i = next((i for i, r in enumerate(grid)
+                  if 'EAN' in [str(c).strip() if c is not None else '' for c in r]
+                  and any(str(c).strip().startswith('Qty')
+                          for c in r if c is not None)), None)
+    if hdr_i is None:
+        raise ValueError("AHLC: 'Sheet1' has no header row with EAN + Qty. — is "
+                         "this the cleaned Apollo workbook (Table 1 + Sheet1)?")
+    hdr = [str(c).strip() if c is not None else '' for c in grid[hdr_i]]
+
+    def _col(*names):
+        for j, h in enumerate(hdr):
+            if h in names:
+                return j
+        return None
+    j_ean, j_qty = _col('EAN'), _col('Qty.', 'Qty')
+    j_mrp, j_cost, j_val = _col('MRP'), _col('Unit Cost'), _col('Total Value')
+
+    rows = []
+    for r in grid[hdr_i + 1:]:
+        raw = r[j_ean] if j_ean is not None else None
+        ean = re.sub(r'\D', '', str(raw if raw is not None else ''))
+        if len(ean) < 8:                    # skip the 'Total :' / blank tail rows
+            continue
+        val = pd.to_numeric(r[j_val], errors='coerce') if j_val is not None else None
+        rows.append({
+            'PO': po_no,
+            'Store': pincode,
+            'EAN': ean,
+            'Qty': pd.to_numeric(r[j_qty], errors='coerce'),
+            'MRP': (pd.to_numeric(r[j_mrp], errors='coerce')
+                    if j_mrp is not None else None),
+            'Unit Cost': (pd.to_numeric(r[j_cost], errors='coerce')
+                          if j_cost is not None else None),
+            'Total Value': (round(float(val), 2)
+                            if val is not None and pd.notna(val) else None),
+            'PO Date': po_date,
+            'Exp Date': exp_date,
+        })
+    out = pd.DataFrame(rows)
+    fd, path = tempfile.mkstemp(suffix='_ahlc_norm.xlsx')
+    os.close(fd)
+    out.to_excel(path, index=False)
+
+    notes: list[str] = []
+    if not po_no:
+        notes.append("AHLC: could not read the Apollo PO number from 'Table 1' — "
+                     "the D365 External Doc will be blank. Check the workbook.")
+    if not pincode:
+        notes.append("AHLC: no delivery PIN found in 'Table 1' — ship-to will flag "
+                     "UNMAPPED (never silent). Add the DC under party 'Apollo' "
+                     "(cust 20850) in Ship-To B2B.")
+    mrp = pd.to_numeric(out['MRP'], errors='coerce')
+    cost = pd.to_numeric(out['Unit Cost'], errors='coerce')
+    ratio = (cost / mrp * 100).where(mrp > 0).dropna()
+    if len(ratio):
+        notes.append(
+            f"AHLC supply ratio (Unit Cost ÷ MRP): avg {ratio.mean():.1f}% · range "
+            f"{ratio.min():.1f}–{ratio.max():.1f}% across {len(ratio)} line(s). "
+            f"No price check (mapping-only) — informational.")
+    return path, notes
+
+
 def _normalize_manash_excel(src_path):
     """Manash (Purplle offline) tab-separated '.XLS' → the flat .xlsx the MANASH
     ChannelConfig reads. Same source shape as online Purplle. Cleans the
@@ -960,7 +1125,9 @@ def _parse_lifestyle_pdf(path) -> dict:
 #   HG — store PO unique per store.
 #   HB — Health & Beauty (Dabur): External Doc = the store PO (e.g. 4600336371),
 #        one PO per DC/store delivery, never reused → safe to dedup on it.
-_EXTDOC_DEDUP_CHANNELS = {'HG', 'HB'}
+#   AHLC — Apollo HealthCo: External Doc = the vendor PO (PO-A000353445), one PO
+#        per delivery location (Apollo term: one invoice per PO) → safe.
+_EXTDOC_DEDUP_CHANNELS = {'HG', 'HB', 'AHLC'}
 
 
 def line_key(po: str, item_no: str, ean: str) -> str:
@@ -1208,6 +1375,19 @@ class MTProcessor:
                     np, hnotes = _normalize_hb_excel(p)
                     norm.append(Path(np))
                     self.notes.extend(hnotes)
+                else:
+                    norm.append(p)
+            engine_paths = norm
+
+        # ── Apollo HealthCo: read the per-PO 'Table 1' + 'Sheet1' workbook →
+        #    flat AHLC columns (Sheet1 lines, Table 1 PO No/dates/PIN). ──
+        if channel.code == 'AHLC':
+            norm = []
+            for p in engine_paths:
+                if str(p).lower().endswith(('.xlsx', '.xls')):
+                    np, anotes = _normalize_ahlc_excel(p)
+                    norm.append(Path(np))
+                    self.notes.extend(anotes)
                 else:
                     norm.append(p)
             engine_paths = norm
