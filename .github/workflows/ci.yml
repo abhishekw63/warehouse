@@ -1,0 +1,32 @@
+name: CI
+
+# Free guard for a money-path app: lint + run the test suite (in-memory sqlite via
+# settings_test, so no TiDB needed) + Django's own system checks on every push/PR.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - name: Install deps
+        run: pip install -r requirements.txt ruff pytest pytest-django
+      - name: Lint (ruff — advisory)
+        # Non-blocking for now: ~65 pre-existing violations predate this workflow.
+        # Tests + system checks below are the hard gate. Flip to a hard gate once
+        # the backlog is cleared (`ruff check --fix .`).
+        continue-on-error: true
+        run: ruff check .
+      - name: Tests (pytest -> settings_test / sqlite)
+        run: pytest
+      - name: Django system checks
+        run: python manage.py check
+        env:
+          DJANGO_SETTINGS_MODULE: renee_cosmetics.settings_test

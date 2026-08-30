@@ -39,7 +39,7 @@ def test_header_mapping(tmp_path):
     assert r['ok']
     h = {x['so_no']: x for x in r['rows']}
     assert h['SO/06/26/0005001']['external_doc'] == '224743253'
-    assert h['SO/06/26/0005001']['location'] == 'Anand Trading Co.'
+    assert h['SO/06/26/0005001']['ship_to_name'] == 'Anand Trading Co.'
     assert h['SO/06/26/0005001']['warehouse'] == 'PICK'
     assert h['SO/06/26/0005001']['qty'] == 1884
     assert h['SO/06/26/0005001']['order_value'] == 558377.84

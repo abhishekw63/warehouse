@@ -157,16 +157,28 @@ def _build_tracker_dropdowns() -> dict:
     return out
 
 
+_BACKEND_CACHE = None    # resolved once per process — config is fixed for a process life
+
+
 def _backend():
-    """Return ('mysql', cfg) or ('sqlite', path) based on the engine config."""
+    """Return ('mysql', cfg) or ('sqlite', path) based on the engine config.
+    Memoized per process: ``load_db_config()`` does a filesystem stat + env→dict
+    rebuild that fired on EVERY ``_conn()``/``_conn_tx()`` (many per request). The
+    resolved backend can't change without a process restart, so cache it. Set
+    ``ORDERDB_BACKEND_NOCACHE=1`` to re-resolve each call (dev credential swap)."""
+    global _BACKEND_CACHE
+    if _BACKEND_CACHE is not None and not os.environ.get('ORDERDB_BACKEND_NOCACHE'):
+        return _BACKEND_CACHE
     from online_po_processor.auto.history_db import (
         default_history_db_path,
         load_db_config,
     )
     cfg = load_db_config()
     if cfg and str(cfg.get('backend', '')).lower() == 'mysql':
-        return 'mysql', cfg
-    return 'sqlite', default_history_db_path()
+        _BACKEND_CACHE = ('mysql', cfg)
+    else:
+        _BACKEND_CACHE = ('sqlite', default_history_db_path())
+    return _BACKEND_CACHE
 
 
 # ── raw-query counter ────────────────────────────────────────────────────────

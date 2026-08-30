@@ -10,9 +10,11 @@ works regardless of ``DEBUG``.
 """
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import re
+import threading
 import time
 from contextlib import ExitStack
 from datetime import datetime
@@ -24,6 +26,34 @@ from django.db import connections
 PERF_LOG = Path(settings.BASE_DIR) / 'logs' / 'perf.jsonl'
 _MAX_BYTES = 5_000_000          # cap the log; trim to the last _KEEP lines
 _KEEP = 3000
+
+# Buffer perf lines + flush in batches — turns a per-request open()+write() (and an
+# inline size-trim that could rewrite the whole 5 MB file mid-request) into ONE write
+# per _FLUSH_EVERY requests, off the 0.1-CPU hot path. Ephemeral telemetry only: a
+# crash can lose up to a buffer's worth; the durable audit_log path is untouched.
+_PERF_BUF: list = []
+_PERF_LOCK = threading.Lock()
+_FLUSH_EVERY = int(os.environ.get('PERF_FLUSH_EVERY', '25'))
+
+
+def _flush_perf(force: bool = False) -> None:
+    with _PERF_LOCK:
+        if not _PERF_BUF or (len(_PERF_BUF) < _FLUSH_EVERY and not force):
+            return
+        lines, _PERF_BUF[:] = _PERF_BUF[:], []     # drain in-place (same list object)
+    try:
+        PERF_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with open(PERF_LOG, 'a', encoding='utf-8') as f:
+            f.write('\n'.join(lines) + '\n')
+        if PERF_LOG.stat().st_size > _MAX_BYTES:    # trim on flush, not per request
+            tail = PERF_LOG.read_text(encoding='utf-8',
+                                      errors='replace').splitlines()[-_KEEP:]
+            PERF_LOG.write_text('\n'.join(tail) + '\n', encoding='utf-8')
+    except Exception:  # noqa: BLE001
+        pass
+
+
+atexit.register(_flush_perf, True)                  # flush the tail on shutdown
 _SKIP_PREFIX = ('/static/', '/media/')
 # A GET slower than this (ms) is logged to the audit_log so slow PAGE loads are
 # pinpointable in production (perf.jsonl is ephemeral on Render). Writes are always
@@ -96,16 +126,12 @@ class PerfMiddleware:
             'ms': round(dur_ms, 1), 'q': counter['n'], 'db_ms': round(db_ms, 1),
             'qms': round(counter['t'] * 1000.0, 1), 'bytes': size, 'user': user,
         }
-        PERF_LOG.parent.mkdir(parents=True, exist_ok=True)
-        with open(PERF_LOG, 'a', encoding='utf-8') as f:
-            f.write(json.dumps(rec) + '\n')
-        try:
-            if PERF_LOG.stat().st_size > _MAX_BYTES:
-                tail = PERF_LOG.read_text(encoding='utf-8',
-                                          errors='replace').splitlines()[-_KEEP:]
-                PERF_LOG.write_text('\n'.join(tail) + '\n', encoding='utf-8')
-        except Exception:  # noqa: BLE001
-            pass
+        # Buffer the telemetry line; the batched writer flushes to disk + trims.
+        with _PERF_LOCK:
+            _PERF_BUF.append(json.dumps(rec))
+            n = len(_PERF_BUF)
+        if n >= _FLUSH_EVERY:
+            _flush_perf()
         # DURABLE capture (survives redeploys, visible in the Audit Log GUI): stamp
         # the elapsed ms onto the audit row a write already created, and — for a SLOW
         # page load with no audit row — write one so slow pages can be pinpointed.
