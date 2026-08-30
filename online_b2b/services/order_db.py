@@ -1626,30 +1626,36 @@ def tracker_insights(segment='', marketplace='', warehouse='', q='',
 
 def hub_extra_kpis() -> dict:
     """Extra hub KPIs in one round-trip: avg PO value, total line items, POs in the
-    last 7 days, and resolved (actioned) issue lines. Read-only; never raises."""
-    out = {'avg_po_value': 0.0, 'order_lines': 0, 'week_pos': 0, 'resolved': 0,
-           'all_pos': 0}
-    try:
-        with _conn() as (cur, d):
-            ot = d['orders']
-            cur.execute(f"SELECT COUNT(DISTINCT po), COALESCE(SUM(order_value),0) FROM {ot}")
-            pos, val = cur.fetchone()
-            out['all_pos'] = pos or 0          # all-time PO count (TAT denominator)
-            out['avg_po_value'] = round(float(val or 0) / pos, 2) if pos else 0.0
-            cur.execute(f"SELECT COUNT(DISTINCT po) FROM {ot} "
-                        f"WHERE created_at >= (CURDATE() - INTERVAL 6 DAY)")
-            out['week_pos'] = cur.fetchone()[0] or 0
-            try:
-                cur.execute("SELECT COUNT(*) FROM order_lines_full")
-                out['order_lines'] = cur.fetchone()[0] or 0
-                cur.execute("SELECT COUNT(*) FROM order_lines_full "
-                            "WHERE action IS NOT NULL AND action <> ''")
-                out['resolved'] = cur.fetchone()[0] or 0
-            except Exception:  # noqa: BLE001 — order_lines may be empty/new
-                pass
-    except Exception:  # noqa: BLE001
-        pass
-    return out
+    last 7 days, and resolved (actioned) issue lines. Read-only; never raises.
+    These are all-time/rolling aggregates that change only on upload/review — and
+    two of them are full scans of order_lines_full — so the bundle is ``_stable``-
+    cached (short TTL; busted on confirm) to keep the hub's #1-route load off those
+    scans on every visit."""
+    def _build():
+        out = {'avg_po_value': 0.0, 'order_lines': 0, 'week_pos': 0, 'resolved': 0,
+               'all_pos': 0}
+        try:
+            with _conn() as (cur, d):
+                ot = d['orders']
+                cur.execute(f"SELECT COUNT(DISTINCT po), COALESCE(SUM(order_value),0) FROM {ot}")
+                pos, val = cur.fetchone()
+                out['all_pos'] = pos or 0          # all-time PO count (TAT denominator)
+                out['avg_po_value'] = round(float(val or 0) / pos, 2) if pos else 0.0
+                cur.execute(f"SELECT COUNT(DISTINCT po) FROM {ot} "
+                            f"WHERE created_at >= (CURDATE() - INTERVAL 6 DAY)")
+                out['week_pos'] = cur.fetchone()[0] or 0
+                try:
+                    cur.execute("SELECT COUNT(*) FROM order_lines_full")
+                    out['order_lines'] = cur.fetchone()[0] or 0
+                    cur.execute("SELECT COUNT(*) FROM order_lines_full "
+                                "WHERE action IS NOT NULL AND action <> ''")
+                    out['resolved'] = cur.fetchone()[0] or 0
+                except Exception:  # noqa: BLE001 — order_lines may be empty/new
+                    pass
+        except Exception:  # noqa: BLE001
+            pass
+        return out
+    return _stable('hub_extra', _build)
 
 
 def recent_orders(limit: int = 8) -> list:
@@ -2075,6 +2081,18 @@ def dashboard(segment='', marketplace='', days=0, q='', warehouse='', order_type
 
 
 def overview(segment=SEGMENT, window='all') -> dict:
+    """``overview`` = the landing-page read bundle (~9 aggregate round-trips). It's
+    read-only and changes only on upload/review, so cache it per (segment, window)
+    in ``_stable`` (short TTL; busted on confirm). A failed build is NEVER cached —
+    it's popped so the next call retries live."""
+    key = f'overview:{segment}:{window}'
+    res = _stable(key, lambda: _overview_build(segment, window))
+    if not res.get('ok'):
+        _STABLE.pop(key, None)
+    return res
+
+
+def _overview_build(segment=SEGMENT, window='all') -> dict:
     """Lean landing-page data: KPIs + 30-day trend + marketplace mix/summary
     (no order rows — the full list lives on the Orders page). ``segment`` scopes
     everything ('OnlineB2B' default, 'Offline', or 'all'). ``window`` (Hub range
@@ -2211,19 +2229,24 @@ def _kpis(cur, d, segment=SEGMENT, window='all') -> dict:
 
 
 def _deltas(cur, d, segment=SEGMENT) -> dict:
-    """POs/value for the last 7 days vs the prior 7 days → % change."""
+    """POs/value for the last 7 days vs the prior 7 days → % change. Both windows
+    are computed in ONE round-trip (was two) via conditional aggregation — the
+    outer ``run_ts >= cut14`` prunes the scan; the CASE fold reproduces the exact
+    per-window COUNT(DISTINCT po)/SUM(value) the two separate queries returned."""
     ot, ph, kind = d['orders'], d['ph'], d['kind']
     seg, sp = _seg(ph, segment)
-
-    def window(lo_days, hi_days):
-        cur.execute(
-            f"SELECT COUNT(DISTINCT po), COALESCE(SUM(order_value),0) FROM {ot} "
-            f"WHERE {seg} AND run_ts >= {ph} AND run_ts < {ph}",
-            tuple(sp + [_cutoff(kind, lo_days), _cutoff(kind, hi_days)]))
-        return cur.fetchone()
-
-    cur_pos, cur_val = window(7, 0)
-    prev_pos, prev_val = window(14, 7)
+    c7, c0, c14 = _cutoff(kind, 7), _cutoff(kind, 0), _cutoff(kind, 14)
+    cur.execute(
+        f"SELECT "
+        f"COUNT(DISTINCT CASE WHEN run_ts >= {ph} AND run_ts < {ph} THEN po END), "
+        f"COALESCE(SUM(CASE WHEN run_ts >= {ph} AND run_ts < {ph} "
+        f"THEN order_value END),0), "
+        f"COUNT(DISTINCT CASE WHEN run_ts >= {ph} AND run_ts < {ph} THEN po END), "
+        f"COALESCE(SUM(CASE WHEN run_ts >= {ph} AND run_ts < {ph} "
+        f"THEN order_value END),0) "
+        f"FROM {ot} WHERE {seg} AND run_ts >= {ph}",
+        tuple([c7, c0, c7, c0, c14, c7, c14, c7] + sp + [c14]))
+    cur_pos, cur_val, prev_pos, prev_val = cur.fetchone()
 
     def pct(c, p):
         c, p = float(c or 0), float(p or 0)

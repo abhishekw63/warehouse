@@ -2502,11 +2502,13 @@ def confirm(request, token):
     meta['run_id'] = run_id
     meta['locked'] = True
     (d / 'meta.json').write_text(json.dumps(meta), encoding='utf-8')
-    # New orders just landed → drop the cached Cockpit summary so it reflects them
-    # at once (else the short TTL would hide the fresh PO for a few seconds).
+    # New orders just landed → drop ALL cached read-aggregates (hub overview/extra
+    # KPIs, cockpit summary, tracker dropdowns/geo) so the hub + tracker reflect the
+    # fresh PO at once instead of after the short TTL. They rebuild on next read.
+    # (Other record paths — offline MT/GT/EKA confirm — self-heal within the TTL.)
     try:
         from .services import order_db as _odb
-        _odb._stable_bust('summary:')
+        _odb._stable_bust()
     except Exception:  # noqa: BLE001
         pass
     # MEASURE-FIRST: surface the Lock&Record phase breakdown (run·export·record·enrich)
