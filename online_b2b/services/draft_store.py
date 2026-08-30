@@ -22,7 +22,13 @@ _FILE = 'parked_draft_file'
 _CHUNK = 4_000_000
 
 
+_READY = False        # process-local: the fixed DDL only needs to run ONCE
+
+
 def _ensure(cur):
+    global _READY
+    if _READY:
+        return
     cur.execute(
         f"CREATE TABLE IF NOT EXISTS {_META} ("
         f"token VARCHAR(64) PRIMARY KEY, marketplace VARCHAR(64), "
@@ -32,6 +38,7 @@ def _ensure(cur):
         f"CREATE TABLE IF NOT EXISTS {_FILE} ("
         f"token VARCHAR(64), filename VARCHAR(255), seq INT, content LONGBLOB, "
         f"PRIMARY KEY (token, filename, seq))")
+    _READY = True
 
 
 def _counts(dir_path: Path, meta: dict) -> tuple[int, int]:

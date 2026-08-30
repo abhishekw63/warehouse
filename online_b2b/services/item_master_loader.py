@@ -101,17 +101,26 @@ CREATE TABLE IF NOT EXISTS item_master (
 """
 
 
+_READY = False        # process-local: the fixed DDL only needs to run ONCE
+
+
 def ensure_tables() -> None:
     """Create item_master if absent (idempotent) + the channel SKU map
     (Swiggy/HG/…). Hand-added items live IN item_master (batch_id='manual') — no
     separate overlay table; the old item_swiggy_map / item_master_manual are
-    retired. Web owns these tables; the engine's schema is untouched."""
+    retired. Web owns these tables; the engine's schema is untouched. Guarded by
+    ``_READY`` so this DDL (+ channel_map's) runs once per process, not on every
+    item-master read."""
+    global _READY
+    if _READY:
+        return
     with _conn() as (cur, d):
         mysql = d['kind'] == 'mysql'
         cur.execute(_MYSQL_MASTER if mysql else _SQLITE_MASTER)
         cur.connection.commit()
     from . import channel_map
     channel_map.ensure_table()
+    _READY = True
 
 
 def _num(x):

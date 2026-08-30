@@ -97,7 +97,13 @@ CREATE TABLE IF NOT EXISTS {_ADHOC} (
 """
 
 
+_READY = False        # process-local: the fixed DDL only needs to run ONCE
+
+
 def ensure_table() -> None:
+    global _READY
+    if _READY:
+        return
     with _conn() as (cur, d):
         cur.execute(_CREATE)
         cur.execute(_CREATE_HOLD_LOG)
@@ -110,6 +116,7 @@ def ensure_table() -> None:
             except Exception:  # noqa: BLE001 — column already exists
                 pass
         cur.connection.commit()
+    _READY = True
 
 
 def hold_history(day, channel: str) -> list[dict]:

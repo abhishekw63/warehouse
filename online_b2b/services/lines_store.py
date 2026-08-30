@@ -128,9 +128,19 @@ def _f(x) -> float | None:
         return None
 
 
+_READY = False        # process-local: the fixed DDL below only needs to run ONCE
+
+
 def ensure_table() -> None:
     """Create the facts table + validation table + join view (idempotent).
-    Web owns all three; the engine schema is untouched."""
+    Web owns all three; the engine schema is untouched. Guarded by ``_READY`` so
+    the ~5 DDL round-trips (2 CREATE TABLE + CREATE OR REPLACE VIEW + 2
+    information_schema index probes) run once per process, not on every line
+    write. Render restarts (deploy/spin-down) re-apply the DDL, so a changed view
+    / index definition still lands on the next boot."""
+    global _READY
+    if _READY:
+        return
     with _conn() as (cur, d):
         mysql = d['kind'] == 'mysql'
         cur.execute(_MYSQL_FACTS if mysql else _SQLITE_FACTS)
@@ -172,6 +182,7 @@ def ensure_table() -> None:
             except Exception:  # noqa: BLE001
                 pass
         cur.connection.commit()
+    _READY = True
 
 
 def ensure_cascade_trigger() -> dict:

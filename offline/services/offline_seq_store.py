@@ -21,11 +21,18 @@ from online_b2b.services.order_db import _conn, _conn_tx
 _TABLE = 'offline_seq_state'
 
 
+_READY = False        # process-local: the fixed DDL only needs to run ONCE
+
+
 def _ensure(cur):
+    global _READY
+    if _READY:
+        return
     cur.execute(
         f"CREATE TABLE IF NOT EXISTS {_TABLE} ("
         f"channel VARCHAR(32) PRIMARY KEY, seq_date VARCHAR(16), "
         f"next_counter BIGINT, updated_at DATETIME)")
+    _READY = True
 
 
 def db_load_state() -> dict:

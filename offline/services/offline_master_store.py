@@ -27,7 +27,13 @@ _CHUNK_BYTES = 4_000_000                     # < TiDB's ~6 MB per-entry limit
 _cache: dict[str, tuple[str, Path]] = {}     # channel -> (uploaded_at, temp Path)
 
 
+_READY = False        # process-local: the fixed DDL only needs to run ONCE
+
+
 def _ensure(cur):
+    global _READY
+    if _READY:
+        return
     cur.execute(
         f"CREATE TABLE IF NOT EXISTS {_META} ("
         f"channel VARCHAR(32) PRIMARY KEY, filename VARCHAR(255), "
@@ -37,6 +43,7 @@ def _ensure(cur):
         f"CREATE TABLE IF NOT EXISTS {_CHUNK} ("
         f"channel VARCHAR(32), seq INT, content LONGBLOB, "
         f"PRIMARY KEY (channel, seq))")
+    _READY = True
 
 
 def put_master(channel: str, file_path, uploaded_by: str = '') -> dict:

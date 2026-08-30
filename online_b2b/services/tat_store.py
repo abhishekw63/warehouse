@@ -54,10 +54,17 @@ CREATE TABLE IF NOT EXISTS order_tat (
 """
 
 
+_READY = False        # process-local: the fixed DDL only needs to run ONCE
+
+
 def ensure_table() -> None:
+    global _READY
+    if _READY:
+        return
     with _conn() as (cur, d):
         cur.execute(_MYSQL if d['kind'] == 'mysql' else _SQLITE)
         cur.connection.commit()
+    _READY = True
 
 
 def _to_date(x):

@@ -52,10 +52,17 @@ CREATE TABLE IF NOT EXISTS channel_sku_map (
 _COLS = ['channel', 'sku_code', 'ean', 'item_no', 'source', 'updated_at']
 
 
+_READY = False        # process-local: the fixed DDL only needs to run ONCE
+
+
 def ensure_table() -> None:
+    global _READY
+    if _READY:
+        return
     with _conn() as (cur, d):
         cur.execute(_MYSQL if d['kind'] == 'mysql' else _SQLITE)
         cur.connection.commit()
+    _READY = True
 
 
 def channel_codes(channel: str) -> dict:
