@@ -335,3 +335,27 @@ LOGIN_REDIRECT_URL = 'departments'
 LOGOUT_REDIRECT_URL = 'home'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# ── Logging ──────────────────────────────────────────────────────────────
+# Durable error capture with ZERO paid infra: unhandled 500s (django.request)
+# and their tracebacks go to STDERR, which Render captures in its free log
+# stream (logs/perf.jsonl is ephemeral on the free tier, so it can't hold these).
+# disable_existing_loggers=False so Django's own loggers keep working.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'concise': {'format': '[{asctime}] {levelname} {name}: {message}',
+                    'style': '{'},
+    },
+    'handlers': {
+        'stderr': {'class': 'logging.StreamHandler', 'formatter': 'concise'},
+    },
+    'loggers': {
+        # 500-level tracebacks (never log request bodies — they may carry PO
+        # financials / credentials).
+        'django.request': {'handlers': ['stderr'], 'level': 'ERROR',
+                           'propagate': False},
+    },
+    'root': {'handlers': ['stderr'], 'level': 'WARNING'},
+}

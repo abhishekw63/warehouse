@@ -6,6 +6,7 @@
 Django==6.0.3
 waitress==3.0.2          # Windows-native WSGI server (LAN hosting; unused on PythonAnywhere)
 whitenoise==6.12.0       # serve collected static files from the WSGI app
+Brotli==1.1.0            # lets whitenoise emit .br (≈15-25% smaller than gzip on css/js)
 python-dotenv==1.1.0     # load a project-root .env (secrets/config off the code)
 gunicorn==23.0.0         # Linux WSGI server (Render / Railway / VPS / Docker)
 asgiref==3.11.1

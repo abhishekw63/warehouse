@@ -18,12 +18,17 @@ Including another URLconf
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
+from django.http import HttpResponse
 from django.templatetags.static import static as static_url
 from django.urls import include, path
 from django.views.generic.base import RedirectView
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    # Liveness probe — touches nothing (no DB, no auth). Ping it from a FREE
+    # external scheduler every ~10 min during work hours to keep the Render free
+    # dyno warm (kills cold-start + the ~700ms TiDB TLS handshake on first hit).
+    path('healthz', lambda r: HttpResponse('ok', content_type='text/plain')),
     # Browsers probe /favicon.ico at the domain root — point it at our icon
     # so it resolves instead of logging a 404.
     path('favicon.ico', RedirectView.as_view(url=static_url('core/favicon.ico'), permanent=True)),
