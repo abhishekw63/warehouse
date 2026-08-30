@@ -330,6 +330,53 @@ def _group_exceptions(rows):
     return [{'mp': k, 'rows': v} for k, v in sorted(groups.items())]
 
 
+def _rules_context() -> dict:
+    """Marketplace Rules & Exceptions **reference** context — margins, basis, item
+    resolution, deals, and MT channels, all from the live engine config. Shared by
+    the Rules page AND the SKU Exceptions page (which now embeds this reference) so
+    the two never drift."""
+    ctx: dict = {}
+    rules = engine_bridge.marketplace_rules()
+    ctx['rules'] = rules
+    ctx['gst_margin_rules'] = [r for r in rules if r.get('gst_margin')]
+    ctx['formats'] = engine_bridge.marketplace_formats()
+    ctx['template_names'] = list(engine_bridge.marketplace_templates().keys())
+    ctx['locations'] = engine_bridge.location_rules()
+    try:
+        from .services import overrides_store
+        allx = overrides_store.list_all()
+        ctx['swiggy_deals'] = [r for r in allx if r.get('kind') == 'swiggy_deal']
+        ctx['zepto_deals'] = [r for r in allx if r.get('kind') == 'zepto_deal']
+        ctx['exc_groups'] = _group_exceptions(allx)
+        ctx['exc_total'] = len(allx)
+    except Exception:  # noqa: BLE001
+        ctx['swiggy_deals'] = []
+        ctx['zepto_deals'] = []
+        ctx['exc_groups'] = []
+        ctx['exc_total'] = 0
+    try:
+        from offline.services import mt_bridge
+        eng = mt_bridge._engine()
+        mt = []
+        for code in mt_bridge.WEB_CHANNELS:
+            cfg = eng.CHANNELS.get(code)
+            if not cfg:
+                continue
+            req = mt_bridge.channel_requirements(code) or {}
+            mt.append({
+                'code': code, 'name': cfg.display_name,
+                'sell_to': getattr(cfg, 'sell_to', ''),
+                'lookup': getattr(cfg, 'lookup_via', ''),
+                'required': req.get('required', ''),
+                'optional': req.get('optional', ''),
+                'if_absent': req.get('if_absent', ''),
+            })
+        ctx['mt_channels'] = mt
+    except Exception:  # noqa: BLE001
+        ctx['mt_channels'] = []
+    return ctx
+
+
 class RulesView(LoginRequiredMixin, TemplateView):
     """Marketplace Rules & Exceptions reference — margins, compare basis, item
     resolution, the engine's exception types + operator decisions, and Flipkart's
@@ -338,50 +385,7 @@ class RulesView(LoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
-        rules = engine_bridge.marketplace_rules()
-        ctx['rules'] = rules
-        # Marketplaces whose margin is GST-dependent (Reliance) — for the
-        # elaborated exceptions section.
-        ctx['gst_margin_rules'] = [r for r in rules if r.get('gst_margin')]
-        ctx['formats'] = engine_bridge.marketplace_formats()
-        # Marketplaces that have a full "See full template" preview available.
-        ctx['template_names'] = list(engine_bridge.marketplace_templates().keys())
-        ctx['locations'] = engine_bridge.location_rules()
-        # Actual Swiggy deal SKUs (name + agreed prices) for accuracy on the card.
-        try:
-            from .services import overrides_store
-            allx = overrides_store.list_all()
-            ctx['swiggy_deals'] = [r for r in allx if r.get('kind') == 'swiggy_deal']
-            ctx['zepto_deals'] = [r for r in allx if r.get('kind') == 'zepto_deal']
-            ctx['exc_groups'] = _group_exceptions(allx)
-            ctx['exc_total'] = len(allx)
-        except Exception:  # noqa: BLE001
-            ctx['swiggy_deals'] = []
-            ctx['zepto_deals'] = []
-            ctx['exc_groups'] = []
-            ctx['exc_total'] = 0
-        # MT (Modern Trade) child channels + their per-channel input requirements
-        # (data-driven, so new channels e.g. Reliance auto-appear on the Rules page).
-        try:
-            from offline.services import mt_bridge
-            eng = mt_bridge._engine()
-            mt = []
-            for code in mt_bridge.WEB_CHANNELS:
-                cfg = eng.CHANNELS.get(code)
-                if not cfg:
-                    continue
-                req = mt_bridge.channel_requirements(code) or {}
-                mt.append({
-                    'code': code, 'name': cfg.display_name,
-                    'sell_to': getattr(cfg, 'sell_to', ''),
-                    'lookup': getattr(cfg, 'lookup_via', ''),
-                    'required': req.get('required', ''),
-                    'optional': req.get('optional', ''),
-                    'if_absent': req.get('if_absent', ''),
-                })
-            ctx['mt_channels'] = mt
-        except Exception:  # noqa: BLE001
-            ctx['mt_channels'] = []
+        ctx.update(_rules_context())
         return ctx
 
 
@@ -4108,7 +4112,9 @@ def exceptions_page(request):
         'marketplaces': engine_bridge.PILOT_MARKETPLACES,
         'counts': ov.table_counts(),
         'n_manual': sum(1 for r in rows if r.get('source') == 'manual'),
-        'n_mp_with': len(grouped), 'n_flat': len(flat)})
+        'n_mp_with': len(grouped), 'n_flat': len(flat),
+        # Rules & Exceptions reference is now embedded on this page (merged).
+        **_rules_context()})
 
 
 @login_required

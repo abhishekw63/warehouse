@@ -3,7 +3,8 @@
 {% block title %}Online B2B — SKU Exceptions{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
 
-<link rel="stylesheet" href="{% static 'online_b2b/pages/exceptions.css' %}">{% endblock %}
+<link rel="stylesheet" href="{% static 'online_b2b/pages/exceptions.css' %}">
+<link rel="stylesheet" href="{% static 'online_b2b/pages/rules.css' %}">{% endblock %}
 
 {% block breadcrumb %}
     <a href="{% url 'departments' %}">Departments</a>
@@ -173,6 +174,12 @@
     </div>
   </div>
 </div>
+
+{# ── Merged in: the former "Rules & Exceptions" reference page (one page now) ── #}
+<details class="xrules-ref">
+  <summary>📖 Marketplace Rules reference <span>— margins · basis · item resolution · deals · MT channels (from the live engine config)</span></summary>
+  {% include 'online_b2b/_rules_ref.html' %}
+</details>
 
 {% endblock %}
 
