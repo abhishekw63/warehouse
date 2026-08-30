@@ -1234,8 +1234,10 @@ def issues(request):
         data['kpi'] = {}
     if _is_ajax(request):
         return render(request, 'online_b2b/_issues_table.html', {'d': data})
+    from .services import issue_email_log as _iel
     return render(request, 'online_b2b/issues.html',
-                  {'d': data, 'eanfix': order_db.ean_corrections()})
+                  {'d': data, 'eanfix': order_db.ean_corrections(),
+                   'auto_email_unsent': _iel.unsent_count()})
 
 
 @login_required
@@ -1317,6 +1319,17 @@ def issues_email_send(request):
              'before sending.'})
     ok, reason = rep.send()
     return JsonResponse({'ok': ok, 'error': reason, 'count': len(rep.rows)})
+
+
+@login_required
+@require_POST
+def issues_email_retry(request):
+    """Retry all failed/pending AUTO Issues emails (the self-healing sweep, on
+    demand from the Issues-page banner). The per-run send already fires at Lock &
+    Record + sweeps on the next record; this is the manual button."""
+    from .services import auto_issue_email as _aie
+    res = _aie.flush_pending(limit=50)
+    return JsonResponse({'ok': True, **res})
 
 
 @login_required
@@ -2544,6 +2557,17 @@ def confirm(request, token):
                           getattr(request.user, 'username', '') or 'system')
         except Exception:  # noqa: BLE001
             pass
+    # ── Auto Issues email for THIS run (excluded + included lines). Synchronous so
+    #    its result rides back for the toast; the run is ALREADY committed, so this
+    #    is wrapped to never break the lock. Also sweeps earlier failed sends async. ──
+    issue_email = None
+    try:
+        from .services import auto_issue_email as _aie
+        issue_email = _aie.send_for_run(run_id, meta.get('marketplace', ''))
+        _aie.flush_pending_async()
+    except Exception:  # noqa: BLE001
+        import logging as _lg
+        _lg.getLogger(__name__).exception('auto issue-email failed (non-fatal)')
     pos = res['summary']['pos']
     lines = res.get('lines_recorded', 0)
     if ajax:
@@ -2553,6 +2577,7 @@ def confirm(request, token):
             'has_d365': False,                   # generated on demand at download
             'run_url': reverse('b2b_run_detail', args=[run_id]),
             'd365_url': reverse('b2b_generate_d365', args=[token]),
+            'issue_email': issue_email,          # {status,detail,to,n_excluded,...} for the toast
             'message': f"Locked & recorded {pos} PO(s), {lines} line(s).",
         })
     messages.success(

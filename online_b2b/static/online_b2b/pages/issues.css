@@ -82,3 +82,16 @@
   .exc{ color:#7c3aed; font-weight:700; font-size:10.5px; }
   .act-sel,.act-rem,.ef-in{ height:32px; box-sizing:border-box; border:1px solid #dcdce6; border-radius:8px; padding:0 9px; font:inherit; font-size:12px; background:#fff; }
   .act-sel:focus,.act-rem:focus,.ef-in:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(79,70,229,.12); }
+
+/* Auto Issues-email health banner (shows only when a per-run send failed/pended) */
+.ie-banner{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 16px;
+  padding:11px 16px;border:1px solid #fcd34d;background:#fffbeb;border-radius:12px;
+  font-size:13px;color:#92400e;}
+.ie-banner .ie-dot{width:9px;height:9px;border-radius:50%;background:#f59e0b;
+  box-shadow:0 0 0 3px #fde68a;flex-shrink:0;}
+.ie-banner .ie-msg b{font-weight:800;}
+.ie-banner .ie-hint{color:#b45309;font-weight:500;}
+.ie-banner .ie-retry{margin-left:auto;background:#f59e0b;color:#fff;border:0;border-radius:8px;
+  padding:7px 14px;font-weight:700;font-size:12.5px;cursor:pointer;transition:background .14s;}
+.ie-banner .ie-retry:hover{background:#d97706;}
+.ie-banner .ie-retry:disabled{opacity:.6;cursor:default;}

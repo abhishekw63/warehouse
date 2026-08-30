@@ -300,3 +300,27 @@ var CFG = JSON.parse(document.getElementById("issues-cfg").textContent);
   $('em-cancel').addEventListener('click', close);
   modal.addEventListener('click', function (e) { if (e.target === modal) close(); });
 })();
+
+// ── Auto Issues-email health banner: manual resend of failed/pending auto-mails.
+// Delegated (survives AJAX table refreshes). POSTs to the retry endpoint → toast.
+document.addEventListener('click', function (e) {
+  var btn = e.target.closest && e.target.closest('.ie-retry');
+  if (!btn) return;
+  var banner = btn.closest('.ie-banner');
+  var url = banner && banner.getAttribute('data-retry-url');
+  if (!url) return;
+  var tok = banner.querySelector('input[name=csrfmiddlewaretoken]');
+  btn.disabled = true; btn.textContent = 'Resending…';
+  fetch(url, { method: 'POST', headers: { 'X-CSRFToken': tok ? tok.value : '' } })
+    .then(function (r) { return r.json(); })
+    .then(function (j) {
+      if (window.B2B && B2B.toast) B2B.toast(
+        'Retried ' + (j.tried || 0) + ' · sent ' + (j.sent || 0) + '.',
+        { type: (j.sent ? 'ok' : 'info'), title: 'Issues email retry' });
+      setTimeout(function () { location.reload(); }, 900);
+    })
+    .catch(function () {
+      btn.disabled = false; btn.textContent = 'Resend now';
+      if (window.B2B && B2B.toast) B2B.toast('Retry failed.', { type: 'err' });
+    });
+});

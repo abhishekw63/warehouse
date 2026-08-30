@@ -2377,7 +2377,7 @@ _FIXED_EAN_SQL = "(received_ean IS NOT NULL AND received_ean <> '')"
 
 
 def issues(marketplace='', q='', status='', resolution='pending',
-           date_from='', date_to='', limit=300) -> dict:
+           date_from='', date_to='', limit=300, run_id='') -> dict:
     """Affected lines for the Issues page — price MISMATCH, NOT_IN_MASTER, AND
     EAN-corrected lines (now OK but were NOT_IN_MASTER, with the fix as the
     resolution). ``resolution`` = 'pending' / 'resolved' / 'all'.
@@ -2406,6 +2406,9 @@ def issues(marketplace='', q='', status='', resolution='pending',
                 where.append(f"(po LIKE {ph} OR item_no LIKE {ph} "
                              f"OR description LIKE {ph})")
                 params += [f"%{q}%", f"%{q}%", f"%{q}%"]
+            # Scope to ONE run — used by the per-run auto Issues email (Lock&Record).
+            if run_id:
+                where.append(f"run_id={ph}"); params.append(run_id)
             # Upload-date window (on run_ts). Same fragment reused for the counts.
             date_sql = ''
             date_params: list = []

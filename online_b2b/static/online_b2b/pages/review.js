@@ -448,6 +448,24 @@ var CFG = JSON.parse(document.getElementById("review-cfg").textContent);
       'Run #' + j.run_id + ' · ' + j.pos + ' PO(s) · ' + j.lines +
         ' line(s) pushed to D365. Download buttons are ready below.',
       { type: 'ok', title: 'Locked & recorded ✓', timeout: 7000 });
+    // Auto Issues email for THIS run (excluded + included lines) — its own toast,
+    // same style as Lock&Record. 'skipped' (no issue lines / no recipient / off)
+    // shows nothing; 'failed' says it will self-heal on the next record.
+    var ie = j.issue_email;
+    if (ie && window.B2B && B2B.toast) {
+      if (ie.status === 'sent') {
+        var who = (ie.to && ie.to.length)
+          ? ie.to[0] + (ie.to.length > 1 ? ' +' + (ie.to.length - 1) + ' more' : '')
+          : 'the team';
+        B2B.toast('📧 Sent to ' + who + ' · ' + (ie.n_excluded || 0) +
+          ' excluded, ' + (ie.n_included || 0) + ' included.',
+          { type: 'ok', title: 'Issues email sent ✓', timeout: 6000 });
+      } else if (ie.status === 'failed') {
+        B2B.toast('Couldn’t send now (' + (ie.detail || 'error') +
+          ') — it will retry automatically on the next record.',
+          { type: 'err', title: 'Issues email failed', timeout: 8000 });
+      }
+    }
   }
 
   // The actual lock+record (progress bar → AJAX). Called once all guards pass.

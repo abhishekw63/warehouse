@@ -21,6 +21,18 @@
     </div>
   </div>
 
+  {# Auto Issues-email health — only shows when a per-run send failed/pended.
+     They self-heal on the next Lock&Record; this is the manual resend + visibility. #}
+  {% if auto_email_unsent %}
+  <div class="ie-banner" data-retry-url="{% url 'b2b_issues_email_retry' %}">
+    {% csrf_token %}
+    <span class="ie-dot"></span>
+    <span class="ie-msg"><b>{{ auto_email_unsent }}</b> run{{ auto_email_unsent|pluralize }} with an un-sent issues email
+      <span class="ie-hint">— retries automatically on the next Lock&nbsp;&amp;&nbsp;Record.</span></span>
+    <button type="button" class="ie-retry">Resend now</button>
+  </div>
+  {% endif %}
+
   {% if not d.ok %}
     <div class="banner err">Issues unavailable{% if d.error %} — {{ d.error }}{% endif %}.</div>
   {% else %}

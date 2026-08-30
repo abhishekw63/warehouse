@@ -125,6 +125,7 @@ urlpatterns = [
     path('issues/export/', views.issues_export, name='b2b_issues_export'),
     path('issues/email/preview/', views.issues_email_preview, name='b2b_issues_email_preview'),
     path('issues/email/send/', views.issues_email_send, name='b2b_issues_email_send'),
+    path('issues/email/retry/', views.issues_email_retry, name='b2b_issues_email_retry'),
     path('issues/save/', views.issues_save, name='b2b_issues_save'),
     path('issues/save-bulk/', views.issues_save_bulk, name='b2b_issues_save_bulk'),
     path('issues/fix-ean/', views.issues_fix_ean, name='b2b_issues_fix_ean'),
