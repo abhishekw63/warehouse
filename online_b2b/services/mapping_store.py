@@ -86,9 +86,19 @@ def _cust(x) -> str:
     return c[:-2] if c.endswith('.0') else c
 
 
+_READY = False        # process-local: the fixed DDL below only needs to run ONCE
+
+
 def ensure_table() -> None:
     """Create ``ship_to_mapping`` if absent (idempotent), and add the ``source``
-    column to a pre-existing table. Web owns this table; engine schema untouched."""
+    column to a pre-existing table. Web owns this table; engine schema untouched.
+
+    The DDL set here is FIXED (custom fields live in the ``extra`` JSON, not
+    per-field columns), so after the first success we short-circuit — otherwise
+    every page load paid ~7 wasted ALTER round-trips (≈1s on a remote DB)."""
+    global _READY
+    if _READY:
+        return
     with _conn() as (cur, d):
         cur.execute(_MYSQL_MAP if d['kind'] == 'mysql' else _SQLITE_MAP)
         try:                              # backfill source col on an older table
@@ -126,6 +136,7 @@ def ensure_table() -> None:
                     name TEXT UNIQUE, label TEXT, created_at TEXT
                 )""")
         cur.connection.commit()
+    _READY = True         # DDL applied — skip the whole block on later calls
 
 
 # ── Personalization: user-defined custom fields ─────────────────────────────
