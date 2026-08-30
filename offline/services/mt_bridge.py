@@ -2135,15 +2135,18 @@ class MTProcessor:
                 # holds the SO number; external_doc holds the store PO.)
                 try:
                     from online_b2b.services.order_db import _conn
-                    with _conn() as (cur, d):
-                        ph = d['ph']
-                        for pf in batch.po_files:
-                            if pf.so_number and pf.po_no:
-                                cur.execute(
-                                    f"UPDATE order_headers SET external_doc={ph} "
-                                    f"WHERE run_id={ph} AND po={ph}",
-                                    (str(pf.po_no), recorded['run_id'], pf.so_number))
-                        cur.connection.commit()
+                    # One executemany instead of a UPDATE per PO — identical SQL +
+                    # per-row params, just protocol-batched (fewer round-trips on a
+                    # big MT dump). Money-path: semantics unchanged.
+                    stamp_rows = [(str(pf.po_no), recorded['run_id'], pf.so_number)
+                                  for pf in batch.po_files if pf.so_number and pf.po_no]
+                    if stamp_rows:
+                        with _conn() as (cur, d):
+                            ph = d['ph']
+                            cur.executemany(
+                                f"UPDATE order_headers SET external_doc={ph} "
+                                f"WHERE run_id={ph} AND po={ph}", stamp_rows)
+                            cur.connection.commit()
                 except Exception as e:  # noqa: BLE001
                     self.report += f"\n[external_doc stamp skipped] {e}"
                 # PO Date backfill from the PDF cross-check (Reliance Excel has

@@ -169,23 +169,30 @@ def load_master_file(path: str, channel: str) -> dict:
             ph = d['ph']
             cur.execute('SELECT ean, item_no FROM item_master')
             e2i = {str(a): str(b) for a, b in cur.fetchall()}
+            # Preload existing (sku_code -> id) for THIS channel in ONE query (was a
+            # SELECT per SKU), then bucket + two executemany (was an UPDATE/INSERT per
+            # SKU). Same result; a few-thousand-SKU master goes 2N round-trips -> ~3.
+            cur.execute(f"SELECT sku_code, id FROM {_TABLE} WHERE channel={ph}", (channel,))
+            existing = {str(s): i for s, i in cur.fetchall()}
+            upd_rows, ins_rows = [], []
             for sku, ean in pairs.items():
                 item = e2i.get(ean, '')
                 if not item:
                     unmapped += 1
-                cur.execute(f"SELECT id FROM {_TABLE} WHERE channel={ph} AND sku_code={ph}",
-                            (channel, sku))
-                row = cur.fetchone()
-                if row:
-                    cur.execute(f"UPDATE {_TABLE} SET ean={ph}, item_no={ph}, "
-                                f"source='upload', updated_at={ph} WHERE id={ph}",
-                                (ean, item or None, now, row[0]))
-                    upd += 1
+                rid = existing.get(sku)
+                if rid is not None:
+                    upd_rows.append((ean, item or None, now, rid))
                 else:
-                    cur.execute(f"INSERT INTO {_TABLE} (channel,sku_code,ean,item_no,"
-                                f"source,updated_at) VALUES ({ph},{ph},{ph},{ph},"
-                                f"'upload',{ph})", (channel, sku, ean, item or None, now))
-                    ins += 1
+                    ins_rows.append((channel, sku, ean, item or None, now))
+            if upd_rows:
+                cur.executemany(
+                    f"UPDATE {_TABLE} SET ean={ph}, item_no={ph}, source='upload', "
+                    f"updated_at={ph} WHERE id={ph}", upd_rows)
+            if ins_rows:
+                cur.executemany(
+                    f"INSERT INTO {_TABLE} (channel,sku_code,ean,item_no,source,"
+                    f"updated_at) VALUES ({ph},{ph},{ph},{ph},'upload',{ph})", ins_rows)
+            ins, upd = len(ins_rows), len(upd_rows)
             cur.connection.commit()
         return {'ok': True, 'parsed': len(pairs), 'inserted': ins,
                 'updated': upd, 'unmapped': unmapped}

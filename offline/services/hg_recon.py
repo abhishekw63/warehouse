@@ -415,19 +415,26 @@ def load_hg_master_dec25(path: str, channel: str = 'HG') -> dict:
         ph = d['ph']
         cur.execute('SELECT ean, item_no FROM item_master')
         e2i = {str(a): str(b) for a, b in cur.fetchall()}
+        # Preload existing ids for this channel in ONE query, then bucket + two
+        # executemany (was a SELECT + UPDATE/INSERT per SKU). Same result.
+        cur.execute(f"SELECT sku_code, id FROM channel_sku_map WHERE channel={ph}",
+                    (channel,))
+        existing = {str(s): i for s, i in cur.fetchall()}
+        upd_rows, ins_rows = [], []
         for sku, ean in m.items():
             item = e2i.get(ean, '')
-            cur.execute(f"SELECT id FROM channel_sku_map WHERE channel={ph} "
-                        f"AND sku_code={ph}", (channel, sku))
-            row = cur.fetchone()
-            if row:
-                cur.execute(f"UPDATE channel_sku_map SET ean={ph}, item_no={ph}, "
-                            f"source='dec25', updated_at={ph} WHERE id={ph}",
-                            (ean, item, now, row[0])); upd += 1
+            rid = existing.get(sku)
+            if rid is not None:
+                upd_rows.append((ean, item, now, rid))
             else:
-                cur.execute(f"INSERT INTO channel_sku_map (channel,sku_code,ean,"
+                ins_rows.append((channel, sku, ean, item, now))
+        if upd_rows:
+            cur.executemany(f"UPDATE channel_sku_map SET ean={ph}, item_no={ph}, "
+                            f"source='dec25', updated_at={ph} WHERE id={ph}", upd_rows)
+        if ins_rows:
+            cur.executemany(f"INSERT INTO channel_sku_map (channel,sku_code,ean,"
                             f"item_no,source,updated_at) VALUES ({ph},{ph},{ph},"
-                            f"{ph},'dec25',{ph})", (channel, sku, ean, item, now))
-                ins += 1
+                            f"{ph},'dec25',{ph})", ins_rows)
+        ins, upd = len(ins_rows), len(upd_rows)
         cur.connection.commit()
     return {'parsed': len(m), 'inserted': ins, 'updated': upd}
