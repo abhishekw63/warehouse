@@ -1021,6 +1021,16 @@ class Processor:
                     f"{label}: dump carries no price — order value is COMPUTED "
                     f"from our master pricing (calculated CP inc-GST = Landing × "
                     f"qty) for {filled} PO(s), total ₹{total:,.2f}.")
+        # Clean po_date/exp_date for DISPLAY. order_rows_from_result stores them as
+        # str(date); a tz-aware source datetime yields ugly "2026-08-31 00:00:00
+        # +0000 UTC" on the review page. Normalise to DD-MM-YYYY via the SAME _to_date
+        # the record path uses, so the recorded DATE is byte-identical (it re-parses
+        # DD-MM-YYYY first) — this only tidies the preview string.
+        from online_po_processor.auto.history_db import _to_date as _hd_to_date
+        for h in headers:
+            for k in ('po_date', 'exp_date'):
+                dv = _hd_to_date(h.get(k))
+                h[k] = dv.strftime('%d-%m-%Y') if dv else ''
         return headers
 
     _EAN_MAX = 20   # matches the order_lines.ean VARCHAR(20) column

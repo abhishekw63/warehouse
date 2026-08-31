@@ -398,6 +398,11 @@ def web_dedup(result, marketplace) -> list:
     if not dup:
         return []
     trk = {str(t['po']): t for t in build_tracker_rows(result)}
+    from online_po_processor.auto.history_db import _to_date as _hd_to_date
+
+    def _dd(v):   # clean date → DD-MM-YYYY for the "already uploaded" tab (display only)
+        dv = _hd_to_date(v)
+        return dv.strftime('%d-%m-%Y') if dv else ''
     skipped = []
     for po in dup:
         t = trk.get(po, {})
@@ -405,7 +410,7 @@ def web_dedup(result, marketplace) -> list:
             'segment': ORDER_SEGMENT, 'marketplace': marketplace,
             'marketplace_label': t.get('market_place', marketplace), 'po': po,
             'location': t.get('location', '') or '',
-            'po_date': t.get('po_date', ''), 'exp_date': t.get('exp_date', ''),
+            'po_date': _dd(t.get('po_date')), 'exp_date': _dd(t.get('exp_date')),
             'qty': int(t.get('order_qty') or 0),
             'order_value': float(t.get('order_value') or 0.0),
         })
