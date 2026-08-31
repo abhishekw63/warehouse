@@ -432,9 +432,8 @@ var CFG = JSON.parse(document.getElementById("review-cfg").textContent);
       document.body.appendChild(t); t.click();
       setTimeout(function () { t.remove(); }, 2000);
     }
-    if (window.B2B && B2B.toast) B2B.toast(
-      'SO Workbook is downloading in the background — check your browser Downloads. You can keep working.',
-      { type: 'info', title: 'SO Workbook', timeout: 9000 });
+    // Toast handled by the single merged Lock&Record toast in flourish() — no
+    // separate "SO Workbook downloading" toast here.
   }
 
   function flourish(j) {
@@ -446,8 +445,9 @@ var CFG = JSON.parse(document.getElementById("review-cfg").textContent);
     if (window.B2B && B2B.celebrate) B2B.celebrate();
     if (window.B2B && B2B.toast) B2B.toast(
       'Run #' + j.run_id + ' · ' + j.pos + ' PO(s) · ' + j.lines +
-        ' line(s) pushed to D365. Download buttons are ready below.',
-      { type: 'ok', title: 'Locked & recorded ✓', timeout: 7000 });
+        ' line(s) pushed to D365. The Completed SO Workbook is downloading — ' +
+        'check your browser Downloads. Buttons are ready below too.',
+      { type: 'ok', title: 'Locked & recorded ✓', timeout: 8000 });
     // Auto Issues email for THIS run (excluded + included lines) — its own toast,
     // same style as Lock&Record. 'skipped' (no issue lines / no recipient / off)
     // shows nothing; 'failed' says it will self-heal on the next record.
