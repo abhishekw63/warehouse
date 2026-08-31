@@ -108,5 +108,5 @@
 {# Chart lib in extra_js (OUTSIDE #MainContent) — inside the content block it breaks on
    SPA nav (innerHTML injects but never runs the <script>, then fools the re-exec dedup).
    syncSharedScripts injects this non-data-page-js lib before overview.js. #}
-{% block extra_js %}<script defer src="{% static 'online_b2b/vendor/apexcharts.min.js' %}"></script>
+{% block extra_js %}<script defer src="{% static 'online_b2b/vendor/echarts.min.js' %}"></script>
 <script defer data-page-js src="{% static 'online_b2b/pages/overview.js' %}"></script>{% endblock %}
