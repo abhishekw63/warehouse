@@ -475,6 +475,10 @@ class IssuesEmailReport(EmailReport):
                 f'<td style="{td}font-family:monospace;">{_fmt(r.get("ean"))}</td>'
                 f'<td style="{td}">{_fmt(r.get("description"))}</td>'
                 f'<td style="{td}text-align:right;">{_fmt(r.get("qty"))}</td>'
+                f'<td style="{td}text-align:right;">{_fmt(r.get("our_mrp"))}</td>'
+                f'<td style="{td}text-align:right;">{_fmt(r.get("vendor_mrp"))}</td>'
+                f'<td style="{td}text-align:right;">{_fmt(r.get("our_landing"))}</td>'
+                f'<td style="{td}text-align:right;">{_fmt(r.get("vendor_landing"))}</td>'
                 f'<td style="{td}text-align:right;">{_fmt(r.get("our_cp"))}</td>'
                 f'<td style="{td}text-align:right;">{_fmt(r.get("vendor_cp"))}</td>'
                 f'<td style="{td}text-align:right;">{_fmt(r.get("diff"))}</td>'
@@ -483,7 +487,7 @@ class IssuesEmailReport(EmailReport):
                 f'<td style="{td}">{_fmt(r.get("remark"))}</td>'
                 f'</tr>')
         body = ''.join(rows_html) or (
-            f'<tr><td colspan="12" style="{td}text-align:center;color:#6b7280;">'
+            f'<tr><td colspan="16" style="{td}text-align:center;color:#6b7280;">'
             f'No lines.</td></tr>')
         return (
             '<table style="border-collapse:collapse;width:100%;border:1px solid #e5e7eb;">'
@@ -491,6 +495,10 @@ class IssuesEmailReport(EmailReport):
             f'<th style="{th}">MP</th><th style="{th}">PO</th><th style="{th}">Item</th>'
             f'<th style="{th}">EAN</th><th style="{th}">Description</th>'
             f'<th style="{th}text-align:right;">Qty</th>'
+            f'<th style="{th}text-align:right;">Our MRP</th>'
+            f'<th style="{th}text-align:right;">Their MRP</th>'
+            f'<th style="{th}text-align:right;">Our LR</th>'
+            f'<th style="{th}text-align:right;">Their LR</th>'
             f'<th style="{th}text-align:right;">Our CP</th>'
             f'<th style="{th}text-align:right;">Their CP</th>'
             f'<th style="{th}text-align:right;">Diff</th>'
