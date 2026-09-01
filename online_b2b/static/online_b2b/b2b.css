@@ -849,7 +849,16 @@ body.lo-open{overflow:hidden;}
 .im-table thead th{position:sticky;top:0;background:var(--surface);z-index:2;box-shadow:0 1px 0 var(--border);}
 .im-table tbody tr:nth-child(even){background:var(--surface-2);}
 .im-table tbody tr:hover{background:var(--accent-soft);}
-.im-table .desc{max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* Description flexes (override the .grid.compact .desc 160px cap via a 4-class
+   selector) so it absorbs the slack; the short columns get fixed widths so they
+   stay compact + aligned instead of spreading across the full-width table. */
+.grid.compact.im-table .desc{max-width:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.im-table th:nth-child(1),.im-table td:nth-child(1){width:84px;}    /* Item No */
+.im-table th:nth-child(2),.im-table td:nth-child(2){width:142px;}   /* EAN */
+.im-table th:nth-child(4),.im-table td:nth-child(4){width:88px;}    /* MRP */
+.im-table th:nth-child(5),.im-table td:nth-child(5){width:78px;}    /* GST */
+.im-table th:nth-child(6),.im-table td:nth-child(6){width:104px;}   /* HSN */
+.im-table th:nth-child(7),.im-table td:nth-child(7){width:190px;white-space:nowrap;}  /* MRP window */
 .im-gst{display:flex;flex-wrap:wrap;gap:8px;}
 .gst-chip{background:var(--surface-2);border:1px solid var(--border);border-radius:20px;
   padding:5px 12px;font-size:12.5px;color:var(--text-2);}
