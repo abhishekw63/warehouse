@@ -3193,7 +3193,11 @@ def item_master_preview(request, token):
     d = _im_token_dir(token)
     mp = d / 'meta.json'
     if not mp.exists():
-        raise Http404("Upload not found or expired.")
+        # Already rebuilt (confirm consumes the token) or expired — a back-nav or a
+        # double-click lands here. Redirect gracefully instead of a raw 404.
+        messages.info(request, "That item-master upload was already rebuilt or has "
+                               "expired — nothing to preview.")
+        return redirect('b2b_item_master')
     meta = json.loads(mp.read_text(encoding='utf-8'))
     from .services import item_master_loader as iml
     try:
@@ -3218,7 +3222,11 @@ def item_master_confirm(request, token):
     d = _im_token_dir(token)
     mp = d / 'meta.json'
     if not mp.exists():
-        raise Http404("Upload not found or expired.")
+        # A double-submit's 2nd POST (or a re-submit after the token was consumed).
+        # The rebuild already happened on the 1st — don't 404, just say so.
+        messages.info(request, "This item-master upload was already rebuilt (or has "
+                               "expired) — no action taken.")
+        return redirect('b2b_item_master')
     meta = json.loads(mp.read_text(encoding='utf-8'))
     from .services import item_master_loader as iml
     try:

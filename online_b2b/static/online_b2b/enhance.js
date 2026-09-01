@@ -690,3 +690,45 @@
   if (document.readyState === "complete") setTimeout(report, 300);
   else window.addEventListener("load", function () { setTimeout(report, 300); });
 })();
+
+/* ── Global submit-once guard ─────────────────────────────────────────────── *
+ * A double-click / double-tap on a POST form fires the POST twice; for the many
+ * token-consuming confirms (Lock & Record, Item-Master rebuild, record-verify,
+ * MT/GT confirm, ship-to upload …) the 2nd hit lands on an already-consumed
+ * token → a 404 ("Upload not found or expired"). This blocks the 2nd submit and
+ * shows a busy label on the submit control — app-wide, in ONE place.
+ *
+ * Safe by construction:
+ *  • Bubble phase + defaultPrevented check → AJAX forms that preventDefault()
+ *    (review lock, exceptions, email…) are LEFT to their own page JS, untouched.
+ *  • Only POST forms (GET filters/search are exempt); opt out with data-no-guard.
+ *  • Buttons are disabled on the NEXT tick, so the click's own formaction /
+ *    name-value are still captured into the request first.
+ *  • Native submits navigate → the page unloads (fresh buttons); no re-enable
+ *    needed, nothing sticks. */
+(function () {
+  if (window.__b2bSubmitGuard) return;                    // attach ONCE (script re-runs on shell-nav)
+  window.__b2bSubmitGuard = true;
+  document.addEventListener("submit", function (e) {
+    if (e.defaultPrevented) return;                       // AJAX/managed form → skip
+    var f = e.target;
+    if (!f || f.tagName !== "FORM" || f.hasAttribute("data-no-guard")) return;
+    if ((f.getAttribute("method") || "get").toLowerCase() !== "post") return;
+    if (f.getAttribute("data-guarded") === "1") { e.preventDefault(); return; }
+    f.setAttribute("data-guarded", "1");
+    var btns = f.querySelectorAll(
+      "button[type=submit], input[type=submit], button:not([type])");
+    setTimeout(function () {                               // request already captured
+      btns.forEach(function (b) {
+        if (b.disabled) return;
+        b.disabled = true; b.setAttribute("aria-busy", "true");
+        var t = (b.textContent || "").trim();
+        if (t) {
+          b.setAttribute("data-lbl", b.innerHTML);
+          b.textContent = b.getAttribute("data-busy")
+            || (t.replace(/[.…]+$/, "") + "…");
+        }
+      });
+    }, 0);
+  }, false);
+})();
