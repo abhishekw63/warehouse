@@ -20,8 +20,7 @@
     </div>
   </div>
 
-  {# ── Tabs: Item Master | Channel SKU Map (pure-CSS radios; server pre-checks
-       from ?tab=). Removable: delete this block + _channel_map_body.html. ── #}
+  {% comment %}Tabs: Item Master | Channel SKU Map (pure-CSS radios; server pre-checks from ?tab=). Removable: delete this block + _channel_map_body.html.{% endcomment %}
   <div class="im-tabs">
     <input type="radio" name="im-tab" id="tab-item" class="im-tabradio"{% if active_tab != 'channel-map' %} checked{% endif %}>
     <input type="radio" name="im-tab" id="tab-cmap" class="im-tabradio"{% if active_tab == 'channel-map' %} checked{% endif %}>
@@ -38,8 +37,8 @@
       <div><div class="n">{{ status.count }}</div><div class="l">Items in master</div></div></div>
     <div class="im-kpi k2"><span class="im-ic">{% include 'online_b2b/_icons.html' with i='hash' %}</span>
       <div><div class="n">{{ status.swiggy_mapped }}</div><div class="l">Swiggy-mapped</div></div></div>
-    <div class="im-kpi k3"><span class="im-ic">{% include 'online_b2b/_icons.html' with i='search' %}</span>
-      <div><div class="n">{{ status.swiggy_map_rows }}</div><div class="l">Swiggy map size</div></div></div>
+    <div class="im-kpi k3"><span class="im-ic">{% include 'online_b2b/_icons.html' with i='hash' %}</span>
+      <div><div class="n">{{ status.hg_mapped }}</div><div class="l">H&amp;G-mapped</div></div></div>
     <div class="im-kpi k4"><span class="im-ic">{% include 'online_b2b/_icons.html' with i='trend' %}</span>
       <div><div class="n">{% if status.last_updated %}{{ status.last_updated|date:"d M · H:i" }}{% else %}—{% endif %}</div><div class="l">Last rebuilt</div></div></div>
   </div>
@@ -78,6 +77,8 @@
           <input type="text" id="imq" value="{{ overview.q }}" placeholder="Search item no / EAN / description…" autocomplete="off">
           <span class="ims-spin" id="imspin" hidden></span>
         </div>
+        <label class="im-mult" title="LR Unit Price = MRP × margin% · CP = LR ÷ (1 + GST for the item's GST group)">Margin
+          <input type="number" id="im-mult" value="60" min="1" max="300" step="5" inputmode="numeric">%</label>
         <a class="btn-clear" id="im-export"
            href="{% url 'b2b_item_master_export' %}{% if overview.q %}?q={{ overview.q|urlencode }}{% endif %}"
            title="Download the item master as Excel (respects the current search)">⬇ Export</a>
@@ -116,7 +117,7 @@
     <p class="im-sub" id="im-shown">Showing {{ overview.shown }} of {{ overview.total }}{% if overview.q %} matching “{{ overview.q }}”{% endif %}.</p>
     <div class="scroll im-tablewrap">
     <table class="grid compact im-table">
-      <thead><tr><th>Item No</th><th>EAN</th><th>Description</th><th class="r">MRP</th><th>GST</th><th>HSN</th><th>MRP window</th></tr></thead>
+      <thead><tr><th>Item No</th><th>EAN</th><th>Description</th><th class="r">MRP</th><th class="r">LR Unit Price</th><th class="r">CP</th><th>GST</th><th>HSN</th><th>MRP window</th></tr></thead>
       <tbody id="im-tbody">
         {% for r in overview.rows %}
         <tr>
@@ -124,11 +125,13 @@
           <td class="mono">{{ r.ean|default:'—' }}</td>
           <td class="desc" title="{{ r.description }}">{{ r.description }}</td>
           <td class="r">{{ r.mrp|default_if_none:'—' }}</td>
+          <td class="r im-lr" data-mrp="{{ r.mrp|default_if_none:0 }}" data-gst="{{ r.gst_rate }}">{{ r.lr }}</td>
+          <td class="r im-cp">{{ r.cp }}</td>
           <td>{{ r.gst_code|default:'—' }}</td>
           <td class="mono">{{ r.hsn|default:'—' }}</td>
           <td class="muted">{% if r.mrp_start %}{{ r.mrp_start }} → {{ r.mrp_end }}{% else %}—{% endif %}</td>
         </tr>
-        {% empty %}<tr><td colspan="7" class="muted">{% if status.count %}No items match.{% else %}Master is empty — upload the two files above to build it.{% endif %}</td></tr>{% endfor %}
+        {% empty %}<tr><td colspan="9" class="muted">{% if status.count %}No items match.{% else %}Master is empty — upload the two files above to build it.{% endif %}</td></tr>{% endfor %}
       </tbody>
     </table>
     </div>

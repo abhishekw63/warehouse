@@ -458,8 +458,10 @@ def status() -> dict:
             cur.execute("SELECT COUNT(*) FROM channel_sku_map "
                         "WHERE channel='Swiggy'")
             smap = int(cur.fetchone()[0] or 0)
+            cur.execute("SELECT COUNT(*) FROM channel_sku_map WHERE channel='HG'")
+            hgmap = int(cur.fetchone()[0] or 0)
         return {'ok': True, 'count': int(n or 0), 'last_updated': last,
-                'swiggy_mapped': smap, 'swiggy_map_rows': smap}
+                'swiggy_mapped': smap, 'swiggy_map_rows': smap, 'hg_mapped': hgmap}
     except Exception as e:  # noqa: BLE001
         return {'ok': False, 'error': f"{type(e).__name__}: {e}",
                 'count': 0, 'last_updated': None, 'swiggy_mapped': 0}

@@ -853,12 +853,19 @@ body.lo-open{overflow:hidden;}
    selector) so it absorbs the slack; the short columns get fixed widths so they
    stay compact + aligned instead of spreading across the full-width table. */
 .grid.compact.im-table .desc{max-width:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.im-table th:nth-child(1),.im-table td:nth-child(1){width:84px;}    /* Item No */
-.im-table th:nth-child(2),.im-table td:nth-child(2){width:142px;}   /* EAN */
-.im-table th:nth-child(4),.im-table td:nth-child(4){width:88px;}    /* MRP */
-.im-table th:nth-child(5),.im-table td:nth-child(5){width:78px;}    /* GST */
-.im-table th:nth-child(6),.im-table td:nth-child(6){width:104px;}   /* HSN */
-.im-table th:nth-child(7),.im-table td:nth-child(7){width:190px;white-space:nowrap;}  /* MRP window */
+.im-table th:nth-child(1),.im-table td:nth-child(1){width:84px;}     /* Item No */
+.im-table th:nth-child(2),.im-table td:nth-child(2){width:140px;}    /* EAN */
+.im-table th:nth-child(4),.im-table td:nth-child(4){width:78px;}     /* MRP */
+.im-table th:nth-child(5),.im-table td:nth-child(5){width:96px;}     /* LR Unit Price */
+.im-table th:nth-child(6),.im-table td:nth-child(6){width:82px;}     /* CP */
+.im-table th:nth-child(7),.im-table td:nth-child(7){width:70px;}     /* GST */
+.im-table th:nth-child(8),.im-table td:nth-child(8){width:100px;}    /* HSN */
+.im-table th:nth-child(9),.im-table td:nth-child(9){width:180px;white-space:nowrap;}  /* MRP window */
+.im-table td.im-lr,.im-table td.im-cp{font-variant-numeric:tabular-nums;font-weight:600;color:var(--text);}
+/* Margin multiplier control (drives LR Unit Price + CP live) */
+.im-mult{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;color:var(--text-2);white-space:nowrap;}
+.im-mult input{width:58px;padding:6px 8px;border:1px solid var(--border);border-radius:8px;font-size:13px;text-align:right;background:var(--surface);color:var(--text);}
+.im-mult input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);}
 .im-gst{display:flex;flex-wrap:wrap;gap:8px;}
 .gst-chip{background:var(--surface-2);border:1px solid var(--border);border-radius:20px;
   padding:5px 12px;font-size:12.5px;color:var(--text-2);}

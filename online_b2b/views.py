@@ -3161,6 +3161,7 @@ class ItemMasterView(LoginRequiredMixin, TemplateView):
         from .services import item_master_loader as iml
         ctx['status'] = iml.status()
         ctx['overview'] = iml.list_items(self.request.GET.get('q', ''), limit=100)
+        _im_add_pricing(ctx['overview'].get('rows') or [])   # LR Unit Price + CP @ default 60%
         # ── Channel SKU Map (second tab on this page) — its own params so they
         #    never collide with Item Master's own search (`q`). ──
         g = self.request.GET
@@ -3267,6 +3268,34 @@ def item_master_discard(request, token):
     return redirect('b2b_item_master')
 
 
+def _im_gst_rate(code) -> float:
+    """GST fraction from a code like 'G-18-S' / 'G-5' / '0-G' → 0.18 / 0.05 / 0.0."""
+    import re as _re
+    m = _re.search(r'(\d+(?:\.\d+)?)', str(code or ''))
+    return round(float(m.group(1)) / 100.0, 4) if m else 0.0
+
+
+def _im_add_pricing(rows, mult=60):
+    """Add LR Unit Price (= MRP × margin%) + CP (= LR ÷ (1 + GST)) + gst_rate to
+    each row. Margin default 60%; GST from the item's GST group. Mutates + returns
+    rows. (The page recomputes LR/CP live when the operator changes the margin.)"""
+    try:
+        m = (float(mult) or 60) / 100.0
+    except (TypeError, ValueError):
+        m = 0.6
+    for r in rows:
+        try:
+            mrp = float(r.get('mrp') or 0)
+        except (TypeError, ValueError):
+            mrp = 0.0
+        rate = _im_gst_rate(r.get('gst_code'))
+        lr = round(mrp * m, 2)
+        r['gst_rate'] = rate
+        r['lr'] = lr
+        r['cp'] = round(lr / (1 + rate), 2) if (1 + rate) else lr
+    return rows
+
+
 def _im_row_json(r: dict) -> dict:
     """JSON-safe item_master row (dates → str, Decimal → float)."""
     def s(v):
@@ -3276,6 +3305,8 @@ def _im_row_json(r: dict) -> dict:
         'description': s(r.get('description')), 'gst_code': s(r.get('gst_code')),
         'hsn': s(r.get('hsn')),
         'mrp': None if r.get('mrp') is None else float(r['mrp']),
+        'gst_rate': r.get('gst_rate', _im_gst_rate(r.get('gst_code'))),
+        'lr': r.get('lr'), 'cp': r.get('cp'),
         'mrp_start': s(r.get('mrp_start')), 'mrp_end': s(r.get('mrp_end')),
     }
 
@@ -3286,6 +3317,7 @@ def item_master_search(request):
     Swiggy). Read-only."""
     from .services import item_master_loader as iml
     res = iml.list_items(request.GET.get('q', ''), limit=100)
+    _im_add_pricing(res.get('rows') or [])   # gst_rate/lr/cp so the JS can render + recompute
     return JsonResponse({
         'total': res['total'], 'shown': res['shown'], 'q': res['q'],
         'rows': [_im_row_json(r) for r in res['rows']],
@@ -3300,9 +3332,16 @@ def item_master_export(request):
 
     from .services import item_master_loader as iml
     q = (request.GET.get('q', '') or '').strip()
+    mult = request.GET.get('mult', 60)
     rows = iml.export_rows(q)
+    _im_add_pricing(rows, mult)          # LR Unit Price + CP at the chosen margin
+    try:
+        mlabel = f"{float(mult):g}"
+    except (TypeError, ValueError):
+        mlabel = '60'
     cols = [('item_no', 'Item No'), ('ean', 'EAN'),
             ('description', 'Description'), ('mrp', 'MRP'),
+            ('lr', f'LR Unit Price ({mlabel}%)'), ('cp', 'CP'),
             ('gst_code', 'GST Code'), ('hsn', 'HSN'),
             ('mrp_start', 'MRP Start'), ('mrp_end', 'MRP End')]
     stamp = _dt.datetime.now().strftime('%Y%m%d_%H%M%S')

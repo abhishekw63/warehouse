@@ -26,25 +26,55 @@ var CFG = JSON.parse(document.getElementById("item_master-cfg").textContent);
   var exportBtn = document.getElementById('im-export');
   var timer = null, ctl = null;
 
-  // keep the Export link pointed at the CURRENT search term (all rows if blank)
+  // keep the Export link pointed at the CURRENT search term + margin (so the
+  // downloaded LR Unit Price / CP match what's on screen).
   function syncExport() {
     if (!exportBtn) return;
-    var q = input.value.trim();
-    exportBtn.href = EXPORT_URL + (q ? ('?q=' + encodeURIComponent(q)) : '');
+    var q = input.value.trim(), p = [];
+    if (q) p.push('q=' + encodeURIComponent(q));
+    p.push('mult=' + curMult());
+    exportBtn.href = EXPORT_URL + '?' + p.join('&');
   }
 
   function esc(s) { var d = document.createElement('div'); d.textContent = (s == null ? '' : s); return d.innerHTML; }
+
+  // ── LR Unit Price + CP (dynamic margin) ──
+  // LR = MRP × margin% ; CP = LR ÷ (1 + GST for the item's GST group). The margin
+  // input drives both; default 60%. Rows carry data-mrp + data-gst so we recompute
+  // live with zero server round-trips (and re-apply after an AJAX search render).
+  function curMult() {
+    var el = document.getElementById('im-mult');
+    var v = el ? parseFloat(el.value) : 60;
+    return (isFinite(v) && v > 0) ? v : 60;
+  }
+  function fmt2(n) { return (n == null || isNaN(n)) ? '—' : (Math.round(n * 100) / 100).toFixed(2); }
+  function recompute() {
+    var m = curMult();
+    tbody.querySelectorAll('.im-lr').forEach(function (cell) {
+      var mrp = parseFloat(cell.getAttribute('data-mrp')) || 0;
+      var gst = parseFloat(cell.getAttribute('data-gst')) || 0;
+      var lr = mrp * (m / 100);
+      cell.textContent = fmt2(lr);
+      var cp = cell.nextElementSibling;
+      if (cp && cp.classList.contains('im-cp')) cp.textContent = fmt2(lr / (1 + gst));
+    });
+    syncExport();
+  }
   function render(data) {
     if (!data.rows.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="muted">No items match.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="muted">No items match.</td></tr>';
     } else {
+      var m = curMult();
       tbody.innerHTML = data.rows.map(function (r) {
         var win = r.mrp_start ? (esc(r.mrp_start) + ' → ' + esc(r.mrp_end)) : '—';
         var mrp = (r.mrp == null) ? '—' : r.mrp;
+        var mv = parseFloat(r.mrp) || 0, gr = parseFloat(r.gst_rate) || 0, lr = mv * (m / 100);
         return '<tr><td class="mono">' + esc(r.item_no) + '</td>' +
           '<td class="mono">' + (esc(r.ean) || '—') + '</td>' +
           '<td class="desc" title="' + esc(r.description) + '">' + esc(r.description) + '</td>' +
           '<td class="r">' + mrp + '</td>' +
+          '<td class="r im-lr" data-mrp="' + mv + '" data-gst="' + gr + '">' + fmt2(lr) + '</td>' +
+          '<td class="r im-cp">' + fmt2(lr / (1 + gr)) + '</td>' +
           '<td>' + (esc(r.gst_code) || '—') + '</td>' +
           '<td class="mono">' + (esc(r.hsn) || '—') + '</td>' +
           '<td class="muted">' + win + '</td></tr>';
@@ -66,4 +96,9 @@ var CFG = JSON.parse(document.getElementById("item_master-cfg").textContent);
       .catch(function () { if (spin) spin.hidden = true; });
   }
   input.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(go, 160); syncExport(); });
+
+  // Margin multiplier → recompute LR Unit Price + CP live (default 60%).
+  var multEl = document.getElementById('im-mult');
+  if (multEl) multEl.addEventListener('input', recompute);
+  syncExport();   // seed the export link with the current margin
 })();
