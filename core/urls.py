@@ -1,4 +1,5 @@
 from django.urls import path
+from django.views.generic import RedirectView
 
 from . import views
 
@@ -7,7 +8,10 @@ urlpatterns = [
     path('login/', views.HomeView.as_view(), name='login'),
     path('signup/', views.SignUpView.as_view(), name='signup'),
     path('logout/', views.CustomLogoutView.as_view(), name='logout'),
-    path('departments/', views.DepartmentsView.as_view(), name='departments'),
+    # Departments picker removed — everything lands straight on Order Management.
+    # The name is KEPT so the ~50 breadcrumb {% url 'departments' %} refs resolve.
+    path('departments/', RedirectView.as_view(pattern_name='b2b_dashboard',
+                                              permanent=False), name='departments'),
     path('profile/', views.ProfileView.as_view(), name='profile'),
     path('password-change/', views.CustomPasswordChangeView.as_view(), name='password_change'),
     # Dev · Health (staff-only) — request perf + code audit.

@@ -58,3 +58,14 @@ db_profiles/*.json
 .pytest_cache/
 # Dev observability perf/audit logs
 logs/
+
+# ── OMT Offline (omt_tkinter) ─────────────────────────────────────────────
+# Runtime state, not source: remembered file paths (machine-specific absolute
+# paths) and the app's cached COPY of the Item Master / Ship-To files (real
+# business master data — it belongs in the operator's own folders, not in git).
+omt_tkinter/settings.json
+omt_tkinter/reference/
+omt_tkinter/build/
+omt_tkinter/dist/
+# ...but DO keep the hand-written PyInstaller recipe (root ignores *.spec).
+!omt_tkinter/omt_offline.spec

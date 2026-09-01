@@ -329,7 +329,7 @@ DATA_UPLOAD_MAX_NUMBER_FIELDS = 100000
 DATA_UPLOAD_MAX_NUMBER_FILES = 5000
 
 LOGIN_URL = 'login'
-LOGIN_REDIRECT_URL = 'departments'
+LOGIN_REDIRECT_URL = 'b2b_dashboard'
 # Central logout target (standard: keep auth redirects declared here, not hardcoded
 # in the view). CustomLogoutView still works; this makes the config the source of truth.
 LOGOUT_REDIRECT_URL = 'home'

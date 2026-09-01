@@ -29,8 +29,6 @@ from .services import common, engine_bridge, erp_import, order_db
 
 
 # Branch descriptors — drive the shared overview template's header/actions.
-ONLINE_BRANCH = {'kind': 'online', 'label': 'Online B2B'}
-OFFLINE_BRANCH = {'kind': 'offline', 'label': 'Offline'}
 
 
 # Code-level (behavioral) exceptions per marketplace — the ones enforced in the
@@ -617,17 +615,6 @@ class TrackerDeleteView(LoginRequiredMixin, View):
         return redirect(request.META.get('HTTP_REFERER') or 'b2b_tracker')
 
 
-class OfflineBranchView(LoginRequiredMixin, TemplateView):
-    """`/b2b/offline/` — the Offline branch: SAME rich dashboard as Online B2B
-    (KPIs + charts + marketplace mix), scoped to the Offline segment."""
-    template_name = 'online_b2b/overview.html'
-
-    def get_context_data(self, **kwargs):
-        ctx = super().get_context_data(**kwargs)
-        ctx['d'] = order_db.overview(segment='Offline')
-        ctx['branch'] = OFFLINE_BRANCH
-        return ctx
-
 _MEDIA = Path(settings.MEDIA_ROOT)
 _RUNS_INDEX = _MEDIA / 'b2b_runs'          # run_id -> {output_path,...} sidecars
 
@@ -719,15 +706,6 @@ def _filters(request):
 
 def _is_ajax(request):
     return bool(request.GET.get('partial')) or common.is_ajax(request)
-
-
-@login_required
-def dashboard(request):
-    """Online B2B branch dashboard — KPIs + charts + marketplace summary for the
-    online marketplaces (Blink/Flipkart/RK/DMart/BlinkMP). Reached from the central hub."""
-    data = order_db.overview(segment='OnlineB2B')
-    return render(request, 'online_b2b/overview.html',
-                  {'d': data, 'branch': ONLINE_BRANCH})
 
 
 @login_required
@@ -3461,77 +3439,4 @@ class SetupView(LoginRequiredMixin, UserPassesTestMixin, View):
             pass
 
 
-# ── EKA Data (editable store registry: margin % · Type SO/TO · mappings) ──────
-# The EKA store registry (from EKA_DATA.xlsx) lives in the eka_data DB table. This
-# page lets the team edit margin %, Type (SO/TO), active status and the mapping
-# fields over time — the offline EKA flow reads margin_pct + kind from here.
-class EkaDataView(LoginRequiredMixin, TemplateView):
-    template_name = 'online_b2b/eka_data.html'
 
-    def get_context_data(self, **kwargs):
-        ctx = super().get_context_data(**kwargs)
-        from .services import eka_data
-        try:
-            ctx['rows'] = eka_data.all_rows()
-            ctx['status'] = eka_data.status()
-        except Exception as e:  # noqa: BLE001 — a transient remote-DB blip must not 500 the page
-            import logging
-            logging.getLogger(__name__).exception('EKA data load failed')
-            ctx['rows'] = []
-            ctx['status'] = {}
-            ctx['load_error'] = (f'Could not load EKA data (temporary database issue: '
-                                 f'{type(e).__name__}) — please retry.')
-        return ctx
-
-
-@login_required
-@require_POST
-def eka_data_update(request, row_id):
-    from .services import eka_data
-    data = common.post_dict(request)
-    res = eka_data.update_row(row_id, data)
-    if common.is_ajax(request):
-        return JsonResponse(res, status=200 if res.get('ok') else 400)
-    if res.get('ok'):
-        messages.success(request, 'EKA store updated.')
-    else:
-        messages.error(request, res.get('error', 'Update failed.'))
-    return redirect('b2b_eka_data')
-
-
-@login_required
-@require_POST
-def eka_data_add(request):
-    from .services import eka_data
-    data = common.post_dict(request)
-    res = eka_data.add_row(data)
-    if res.get('ok'):
-        messages.success(request, 'EKA store added.')
-    else:
-        messages.error(request, res.get('error', 'Add failed.'))
-    return redirect('b2b_eka_data')
-
-
-@login_required
-@require_POST
-def eka_data_upload(request):
-    """Upload EKA_DATA.xlsx → replace the eka_data table (mirror the sheet)."""
-    import tempfile
-    from .services import eka_data
-    f = request.FILES.get('eka_file')
-    if not f:
-        messages.error(request, 'Choose the EKA_DATA.xlsx file to upload.')
-        return redirect('b2b_eka_data')
-    tmp = os.path.join(tempfile.gettempdir(), 'eka_upload_' + uuid.uuid4().hex[:8] + '.xlsx')
-    common.save_upload(f, tmp)
-    try:
-        res = eka_data.load_from_excel(tmp, replace=True)
-        messages.success(request, f"Loaded {res['loaded']} EKA store row(s) from Excel (table replaced).")
-    except Exception as e:  # noqa: BLE001
-        messages.error(request, f"Couldn't read the Excel: {type(e).__name__}: {e}")
-    finally:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-    return redirect('b2b_eka_data')

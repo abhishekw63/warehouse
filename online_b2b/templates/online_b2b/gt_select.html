@@ -6,7 +6,7 @@
 
 {% block breadcrumb %}
     <a href="{% url 'departments' %}">Departments</a>
-    <a href="{% url 'b2b_offline' %}"> / Offline</a> <span>/ GT Select · D365 Import</span>
+    <a href="{% url 'offline_dashboard' %}"> / Offline</a> <span>/ GT Select · D365 Import</span>
 {% endblock %}
 
 {% block content %}
@@ -16,7 +16,7 @@
       <h1>GT Select <span>· D365 Import</span></h1>
       <p class="src">GT Select is <b>auto-punched into D365</b> (staged → DMS), so it never reaches the tracker and today's total is understated. Upload the D365 <b>Sales Orders + Sales Lines</b> — we skip everything already captured and import only the <b>NEW</b> orders, each under its true channel.</p>
     </div>
-    <a href="{% url 'b2b_offline' %}" class="back">← Offline</a>
+    <a href="{% url 'offline_dashboard' %}" class="back">← Offline</a>
   </div>
 
   {{ taxonomy|json_script:"gtsTaxonomy" }}

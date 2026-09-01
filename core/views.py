@@ -53,10 +53,11 @@ def _home_stats() -> dict:
 
 class HomeView(LoginView):
     template_name = 'core/landing.html'
-    redirect_authenticated_user = False
+    # Already signed in? Go straight to the workspace — don't show a login page.
+    redirect_authenticated_user = True
 
     def get_success_url(self):
-        return reverse_lazy('departments')
+        return reverse_lazy('b2b_dashboard')
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
@@ -70,25 +71,10 @@ class HomeView(LoginView):
         messages.success(self.request, 'Login successful')
         return super().form_valid(form)
 
-class DepartmentsView(LoginRequiredMixin, TemplateView):
-    template_name = 'core/departments.html'
-
-    def get_context_data(self, **kwargs):
-        ctx = super().get_context_data(**kwargs)
-        ctx['stats'] = _home_stats()                 # live at-a-glance snapshot
-        try:
-            from online_b2b.services.order_db import hub_extra_kpis, recent_orders
-            ctx['hub'] = hub_extra_kpis()
-            ctx['recent'] = recent_orders(6)         # recent-activity feed
-        except Exception:  # noqa: BLE001 — never block the hub on the DB
-            ctx['hub'] = {}
-            ctx['recent'] = []
-        return ctx
-
 class SignUpView(CreateView):
     form_class = UserCreationForm
     template_name = 'core/signup.html'
-    success_url = reverse_lazy('departments')
+    success_url = reverse_lazy('b2b_dashboard')
 
     def form_valid(self, form):
         response = super().form_valid(form)
@@ -98,7 +84,7 @@ class SignUpView(CreateView):
 
     def dispatch(self, request, *args, **kwargs):
         if request.user.is_authenticated:
-            return redirect('departments')
+            return redirect('b2b_dashboard')
         return super().dispatch(request, *args, **kwargs)
 
 class ProfileView(LoginRequiredMixin, UpdateView):

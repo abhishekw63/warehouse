@@ -31,16 +31,6 @@
                 <span style="font-size: 12px; color: #777; margin-top: 10px; text-transform: uppercase; letter-spacing: 1px;">Excel Tool (fallback)</span>
             </a>
 
-            <a href="{% url 'mt_flow_upload' %}" class="department-card">
-                <h2>Modern Trade (MT)</h2>
-                <span style="font-size: 12px; color: #777; margin-top: 10px; text-transform: uppercase; letter-spacing: 1px;">Preview · Lock · Record — SS / H&amp;G / Naturals…</span>
-            </a>
-
-            <a href="{% url 'eka_flow_upload' %}" class="department-card">
-                <h2>EKA</h2>
-                <span style="font-size: 12px; color: #777; margin-top: 10px; text-transform: uppercase; letter-spacing: 1px;">EBO · Kiosk · Airport → SO/TO — upload · review · record</span>
-            </a>
-
             {% comment %}GT Select is AUTO — staged in D365, auto-punched by DMS, so it never
                runs a standalone flow. It's auto-fetched from the D365 Sales Orders (Headers) +
                Sales Lines and captured + verified inside D365 Verify & Capture. Not openable

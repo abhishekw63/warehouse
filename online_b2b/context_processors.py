@@ -34,6 +34,7 @@ _LOG_N = 8             # how many recent commits the hover log shows
 # Git-derived build log, computed ONCE (lazily, then cached) — a git call per
 # request would be wasteful and the answer can't change without a restart.
 _BUILD_CACHE = None     # (latest_date, latest_subject, [ (date, subject), ... ]) | False
+_BRANCH_CACHE = None    # current git branch name | '' (no git)
 
 
 def _git(args):
@@ -46,6 +47,19 @@ def _git(args):
     except Exception:  # noqa: BLE001 — git missing / not a repo / timeout
         pass
     return ''
+
+
+def _branch():
+    """Current git branch, cached with the build log. '' when git isn't available.
+
+    Shown on the badge because this repo runs two long-lived branches (the full
+    app vs the limited build) — without it there is no way to tell, from the
+    screen, WHICH one you are looking at.
+    """
+    global _BRANCH_CACHE
+    if _BRANCH_CACHE is None:
+        _BRANCH_CACHE = _git(['rev-parse', '--abbrev-ref', 'HEAD'])
+    return _BRANCH_CACHE
 
 
 def _build_log():
@@ -117,11 +131,17 @@ def build_info(request):
             f'✓ build {escape(boot)}</span>')}
 
     date, subject, recent = log
+    branch = _branch()
     # Rolling log in the tooltip (newlines render in a native title tooltip);
     # the message line ellipsizes in CSS so the sidebar footer stays tidy.
     tip = 'Recent builds:\n' + '\n'.join(f'{d} · {s}' for d, s in recent)
+    if branch:
+        tip = f'branch: {branch}\n\n' + tip
     tip += f'\n\nserver booted {boot}'
+    # Name the branch on the badge — this repo runs two long-lived branches, and
+    # without it there's no way to tell from the screen which build you're on.
+    chip = f'<span class="bb-b">{escape(branch)}</span>' if branch else ''
     badge = (f'<span class="build-badge ok build-log" title="{escape(tip)}">'
-             f'<span class="bb-v">✓ Build {escape(date)}</span>'
+             f'<span class="bb-v">✓ Build {escape(date)}</span>{chip}'
              f'<span class="bb-m">{escape(subject)}</span></span>')
     return {'build_info': mark_safe(badge)}

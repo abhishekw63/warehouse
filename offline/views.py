@@ -26,8 +26,8 @@ from django.views.generic import TemplateView, View
 
 from online_b2b.services import po_flow
 
-from .flows import EKA_SPEC, GT_MASS_SPEC, MT_SPEC
-from .services import gt_mass_bridge, mt_bridge
+from .flows import GT_MASS_SPEC
+from .services import gt_mass_bridge
 from .utils import (
     EMAIL_CONFIG,
     D365Exporter,
@@ -242,82 +242,6 @@ class DownloadTemplateView(LoginRequiredMixin, View):
 #  runs the EXACT desktop pipeline headlessly → same ss_so_*.xlsx workbook.
 # ─────────────────────────────────────────────────────────────────────────
 
-class ShoppersStopView(LoginRequiredMixin, View):
-    """Legacy MT (Shoppers Stop) single-page generator — RETIRED. It used a
-    different (core/base) look; MT now runs on the shared PO-flow scaffold so the
-    UI matches every other segment. Kept as a permanent redirect so old
-    bookmarks/links land on the new page. (The SS preview/confirm/download
-    endpoints below stay dark — nothing links to them.)"""
-
-    def get(self, request, *args, **kwargs):
-        return redirect(reverse('mt_flow_upload'))
-
-
-class SSPreviewView(LoginRequiredMixin, View):
-    """Phase 1: save uploaded PO file(s) under a token, run a NO-WRITE preview
-    (parse + resolve + validate). Nothing is recorded and no SO number is burned —
-    same as the online review step."""
-
-    def post(self, request, *args, **kwargs):
-        files = request.FILES.getlist('files')
-        if not files:
-            return JsonResponse({'ok': False, 'error': 'No files selected'},
-                                status=400)
-        channel = request.POST.get('channel', 'SS')
-        warehouse = (request.POST.get('warehouse', '')
-                     or mt_bridge.default_warehouse())
-
-        token = uuid.uuid4().hex[:12]
-        up_dir = Path(settings.MEDIA_ROOT) / 'mt_uploads' / token
-        up_dir.mkdir(parents=True, exist_ok=True)
-        paths = []
-        for f in files:
-            dest = up_dir / Path(f.name).name
-            with open(dest, 'wb') as out:
-                for chunk in f.chunks():
-                    out.write(chunk)
-            paths.append(str(dest))
-        (up_dir / 'meta.json').write_text(
-            json.dumps({'channel': channel, 'warehouse': warehouse,
-                        'files': paths}), encoding='utf-8')
-
-        result = mt_bridge.preview(channel, paths, warehouse)
-        result['token'] = token
-        return JsonResponse(result, status=200 if result.get('ok') else 400)
-
-
-class SSConfirmView(LoginRequiredMixin, View):
-    """Phase 2: assign SO numbers, write the workbook, and record into the shared
-    renee_orders DB — so SS appears on the online dashboard."""
-
-    def post(self, request, *args, **kwargs):
-        token = request.POST.get('token', '')
-        up_dir = Path(settings.MEDIA_ROOT) / 'mt_uploads' / token
-        meta_p = up_dir / 'meta.json'
-        if not token or not meta_p.exists():
-            return JsonResponse(
-                {'ok': False, 'error': 'Upload expired — please re-upload.'},
-                status=400)
-        meta = json.loads(meta_p.read_text(encoding='utf-8'))
-        result = mt_bridge.confirm(meta['channel'], meta['files'],
-                                   meta['warehouse'])
-        if result.get('ok') and result.get('output_path'):
-            request.session[f'ss_out_{token}'] = result['output_path']
-            result['download_url'] = reverse('ss_download', args=[token])
-        return JsonResponse(result, status=200 if result.get('ok') else 400)
-
-
-class SSDownloadView(LoginRequiredMixin, View):
-    """GET: serve the generated workbook for a processed token."""
-
-    def get(self, request, token, *args, **kwargs):
-        path = request.session.get(f'ss_out_{token}')
-        if not path or not os.path.exists(path):
-            messages.info(request, "That workbook has expired — re-run Shoppers Stop to regenerate it.")
-            return redirect('shoppers_stop')
-        return FileResponse(open(path, 'rb'), as_attachment=True,
-                            filename=os.path.basename(path))
-
 
 # ─────────────────────────────────────────────────────────────────────────
 #  GT Mass — Dashboard recorder (preview → confirm → record to renee_orders)
@@ -404,79 +328,6 @@ class GTMDownloadView(LoginRequiredMixin, View):
 # ── Reliance Trends (BAP Excel) recorder — upload → preview → confirm ─────────
 #   Records to renee_orders like GT Mass; frozen engine untouched. NEW channel
 #   (cust 20418); BAP replen PO ships to Bhiwandi 20418_2 (S0HZ ambiguity noted).
-class RelianceTrendsView(LoginRequiredMixin, TemplateView):
-    template_name = 'offline/reliance_trends.html'
-
-
-class RTPreviewView(LoginRequiredMixin, View):
-    """Phase 1: save the uploaded BAP file under a token, run a NO-WRITE preview."""
-
-    def post(self, request, *args, **kwargs):
-        f = request.FILES.get('file')
-        if not f:
-            return JsonResponse({'ok': False, 'error': 'No file selected'}, status=400)
-        token = uuid.uuid4().hex[:12]
-        up_dir = Path(settings.MEDIA_ROOT) / 'reliance_trends_uploads' / token
-        up_dir.mkdir(parents=True, exist_ok=True)
-        dest = up_dir / Path(f.name).name
-        with open(dest, 'wb') as out:
-            for chunk in f.chunks():
-                out.write(chunk)
-        (up_dir / 'meta.json').write_text(
-            json.dumps({'file': str(dest), 'name': f.name}), encoding='utf-8')
-        from .services import reliance_trends_bridge as rt
-        parsed = rt.parse(str(dest))
-        if not parsed['ok']:
-            return JsonResponse({'ok': False, 'error': parsed['error']}, status=400)
-        pos = [{'po': p['po'], 'ship_to': p['ship_to'], 'city': p['city'],
-                'lines': len(p['lines']), 'qty': p['qty'], 'value': p['value'],
-                'unresolved': p['unresolved']}
-               for p in parsed['pos'].values()]
-        return JsonResponse({'ok': True, 'token': token, 'pos': pos,
-                             'totals': parsed['totals'],
-                             'warnings': parsed['warnings'][:20]}, status=200)
-
-
-class RTConfirmView(LoginRequiredMixin, View):
-    """Phase 2: record runs + order_headers + order_lines into renee_orders (dedup)."""
-
-    def post(self, request, *args, **kwargs):
-        token = request.POST.get('token', '')
-        up_dir = Path(settings.MEDIA_ROOT) / 'reliance_trends_uploads' / token
-        meta_p = up_dir / 'meta.json'
-        if not token or not meta_p.exists():
-            return JsonResponse(
-                {'ok': False, 'error': 'Upload expired — please re-upload.'},
-                status=400)
-        meta = json.loads(meta_p.read_text(encoding='utf-8'))
-        wh = request.POST.get('warehouse', 'AHD')
-        from .services import reliance_trends_bridge as rt
-        res = rt.record(meta['file'], warehouse=wh, source_file=meta['name'])
-        # Build the downloadable D365 SO workbook (unified 8-sheet) with the SAME
-        # SO numbers record() just assigned, even when the POs were already recorded
-        # (so a re-download is always available).
-        if res.get('ok'):
-            out, err = rt.build_workbook(meta['file'], warehouse=wh,
-                                         so_map=res.get('so_map'))
-            if out:
-                request.session[f'rt_out_{token}'] = str(out)
-                res['download_url'] = reverse('rt_download', args=[token])
-                res['output_name'] = os.path.basename(str(out))
-            elif err:
-                res['workbook_error'] = err
-        return JsonResponse(res, status=200 if res.get('ok') else 400)
-
-
-class RTDownloadView(LoginRequiredMixin, View):
-    """GET: serve the generated Reliance Trends D365 SO workbook for a token."""
-
-    def get(self, request, token, *args, **kwargs):
-        path = request.session.get(f'rt_out_{token}')
-        if not path or not os.path.exists(path):
-            messages.info(request, "That workbook has expired — re-run Reliance Trends to regenerate it.")
-            return redirect('reliance_trends')
-        return FileResponse(open(path, 'rb'), as_attachment=True,
-                            filename=os.path.basename(path))
 
 
 # ── Shared PO-flow scaffold (upload → review → confirm → lock) ───────────────
@@ -730,73 +581,7 @@ class GTMFlowDraftsView(_FlowDraftsView):
 
 
 # ── Modern Trade (MT) — on par with the online marketplaces ──────────────
-class MTFlowUploadView(_FlowUploadView):
-    spec = MT_SPEC
 
-
-class MTFlowReviewView(_FlowReviewView):
-    spec = MT_SPEC
-
-
-class MTFlowConfirmView(_FlowConfirmView):
-    spec = MT_SPEC
-
-
-class MTFlowDecisionView(_FlowDecisionView):
-    spec = MT_SPEC
-
-
-class MTFlowDiscardView(_FlowDiscardView):
-    spec = MT_SPEC
-
-
-class MTFlowDownloadView(_FlowDownloadView):
-    spec = MT_SPEC
-
-
-class MTFlowExportView(_FlowExportView):
-    spec = MT_SPEC
-
-
-class MTFlowSaveLaterView(_FlowSaveLaterView):
-    spec = MT_SPEC
-
-
-class MTFlowDraftsView(_FlowDraftsView):
-    spec = MT_SPEC
 
 # ── EKA (EBO / Kiosk / Airport → SO/TO) — third offline channel on po_flow ───
-class EKAFlowUploadView(_FlowUploadView):
-    spec = EKA_SPEC
 
-
-class EKAFlowReviewView(_FlowReviewView):
-    spec = EKA_SPEC
-
-
-class EKAFlowConfirmView(_FlowConfirmView):
-    spec = EKA_SPEC
-
-
-class EKAFlowDecisionView(_FlowDecisionView):
-    spec = EKA_SPEC
-
-
-class EKAFlowDiscardView(_FlowDiscardView):
-    spec = EKA_SPEC
-
-
-class EKAFlowDownloadView(_FlowDownloadView):
-    spec = EKA_SPEC
-
-
-class EKAFlowExportView(_FlowExportView):
-    spec = EKA_SPEC
-
-
-class EKAFlowSaveLaterView(_FlowSaveLaterView):
-    spec = EKA_SPEC
-
-
-class EKAFlowDraftsView(_FlowDraftsView):
-    spec = EKA_SPEC

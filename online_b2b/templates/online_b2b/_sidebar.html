@@ -11,15 +11,9 @@
     <a href="{% url 'b2b_exceptions' %}" class="sn{% if '/exceptions' in request.path or '/rules' in request.path %} on{% endif %}" title="Rules &amp; SKU Exceptions — override unit price · EAN remap · the marketplace rules reference">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='tag' %}</span><span class="side-label">Rules &amp; Exceptions</span></a>
 
-    <div class="side-sep">Segments</div>
-    <a href="{% url 'b2b_online' %}" class="sn{% if '/b2b/online' in request.path %} on{% endif %}" title="Online B2B">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='globe' %}</span><span class="side-label">Online B2B</span></a>
-    <a href="{% url 'b2b_offline' %}" class="sn{% if '/b2b/offline' in request.path %} on{% endif %}" title="Offline">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='store' %}</span><span class="side-label">Offline</span></a>
-
     <div class="side-sep">Data</div>
-    <a href="{% url 'b2b_tracker' %}" class="sn{% if '/tracker' in request.path or '/orders' in request.path %} on{% endif %}" title="Consolidated Tracker — single source of truth (Online B2B + Offline); click any PO for its full line-level detail">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='route' %}</span><span class="side-label">Tracker</span></a>
+    <a href="{% url 'b2b_tracker' %}" class="sn{% if '/tracker' in request.path or '/orders' in request.path %} on{% endif %}" title="Orders — every PO across Online B2B and Offline; click any PO for its full line-level detail">
+      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='route' %}</span><span class="side-label">Orders</span></a>
     <a href="{% url 'b2b_lines' %}" class="sn{% if '/lines' in request.path %} on{% endif %}" title="Line Items">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='list' %}</span><span class="side-label">Line Items</span></a>
     <a href="{% url 'b2b_inventory' %}" class="sn{% if '/inventory' in request.path %} on{% endif %}" title="Inventory · Fill Rate">
@@ -28,8 +22,6 @@
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='barcode' %}</span><span class="side-label">Item Master</span></a>
     <a href="{% url 'b2b_ship_to' %}" class="sn{% if '/ship-to' in request.path %} on{% endif %}" title="Ship-To Mapping">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='pin' %}</span><span class="side-label">Ship-To Mapping</span></a>
-    <a href="{% url 'b2b_eka_data' %}" class="sn{% if '/eka-data' in request.path %} on{% endif %}" title="EKA Data — margin % · Type (SO/TO) · store registry">
-      <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='database' %}</span><span class="side-label">EKA Data</span></a>
     <a href="{% url 'b2b_issues' %}" class="sn{% if '/issues' in request.path %} on{% endif %}" title="Issues">
       <span class="sn-ic">{% include 'online_b2b/_icons.html' with i='flag' %}</span><span class="side-label">Issues</span></a>
     {% comment %}Sales Validation removed 2026-07-20 (superseded by Triangular).

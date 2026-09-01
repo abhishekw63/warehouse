@@ -1,13 +1,13 @@
 {% extends 'online_b2b/base_b2b.html' %}
 {% load static b2b_extras %}
-{% block title %}Consolidated Tracker — Order Management{% endblock %}
+{% block title %}Orders — Order Management{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'online_b2b/b2b.css' %}">
 <link rel="stylesheet" href="{% static 'online_b2b/pages/tracker.css' %}">
 <link rel="stylesheet" href="{% static 'online_b2b/pages/tracker_insights.css' %}">{% endblock %}
 
 {% block breadcrumb %}
     <a href="{% url 'departments' %}">Departments</a>
-    <a href="{% url 'b2b_dashboard' %}"> / Order Management</a> <span>/ Tracker</span>
+    <a href="{% url 'b2b_dashboard' %}"> / Order Management</a> <span>/ Orders</span>
 {% endblock %}
 
 {% block content %}
@@ -17,7 +17,7 @@
 
   <div class="trk-hero">
     <div class="trk-hero-txt">
-      <h1>Consolidated Tracker</h1>
+      <h1>Orders</h1>
       <p>Single source of truth · every order across <b>Online B2B</b> &amp; <b>Offline</b> · newest first</p>
     </div>
     <div class="trk-hero-act">
