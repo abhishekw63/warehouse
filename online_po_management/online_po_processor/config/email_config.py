@@ -118,7 +118,7 @@ _DEFAULT_EMAIL_CONFIG: Dict[str, Any] = {
         'rajat.khandelwal@reneecosmetics.in',
         'govind.mishra@reneecosmetics.in',
         'ecomm@reneecosmetics.in',
-        'yogesh.parekh@reneecosmetics.in',
+        # 'yogesh.parekh@reneecosmetics.in',   # commented out per request
     ],
 }
 
