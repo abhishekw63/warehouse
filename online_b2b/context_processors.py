@@ -6,11 +6,16 @@ Delivered as a CONTEXT PROCESSOR (not a template tag) on purpose: if this isn't
 loaded yet on an old process, ``{{ build_info }}`` simply renders empty — it can
 never crash a page. A new template tag would raise on the stale server.
 
-The build log is derived from GIT at boot (Render deploys are git checkouts, so
-``.git`` + the ``git`` CLI are present): the latest commit's date + subject IS
-the "latest update", and the last few commits are the rolling build log shown on
-hover. Nothing to maintain by hand — every commit updates it automatically. If
-git is unavailable for any reason, it degrades to the old boot-timestamp badge.
+The badge is derived from GIT at boot (Render deploys are git checkouts, so
+``.git`` + the ``git`` CLI are present): the latest commit's DATE and the current
+BRANCH. Nothing to maintain by hand. If git is unavailable for any reason, it
+degrades to the old boot-timestamp badge.
+
+Deliberately NOT shown: commit subjects. This badge renders on every page for
+every user, and commit messages are internal engineering notes — they routinely
+name people, customers and internal decisions that have no business being
+published in the product UI. Date + branch answers "which build am I on?"
+without leaking the changelog.
 """
 
 import datetime as _dt
@@ -28,12 +33,10 @@ _BOOT = _dt.datetime.now()
 _WATCH = ['online_b2b/services', 'online_b2b/views.py', 'online_b2b/urls.py',
           'online_b2b/models.py']
 
-_SEP = '\x1f'          # unit separator — safe between date and a free-text subject
-_LOG_N = 8             # how many recent commits the hover log shows
-
-# Git-derived build log, computed ONCE (lazily, then cached) — a git call per
+# Git-derived build facts, computed ONCE (lazily, then cached) — a git call per
 # request would be wasteful and the answer can't change without a restart.
-_BUILD_CACHE = None     # (latest_date, latest_subject, [ (date, subject), ... ]) | False
+_BUILD_CACHE = None     # latest commit date (str) | False when git is unavailable
+_BRANCH_CACHE = None    # current branch name (str) | '' when git is unavailable
 
 
 def _git(args):
@@ -48,25 +51,33 @@ def _git(args):
     return ''
 
 
-def _build_log():
-    """(latest_date, latest_subject, recent[]) from git, cached; False if no git."""
+def _build_date():
+    """Latest commit date from git, cached; False if git is unavailable.
+
+    Only the DATE is read — subjects are never pulled into the process, so there
+    is no way for a commit message to reach the page.
+    """
     global _BUILD_CACHE
     if _BUILD_CACHE is not None:
         return _BUILD_CACHE
     # %cd uses the commit's OWN timezone (commits are made from IST) → the date
     # reads correctly for the user regardless of the server's UTC clock.
-    raw = _git(['log', f'-{_LOG_N}', f'--format=%cd{_SEP}%s',
-                '--date=format:%d %b %Y'])
-    entries = []
-    for line in raw.splitlines():
-        date, _, subj = line.partition(_SEP)
-        if subj:
-            entries.append((date.strip(), subj.strip()))
-    if not entries:
-        _BUILD_CACHE = False
-        return _BUILD_CACHE
-    _BUILD_CACHE = (entries[0][0], entries[0][1], entries)
+    date = _git(['log', '-1', '--format=%cd', '--date=format:%d %b %Y']).strip()
+    _BUILD_CACHE = date or False
     return _BUILD_CACHE
+
+
+def _branch():
+    """Current git branch, cached. '' when git isn't available.
+
+    Shown because this repo runs two long-lived branches (the full app vs the
+    limited build) — without it there's no way to tell, from the screen, which
+    one you're looking at.
+    """
+    global _BRANCH_CACHE
+    if _BRANCH_CACHE is None:
+        _BRANCH_CACHE = _git(['rev-parse', '--abbrev-ref', 'HEAD'])
+    return _BRANCH_CACHE
 
 
 def _latest_source_mtime():
@@ -91,8 +102,7 @@ def build_info(request):
 
       • ⚠ RED 'restart needed' when a backend .py changed after boot (local dev,
         stale process — checked first so it always wins).
-      • ✓ GREEN 'Build <date> · <latest update>' from the latest commit, with the
-        recent build log on hover.
+      • ✓ GREEN 'Build <date>' + the git branch. No commit text (see module doc).
       • Fallback ✓ 'build <boot time>' when git isn't available.
     """
     boot = _BOOT.strftime('%d %b %H:%M:%S')
@@ -108,20 +118,18 @@ def build_info(request):
             f'this server started ({escape(boot)}) — RESTART to load it.">'
             '⚠ code changed · restart needed</span>')}
 
-    log = _build_log()
+    date = _build_date()
 
     # 2) No git → old behaviour (boot timestamp), never crash.
-    if not log:
+    if not date:
         return {'build_info': mark_safe(
             '<span class="build-badge ok" title="Running the latest code.">'
             f'✓ build {escape(boot)}</span>')}
 
-    date, subject, recent = log
-    # Rolling log in the tooltip (newlines render in a native title tooltip);
-    # the message line ellipsizes in CSS so the sidebar footer stays tidy.
-    tip = 'Recent builds:\n' + '\n'.join(f'{d} · {s}' for d, s in recent)
-    tip += f'\n\nserver booted {boot}'
+    branch = _branch()
+    tip = f'branch: {branch}\n' if branch else ''
+    tip += f'built {date}\nserver booted {boot}'
+    chip = f'<span class="bb-b">{escape(branch)}</span>' if branch else ''
     badge = (f'<span class="build-badge ok build-log" title="{escape(tip)}">'
-             f'<span class="bb-v">✓ Build {escape(date)}</span>'
-             f'<span class="bb-m">{escape(subject)}</span></span>')
+             f'<span class="bb-v">✓ Build {escape(date)}</span>{chip}</span>')
     return {'build_info': mark_safe(badge)}

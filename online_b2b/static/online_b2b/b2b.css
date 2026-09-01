@@ -1004,6 +1004,12 @@ tr.sku-drill > td{background:#f7f9fc;padding:0;}
    Full commit + rolling log live in the native tooltip (hover). */
 .build-badge.build-log{display:block;max-width:100%;padding:5px 8px;cursor:default;line-height:1.35;}
 .build-badge.build-log .bb-v{display:block;color:#8ad6a8;letter-spacing:.01em;}
+/* git branch chip — this repo runs two long-lived branches (full app vs limited
+   build), so the badge names the one you're actually looking at. */
+.build-badge.build-log .bb-b{display:inline-block;margin-top:3px;padding:1px 6px;font-size:9px;
+  font-weight:800;letter-spacing:.06em;text-transform:uppercase;border-radius:4px;
+  color:#c9b8ff;background:rgba(124,58,237,.18);border:1px solid rgba(124,58,237,.35);
+  max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:middle;}
 .build-badge.build-log .bb-m{display:block;font-weight:500;font-size:9.5px;opacity:.72;margin-top:1px;
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 body.b2b-collapsed .side-build{display:none;}

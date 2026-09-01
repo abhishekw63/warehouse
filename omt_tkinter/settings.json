@@ -1,0 +1,10 @@
+{
+  "items": {
+    "source": "D:\\OneDrive - RENEE COSMETICS PRIVATE LIMITED\\Package Data\\Package data Compilation\\Sept 2026\\online\\item_master_all_1589items_20260901_112722.xlsx",
+    "cached": "D:\\PO tracking\\Automation\\warehouse\\omt_tkinter\\reference\\item_master.xlsx"
+  },
+  "shipto": {
+    "source": "C:\\Users\\renee\\Downloads\\ship_to_mapping_all_01-09-2026_150802.xlsx",
+    "cached": "D:\\PO tracking\\Automation\\warehouse\\omt_tkinter\\reference\\ship_to.xlsx"
+  }
+}
