@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import FileResponse, Http404, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
@@ -312,7 +313,8 @@ class SSDownloadView(LoginRequiredMixin, View):
     def get(self, request, token, *args, **kwargs):
         path = request.session.get(f'ss_out_{token}')
         if not path or not os.path.exists(path):
-            raise Http404('Generated workbook not found or expired.')
+            messages.info(request, "That workbook has expired — re-run Shoppers Stop to regenerate it.")
+            return redirect('shoppers_stop')
         return FileResponse(open(path, 'rb'), as_attachment=True,
                             filename=os.path.basename(path))
 
@@ -393,7 +395,8 @@ class GTMDownloadView(LoginRequiredMixin, View):
     def get(self, request, token, *args, **kwargs):
         path = request.session.get(f'gtm_out_{token}')
         if not path or not os.path.exists(path):
-            raise Http404('Generated dump not found or expired.')
+            messages.info(request, "That dump has expired — re-run GT Mass to regenerate it.")
+            return redirect('gt_mass_recorder')
         return FileResponse(open(path, 'rb'), as_attachment=True,
                             filename=os.path.basename(path))
 
@@ -470,7 +473,8 @@ class RTDownloadView(LoginRequiredMixin, View):
     def get(self, request, token, *args, **kwargs):
         path = request.session.get(f'rt_out_{token}')
         if not path or not os.path.exists(path):
-            raise Http404('Generated workbook not found or expired.')
+            messages.info(request, "That workbook has expired — re-run Reliance Trends to regenerate it.")
+            return redirect('reliance_trends')
         return FileResponse(open(path, 'rb'), as_attachment=True,
                             filename=os.path.basename(path))
 
@@ -559,7 +563,8 @@ class _FlowReviewView(LoginRequiredMixin, View):
     def get(self, request, token):
         meta = po_flow.load_meta(self.spec, token)
         if meta is None:
-            raise Http404('Upload not found or expired.')
+            messages.info(request, "That upload was already recorded or has expired — nothing to review.")
+            return redirect(reverse(self.spec.urls['upload']))
         # Reopen-from-Drafts (?revalidate=1): drop the cached preview so the run
         # is re-validated live against the CURRENT masters (picks up any fix made
         # while it was parked). No-op once locked.
@@ -621,7 +626,8 @@ class _FlowDownloadView(LoginRequiredMixin, View):
     def get(self, request, token):
         p = po_flow.download_path(self.spec, token)
         if not p:
-            raise Http404('No workbook available.')
+            messages.info(request, "That workbook isn't available yet or the upload has expired.")
+            return redirect(reverse(self.spec.urls['review'], args=[token]))
         # Uniform, self-describing name on par with Online B2B (Mp_Npo_ts_kind) —
         # never the raw tmpXXXX temp name.
         meta = po_flow.load_meta(self.spec, token) or {}
@@ -637,7 +643,8 @@ class _FlowExportView(LoginRequiredMixin, View):
     def get(self, request, token):
         meta = po_flow.load_meta(self.spec, token)
         if meta is None:
-            raise Http404('Upload not found or expired.')
+            messages.info(request, "That upload has expired — the export is no longer available.")
+            return redirect(reverse(self.spec.urls['upload']))
         p = po_flow.export_review_xlsx(self.spec, token, meta)
         if not p:
             raise Http404('Could not build the review export.')

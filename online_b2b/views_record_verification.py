@@ -44,10 +44,11 @@ def _result_path(token: str) -> Path:
 
 
 def _load_result(token: str):
-    """(path, result-dict) for a run token, or Http404 if the run is gone/expired."""
+    """(path, result-dict) for a run token, or ``(None, None)`` if gone/expired —
+    callers redirect gracefully (a consumed/double-submitted token must not 404)."""
     rp = _result_path(token)
     if not rp.exists():
-        raise Http404('Review not found or expired.')
+        return None, None
     return rp, json.loads(rp.read_text(encoding='utf-8'))
 
 
@@ -267,6 +268,9 @@ class RecordVerificationConfirmView(LoginRequiredMixin, View):
 
     def post(self, request, token):
         rp, res = _load_result(token)
+        if res is None:
+            messages.info(request, "That verification run was already recorded or has expired.")
+            return redirect('b2b_record_verify')
         if not res.get('ok'):
             messages.error(request, 'Nothing to confirm.')
             return redirect('b2b_record_verify')
@@ -290,6 +294,8 @@ class RecordVerificationCaptureView(LoginRequiredMixin, View):
 
     def post(self, request, token):
         rp, res = _load_result(token)
+        if res is None:
+            return JsonResponse({'ok': False, 'error': 'That verification run has expired.'}, status=404)
         if not res.get('ok') or not res.get('headers_path'):
             return JsonResponse({'ok': False, 'error': 'Nothing to capture for this check.'}, status=400)
         overrides, only_pos = {}, None
@@ -319,6 +325,9 @@ class RecordVerificationSaveLaterView(LoginRequiredMixin, View):
 
     def post(self, request, token):
         rp, res = _load_result(token)
+        if res is None:
+            messages.info(request, "That verification run has expired — nothing to save.")
+            return redirect('b2b_record_verify')
         res['draft'] = True
         res['saved_at'] = _dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         res['saved_by'] = _actor(request)
@@ -384,6 +393,9 @@ class RecordVerificationDiscardPartView(LoginRequiredMixin, View):
 
     def post(self, request, token):
         rp, res = _load_result(token)
+        if res is None:
+            messages.info(request, "That verification run was already discarded or has expired.")
+            return redirect('b2b_record_verify')
         part = (request.POST.get('part') or '').strip().lower()
         if part == 'import':
             res['import_discarded'] = True
@@ -403,6 +415,7 @@ class RecordVerificationDownloadView(LoginRequiredMixin, View):
     def get(self, request, token):
         xp = _tok_dir(token) / 'record_verification.xlsx'
         if not xp.exists():
-            raise Http404('File not found or expired.')
+            messages.info(request, "That reconciliation file has expired — re-run the verification to rebuild it.")
+            return redirect('b2b_record_verify')
         return FileResponse(open(xp, 'rb'), as_attachment=True,
                             filename='Record_Verification.xlsx')

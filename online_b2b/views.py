@@ -2091,7 +2091,8 @@ def review(request, token):
     """Phase 2: process in memory (no DB write) and show the review page."""
     meta, d = _load_meta(token)
     if not meta:
-        raise Http404("Upload not found or expired.")
+        messages.info(request, "That upload was already recorded or has expired — nothing to review.")
+        return redirect('b2b_upload')
     # Load the cached preview (the AJAX upload already ran + cached it → instant);
     # falls back to a fresh run for non-JS uploads or a busted cache. Reopening a
     # 'Review Later' draft passes ?revalidate=1 → force a fresh run so the team's
@@ -2402,7 +2403,8 @@ def confirm(request, token):
     ajax = common.is_ajax(request)
     meta, d = _load_meta(token)
     if not meta:
-        raise Http404("Upload not found or expired.")
+        messages.info(request, "That upload was already recorded or has expired.")
+        return redirect('b2b_upload')
     paths = [str(d / n) for n in meta['files']]
 
     # Per-affected-line operator decision (Action + Override CP + Remark),
@@ -2593,7 +2595,8 @@ def generate_d365(request, token):
     dropped, Overrides repriced). Engine + full SO Workbook untouched."""
     meta, d = _load_meta(token)
     if not meta:
-        raise Http404("Upload not found or expired.")
+        messages.info(request, "That upload has expired — re-open the run to regenerate the D365 dump.")
+        return redirect('b2b_upload')
     if not meta.get('locked'):
         messages.error(request, "Lock the decisions first, then generate D365.")
         return redirect('b2b_review', token=token)
@@ -2696,7 +2699,8 @@ def fix_ean(request, token):
     lock). Persistent: a repeat wrong EAN auto-resolves on future POs."""
     meta, d = _load_meta(token)
     if not meta:
-        raise Http404("Upload not found or expired.")
+        messages.info(request, "That upload was already recorded or has expired.")
+        return redirect('b2b_upload')
     if meta.get('locked'):
         messages.error(request, "Already locked — EANs can't be changed.")
         return redirect('b2b_review', token=token)
@@ -2800,7 +2804,8 @@ def review_download(request, token):
     NOT decision-filtered (use review_download_completed for accepted-only)."""
     meta, d = _load_meta(token)
     if not meta:
-        raise Http404("Upload not found or expired.")
+        messages.info(request, "That upload has expired — the review workbook is no longer available.")
+        return redirect('b2b_upload')
     f = _full_workbook(d / 'output')
     if not f:
         raise Http404("Preview workbook not found.")
@@ -2862,7 +2867,8 @@ def review_download_completed(request, token):
     multi-sheet workbook, just the decided/accepted set."""
     meta, d = _load_meta(token)
     if not meta:
-        raise Http404("Upload not found or expired.")
+        messages.info(request, "That upload has expired — the completed workbook is no longer available.")
+        return redirect('b2b_upload')
     if not meta.get('locked'):
         messages.error(request, "Lock & Record first, then download the completed workbook.")
         return redirect('b2b_review', token=token)
@@ -2930,7 +2936,8 @@ def bulk_review(request, token):
     """Preview the parsed ERP rows (new vs already-imported) — no DB write."""
     fp = _erp_file(token)
     if not fp or not fp.exists():
-        raise Http404("Upload not found or expired.")
+        messages.info(request, "That ERP upload was already imported or has expired.")
+        return redirect('b2b_bulk_upload')
     res = erp_import.preview(str(fp))
     return render(request, 'online_b2b/bulk_review.html',
                   {'token': token, 'r': res})
@@ -2942,7 +2949,8 @@ def bulk_confirm(request, token):
     """Import the NEW ERP rows into the order DB (segment=Offline)."""
     fp = _erp_file(token)
     if not fp or not fp.exists():
-        raise Http404("Upload not found or expired.")
+        messages.info(request, "That ERP upload was already imported or has expired.")
+        return redirect('b2b_bulk_upload')
     res = erp_import.do_import(str(fp))
     if not res.get('ok'):
         messages.error(request, res.get('error', 'Import failed.'))
@@ -3037,8 +3045,8 @@ def download_d365(request, run_id):
                 idx['d365_path'] = built
                 _save_run_index(run_id, idx)
     if not path or not os.path.exists(path):
-        raise Http404("D365 dump isn't available for this run — the source files "
-                      "may have expired. Re-open the review to regenerate it.")
+        messages.info(request, "That D365 dump has expired — re-open the run to regenerate it.")
+        return redirect('b2b_run_detail', run_id)
     mkt = idx.get('marketplace', 'D365')
     return FileResponse(open(path, 'rb'), as_attachment=True,
                         filename=f"{mkt}_D365_import.xlsx")
@@ -3051,7 +3059,8 @@ def download(request, run_id):
     idx = _load_run_index(run_id)
     path = idx.get('output_path')
     if not path or not os.path.exists(path):
-        raise Http404("Output file not found for this run.")
+        messages.info(request, "That workbook has expired — re-open the run to regenerate it.")
+        return redirect('b2b_run_detail', run_id)
     return FileResponse(open(path, 'rb'), as_attachment=True,
                         filename=_full_name(os.path.basename(path)))
 
@@ -3078,8 +3087,8 @@ def download_completed(request, run_id):
                 idx['completed_path'] = built
                 _save_run_index(run_id, idx)
     if not path or not os.path.exists(path):
-        raise Http404("Completed workbook isn't available for this run — the source "
-                      "files may have expired. Re-open the review to regenerate it.")
+        messages.info(request, "That completed workbook has expired — re-open the run to regenerate it.")
+        return redirect('b2b_run_detail', run_id)
     mkt = idx.get('marketplace', 'SO')
     return FileResponse(open(path, 'rb'), as_attachment=True,
                         filename=_lot_name(mkt, path, 'completed'))
@@ -3387,7 +3396,8 @@ def gt_select_preview(request, token):
     d = _gts_token_dir(token)
     mp = d / 'meta.json'
     if not mp.exists():
-        raise Http404("Upload not found or expired.")
+        messages.info(request, "That GT-Select upload was already imported or has expired.")
+        return redirect('b2b_gt_select')
     meta = json.loads(mp.read_text(encoding='utf-8'))
     from .services import gt_select_import as gts
     pv = gts.preview(str(d / meta['headers_path']), str(d / meta['lines_path']))
@@ -3410,7 +3420,8 @@ class GtSelectImportView(LoginRequiredMixin, View):
         if not mp.exists():
             if _gts_is_ajax(request):
                 return JsonResponse({'ok': False, 'error': 'Upload not found or expired.'}, status=404)
-            raise Http404("Upload not found or expired.")
+            messages.info(request, "That GT-Select upload was already imported or has expired.")
+            return redirect('b2b_gt_select')
         meta = json.loads(mp.read_text(encoding='utf-8'))
         overrides = {}
         if _gts_is_ajax(request):
@@ -3607,7 +3618,8 @@ def ship_to_preview(request, token):
     d = _stm_token_dir(token)
     mp = d / 'meta.json'
     if not mp.exists():
-        raise Http404("Upload not found or expired.")
+        messages.info(request, "That Ship-To upload was already applied or has expired.")
+        return redirect('b2b_ship_to')
     meta = json.loads(mp.read_text(encoding='utf-8'))
     from .services import mapping_store as ms
     path = str(d / meta['path'])
@@ -3641,7 +3653,8 @@ def ship_to_confirm(request, token):
     d = _stm_token_dir(token)
     mp = d / 'meta.json'
     if not mp.exists():
-        raise Http404("Upload not found or expired.")
+        messages.info(request, "That Ship-To upload was already applied or has expired.")
+        return redirect('b2b_ship_to')
     meta = json.loads(mp.read_text(encoding='utf-8'))
     from .services import mapping_store as ms
     path = str(d / meta['path'])
