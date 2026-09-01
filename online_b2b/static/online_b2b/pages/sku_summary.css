@@ -1,5 +1,0 @@
-/* online_b2b/sku_summary.html — page styles (separated from template). Uses shared tokens. */
-/* keep the "Issues only" checkbox + label tight together (was spread out) */
-  .sku-chk{ display:inline-flex; align-items:center; gap:7px; white-space:nowrap;
-    font-size:12px; font-weight:600; color:var(--text-2); cursor:pointer; align-self:center; }
-  .sku-chk input{ width:16px; height:16px; margin:0; cursor:pointer; }

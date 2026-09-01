@@ -9,7 +9,6 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.http import Http404, HttpResponse
 from django.test import RequestFactory, SimpleTestCase
 
-from online_b2b.services import batch_flow as bf
 from online_b2b.services import common
 from online_b2b.services import marketplaces as reg
 
@@ -142,33 +141,3 @@ class MarketplaceRegistryTests(SimpleTestCase):
     def test_db_key_map_has_no_collisions(self):
         db_keys = [c.db_key for c in reg.channels() if c.db_key]
         self.assertEqual(len(db_keys), len(set(db_keys)))
-
-
-class BatchDetectorTests(SimpleTestCase):
-    """Locks the READ-ONLY batch-run MP detector's pure logic (no files/DB)."""
-
-    def test_norm_folds_to_alnum(self):
-        self.assertEqual(bf._norm('Supplier Unit Price'), 'supplierunitprice')
-        self.assertEqual(bf._norm('PO No.'), 'pono')
-
-    def test_flatten_cols_handles_str_list_dict_and_skips_placeholders(self):
-        self.assertEqual(bf._flatten_cols('PO'), ['PO'])
-        self.assertEqual(bf._flatten_cols(['PO', 'PO Number']), ['PO', 'PO Number'])
-        self.assertEqual(bf._flatten_cols({'multiply': ['Landing Price', 'Quantity']}),
-                         ['Landing Price', 'Quantity'])
-        self.assertEqual(bf._flatten_cols('__po__'), [])   # engine placeholder skipped
-
-    def test_filename_hint_disambiguates_lookalikes(self):
-        self.assertEqual(bf._filename_hint('POItemExport_2026-08-18.xls'), 'RK')
-        self.assertEqual(bf._filename_hint('purchase_order_FLS073C0F2B4.xlsx'), 'Flipkart')
-        self.assertEqual(bf._filename_hint('Consignment_Details_204838801.csv'), 'Flipkart-TO')
-        # Swiggy (all-digits) vs Zepto (hex) share PO_<id>.csv
-        self.assertEqual(bf._filename_hint('PO_1786601384021.csv'), 'Swiggy')
-        self.assertEqual(bf._filename_hint('PO_2683fb1ca1f301b0.csv'), 'Zepto')
-        self.assertIsNone(bf._filename_hint('random_upload.xlsx'))
-
-    def test_signatures_built_from_engine_configs(self):
-        sigs = bf.signatures()
-        self.assertIn('Myntra', sigs)
-        # Myntra's GTIN column must be part of its signature
-        self.assertIn('gtin', sigs['Myntra']['cols'])

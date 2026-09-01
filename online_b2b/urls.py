@@ -1,14 +1,15 @@
 from django.urls import path
+from django.views.generic import RedirectView
 
 from . import views
 from . import full_validation_views as _fullval  # STANDALONE feature (removable)
 from . import views_record_verification as _rv  # STANDALONE feature (removable)
-from . import views_batch as _batch  # STANDALONE feature (removable) — Batch Run Phase 0/1
 from . import inventory_views as _inv  # STANDALONE feature (removable)
-from . import views_tables as _tbl  # STANDALONE feature (removable)
 
 urlpatterns = [
-    path('', views.CentralHubView.as_view(), name='b2b_dashboard'),
+    # Hub removed (limited build) — landing redirects to the Tracker. The name
+    # 'b2b_dashboard' is KEPT so every breadcrumb/brand {% url %} still resolves.
+    path('', RedirectView.as_view(pattern_name='b2b_tracker', permanent=False), name='b2b_dashboard'),
     # ── Full Validation (standalone; delete these 3 lines + the module/template/
     #    sidebar link to remove the whole feature) ────────────────────────────
     path('full-validation/', _fullval.full_validation, name='b2b_full_validation'),
@@ -28,13 +29,6 @@ urlpatterns = [
     path('record-verify/<str:token>/discard-part/', _rv.RecordVerificationDiscardPartView.as_view(), name='b2b_record_verify_discard_part'),
     path('record-verify/<str:token>/download/', _rv.RecordVerificationDownloadView.as_view(),
          name='b2b_record_verify_download'),
-    # ── Batch Run — Phase 0/1: read-only file→MP detect + confirm grid (records
-    #    NOTHING). Delete these 3 lines + views_batch.py + services/batch_flow.py +
-    #    the batch_detect templates + the nav link to remove the whole feature. ───
-    path('batch/', _batch.BatchDetectView.as_view(), name='b2b_batch'),
-    path('batch/detect/', _batch.BatchDetectRunView.as_view(), name='b2b_batch_detect'),
-    path('batch/<str:token>/confirm/', _batch.BatchConfirmView.as_view(), name='b2b_batch_confirm'),
-    path('batch/<str:token>/preview/', _batch.BatchPreviewView.as_view(), name='b2b_batch_preview'),
     # ── Inventory — Fill-Rate cockpit (standalone; delete these lines + the
     #    module/service/templates/sidebar link to remove the whole feature) ────
     # Channel SKU Map — per-channel vendor SKU-code → EAN → item (Swiggy/HG/…)
@@ -58,23 +52,8 @@ urlpatterns = [
          name='b2b_inventory_confirm'),
     path('inventory/<str:token>/discard/', _inv.inventory_discard,
          name='b2b_inventory_discard'),
-    # Order Availability Checker — paste order no(s) → stock vs mapped WH.
-    path('availability/', views.AvailabilityView.as_view(), name='b2b_availability'),
-    path('availability/check/', views.availability_check, name='b2b_availability_check'),
-    path('availability/scenarios/', views.availability_scenarios, name='b2b_availability_scenarios'),
-    path('availability/shift/', views.availability_shift_wh, name='b2b_availability_shift'),
-    path('availability/record/', views.availability_record, name='b2b_availability_record'),
-    path('availability/runs/', views.availability_runs, name='b2b_availability_runs'),
-    path('availability/trend/', views.availability_trend, name='b2b_availability_trend'),
-    path('availability/runs/<int:run_id>/', views.availability_run_view, name='b2b_availability_run_view'),
-    path('availability/runs/<int:run_id>/delete/', views.availability_run_delete, name='b2b_availability_run_delete'),
-    path('availability/export/', views.availability_export, name='b2b_availability_export'),
-    path('availability/bins/', views.availability_bins, name='b2b_availability_bins'),
     path('online/', views.dashboard, name='b2b_online'),
     path('offline/', views.OfflineBranchView.as_view(), name='b2b_offline'),
-    path('analytics/', views.AnalyticsView.as_view(), name='b2b_analytics'),
-    path('analytics/sku/', views.SkuDemandView.as_view(), name='b2b_sku_demand'),
-    path('analytics/sku/export/', views.sku_demand_export, name='b2b_sku_demand_export'),
     path('rules/', views.RulesView.as_view(), name='b2b_rules'),
     path('exceptions/', views.exceptions_page, name='b2b_exceptions'),
     path('exceptions/add/', views.exception_add, name='b2b_exception_add'),
@@ -93,16 +72,6 @@ urlpatterns = [
     path('tracker/insights/', views.TrackerInsightsView.as_view(), name='b2b_tracker_insights'),
     path('tracker/add/', views.TrackerAddView.as_view(), name='b2b_tracker_add'),
     path('tracker/<int:row_id>/delete/', views.TrackerDeleteView.as_view(), name='b2b_tracker_delete'),
-    # ── Tables · master-tables manager (standalone; delete these lines + the
-    #    module/template/sidebar link to remove the whole feature) ────────────
-    path('tables/', _tbl.TablesHomeView.as_view(), name='b2b_tables'),
-    path('tables/<slug:slug>/data/', _tbl.TableDataView.as_view(), name='b2b_table_data'),
-    path('tables/row/add/', _tbl.RowAddView.as_view(), name='b2b_table_row_add'),
-    path('tables/row/<int:row_id>/update/', _tbl.RowUpdateView.as_view(), name='b2b_table_row_update'),
-    path('tables/row/<int:row_id>/delete/', _tbl.RowDeleteView.as_view(), name='b2b_table_row_delete'),
-    path('tables/create/', _tbl.TableCreateView.as_view(), name='b2b_table_create'),
-    path('tables/<int:table_id>/rename/', _tbl.TableRenameView.as_view(), name='b2b_table_rename'),
-    path('tables/<int:table_id>/delete/', _tbl.TableDeleteView.as_view(), name='b2b_table_delete'),
     path('lines/', views.lines, name='b2b_lines'),
     path('lines/more/', views.lines_more, name='b2b_lines_more'),
     path('daily/', views.daily_tasks, name='b2b_daily'),
@@ -113,14 +82,6 @@ urlpatterns = [
     path('daily/adhoc/add/', views.daily_adhoc_add, name='b2b_daily_adhoc_add'),
     path('daily/adhoc/toggle/', views.daily_adhoc_toggle, name='b2b_daily_adhoc_toggle'),
     path('daily/adhoc/delete/', views.daily_adhoc_delete, name='b2b_daily_adhoc_delete'),
-    # Fulfilment Cockpit — order-wise fill rate & billing (summary email is one action here).
-    # (URL renamed email/ -> cockpit/; internal view names kept so existing {% url %} refs work.)
-    path('cockpit/', views.email_page, name='b2b_email'),
-    path('cockpit/export/', views.cockpit_export, name='b2b_cockpit_export'),
-    path('cockpit/po-skus/', views.CockpitPOSkusView.as_view(), name='b2b_cockpit_po_skus'),
-    path('cockpit/preview/', views.email_preview, name='b2b_email_preview'),
-    path('cockpit/send/', views.email_send, name='b2b_email_send'),
-    path('email/', views.email_page),   # legacy redirect target — old bookmarks still land here
     path('issues/', views.issues, name='b2b_issues'),
     path('issues/export/', views.issues_export, name='b2b_issues_export'),
     path('issues/email/preview/', views.issues_email_preview, name='b2b_issues_email_preview'),
@@ -129,11 +90,6 @@ urlpatterns = [
     path('issues/save/', views.issues_save, name='b2b_issues_save'),
     path('issues/save-bulk/', views.issues_save_bulk, name='b2b_issues_save_bulk'),
     path('issues/fix-ean/', views.issues_fix_ean, name='b2b_issues_fix_ean'),
-    path('tat/', views.tat, name='b2b_tat'),
-    path('tat/save/', views.tat_save, name='b2b_tat_save'),
-    path('tat/export/', views.tat_export, name='b2b_tat_export'),
-    path('sku-summary/', views.sku_summary, name='b2b_sku_summary'),
-    path('sku-summary/lines/', views.sku_summary_lines, name='b2b_sku_summary_lines'),
     path('export/', views.export, name='b2b_export'),
     path('upload/', views.upload, name='b2b_upload'),
     path('bulk/', views.bulk_upload, name='b2b_bulk_upload'),
@@ -181,7 +137,6 @@ urlpatterns = [
     path('ship-to/<str:token>/', views.ship_to_preview, name='b2b_ship_to_preview'),
     path('ship-to/<str:token>/confirm/', views.ship_to_confirm, name='b2b_ship_to_confirm'),
     path('ship-to/<str:token>/discard/', views.ship_to_discard, name='b2b_ship_to_discard'),
-    path('runs/', views.RunsView.as_view(), name='b2b_runs'),
     path('run/<int:run_id>/', views.run_detail, name='b2b_run_detail'),
     path('run/<int:run_id>/export/', views.run_export, name='b2b_run_export'),
     path('run/<int:run_id>/download/', views.download, name='b2b_download'),

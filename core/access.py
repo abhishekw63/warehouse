@@ -47,14 +47,6 @@ _SAFE_POST_NAMES = frozenset({
     # reconciliation tools — upload D365 files but write NOTHING to the business
     # DB (they only produce an Excel report). Allowed for Viewers by decision.
     'b2b_full_validation_run', 'b2b_triangular_run',
-    # availability checker — read-only reports (the best-WH comparison too;
-    # 'b2b_availability_shift'/'..._run_delete' are deliberately NOT here — they
-    # write, Editors only). 'record' is an append-only snapshot → Viewers may keep
-    # an audit of the FR they saw, so it's allowed.
-    'b2b_availability_check', 'b2b_availability_bins', 'b2b_availability_scenarios',
-    'b2b_availability_record',
-    # read-only data fetches that don't match a suffix
-    'b2b_cockpit_po_skus',
     # client Navigation-Timing beacon → a NAV row in the audit_log (frontend
     # load telemetry). No business write; allowed for everyone so we capture
     # real page-load timing from Viewers too.
