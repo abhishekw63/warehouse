@@ -1,9 +1,0 @@
-# OMT Offline — runtime deps
-pandas
-openpyxl
-xlrd            # .xls  (RK POItemExport, some GT Mass sheets)
-pyxlsb          # .xlsb (optional — only if you get .xlsb punches)
-
-# To build the .exe:
-#   pip install pyinstaller
-#   pyinstaller omt_offline.spec --noconfirm
