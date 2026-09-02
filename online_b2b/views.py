@@ -2405,6 +2405,32 @@ def confirm(request, token):
     if not meta:
         messages.info(request, "That upload was already recorded or has expired.")
         return redirect('b2b_upload')
+
+    # ── IDEMPOTENT: this run is already locked → report it, never re-record. ──
+    # Lock&Record is a long job (measured: ~35s median, 107s worst). The browser's
+    # fetch can die while the SERVER completes, leaving the operator staring at a
+    # "network error" with no idea whether it landed. Their instinct is to press
+    # it again. PO-level dedup already stops duplicate ORDERS, but re-running also
+    # re-sends the issues email and burns another minute of CPU for nothing.
+    # Returning the existing run instead makes a retry cheap AND truthful — and
+    # gives the review page a fast way to ASK "did it actually record?" after a
+    # dropped connection, by simply POSTing again.
+    if meta.get('locked') and meta.get('run_id'):
+        rid = meta['run_id']
+        if ajax:
+            from django.urls import reverse
+            return JsonResponse({
+                'ok': True, 'run_id': rid, 'already': True,
+                'pos': meta.get('locked_pos', 0), 'lines': meta.get('locked_lines', 0),
+                'has_d365': False,
+                'run_url': reverse('b2b_run_detail', args=[rid]),
+                'd365_url': reverse('b2b_generate_d365', args=[token]),
+                'issue_email': None,
+                'message': f'Already recorded as run #{rid} — nothing was duplicated.',
+            })
+        messages.info(request, f'Already locked & recorded as run #{rid}.')
+        return redirect('b2b_review', token=token)
+
     paths = [str(d / n) for n in meta['files']]
 
     # Per-affected-line operator decision (Action + Override CP + Remark),
@@ -2516,6 +2542,10 @@ def confirm(request, token):
     meta['decisions'] = actions
     meta['run_id'] = run_id
     meta['locked'] = True
+    # counts kept so a repeat POST (see the idempotent guard above) can report
+    # what was recorded without re-running the job.
+    meta['locked_pos'] = res['summary']['pos']
+    meta['locked_lines'] = res.get('lines_recorded', 0)
     (d / 'meta.json').write_text(json.dumps(meta), encoding='utf-8')
     # New orders just landed → drop ALL cached read-aggregates (hub overview/extra
     # KPIs, cockpit summary, tracker dropdowns/geo) so the hub + tracker reflect the

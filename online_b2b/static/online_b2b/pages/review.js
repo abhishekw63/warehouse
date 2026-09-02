@@ -502,7 +502,37 @@ var CFG = JSON.parse(document.getElementById("review-cfg").textContent);
         }, 580);
       }, wait);
     }).catch(function () {
-      failProgress('Network error — nothing was locked. Try again.');
+      // A dead connection tells us NOTHING about what the server did. Lock&Record
+      // runs ~35s (worst seen: 107s), so the usual cause is the request outliving
+      // the connection while the record COMPLETED server-side. Claiming "nothing
+      // was locked" here would be a guess — and the operator's next move, pressing
+      // it again, is exactly the wrong one if it did land.
+      // Confirm is idempotent: re-POSTing an already-locked token returns the
+      // existing run immediately (no re-record, no rebuild), so we just ask.
+      failProgress('Connection lost — checking whether it recorded…');
+      fetch(form.action, {
+        method: 'POST',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        body: new FormData(form),
+        credentials: 'same-origin'
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        if (j && j.ok && j.run_id) {
+          // It DID record. Show the locked state rather than inviting a retry.
+          finishProgress();
+          morphLocked(j);
+          if (window.B2B && B2B.toast) {
+            B2B.toast('The connection dropped, but the record completed — run #' +
+              j.run_id + '. Nothing was duplicated.',
+              { type: 'ok', title: 'Recorded ✓', timeout: 9000 });
+          }
+        } else {
+          failProgress('Not recorded — safe to retry.');
+        }
+      }).catch(function () {
+        // Still unreachable: say what we know and what we don't.
+        failProgress('Connection lost — we could not confirm the result. ' +
+                     'Check Runs before retrying.');
+      });
     });
   }
 
