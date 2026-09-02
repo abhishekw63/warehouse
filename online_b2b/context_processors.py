@@ -76,7 +76,16 @@ def _branch():
     """
     global _BRANCH_CACHE
     if _BRANCH_CACHE is None:
-        _BRANCH_CACHE = _git(['rev-parse', '--abbrev-ref', 'HEAD'])
+        # Render checks the repo out DETACHED, so `rev-parse --abbrev-ref HEAD`
+        # answers the literal string 'HEAD' there — useless on the badge, which
+        # exists precisely to say WHICH branch is live. Render exports the real
+        # branch as RENDER_GIT_BRANCH; prefer it and keep git as the local path.
+        name = (_os.environ.get('RENDER_GIT_BRANCH') or '').strip()
+        if not name:
+            name = _git(['rev-parse', '--abbrev-ref', 'HEAD'])
+        if name == 'HEAD':                      # detached with no env hint
+            name = _git(['rev-parse', '--short', 'HEAD'])   # show the commit
+        _BRANCH_CACHE = name
     return _BRANCH_CACHE
 
 

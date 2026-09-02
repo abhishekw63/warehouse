@@ -58,7 +58,12 @@ def send_html(subject: str, html: str, to=None, cc=None, config=None):
     config = config or get_config()
     sender = config.get('EMAIL_SENDER')
     pwd = config.get('EMAIL_PASSWORD')
-    to_list = _as_list(to) or _as_list(config.get('DEFAULT_RECIPIENT'))
+    # `to=None` means "use the configured default". An EXPLICIT empty list means
+    # "send to nobody" and must NOT fall back — the old `or` treated [] and None
+    # alike, so a caller that had filtered its recipients down to none silently
+    # mailed the default recipient instead. Mirrors how `cc` already behaves.
+    to_list = (_as_list(config.get('DEFAULT_RECIPIENT')) if to is None
+               else _as_list(to))
     cc_list = _as_list(cc) if cc is not None else _as_list(config.get('CC_RECIPIENTS'))
     smtp_host = config.get('SMTP_SERVER')
 
@@ -81,6 +86,30 @@ def send_html(subject: str, html: str, to=None, cc=None, config=None):
                     'Please view it in an HTML-capable client.')
     msg.add_alternative(html, subtype='html')
 
+    # ── HTTPS first, when a provider is configured ────────────────────────
+    # The deployed host's outbound SMTP is blocked ([Errno 101] Network is
+    # unreachable), so on the server this is the ONLY path that can work. It is
+    # opt-in: with EMAIL_HTTP_PROVIDER unset we go straight to SMTP and nothing
+    # changes for local use. If the HTTP send fails we still try SMTP, so a
+    # misconfigured key can't take email away from a machine where SMTP works.
+    http_err = ''
+    try:
+        from . import mail_http
+        if mail_http.configured():
+            ok, reason = mail_http.send(subject, html, sender, to_list, cc_list)
+            if ok:
+                return True, ''
+            http_err = reason
+            log.warning('HTTP email failed (%s) — falling back to SMTP', reason)
+    except Exception as e:  # noqa: BLE001 — transport choice must never raise
+        http_err = f'{type(e).__name__}: {e}'
+
+    def _fail(msg):
+        # Surface BOTH failures, else the HTTP problem is invisible behind the
+        # SMTP one and whoever debugs it chases the wrong transport.
+        return False, (f'{msg} (HTTP transport also failed: {http_err})'
+                       if http_err else msg)
+
     server = None
     try:
         server = smtplib.SMTP(smtp_host, int(config.get('SMTP_PORT', 587)),
@@ -93,14 +122,14 @@ def send_html(subject: str, html: str, to=None, cc=None, config=None):
         return True, ''
     except smtplib.SMTPAuthenticationError as e:
         _close(server)
-        return False, (f'Authentication failed — check EMAIL_PASSWORD (Gmail '
-                       f'App Password, not the account password). ({e.smtp_code})')
+        return _fail(f'Authentication failed — check EMAIL_PASSWORD (Gmail '
+                     f'App Password, not the account password). ({e.smtp_code})')
     except smtplib.SMTPException as e:
         _close(server)
-        return False, f'SMTP error: {e}'
+        return _fail(f'SMTP error: {e}')
     except OSError as e:
         _close(server)
-        return False, f'Network error — check the connection / SMTP port. ({e})'
+        return _fail(f'Network error — check the connection / SMTP port. ({e})')
 
 
 def _close(server) -> None:

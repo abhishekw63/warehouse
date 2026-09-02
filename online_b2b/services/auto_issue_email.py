@@ -100,8 +100,14 @@ def flush_pending(limit: int = 25) -> dict:
     sweep). Returns ``{tried, sent}``. Best-effort; never raises."""
     tried = sent = 0
     for rid in _log.pending_run_ids(limit):
+        # Re-check RIGHT NOW instead of trusting the list we just read. The list
+        # is a snapshot; a send can land between reading it and getting here (it
+        # did — a sweep re-sent a run that had just succeeded from another host,
+        # and its 'failed' write clobbered the 'sent' row). force=False makes
+        # send_for_run itself skip an already-sent run, so the mail can never go
+        # out twice and the newer state is never overwritten.
         tried += 1
-        if send_for_run(rid, force=True).get('status') == 'sent':
+        if send_for_run(rid, force=False).get('status') == 'sent':
             sent += 1
     return {'tried': tried, 'sent': sent}
 
