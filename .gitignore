@@ -59,11 +59,7 @@ db_profiles/*.json
 # Dev observability perf/audit logs
 logs/
 
-# ── OMT Offline (omt_tkinter) ─────────────────────────────────────────────
-# Runtime state, not source: remembered file paths (machine-specific) and the
-# app's cached COPY of the Item Master / Ship-To files (real business master
-# data — it belongs in the operator's folders, not in git).
-omt_tkinter/settings.json
-omt_tkinter/reference/
-omt_tkinter/build/
-omt_tkinter/dist/
+# ── OMT Offline desktop app (omt_tkinter/) ────────────────────────────────
+# A separate, standalone deliverable — deliberately NOT tracked here so it
+# survives branch switches untouched.
+omt_tkinter/
