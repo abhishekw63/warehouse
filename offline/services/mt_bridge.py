@@ -667,6 +667,37 @@ def _lifestyle_store_map() -> dict:
     return out
 
 
+# GST state code → the PIN prefixes (first 2 digits) that belong to that state.
+# Used to sanity-check a BARE pincode scraped from a delivery address: a 6-digit
+# run only counts as the PIN if it sits in the state the GSTIN says it does.
+_GST_STATE_PIN = {
+    '01': ('18', '19'), '02': ('17',), '03': ('14', '15', '16'), '04': ('16',),
+    '05': ('24', '25', '26', '27', '28'), '06': ('12', '13'), '07': ('11',),
+    '08': ('30', '31', '32', '33', '34'),
+    '09': ('20', '21', '22', '23', '24', '25', '26', '27', '28'),
+    '10': ('80', '81', '82', '83', '84', '85'), '18': ('78', '79'),
+    '19': ('70', '71', '72', '73', '74'), '20': ('81', '82', '83'),
+    '21': ('75', '76', '77'), '22': ('49',), '23': ('45', '46', '47', '48'),
+    '24': ('36', '37', '38', '39'), '27': ('40', '41', '42', '43', '44'),
+    '29': ('56', '57', '58', '59'), '30': ('40',), '32': ('67', '68', '69'),
+    '33': ('60', '61', '62', '63', '64'), '34': ('60',),
+    '36': ('50', '51', '52', '53'), '37': ('51', '52', '53', '55'),
+}
+
+
+def _pin_matches_gst_state(pin: str, gst_state: str) -> bool:
+    """True when a 6-digit PIN plausibly belongs to the GSTIN's state.
+
+    Guards the bare-PIN fallback: '580028' with GSTIN '29…' (Karnataka) passes
+    because 58xxxx is Karnataka; an HSN code or a plot number would not.
+    Unknown/absent state code → False, so the caller flags UNMAPPED rather than
+    guessing (a wrong ship-to is far worse than a flagged one).
+    """
+    if not (pin or '').isdigit() or len(pin) != 6:
+        return False
+    return pin[:2] in _GST_STATE_PIN.get(str(gst_state or '').strip(), ())
+
+
 def _read_xlsb_by_headers(src_path, signature, engine='pyxlsb'):
     """Read the sheet whose header row contains ALL of ``signature`` (compared
     space/case-insensitively) — so a RENAMED tab (e.g. a timestamped
@@ -874,31 +905,70 @@ def _normalize_ahlc_excel(src_path):
     # ── Table 1: PO No, PO/Exp dates, delivery PIN + GST (scanned by content) ──
     t1 = wb['Table 1'] if 'Table 1' in wb.sheetnames else wb[wb.sheetnames[0]]
     po_no = po_date = exp_date = pincode = gst = addr = ''
+    notes_pre: list[str] = []      # notes raised while reading the workbook
     for row in t1.iter_rows(values_only=True):
         for cell in row:
             if not isinstance(cell, str):
                 continue
             s = cell.strip()
-            m = re.search(r'(PO-?A?\d{6,})', s)
+            # PO No — the letter after 'PO-' varies BY DC (PO-A… Pedda Amberpet,
+            # PO-L… Hubballi, PO-S… Faridabad), so accept any single letter
+            # rather than hard-coding one. Anchored on 'PO-' + 6+ digits, which
+            # is specific enough not to collide with other numbers on the sheet.
+            m = re.search(r'(PO-?[A-Z]?\d{6,})', s.upper())
             if m and not po_no:
                 po_no = m.group(1)
                 po_date = po_date or _mon_to_isoday(s)
             if 'Exp Date' in s and not exp_date:
                 exp_date = _mon_to_isoday(s)
-            if 'PIN-' in s.upper() and 'GST' in s.upper() and not pincode:
-                pm = re.search(r'PIN[-:\s]*(\d{6})', s.upper())
-                gm = re.search(r'GST[:\s]*([0-9]{2}[A-Z0-9]{13})', s.upper())
-                pincode = pm.group(1) if pm else ''
+            # Delivery PIN — Apollo writes it either LABELLED ('… PIN-121003')
+            # or BARE after the city ('… P B ROAD, HUBBALLI 580028'). Take the
+            # label when present; otherwise fall back to a standalone 6-digit
+            # number, but ONLY when the GST state code agrees with the PIN's
+            # region — a blind 6-digit grab would happily pick up 'PID NO-67' or
+            # an HSN code. Never guess silently.
+            if 'GST' in s.upper() and not pincode:
+                S = s.upper()
+                gm = re.search(r'GST[:\s]*([0-9]{2}[A-Z0-9]{13})', S)
+                pm = re.search(r'PIN[-:\s]*(\d{6})', S)
+                if pm:
+                    pincode = pm.group(1)
+                else:
+                    gst_state = gm.group(1)[:2] if gm else ''
+                    # strip the 'PID NO-…' decoy before hunting bare 6-digit runs
+                    cleaned = re.sub(r'PID\s*NO[-:\s]*[\d/]+', ' ', S)
+                    for cand in re.findall(r'(?<!\d)(\d{6})(?!\d)', cleaned):
+                        if _pin_matches_gst_state(cand, gst_state):
+                            pincode = cand
+                            break
                 gst = gm.group(1) if gm else ''
-                addr = s.split('\n')[0].strip()
+                if pincode or gm:
+                    addr = s.split('\n')[0].strip()
 
-    # ── Sheet1: clean line items (header row = the one carrying EAN + Qty.) ──
-    sh = wb['Sheet1'] if 'Sheet1' in wb.sheetnames else wb[wb.sheetnames[-1]]
-    grid = list(sh.iter_rows(values_only=True))
-    hdr_i = next((i for i, r in enumerate(grid)
-                  if 'EAN' in [str(c).strip() if c is not None else '' for c in r]
-                  and any(str(c).strip().startswith('Qty')
-                          for c in r if c is not None)), None)
+    # ── Line items: prefer the cleaned 'Sheet1' (clean 13-digit EANs); fall back
+    #    to the raw 'Table 1' when the vendor sends the un-cleaned workbook.
+    #    Table 1 IS parseable — its EANs are just unreliable (Apollo exports some
+    #    as '8.90612E+12'), which surfaces per line as an unresolved item rather
+    #    than losing the whole PO. Any sheet carrying EAN + Qty. headers works.
+    def _hdr_row(ws):
+        g = list(ws.iter_rows(values_only=True))
+        return g, next((i for i, r in enumerate(g)
+                        if 'EAN' in [str(c).strip() if c is not None else '' for c in r]
+                        and any(str(c).strip().startswith('Qty')
+                                for c in r if c is not None)), None)
+
+    grid = hdr_i = None
+    for name in (['Sheet1'] if 'Sheet1' in wb.sheetnames else []) + \
+                [n for n in wb.sheetnames if n != 'Sheet1']:
+        g, i = _hdr_row(wb[name])
+        if i is not None:
+            grid, hdr_i = g, i
+            if name != 'Sheet1':
+                notes_pre.append(
+                    f"AHLC: no cleaned 'Sheet1' — lines read from '{name}'. Its EANs "
+                    f"can be malformed (Apollo exports some as 8.90612E+12); any such "
+                    f"line will flag as unresolved rather than being dropped.")
+            break
     if hdr_i is None:
         raise ValueError("AHLC: 'Sheet1' has no header row with EAN + Qty. — is "
                          "this the cleaned Apollo workbook (Table 1 + Sheet1)?")
@@ -938,7 +1008,7 @@ def _normalize_ahlc_excel(src_path):
     os.close(fd)
     out.to_excel(path, index=False)
 
-    notes: list[str] = []
+    notes: list[str] = list(notes_pre)
     if not po_no:
         notes.append("AHLC: could not read the Apollo PO number from 'Table 1' — "
                      "the D365 External Doc will be blank. Check the workbook.")
