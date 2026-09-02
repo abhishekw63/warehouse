@@ -83,9 +83,23 @@ var CFG = JSON.parse(document.getElementById("upload-cfg").textContent);
   // not within #MainContent (padding-left:252px for the sidebar + the page-in
   // transform were pulling the card off-centre / low). Mirrors the shared
   // body-level #b2b-load overlay pattern.
-  if (overlay && overlay.parentNode !== document.body) document.body.appendChild(overlay);
-  var fill = document.getElementById('proc-fill'), pctEl = document.getElementById('proc-pct'),
-      stageEl = document.getElementById('proc-stage'), timeEl = document.getElementById('proc-time');
+  // Shell-nav swaps only #MainContent, so an overlay portaled on a PREVIOUS
+  // visit is still sitting in <body>. Drop those before portaling this one —
+  // otherwise the page holds two #proc-fill / #proc-pct, and getElementById
+  // returns the STALE one (this overlay was just moved to the END of body). The
+  // result was animating an invisible card while the visible one sat frozen on
+  // "Starting… 0% … elapsed 0:00".
+  if (overlay) {
+    var _dupes = document.querySelectorAll('#proc-overlay');
+    for (var _i = 0; _i < _dupes.length; _i++) {
+      if (_dupes[_i] !== overlay && _dupes[_i].parentNode === document.body) {
+        _dupes[_i].parentNode.removeChild(_dupes[_i]);
+      }
+    }
+    if (overlay.parentNode !== document.body) document.body.appendChild(overlay);
+  }
+  var fill = overlay.querySelector('#proc-fill'), pctEl = overlay.querySelector('#proc-pct'),
+      stageEl = overlay.querySelector('#proc-stage'), timeEl = overlay.querySelector('#proc-time');
   var STAGES = [
     { p: 0,  t: 'Loading master & Ship-To mapping…' },
     { p: 42, t: 'Reading & processing PO file…' },
@@ -139,7 +153,7 @@ var CFG = JSON.parse(document.getElementById("upload-cfg").textContent);
       fill.style.width = '100%'; if (fill.classList) fill.classList.add('proc-fill-err');
       pctEl.textContent = '';
       timeEl.innerHTML = '<button type="button" id="proc-close" class="proc-close">Close</button>';
-      var c = document.getElementById('proc-close');
+      var c = overlay.querySelector('#proc-close');
       if (c) c.addEventListener('click', function () {
         overlay.hidden = true; card.classList.remove('proc-err');
         if (spin) spin.style.display = ''; titleEl.textContent = 'Processing PO';

@@ -165,9 +165,23 @@
   var overlay = document.getElementById('proc-overlay');
   // Portal to <body> so position:fixed centres on the VIEWPORT, not within
   // #MainContent (sidebar padding + page-in transform pull it off-centre).
-  if (overlay && overlay.parentNode !== document.body) document.body.appendChild(overlay);
-  var fill = document.getElementById('proc-fill'), pctEl = document.getElementById('proc-pct'),
-      stageEl = document.getElementById('proc-stage'), timeEl = document.getElementById('proc-time');
+  // Shell-nav swaps only #MainContent, so an overlay portaled on a PREVIOUS
+  // visit is still sitting in <body>. Drop those before portaling this one —
+  // otherwise the page holds two #proc-fill / #proc-pct, and getElementById
+  // returns the STALE one (this overlay was just moved to the END of body). The
+  // result was animating an invisible card while the visible one sat frozen on
+  // "Starting… 0% … elapsed 0:00".
+  if (overlay) {
+    var _dupes = document.querySelectorAll('#proc-overlay');
+    for (var _i = 0; _i < _dupes.length; _i++) {
+      if (_dupes[_i] !== overlay && _dupes[_i].parentNode === document.body) {
+        _dupes[_i].parentNode.removeChild(_dupes[_i]);
+      }
+    }
+    if (overlay.parentNode !== document.body) document.body.appendChild(overlay);
+  }
+  var fill = overlay.querySelector('#proc-fill'), pctEl = overlay.querySelector('#proc-pct'),
+      stageEl = overlay.querySelector('#proc-stage'), timeEl = overlay.querySelector('#proc-time');
   var STAGES = [{p:0,t:'Loading master…'},{p:42,t:'Reading & processing PO file…'},
     {p:68,t:'Validating against master…'},{p:86,t:'Building preview & workbook…'},{p:95,t:'Finalizing…'}];
   function clock(ms){var s=Math.floor(ms/1000);return Math.floor(s/60)+':'+('0'+(s%60)).slice(-2);}
@@ -188,7 +202,7 @@
       stageEl.textContent = msg || 'Something went wrong — please try again.';
       fill.style.width = '100%'; pctEl.textContent = '';
       timeEl.innerHTML = '<button type="button" id="proc-close" class="proc-close">Close</button>';
-      var c = document.getElementById('proc-close');
+      var c = overlay.querySelector('#proc-close');
       if (c) c.addEventListener('click', function () { overlay.hidden = true; card.classList.remove('proc-err');
         if (spin) spin.style.display = ''; titleEl.textContent = 'Processing PO'; btn.disabled = false; btn.textContent = 'Process'; }); }
     fetch(form.action, { method: 'POST', body: new FormData(form),
