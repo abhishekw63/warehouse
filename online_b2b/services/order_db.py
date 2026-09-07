@@ -2387,22 +2387,33 @@ def issues(marketplace='', q='', status='', resolution='pending',
     return out
 
 
-def mp_lot_qty(marketplace='', date_from='', date_to='') -> dict:
-    """Total UPLOADED lot qty per marketplace over the given upload-date window
-    (``run_ts``) — ALL lines, not just affected ones. Used by the Issues email
-    to compute the uploaded-% (lot − excluded) ÷ lot. Returns ``{mp: qty}``."""
+def mp_lot_qty(marketplace='', date_from='', date_to='', run_id=None) -> dict:
+    """Total UPLOADED lot qty per marketplace — ALL lines, not just affected
+    ones — used by the Issues email/page to compute uploaded-% (lot − excluded)
+    ÷ lot. Returns ``{mp: qty}``.
+
+    Scope: a ``run_id`` pins it to THAT run's lot (the per-run intimation email);
+    otherwise the ``run_ts`` upload-date window + marketplace (the Issues page).
+    Without a run_id AND without a date window it would sum the marketplace's
+    ENTIRE history — which is exactly the bug this guards against: the auto email
+    passed neither, so Lot Qty showed the all-time total (e.g. Blink 10,13,512)
+    instead of the run's."""
     out: dict = {}
     try:
         with _conn() as (cur, d):
             ph = d['ph']
             where = ['1=1']
             params: list = []
-            if marketplace:
-                where.append(f"marketplace={ph}"); params.append(marketplace)
-            if date_from:
-                where.append(f"DATE(run_ts) >= {ph}"); params.append(date_from)
-            if date_to:
-                where.append(f"DATE(run_ts) <= {ph}"); params.append(date_to)
+            if run_id not in (None, '', 0, '0'):
+                # A run is one upload → its lot is unambiguous; ignore date/mp.
+                where.append(f"run_id={ph}"); params.append(int(run_id))
+            else:
+                if marketplace:
+                    where.append(f"marketplace={ph}"); params.append(marketplace)
+                if date_from:
+                    where.append(f"DATE(run_ts) >= {ph}"); params.append(date_from)
+                if date_to:
+                    where.append(f"DATE(run_ts) <= {ph}"); params.append(date_to)
             cur.execute(
                 f"SELECT marketplace, SUM(qty) FROM order_lines_full "
                 f"WHERE {' AND '.join(where)} GROUP BY marketplace", tuple(params))

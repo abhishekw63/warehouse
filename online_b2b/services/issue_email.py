@@ -220,10 +220,14 @@ class IssuesEmailReport(EmailReport):
             g['inc_qty'] += qty
             g['inc'] += lv
         # Uploaded-% is about the drop: (lot − excluded qty) ÷ lot per MP.
+        # Per-run intimation email → scope the lot to THIS run (filters carry a
+        # run_id). The Issues page (no run_id) keeps the date-window scope. Without
+        # this, an empty window summed the marketplace's whole history as the lot.
         lot = order_db.mp_lot_qty(
             marketplace=self.filters.get('marketplace', '') or '',
             date_from=self.filters.get('date_from', '') or '',
-            date_to=self.filters.get('date_to', '') or '')
+            date_to=self.filters.get('date_to', '') or '',
+            run_id=self.filters.get('run_id') or None)
         for mp, g in by_mp.items():
             lot_qty = lot.get(mp) or (g['exc_qty'] + g['inc_qty'])
             g['lot_qty'] = lot_qty
