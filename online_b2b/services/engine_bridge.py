@@ -1835,7 +1835,22 @@ class FlipkartProcessor(Processor):
 
     def engine_files(self) -> list[str]:
         # The engine gets the PO xlsx; a uploaded .csv is the tracker header.
-        return [p for p in self.po_paths if p.lower().endswith('.xlsx')]
+        xlsx = [p for p in self.po_paths if p.lower().endswith('.xlsx')]
+        # Flipkart sometimes ships a line with the EAN cell EMPTY but the FSN
+        # present. The frozen dump parser treats a non-8..14-digit EAN as a
+        # footer row and skips it, so those lines used to vanish without a word
+        # (504 units on 07-09-2026). Fill the EAN from the FSN map BEFORE the
+        # engine sees the file, and note every fill — and every FSN we can't
+        # map — so nothing is silent either way.
+        try:
+            from . import flipkart_fsn
+            xlsx, notes = flipkart_fsn.fill_blank_eans(xlsx)
+            if notes:
+                self.notes.extend(notes)
+        except Exception:  # noqa: BLE001 — never block an upload on this
+            import logging
+            logging.getLogger(__name__).exception('Flipkart FSN fill failed')
+        return xlsx
 
     def use_multi(self, config) -> bool:
         return True
