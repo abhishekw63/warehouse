@@ -498,8 +498,13 @@ tr.has-exc > td:first-child{box-shadow:inset 3px 0 0 var(--amber);}
 .side-nav{display:flex;flex-direction:column;gap:2px;flex:1 1 auto;min-height:0;
   overflow-y:auto;overflow-x:hidden;}
 /* thin, unobtrusive scrollbar for the nav */
+.side-nav{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.18) transparent;}  /* Firefox */
 .side-nav::-webkit-scrollbar{width:6px;}
 .side-nav::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:3px;}
+.side-nav::-webkit-scrollbar-track{background:transparent;}
+/* Kill the native up/down arrow BUTTONS — they were rendering as ▲▼ against the
+   dark sidebar (the styled scrollbar left the buttons at their OS default). */
+.side-nav::-webkit-scrollbar-button{display:none;height:0;width:0;}
 /* Small collapsible group (e.g. Admin) — header + chevron, indented children. */
 .side-group{width:100%;background:none;border:0;text-align:left;cursor:pointer;font:inherit;}
 .side-caret{margin-left:auto;font-size:11px;opacity:.55;transition:transform .2s ease;}
