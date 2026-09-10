@@ -1333,6 +1333,28 @@ def issues_email_retry(request):
 
 
 @login_required
+@require_POST
+def run_send_issue_email(request, run_id):
+    """Send the Issues email for ONE run — the operator CONFIRMED it in the
+    post-Lock&Record modal (we no longer auto-send on record). The modal is the
+    consent, so ``force=True``. Returns the delivery result as JSON."""
+    from .services import auto_issue_email as _aie
+    res = _aie.send_for_run(run_id, request.POST.get('marketplace', ''),
+                            force=True)
+    return JsonResponse({'ok': res.get('status') == 'sent', **res})
+
+
+@login_required
+@require_POST
+def run_skip_issue_email(request, run_id):
+    """Operator declined to send the run's Issues email in the modal — record the
+    skip so the decision is visible and the self-heal sweep won't later mail it."""
+    from .services import auto_issue_email as _aie
+    return JsonResponse(
+        {'ok': True, **_aie.record_skip(run_id, request.POST.get('marketplace', ''))})
+
+
+@login_required
 def daily_tasks(request):
     """Daily Activity Checklist — per-day grid of channels × workflow steps.
     Dual-render: JSON for AJAX (API-ready), template otherwise."""
@@ -2589,17 +2611,18 @@ def confirm(request, token):
                           getattr(request.user, 'username', '') or 'system')
         except Exception:  # noqa: BLE001
             pass
-    # ── Auto Issues email for THIS run (excluded + included lines). Synchronous so
-    #    its result rides back for the toast; the run is ALREADY committed, so this
-    #    is wrapped to never break the lock. Also sweeps earlier failed sends async. ──
+    # ── Issues email for THIS run (excluded + included lines). We no longer send
+    #    automatically — instead we PREPARE it (counts + recipients, nothing sent)
+    #    and hand it back so the FE can ask the operator "send this email?" in a
+    #    modal. The actual send happens on their confirm (b2b_run_send_issue_email).
+    #    Wrapped so it can never break the already-committed lock. ──
     issue_email = None
     try:
         from .services import auto_issue_email as _aie
-        issue_email = _aie.send_for_run(run_id, meta.get('marketplace', ''))
-        _aie.flush_pending_async()
+        issue_email = _aie.prepare_for_run(run_id, meta.get('marketplace', ''))
     except Exception:  # noqa: BLE001
         import logging as _lg
-        _lg.getLogger(__name__).exception('auto issue-email failed (non-fatal)')
+        _lg.getLogger(__name__).exception('issue-email prepare failed (non-fatal)')
     pos = res['summary']['pos']
     lines = res.get('lines_recorded', 0)
     if ajax:

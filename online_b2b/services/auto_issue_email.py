@@ -25,6 +25,68 @@ def enabled() -> bool:
     return os.environ.get('AUTO_ISSUE_EMAIL', '1') not in ('0', 'false', 'False', '')
 
 
+def prepare_for_run(run_id, marketplace: str = '') -> dict:
+    """Compute what the Issues email for ONE run WOULD contain, **without sending**
+    — this drives the post-Lock&Record modal so the operator decides whether to
+    send. Sends nothing, writes no log row. Never raises. Returns::
+
+        {status, n_excluded, n_included, to, cc, subject, run_id}
+
+    ``status`` is one of:
+      • ``ready``        — has excluded/included lines AND a recipient → show modal
+      • ``no_issues``    — nothing excluded/included → nothing to offer
+      • ``no_recipient`` — has issues but no To configured
+      • ``already_sent`` — this run's email already went out
+      • ``off``          — AUTO_ISSUE_EMAIL kill-switch is off
+      • ``error``        — could not compose / read issue data
+    """
+    try:
+        run_id = int(run_id)
+    except (TypeError, ValueError):
+        return {'status': 'error', 'detail': 'no run id'}
+    if not enabled():
+        return {'status': 'off'}
+    if _log.status_of(run_id) == 'sent':
+        return {'status': 'already_sent', 'run_id': run_id}
+    try:
+        from .issue_email import IssuesEmailReport
+        rep = IssuesEmailReport({'run_id': str(run_id)})
+    except Exception as e:  # noqa: BLE001
+        return {'status': 'error', 'detail': f'compose error: {e}'}
+    if rep.fetch_error:
+        return {'status': 'error', 'detail': str(rep.fetch_error)}
+    n_excl, n_incl = len(rep.excluded), len(rep.included)
+    if n_excl == 0 and n_incl == 0:
+        return {'status': 'no_issues', 'n_excluded': 0, 'n_included': 0,
+                'run_id': run_id}
+    r = rep.recipients()
+    to_list = r.get('to') or []
+    if not to_list:
+        return {'status': 'no_recipient', 'n_excluded': n_excl,
+                'n_included': n_incl, 'run_id': run_id}
+    return {'status': 'ready', 'run_id': run_id, 'n_excluded': n_excl,
+            'n_included': n_incl, 'to': to_list, 'cc': r.get('cc') or [],
+            'subject': rep.subject()}
+
+
+def record_skip(run_id, marketplace: str = '') -> dict:
+    """Operator chose NOT to send the modal's Issues email — record it as an
+    explicit ``skipped`` so the decision is visible (never-skip-silently) and the
+    self-heal sweep won't later mail it. Idempotent; never raises."""
+    try:
+        run_id = int(run_id)
+    except (TypeError, ValueError):
+        return {'status': 'error', 'detail': 'no run id'}
+    if _log.status_of(run_id) == 'sent':
+        return {'status': 'sent', 'detail': 'already sent'}
+    try:
+        _log.record(run_id, 'skipped', marketplace=marketplace,
+                    error='operator declined to send (modal)')
+    except Exception:  # noqa: BLE001
+        pass
+    return {'status': 'skipped'}
+
+
 def send_for_run(run_id, marketplace: str = '', *, force: bool = False,
                  retries: int = 1) -> dict:
     """Send the Issues email for ONE run (excluded + included lines). Idempotent —

@@ -448,24 +448,91 @@ var CFG = JSON.parse(document.getElementById("review-cfg").textContent);
         ' line(s) pushed to D365. The Completed SO Workbook is downloading — ' +
         'check your browser Downloads. Buttons are ready below too.',
       { type: 'ok', title: 'Locked & recorded ✓', timeout: 8000 });
-    // Auto Issues email for THIS run (excluded + included lines) — its own toast,
-    // same style as Lock&Record. 'skipped' (no issue lines / no recipient / off)
-    // shows nothing; 'failed' says it will self-heal on the next record.
-    var ie = j.issue_email;
-    if (ie && window.B2B && B2B.toast) {
-      if (ie.status === 'sent') {
-        var who = (ie.to && ie.to.length)
-          ? ie.to[0] + (ie.to.length > 1 ? ' +' + (ie.to.length - 1) + ' more' : '')
-          : 'the team';
-        B2B.toast('📧 Sent to ' + who + ' · ' + (ie.n_excluded || 0) +
-          ' excluded, ' + (ie.n_included || 0) + ' included.',
-          { type: 'ok', title: 'Issues email sent ✓', timeout: 6000 });
-      } else if (ie.status === 'failed') {
-        B2B.toast('Couldn’t send now (' + (ie.detail || 'error') +
-          ') — it will retry automatically on the next record.',
-          { type: 'err', title: 'Issues email failed', timeout: 8000 });
-      }
+    // Issues email for THIS run — we no longer auto-send. ASK first: if the run
+    // has excluded/included lines and a recipient, pop a modal so the operator
+    // decides whether to send (see offerIssueEmail → issueEmailModal).
+    offerIssueEmail(j, j.issue_email);
+  }
+
+  // Decide what to do with the PREPARED issue-email info from the confirm
+  // response. status: 'ready' → modal; 'no_recipient' → warn; others → quiet.
+  function offerIssueEmail(j, ie) {
+    if (!ie) return;
+    var T = (window.B2B && B2B.toast) ? B2B.toast : function () {};
+    if (ie.status === 'ready') { issueEmailModal(j, ie); return; }
+    if (ie.status === 'no_recipient') {
+      T((ie.n_excluded || 0) + ' excluded / ' + (ie.n_included || 0) +
+        ' included line(s), but no email recipient is configured — set one on ' +
+        'the Issues page to send.',
+        { type: 'err', title: 'No recipient for issues email', timeout: 8000 });
+    } else if (ie.status === 'already_sent') {
+      T('Issues email for this run was already sent.', { type: 'ok', timeout: 5000 });
     }
+    // 'no_issues' / 'off' / 'error' → stay quiet (nothing to offer).
+  }
+
+  // Post-Lock&Record confirmation modal: "Send the issues email?" Send → POST the
+  // run send endpoint; Not now → record the skip. Backdrop/Escape = Not now.
+  function issueEmailModal(j, ie) {
+    var who = (ie.to && ie.to.length)
+      ? ie.to[0] + (ie.to.length > 1 ? ' +' + (ie.to.length - 1) + ' more' : '')
+      : 'the team';
+    var sendUrl = j.run_url + 'issue-email/send/';
+    var skipUrl = j.run_url + 'issue-email/skip/';
+    var ov = document.createElement('div');
+    ov.className = 'ie-modal-ov';
+    ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true');
+    ov.innerHTML =
+      '<div class="ie-modal" role="document">' +
+        '<div class="ie-modal-h">📧 Send issues email?</div>' +
+        '<div class="ie-modal-b">Run #' + j.run_id + ' has <b>' +
+          (ie.n_excluded || 0) + '</b> excluded and <b>' + (ie.n_included || 0) +
+          '</b> included line(s).<br>Send the issues email to <b>' + who + '</b>?' +
+          (ie.subject ? '<div class="ie-modal-sub">' + ie.subject + '</div>' : '') +
+        '</div>' +
+        '<div class="ie-modal-a">' +
+          '<button type="button" class="btn-ghost" data-ie="skip">Not now</button>' +
+          '<button type="button" class="btn-primary" data-ie="send">Send email</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(ov);
+    var closed = false;
+    function close() {
+      if (closed) return; closed = true;
+      ov.remove(); document.removeEventListener('keydown', onKey);
+    }
+    function onKey(e) { if (e.key === 'Escape') doSkip(); }
+    document.addEventListener('keydown', onKey);
+    function doSkip() {
+      close();
+      if (window.B2B && B2B.postForm) B2B.postForm(skipUrl, {}).catch(function () {});
+    }
+    function doSend() {
+      var send = ov.querySelector('[data-ie=send]');
+      var skip = ov.querySelector('[data-ie=skip]');
+      if (send) { send.disabled = true; send.innerHTML = '<span class="btn-spin"></span> Sending…'; }
+      if (skip) skip.disabled = true;
+      B2B.postForm(sendUrl, {}).then(function (r) {
+        close();
+        if (r && r.status === 'sent') {
+          B2B.toast('📧 Sent to ' + who + ' · ' + (r.n_excluded || ie.n_excluded || 0) +
+            ' excluded, ' + (r.n_included || ie.n_included || 0) + ' included.',
+            { type: 'ok', title: 'Issues email sent ✓', timeout: 6000 });
+        } else {
+          B2B.toast((r && (r.detail || r.error)) || 'Send failed.',
+            { type: 'err', title: 'Issues email not sent', timeout: 8000 });
+        }
+      }).catch(function () {
+        close();
+        B2B.toast('Send failed — network error. You can resend from the Issues page.',
+          { type: 'err', title: 'Issues email not sent', timeout: 8000 });
+      });
+    }
+    ov.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('[data-ie]') : null;
+      if (b) { if (b.getAttribute('data-ie') === 'send') doSend(); else doSkip(); return; }
+      if (e.target === ov) doSkip();     // click the backdrop = Not now
+    });
   }
 
   // The actual lock+record (progress bar → AJAX). Called once all guards pass.
