@@ -53,7 +53,9 @@ body.b2b-app #pageBoot{ display:none !important; }
    (e.g. switching to a taller/shorter tab pane, or between pages) never shifts the
    layout sideways — the "slight movement" on tab switch. The shell stays rock-steady;
    only the pane's own content changes height. */
-html{ scrollbar-gutter: stable; }
+html{ scrollbar-gutter: stable; background:var(--bg); }   /* paint the canvas so a
+   View-Transition never exposes the bare (black) html backdrop in the punched-out
+   #MainContent region on the right while its new snapshot fades in. */
 
 /* The View Transition OWNS the page-change entrance, so #MainContent must stay
    PAINTED — the global anti-FOUC opacity gate + the generic entrance animation
