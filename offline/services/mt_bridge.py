@@ -31,6 +31,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import os
+import re
 import sys
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -983,11 +984,21 @@ def _normalize_ahlc_excel(src_path):
     j_mrp, j_cost, j_val = _col('MRP'), _col('Unit Cost'), _col('Total Value')
 
     rows = []
+    kept_blank_ean = []
     for r in grid[hdr_i + 1:]:
         raw = r[j_ean] if j_ean is not None else None
         ean = re.sub(r'\D', '', str(raw if raw is not None else ''))
-        if len(ean) < 8:                    # skip the 'Total :' / blank tail rows
-            continue
+        qv = pd.to_numeric(r[j_qty], errors='coerce') if j_qty is not None else None
+        has_qty = qv is not None and pd.notna(qv) and float(qv) > 0
+        if len(ean) < 8:
+            # A short/blank EAN is normally the 'Total :' / blank tail row → skip.
+            # NEVER-SILENT guard: a row that carries a real Qty is a genuine item
+            # with a missing/truncated barcode — do NOT drop it. Keep it with a
+            # blank EAN (the engine flags it UNRESOLVED, visible on the page) and
+            # record a loud note; only truly qty-empty tail rows are skipped.
+            if not has_qty:
+                continue
+            kept_blank_ean.append(str(raw if raw is not None else '').strip())
         val = pd.to_numeric(r[j_val], errors='coerce') if j_val is not None else None
         rows.append({
             'PO': po_no,
@@ -1003,6 +1014,11 @@ def _normalize_ahlc_excel(src_path):
             'PO Date': po_date,
             'Exp Date': exp_date,
         })
+    if kept_blank_ean:
+        notes_pre.append(
+            f"AHLC: {len(kept_blank_ean)} line(s) carry a real Qty but a blank/"
+            f"short EAN — KEPT as unresolved (never silently dropped): "
+            f"{', '.join(kept_blank_ean)}.")
     out = pd.DataFrame(rows)
     fd, path = tempfile.mkstemp(suffix='_ahlc_norm.xlsx')
     os.close(fd)
@@ -1197,6 +1213,171 @@ def _parse_lifestyle_pdf(path) -> dict:
 #        one PO per DC/store delivery, never reused → safe to dedup on it.
 #   AHLC — Apollo HealthCo: External Doc = the vendor PO (PO-A000353445), one PO
 #        per delivery location (Apollo term: one invoice per PO) → safe.
+# ── Naturals PDF hardening (our layer — the frozen ``parse_naturals_pdf`` is
+#    left byte-for-byte intact; we swap the parser the ENGINE dispatches to, the
+#    same reversible technique as the Lulu Excel-mode swap). Two guarantees:
+#
+#    1) RECOVER glued rows. The frozen row-regex requires a SPACE between the
+#       product name and the HSN code. A wide product name can be rendered by the
+#       PDF text layer glued to the HSN with no space — e.g. Naturals PO 1124/1125
+#       line "...ROSE GLOW 6ML" came out as ``6ML33049990`` — so the WHOLE line
+#       failed to match and was dropped (10 units of item 201186 vanished from
+#       Erode + Tirupur). Our regex makes that space OPTIONAL, so the row parses.
+#
+#    2) NEVER SILENT. After matching, any line that still looks like an item row
+#       (starts with ``<Sl> <code>`` and carries a 12-14 digit barcode) but did
+#       NOT parse is collected and we RAISE. The engine wraps the parser in
+#       try/except that surfaces the message as a visible "Cannot read PDF" error
+#       finding — so a row we can't read HALTS the run loudly instead of being
+#       dropped. A dropped PO line = lost units on the SO; it must never be quiet.
+#
+#    Header extraction (PO No / city / dates) mirrors the frozen parser exactly.
+
+# Tolerant item row — identical to the frozen ``_NAT_ITEM`` EXCEPT ``\s*`` (was
+# ``\s+``) before the HSN, so a name glued to the HSN ("6ML33049990") still
+# splits correctly (the 12-14 digit EAN anchor keeps the HSN boundary unambiguous).
+_ROBUST_NAT_ITEM = re.compile(
+    r'^\s*(\d+)\s+(\S+)\s+(.+?)\s*(\d{6,8})\s+(\d{12,14})\s+'
+    r'([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+(\d+)\s+(\S+)\s+'
+    r'(.*?)([\d,]+\.\d{2})\s+(\d+)\s+([\d,]+\.\d{2})\s*$')
+# "Looks like an item row" (loud-drop guard): begins with Sl + a code token and
+# carries a barcode-length number. Header/total/address lines never do.
+_NAT_ITEMISH = re.compile(r'^\s*\d+\s+\S+\s+.*\d{12,14}')
+_NAT_PO   = re.compile(r'PO No\.?\s*:?\s*(\S+)', re.IGNORECASE)
+_NAT_DATE = re.compile(r'Date\s*:?\s*(\d{2}-\d{2}-\d{4})', re.IGNORECASE)
+_NAT_DEL  = re.compile(r'Delivery by\s*:?\s*(\d{2}-\d{2}-\d{4})', re.IGNORECASE)
+_NAT_CITY = re.compile(r'([A-Za-z]+)[\s,\-]+(\d{6})\b')
+
+
+def robust_parse_naturals_pdf(file_path):
+    """Glue-tolerant, never-silent replacement for the frozen ``parse_naturals_pdf``.
+
+    Returns the SAME flat DataFrame (identical columns) the engine expects; the
+    ONLY behavioural differences are (1) a name glued to the HSN still parses and
+    (2) any item-looking line we cannot parse raises instead of being dropped."""
+    import pdfplumber
+    import pandas as pd
+
+    with pdfplumber.open(file_path) as pdf:
+        text = '\n'.join(p.extract_text() or '' for p in pdf.pages)
+
+    def _g(rx):
+        m = rx.search(text)
+        return m.group(1).strip() if m else ''
+
+    po_no, po_date, deliver = _g(_NAT_PO), _g(_NAT_DATE), _g(_NAT_DEL)
+    m_ean = re.search(r'\d{13}', text)
+    header = text[:m_ean.start()] if m_ean else text
+    city_matches = _NAT_CITY.findall(header)
+    store = city_matches[-1][0].strip() if city_matches else ''
+
+    rows, unparsed = [], []
+    for ln in text.splitlines():
+        m = _ROBUST_NAT_ITEM.match(ln)
+        if not m:
+            # A line that looks like a real item row (Sl + code + a barcode) but
+            # did not parse must NEVER be skipped quietly — record it to raise.
+            if _NAT_ITEMISH.match(ln):
+                unparsed.append(ln.strip())
+            continue
+        (_sl, item_code, name, hsn, ean, mrp, rate, qty, _uom,
+         _mid, _amount, _gst, gross) = m.groups()
+        rows.append({
+            'PO No': po_no, 'Store': store, 'Date': po_date,
+            'Delivery by': deliver, 'Item Code': item_code,
+            'Product Name': name.strip(), 'HSN Code': hsn, 'EAN': ean,
+            'MRP': float(mrp.replace(',', '')), 'Rate': float(rate.replace(',', '')),
+            'Qty': int(qty), 'Gross Amount': float(gross.replace(',', '')),
+        })
+
+    if unparsed:
+        raise ValueError(
+            f"{Path(file_path).name}: {len(unparsed)} Naturals line(s) look like "
+            f"item rows (carry a barcode) but could not be parsed — refusing to "
+            f"drop them silently. Fix the PO text layout / parser for:\n  - "
+            + "\n  - ".join(unparsed))
+    if not rows:
+        raise ValueError(
+            f"{Path(file_path).name}: no Naturals line items found — layout may "
+            f"differ from the reference. Inspect extract_text() output.")
+    return pd.DataFrame(rows)
+
+
+# Lulu Hypermarket PO PDF — same silent-drop class as Naturals. The frozen
+# ``_LULU_ITEM`` requires a space at the HSN↔description and description↔EAN
+# boundaries; a glued cell there loses the whole line. Tolerant version makes
+# those two boundaries space-OPTIONAL (the 12-14 digit EAN anchor keeps them
+# unambiguous). Lulu is normally read as Excel (LULU_EXCEL_MODE), so this only
+# matters if the PDF fallback is ever used — but it must never lose a line either.
+_ROBUST_LULU_ITEM = re.compile(
+    r'^\s*(\d+)\s+(\S+)\s+(\S+)\s+(\d{6,8})\s*(.+?)\s*(\d{12,14})\s+'
+    r'(\d+)\s+(\S+)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s+'
+    r'([\d.]+)\s+([\d,]+\.\d{2})\s+([\d,]+\.\d{2})\s*$')
+_LULU_PO_RX   = re.compile(r'PO Number\s*:?\s*(\d+)', re.IGNORECASE)
+_LULU_DATE_RX = re.compile(r'PO Date\s*:?\s*(\d{2}\.\d{2}\.\d{4})', re.IGNORECASE)
+_LULU_DEL_RX  = re.compile(r'Delivery Date\s*:?\s*(\d{2}\.\d{2}\.\d{4})', re.IGNORECASE)
+_LULU_CITY_RX = re.compile(r'Delivery to\s*:?\s*[^,\n]*,\s*([A-Za-z]+)', re.IGNORECASE)
+
+
+def robust_parse_lulu_pdf(file_path):
+    """Glue-tolerant, never-silent replacement for the frozen ``parse_lulu_pdf`` —
+    same columns; glued HSN/description/EAN still parse, and any item-looking line
+    we cannot read raises instead of being skipped."""
+    import pdfplumber
+    import pandas as pd
+
+    with pdfplumber.open(file_path) as pdf:
+        text = '\n'.join(p.extract_text() or '' for p in pdf.pages)
+
+    def _g(rx):
+        m = rx.search(text)
+        return m.group(1).strip() if m else ''
+
+    po_no, po_date = _g(_LULU_PO_RX), _g(_LULU_DATE_RX)
+    deliver, store = _g(_LULU_DEL_RX), _g(_LULU_CITY_RX)
+
+    rows, unparsed = [], []
+    for ln in text.splitlines():
+        m = _ROBUST_LULU_ITEM.match(ln)
+        if not m:
+            if _NAT_ITEMISH.match(ln):       # looks like an item row → never skip quietly
+                unparsed.append(ln.strip())
+            continue
+        (_it, article, _brand, hsn, name, ean, qty, _uom,
+         mrp, gross, _net, _tax, _gst, amount) = m.groups()
+        rows.append({
+            'PO No': po_no, 'Store': store, 'PO Date': po_date,
+            'Delivery Date': deliver, 'Item Code': article,
+            'Product Name': name.strip(), 'HSN Code': hsn, 'EAN': ean,
+            'MRP': float(mrp.replace(',', '')), 'Gross Price': float(gross.replace(',', '')),
+            'Qty': int(qty), 'Amount': float(amount.replace(',', '')),
+        })
+
+    if unparsed:
+        raise ValueError(
+            f"{Path(file_path).name}: {len(unparsed)} Lulu line(s) look like item "
+            f"rows (carry a barcode) but could not be parsed — refusing to drop "
+            f"them silently:\n  - " + "\n  - ".join(unparsed))
+    if not rows:
+        raise ValueError(
+            f"{Path(file_path).name}: no Lulu line items found — layout may differ "
+            f"from the reference. Inspect extract_text() output.")
+    return pd.DataFrame(rows)
+
+
+def _harden_mt_pdf_parsers(eng) -> bool:
+    """Point the engine's PDF parsers at our glue-tolerant, never-silent versions.
+    ``eng`` is the standalone module, so its ``_CHANNEL_PDF_PARSERS`` dispatch dict
+    is swapped in place (naturals + lulu). Idempotent + reversible; the frozen file
+    is never edited. Returns True if the swap is in effect."""
+    reg = getattr(eng, '_CHANNEL_PDF_PARSERS', None)
+    if not isinstance(reg, dict):
+        return False
+    reg['naturals'] = robust_parse_naturals_pdf
+    reg['lulu'] = robust_parse_lulu_pdf
+    return True
+
+
 _EXTDOC_DEDUP_CHANNELS = {'HG', 'HB', 'AHLC'}
 
 
@@ -1474,6 +1655,13 @@ class MTProcessor:
                 else:
                     norm.append(p)
             engine_paths = norm
+
+        # ── PDF channels (Naturals, Lulu): harden the PDF parser BEFORE the read —
+        #    recover rows whose cells are glued together in the PDF text layer, and
+        #    turn any unreadable item row into a LOUD error instead of a silent
+        #    drop. Swaps only the naturals/lulu dispatch entries; no-op otherwise. ──
+        if getattr(channel, 'pdf_parser', None):
+            _harden_mt_pdf_parsers(eng)
 
         buf = io.StringIO()
         with redirect_stdout(buf):

@@ -561,6 +561,22 @@ def parse_myntra_pdf(filepath: str | Path) -> MyntraPO:
 
     header = _parse_header(text)
     f_qty, f_amt = _parse_footer(text)
+    # ── NEVER-SILENT integrity guard ─────────────────────────────────────────
+    # The PO footer states 'Total Quantity: <n>'. If our SKU-anchored rows don't
+    # sum to it, a line was lost (e.g. a SKU that failed the anchor pattern, or an
+    # EAN bucketed to the wrong column). RAISE loudly rather than emit a short SO.
+    # This is parse-time completeness — it runs BEFORE any downstream deal-SKU /
+    # price exclusion, so it only fires on genuinely un-parsed lines.
+    if f_qty is not None:
+        parsed_qty = sum(int(it.qty) for it in items)
+        if parsed_qty != f_qty:
+            raise ValueError(
+                f"{filepath.name}: parsed {len(items)} line(s) totalling qty "
+                f"{parsed_qty}, but the PO footer says Total Quantity {f_qty} — "
+                f"{abs(f_qty - parsed_qty)} unit(s) unaccounted for. A line was "
+                f"dropped or misread; refusing to produce an incomplete Sales "
+                f"Order. Inspect the PO's line rows."
+            )
     return MyntraPO(header=header, items=items,
                     footer_total_qty=f_qty, footer_total_amount=f_amt)
 

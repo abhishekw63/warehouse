@@ -133,6 +133,24 @@ def parse_avenue_pdf(filepath: str | Path) -> AvenuePO:
     items  = _parse_line_items(lines)
     total_qty, total_value = _parse_footer_totals(lines)
 
+    # ── NEVER-SILENT integrity guard ─────────────────────────────────────────
+    # The Avenue PO footer states a grand-total quantity ('Total <qty> <value>').
+    # If the line items we parsed don't sum to it, a row was dropped or misread
+    # (a token-per-line parser can lose a whole line on a glued/split EAN, a
+    # missing 'EA', or a number that won't parse). Rather than silently emit a
+    # short SO, RAISE — the caller surfaces it as a loud "failed to process" so a
+    # human reconciles. Only runs when the footer total was found.
+    if total_qty is not None:
+        parsed_qty = sum(int(it.po_qty) for it in items)
+        if abs(parsed_qty - total_qty) > 0.5:
+            raise ValueError(
+                f"{filepath.name}: parsed {len(items)} line(s) totalling qty "
+                f"{parsed_qty}, but the PO footer says total qty "
+                f"{total_qty:.0f} — {abs(total_qty - parsed_qty):.0f} unit(s) "
+                f"unaccounted for. A line was dropped or misread; refusing to "
+                f"produce an incomplete Sales Order. Check the PO's line rows."
+            )
+
     return AvenuePO(
         header=header,
         items=items,

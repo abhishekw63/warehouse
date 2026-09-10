@@ -180,6 +180,16 @@ def _map_columns(header_row: List[Any]) -> Optional[Dict[str, int]]:
     return None
 
 
+def _table_has_item_rows(table) -> bool:
+    """True if any cell carries a 13-digit barcode — i.e. this table holds real
+    line items, not just notes/terms. Used to refuse a SILENT whole-table drop."""
+    for row in table:
+        for cell in row:
+            if cell and re.search(r'\d{13}', str(cell)):
+                return True
+    return False
+
+
 def _parse_items(tables: List[List[List[Any]]]) -> List[RelianceLineItem]:
     items: List[RelianceLineItem] = []
     seen: set = set()
@@ -194,6 +204,17 @@ def _parse_items(tables: List[List[List[Any]]]) -> List[RelianceLineItem]:
                 header_idx = hi
                 break
         if not col_map:
+            # NEVER-SILENT: a table we can't column-map is usually notes/terms —
+            # but if it carries barcodes it's a real line-item table (e.g. a
+            # continuation page whose header didn't repeat), and skipping it would
+            # drop a WHOLE PAGE of items unseen. Refuse: raise so a human checks.
+            if _table_has_item_rows(table):
+                raise ValueError(
+                    "Reliance PO: a line-item table (it contains barcodes) could "
+                    "not be column-mapped — its rows would be dropped. Refusing to "
+                    "silently lose a page of items; tune _map_columns for this "
+                    "PDF's table layout."
+                )
             continue
 
         def cell(row, key, _cm=col_map):

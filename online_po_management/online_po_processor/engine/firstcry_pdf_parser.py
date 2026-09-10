@@ -281,6 +281,16 @@ def _parse_items(tables: List[List[List[Any]]]) -> List[FirstcryLineItem]:
                 header_idx = hi
                 break
         if not col_map:
+            # NEVER-SILENT: skipping an unmappable table is fine for notes/terms,
+            # but if it carries barcodes it's a real line-item page (its header
+            # didn't repeat) and skipping drops a WHOLE PAGE of items unseen.
+            if any(c and re.search(r'\d{13}', str(c)) for row in table for c in row):
+                raise ValueError(
+                    "FirstCry PO: a line-item table (it contains barcodes) could "
+                    "not be column-mapped — its rows would be dropped. Refusing to "
+                    "silently lose a page of items; tune _COL_PATTERNS for this "
+                    "PDF's table layout."
+                )
             continue
 
         def cell(row, key, _cm=col_map):
@@ -353,6 +363,21 @@ def parse_firstcry_pdf(filepath: str | Path) -> FirstcryPO:
             f"_COL_PATTERNS."
         )
     f_qty, f_amt = _parse_footer(text)
+    # ── NEVER-SILENT integrity guard ─────────────────────────────────────────
+    # The PO's 'Sub Total' footer states the grand-total quantity. If our parsed
+    # lines don't sum to it, a row — or on a multi-page PO a whole continuation
+    # table (unrecognised header → skipped) — was dropped. RAISE loudly rather
+    # than emit a short SO. Runs only when the footer total was found.
+    if f_qty is not None:
+        parsed_qty = sum(int(it.total_qty) for it in items)
+        if parsed_qty != f_qty:
+            raise ValueError(
+                f"{filepath.name}: parsed {len(items)} line(s) totalling qty "
+                f"{parsed_qty}, but the PO 'Sub Total' says {f_qty} — "
+                f"{abs(f_qty - parsed_qty)} unit(s) unaccounted for. A line (or a "
+                f"whole continuation-table page) was dropped; refusing to produce "
+                f"an incomplete Sales Order. Inspect the PO's line rows."
+            )
     return FirstcryPO(
         header=header, items=items,
         footer_total_qty=f_qty, footer_total_amount=f_amt,
