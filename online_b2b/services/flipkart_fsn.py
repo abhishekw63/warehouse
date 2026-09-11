@@ -131,8 +131,12 @@ def fill_blank_eans(paths):
             ws = wb[wb.sheetnames[0]]
             for row_i, ean in edits:
                 ws.cell(row=row_i + 1, column=i_ean + 1, value=ean)   # 1-based
-            fd, tmp = tempfile.mkstemp(suffix='_fk_fsn.xlsx')
-            os.close(fd)
+            # Preserve the ORIGINAL filename — Flipkart derives its PO number
+            # from the file's basename (purchase_order_<PO>.xlsx). A random
+            # mkstemp name (tmpXXXX_fk_fsn.xlsx) made the parser read the PO as
+            # 'TMPXXXX_FK_FSN'. Write into a fresh temp DIR under the real name.
+            tmpdir = tempfile.mkdtemp(prefix='fk_fsn_')
+            tmp = os.path.join(tmpdir, os.path.basename(str(path)))
             wb.save(tmp)
             out_paths.append(tmp)
             filled_total += len(edits)
