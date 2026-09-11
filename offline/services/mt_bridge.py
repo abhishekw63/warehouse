@@ -717,7 +717,13 @@ def _read_xlsb_by_headers(src_path, signature, engine='pyxlsb'):
         except Exception:  # noqa: BLE001 — unreadable sheet → skip
             continue
         if want <= {_norm(c) for c in head.columns}:
-            return pd.read_excel(src_path, sheet_name=sh, engine=engine), sh
+            df = pd.read_excel(src_path, sheet_name=sh, engine=engine)
+            # Strip stray leading/trailing whitespace from headers so callers can
+            # access columns by clean name — the signature is matched space-
+            # insensitively, so a header like 'Site ' matched here but then broke
+            # a downstream df['Site'] (real case: Book59 H&B export → KeyError 'Site').
+            df.columns = [str(c).strip() for c in df.columns]
+            return df, sh
     raise ValueError(
         f"No sheet matched the expected headers "
         f"({', '.join(signature)}). Looked in: "
