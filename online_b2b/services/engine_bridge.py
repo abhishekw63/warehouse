@@ -613,7 +613,12 @@ class Processor:
         from . import item_master_loader as iml
         from . import mapping_store as mstore
 
-        if mstore.table_count() == 0:
+        try:
+            _map_rows = mstore.table_count()
+        except Exception:  # noqa: BLE001 — a DB blip is NOT an empty table
+            return {'ok': False, 'error': "Database temporarily unreachable — "
+                    "please retry in a moment (your Ship-To mapping is intact)."}
+        if _map_rows == 0:
             return {'ok': False, 'error': "Ship-To mapping DB is empty — seed it "
                     "on the Ship-To Mapping page first."}
         mapping = mstore.DBMappingLoader()
@@ -652,7 +657,12 @@ class Processor:
                     f"Ship-To B2B — provisional alias retired: "
                     f"{', '.join(sorted(retire))}.")
 
-        if iml.table_count() == 0:
+        try:
+            _im_rows = iml.table_count()
+        except Exception:  # noqa: BLE001 — a DB blip is NOT an empty table
+            return {'ok': False, 'error': "Database temporarily unreachable — "
+                    "please retry in a moment (your item master is intact)."}
+        if _im_rows == 0:
             return {'ok': False, 'error': "Item master DB is empty — upload it on "
                     "the Item Master page first."}
         try:

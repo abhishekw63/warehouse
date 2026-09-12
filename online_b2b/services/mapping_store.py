@@ -620,13 +620,16 @@ def seed_from_bundled() -> dict:
 # ── Read (status / overview) ────────────────────────────────────────────────
 
 def table_count() -> int:
-    """Number of rows in ship_to_mapping (0 if table absent)."""
-    try:
-        with _conn() as (cur, d):
+    """Number of rows in ship_to_mapping (0 if the table is ABSENT). A
+    connection/DB error PROPAGATES (the ``with _conn()`` is outside the try) so
+    callers can tell 'empty table' from 'DB unreachable' — a transient network
+    blip must never be reported as an empty mapping ('seed it first')."""
+    with _conn() as (cur, d):
+        try:
             cur.execute(f"SELECT COUNT(*) FROM {_MAP_TABLE}")
             return int(cur.fetchone()[0] or 0)
-    except Exception:  # noqa: BLE001
-        return 0
+        except Exception:  # noqa: BLE001 — table not created yet → genuinely empty
+            return 0
 
 
 def status() -> dict:

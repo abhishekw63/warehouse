@@ -541,12 +541,12 @@ def resolve_in_master(key) -> dict | None:
 def table_count() -> int:
     """Row count of item_master (0 if the table is missing/empty). Used by the
     bridge to decide DB-master vs Excel-fallback."""
-    try:
-        with _conn() as (cur, d):
+    with _conn() as (cur, d):          # connection error propagates (not 'empty')
+        try:
             cur.execute(f"SELECT COUNT(*) FROM {_MASTER_TABLE}")
             return int(cur.fetchone()[0] or 0)
-    except Exception:  # noqa: BLE001
-        return 0
+        except Exception:  # noqa: BLE001 — table not created yet → genuinely empty
+            return 0
 
 
 # ── DB-backed master (engine reads this instead of the Excel) ────────────────
