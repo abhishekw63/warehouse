@@ -44,6 +44,27 @@ def parse_order_nos(text) -> list[str]:
     return out
 
 
+def _item_desc_map(cur, ph, item_nos) -> dict:
+    """``{item_no: description}`` from ``item_master`` — a fallback name for recorded
+    lines that carry NO description (e.g. EKA transfer-order lines store item_no +
+    qty only, so the tracker/availability views would otherwise show a blank name).
+    Best-effort: any lookup error just yields no fallback, never breaks availability."""
+    ids = sorted({str(i).strip() for i in item_nos if str(i or '').strip()})
+    out: dict = {}
+    try:
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            marks = ','.join([ph] * len(chunk))
+            cur.execute(f"SELECT item_no, description FROM item_master WHERE item_no IN ({marks})",
+                        tuple(chunk))
+            for it, dsc in cur.fetchall():
+                if dsc:
+                    out[str(it).strip()] = str(dsc)
+    except Exception:
+        _log.warning("availability: item_master description fallback failed", exc_info=True)
+    return out
+
+
 def _q(x):
     """Qty display — whole numbers as int, else 1-dp float."""
     x = float(x or 0)
@@ -129,6 +150,10 @@ def check_orders(order_nos, wh_override: str = '') -> dict:
             for row in cur.fetchall():
                 lines_by_po.setdefault(row[0], []).append(row[1:])
 
+        # Fallback names from item_master for lines with no recorded description
+        # (EKA transfer orders store item_no + qty only). [[availability-checker]]
+        _dmap = _item_desc_map(cur, ph, (r[0] for rows in lines_by_po.values() for r in rows))
+
         for po in order_nos:
             hdr = hdr_by_po.get(po)
             if not hdr:
@@ -156,7 +181,7 @@ def check_orders(order_nos, wh_override: str = '') -> dict:
                 lo_v, lf_v, ls_v = q * uv, fillable * uv, short * uv
                 lrows.append({
                     'item_no': key, 'ean': str(ean or ''),
-                    'description': str(desc or ''),
+                    'description': str(desc or '') or _dmap.get(key, ''),
                     'ordered': _q(q),
                     'available': _q(avail), 'fillable': _q(fillable), 'short': _q(short),
                     'unit_value': round(uv, 2),
@@ -171,7 +196,7 @@ def check_orders(order_nos, wh_override: str = '') -> dict:
                 if a is None:
                     a = sku_agg[(wh, key)] = {
                         'item_no': key, 'ean': str(ean or ''),
-                        'description': str(desc or ''), 'wh': wh,
+                        'description': str(desc or '') or _dmap.get(key, ''), 'wh': wh,
                         'wh_short': inv.wh_short(wh), 'ordered': 0.0,
                         'ordered_value': 0.0, 'available': avail, 'found': found,
                         'pos': set()}
@@ -180,8 +205,8 @@ def check_orders(order_nos, wh_override: str = '') -> dict:
                 a['pos'].add(po)
                 if not a['ean'] and ean:
                     a['ean'] = str(ean)
-                if not a['description'] and desc:
-                    a['description'] = str(desc)
+                if not a['description']:
+                    a['description'] = str(desc or '') or _dmap.get(key, '')
             orders.append({
                 'po': po, 'marketplace': str(mp_label or ''),
                 'wh': wh, 'wh_short': inv.wh_short(wh), 'stock_as_of': snap_ts(wh),
@@ -465,6 +490,10 @@ def wh_scenarios(order_nos) -> dict:
             for row in cur.fetchall():
                 lines_by_po.setdefault(row[0], []).append(row[1:])
 
+        # Fallback names from item_master for lines with no recorded description
+        # (EKA transfer orders store item_no + qty only). [[availability-checker]]
+        _dmap = _item_desc_map(cur, ph, (r[0] for rows in lines_by_po.values() for r in rows))
+
         for po in order_nos:
             hdr = hdr_by_po.get(po)
             if not hdr:
@@ -482,13 +511,13 @@ def wh_scenarios(order_nos) -> dict:
                 s = sku.get(key)
                 if s is None:
                     s = sku[key] = {'item': key, 'ean': str(ean or ''),
-                                    'desc': str(desc or ''), 'qty': 0.0, 'val': 0.0,
+                                    'desc': str(desc or '') or _dmap.get(key, ''), 'qty': 0.0, 'val': 0.0,
                                     'pos': set()}
                 s['qty'] += q; s['val'] += q * uv; s['pos'].add(po)
                 if not s['ean'] and ean:
                     s['ean'] = str(ean)
-                if not s['desc'] and desc:
-                    s['desc'] = str(desc)
+                if not s['desc']:
+                    s['desc'] = str(desc or '') or _dmap.get(key, '')
             cur_code = inv.effective_order_wh(po, wh_raw, mp_label, mp_label, ovmap)
             ovr = ovmap.get(str(po))
             po_demand.append({
@@ -644,6 +673,9 @@ def fulfilment_risk(date_from='', date_to='', marketplace='') -> dict:
                 "GROUP BY l.item_no, hh.po, hh.warehouse, hh.marketplace_label",
                 tuple(args))
             raw = cur.fetchall()
+            # Fallback names from item_master for lines with no recorded description
+            # (EKA transfer orders store item_no + qty only). [[availability-checker]]
+            _dmap = _item_desc_map(cur, ph, (r[0] for r in raw))
 
         # aggregate demand per (resolved WH, item) — override wins per PO
         _ov = inv.wh_override_map()
@@ -655,7 +687,8 @@ def fulfilment_risk(date_from='', date_to='', marketplace='') -> dict:
             wh = inv.effective_order_wh(po, wh_raw, mp_label, mp_label, _ov)
             a = agg.get((wh, item))
             if a is None:
-                a = agg[(wh, item)] = {'item_no': item, 'description': str(desc or ''),
+                a = agg[(wh, item)] = {'item_no': item,
+                                       'description': str(desc or '') or _dmap.get(item, ''),
                                        'wh': wh, 'wh_short': inv.wh_short(wh),
                                        'qty': 0.0, 'value': 0.0}
             a['qty'] += float(qty or 0)

@@ -315,21 +315,32 @@ def parse_lines(path: str) -> dict:
 def existing_recorded(keys: list[str]) -> set:
     """Subset of ``keys`` already present in ``order_headers`` as a ``po`` OR an
     ``external_doc`` (across every marketplace) — an order captured by ANY flow
-    counts as already-recorded, so we never double-count."""
-    keys = list({k for k in keys if k})
-    if not keys:
+    counts as already-recorded, so we never double-count.
+
+    **Case-insensitive** match: some channels store their PO lower-cased (e.g.
+    Online B2B ``pin212...``) while the D365 export gives it upper-cased
+    (``PIN212...``); a case-sensitive compare would miss the dup and re-import it.
+    We match on ``UPPER(...)`` both sides but return the ORIGINAL-case input keys,
+    so the caller's ``key in seen`` membership test is unchanged."""
+    by_upper: dict = {}                          # UPPER(key) -> original key (first wins)
+    for k in keys:
+        if k and str(k).strip():
+            by_upper.setdefault(str(k).strip().upper(), str(k))
+    if not by_upper:
         return set()
-    found: set = set()
+    up_keys = list(by_upper)
+    found_up: set = set()
     with _conn() as (cur, d):
         ph = d['ph']
-        for i in range(0, len(keys), 500):
-            chunk = keys[i:i + 500]
+        for i in range(0, len(up_keys), 500):
+            chunk = up_keys[i:i + 500]
             marks = ','.join([ph] * len(chunk))
-            cur.execute(f"SELECT po FROM order_headers WHERE po IN ({marks})", tuple(chunk))
-            found |= {str(r[0]) for r in cur.fetchall() if r[0] is not None}
-            cur.execute(f"SELECT external_doc FROM order_headers WHERE external_doc IN ({marks})", tuple(chunk))
-            found |= {str(r[0]) for r in cur.fetchall() if r[0]}
-    return found
+            cur.execute(f"SELECT po FROM order_headers WHERE UPPER(po) IN ({marks})", tuple(chunk))
+            found_up |= {str(r[0]).strip().upper() for r in cur.fetchall() if r[0] is not None}
+            cur.execute(f"SELECT external_doc FROM order_headers WHERE UPPER(external_doc) IN ({marks})",
+                        tuple(chunk))
+            found_up |= {str(r[0]).strip().upper() for r in cur.fetchall() if r[0]}
+    return {by_upper[u] for u in found_up if u in by_upper}
 
 
 def _order_po(h) -> str:
