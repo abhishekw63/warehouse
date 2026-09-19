@@ -12,6 +12,7 @@ truth) via the same history_db recorder every other channel uses.
 """
 from __future__ import annotations
 
+import logging
 import os
 import re
 import tempfile
@@ -19,6 +20,8 @@ from typing import Dict, List, Optional, Tuple
 
 # Tkinter-free shared engine — the web has no dependency on the desktop file.
 from offline.services import eka_engine
+
+_log = logging.getLogger(__name__)
 
 
 # ── DB-sourced inputs ─────────────────────────────────────────────────────────
@@ -307,21 +310,34 @@ def record(results, output_file: str = '', warehouse: str = 'AHD') -> Dict:
             for lr in eka_engine.build_eka_line_rows(results, output_file, warehouse):
                 by_po.setdefault(lr['po'], []).append(lr)
             written = 0
+            line_failures = []          # per-PO insert failures — NEVER swallowed
             for po, lrs in by_po.items():
-                with _bconn() as (cur, dd):
-                    ph = dd['ph']
-                    cur.execute(f"SELECT run_id FROM order_headers WHERE po={ph} "
-                                f"ORDER BY run_id DESC LIMIT 1", (po,))
-                    hr = cur.fetchone()
-                    if not hr:
-                        continue
-                    rid = hr[0]
-                    cur.execute(f"SELECT COUNT(*) FROM order_lines WHERE run_id={ph} "
-                                f"AND po={ph}", (rid, po))
-                    if cur.fetchone()[0] > 0:
-                        continue                       # already has lines
-                written += lines_store.insert_lines_for_run(rid, run_ts, lrs)
+                # ISOLATE each PO: one bad row (e.g. an over-length value) must NOT
+                # abort the whole batch and silently drop every later order. Any
+                # failure is captured by PO name and surfaced. [[never-skip-silently]]
+                try:
+                    with _bconn() as (cur, dd):
+                        ph = dd['ph']
+                        cur.execute(f"SELECT run_id FROM order_headers WHERE po={ph} "
+                                    f"ORDER BY run_id DESC LIMIT 1", (po,))
+                        hr = cur.fetchone()
+                        if not hr:
+                            continue
+                        rid = hr[0]
+                        cur.execute(f"SELECT COUNT(*) FROM order_lines WHERE run_id={ph} "
+                                    f"AND po={ph}", (rid, po))
+                        if cur.fetchone()[0] > 0:
+                            continue                   # already has lines
+                    written += lines_store.insert_lines_for_run(rid, run_ts, lrs)
+                except Exception as e:  # noqa: BLE001 — isolate & report, never silent
+                    line_failures.append({'po': po, 'lines': len(lrs),
+                                          'error': f"{type(e).__name__}: {e}"})
+                    _log.error("EKA line record FAILED for %s (%d lines): %s", po, len(lrs), e)
             res['lines_recorded'] = written
+            if line_failures:
+                res['line_failures'] = line_failures
+                res['lines_error'] = (f"{len(line_failures)} order(s) recorded NO lines: "
+                                      + ', '.join(f"{f['po']} ({f['error']})" for f in line_failures))
             if written and not res.get('recorded'):
                 res['recorded'] = True     # backfilled lines onto existing headers
         except Exception as e:  # noqa: BLE001 — lines are additive; header stands
