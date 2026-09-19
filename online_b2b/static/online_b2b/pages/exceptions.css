@@ -36,6 +36,9 @@
     cursor:pointer;transition:background .15s,transform .06s;}
   .xbtn:hover{background:#4338ca;} .xbtn:active{transform:translateY(1px);} .xbtn:disabled{opacity:.55;cursor:default;}
 
+  .xbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin:0 0 16px;}
+  .xbar .xlens{margin:0;}
+  .xexport{white-space:nowrap;}
   .xlens{display:inline-flex;background:#eef1f7;border-radius:11px;padding:4px;gap:3px;margin:0 0 16px;}
   .xlens button{border:0;background:none;font:inherit;font-size:12.5px;font-weight:700;color:#5b6478;padding:7px 15px;
     border-radius:8px;cursor:pointer;transition:background .18s,color .18s,box-shadow .18s;}

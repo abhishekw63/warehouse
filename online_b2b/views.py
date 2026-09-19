@@ -4081,16 +4081,12 @@ def availability_bins(request):
 
 # ── SKU price/CP exceptions — operator-managed (feeds the engine's exception
 #    overlay; additive, the engine already auto-reads item_exceptions) ────────
-@login_required
-def exceptions_page(request):
-    """Manage per-marketplace SKU exceptions (Use Vendor CP / Override MRP /
-    Override Margin / EAN remap). Rows land in `item_exceptions` (source=manual)
-    and are applied automatically on the next run — no engine change.
-
-    Presented marketplace-wise: each MP shows its own SKU exceptions; MPs with
-    none show 'all flat <margin>%'. Rows enriched with item name/no from master."""
+def _exception_rows():
+    """Enriched, de-duplicated SKU-exception rows for the Exceptions page —
+    marketplace (``mp_eff``), item name/no, effect label + detail (₹ value),
+    subtype, source, and relative/absolute added & updated times. SHARED by the
+    page view and the Excel export so the two can never drift."""
     import datetime as _dt
-    from collections import OrderedDict
 
     from .services import overrides_store as ov
     ov.ensure_tables()
@@ -4133,17 +4129,11 @@ def exceptions_page(request):
         return 1.18
 
     def _eff(r, gdiv=1.18):
-        # Operator kinds: Override Unit Price (a typed ₹ value, highest precedence),
-        # EAN Remap, or the legacy Override CP (deal/MRP/vendor-CP derivations).
         oup = _f(r.get('override_unit_price'))
         if oup is not None:
             return ('cp', 'Override Unit Price', f"₹{oup:g}")
         if r.get('maps_to'):
             return ('remap', 'EAN Remap', f"→ {r['maps_to']}")
-        # Deal SKUs carry a negotiated cost. 'Cost after GST' is already the
-        # pre-GST CP; 'Cost With GST' (Myntra transfer price) → ÷(1+GST), exactly
-        # as the engine writes it to the D365 Lines unit price (engine_bridge
-        # expected_cp = transfer ÷ gst_div).
         price = _f(r.get('cost_after_gst'))
         if price is None:
             cwg = _f(r.get('cost_with_gst'))
@@ -4162,7 +4152,6 @@ def exceptions_page(request):
         return ('cp', 'Override CP', '—')
 
     def _ago(v):
-        """'2 days ago' style relative string + absolute for the tooltip."""
         if not v:
             return '', ''
         try:
@@ -4181,20 +4170,14 @@ def exceptions_page(request):
             rel = dtv.strftime('%d %b %Y')
         return rel, dtv.strftime('%d %b %Y, %H:%M')
 
-    # Deal-SKU rows carry no Marketplace column, so attribute them by kind
-    # (swiggy_deal → Swiggy, myntra_deal → Myntra) — else they'd read as
-    # '(unassigned)' and the channel would wrongly look flat.
     _KIND_MP = {'swiggy_deal': 'Swiggy', 'myntra_deal': 'Myntra',
                 'zepto_deal': 'Zepto'}
-    eff_counts: dict = {}
     for r in rows:
         code = str(r.get('source_code') or '').strip()
         item_no, desc = by_ean.get(code, (code if code in by_item else '', by_item.get(code, '')))
         r['item_no'] = item_no
         r['item_name'] = desc or ''
         r['eff_kind'], r['eff_label'], r['eff_detail'] = _eff(r, _gst_div(gst_of.get(code)))
-        # Internal sub-type — kept in the remark column, NOT a top-level label
-        # (the two operator categories stay Override CP / EAN Remap only).
         if r.get('kind') == 'swiggy_deal':
             r['subtype'] = 'Swiggy deal SKU'
         elif r.get('kind') == 'myntra_deal':
@@ -4215,13 +4198,10 @@ def exceptions_page(request):
         r['updated_rel'], r['updated_abs'] = _ago(r.get('updated_at'))
         r['mp_eff'] = ((r.get('marketplace') or '').strip()
                        or _KIND_MP.get(r.get('kind'), ''))
-        eff_counts[r['eff_kind']] = eff_counts.get(r['eff_kind'], 0) + 1
 
     # De-dup twins: some SKUs carry BOTH a legacy 'use vendor CP' row AND a deal
-    # row with the actual fixed transfer price (e.g. Myntra matte-lock ↔ ₹63.35).
-    # Show the fixed price once — drop the redundant vendor-CP twin from the view
-    # (display only; the engine + DB are untouched). SKUs that are genuinely
-    # vendor-CP with no fixed number (e.g. Goddess) keep their row.
+    # row with the actual fixed transfer price. Show the fixed price once — drop
+    # the redundant vendor-CP twin from the view (display only; DB untouched).
     def _has_fixed(r):
         return bool(_f(r.get('cost_after_gst')) or _f(r.get('cost_with_gst'))
                     or (_f(r.get('override_mrp')) and _f(r.get('override_margin'))))
@@ -4230,7 +4210,22 @@ def exceptions_page(request):
     rows = [r for r in rows
             if not (r.get('use_vendor_cp') and not r.get('maps_to') and not _has_fixed(r)
                     and (r['mp_eff'], str(r.get('source_code') or '').strip()) in _fixed_keys)]
-    # Recount effects after the de-dup so the effect-lens totals stay honest.
+    return rows
+
+
+@login_required
+def exceptions_page(request):
+    """Manage per-marketplace SKU exceptions (Use Vendor CP / Override MRP /
+    Override Margin / EAN remap). Rows land in `item_exceptions` (source=manual)
+    and are applied automatically on the next run — no engine change.
+
+    Presented marketplace-wise: each MP shows its own SKU exceptions; MPs with
+    none show 'all flat <margin>%'. Rows enriched with item name/no from master."""
+    from collections import OrderedDict
+
+    from .services import overrides_store as ov
+    rows = _exception_rows()
+
     eff_counts = {}
     for r in rows:
         eff_counts[r['eff_kind']] = eff_counts.get(r['eff_kind'], 0) + 1
@@ -4265,6 +4260,61 @@ def exceptions_page(request):
         'n_mp_with': len(grouped), 'n_flat': len(flat),
         # Rules & Exceptions reference is now embedded on this page (merged).
         **_rules_context()})
+
+
+@login_required
+def exceptions_export(request):
+    """Download the SKU exceptions as Excel — the SAME enriched rows shown in the
+    'Full list' (via the shared :func:`_exception_rows`), so the file matches the
+    page exactly. Honors an optional ``?mp=<marketplace>`` filter."""
+    import datetime as _dt
+    import io as _io
+
+    import openpyxl
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    rows = _exception_rows()
+    mp = (request.GET.get('mp', '') or '').strip()
+    if mp:
+        rows = [r for r in rows if (r.get('mp_eff') or '') == mp]
+    heads = ['Marketplace', 'Item', 'SKU / Code', 'Item No.', 'Effect', 'Value',
+             'Remark', 'Source', 'Added', 'Updated']
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'SKU Exceptions'
+    ws.append(heads)
+    for r in rows:
+        ws.append([
+            r.get('mp_eff') or '(unassigned)',
+            r.get('item_name') or '',
+            str(r.get('source_code') or ''),
+            str(r.get('item_no') or ''),
+            r.get('eff_label') or '',
+            r.get('eff_detail') or '',
+            r.get('subtype') or '',
+            r.get('source') or '',
+            r.get('created_abs') or r.get('created_rel') or '',
+            r.get('updated_abs') or r.get('updated_rel') or '',
+        ])
+    navy = PatternFill('solid', fgColor='1A237E')
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = navy
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+    for i, w in enumerate([14, 42, 16, 10, 18, 14, 24, 9, 20, 20], 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = 'A2'
+    if ws.max_row > 1:
+        ws.auto_filter.ref = f"A1:{get_column_letter(len(heads))}{ws.max_row}"
+    buf = _io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    tag = (mp or 'all').replace(' ', '')
+    fname = f"sku_exceptions_{tag}_{_dt.datetime.now():%d-%m-%Y_%H%M%S}.xlsx"
+    return FileResponse(
+        buf, as_attachment=True, filename=fname,
+        content_type='application/vnd.openxmlformats-officedocument.'
+                     'spreadsheetml.sheet')
 
 
 @login_required

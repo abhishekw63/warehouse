@@ -77,6 +77,7 @@ urlpatterns = [
     path('analytics/sku/export/', views.sku_demand_export, name='b2b_sku_demand_export'),
     path('rules/', views.RulesView.as_view(), name='b2b_rules'),
     path('exceptions/', views.exceptions_page, name='b2b_exceptions'),
+    path('exceptions/export/', views.exceptions_export, name='b2b_exceptions_export'),
     path('exceptions/add/', views.exception_add, name='b2b_exception_add'),
     path('exceptions/<int:row_id>/update/', views.exception_update, name='b2b_exception_update'),
     path('exceptions/<int:row_id>/delete/', views.exception_delete, name='b2b_exception_delete'),

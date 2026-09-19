@@ -48,10 +48,14 @@
     </form>
   </details>
 
-  <div class="xlens" role="tablist">
-    <button class="on" data-lens="mp">By marketplace</button>
-    <button data-lens="eff">By effect</button>
-    <button data-lens="all">Full list</button>
+  <div class="xbar">
+    <div class="xlens" role="tablist">
+      <button class="on" data-lens="mp">By marketplace</button>
+      <button data-lens="eff">By effect</button>
+      <button data-lens="all">Full list</button>
+    </div>
+    <a href="{% url 'b2b_exceptions_export' %}" class="btn-ghost xexport"
+       title="Download all SKU exceptions as Excel (same rows as the Full list)">⬇ Export</a>
   </div>
 
   <!-- ═══ BY MARKETPLACE ═══ -->
