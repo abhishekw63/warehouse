@@ -2719,6 +2719,25 @@ def line_items_page(marketplace='', status='', po='', q='', offset=0,
     return out
 
 
+def line_items_export(marketplace='', status='', po='', q='') -> list:
+    """ALL matching ``order_lines_full`` rows (NO pagination) for the Line Items
+    Excel export — same filter as :func:`line_items`. Returns a list of row dicts
+    (incl. status + the include/exclude/override ``action``). Best-effort: any
+    query error yields an empty list rather than breaking the download."""
+    try:
+        with _conn() as (cur, d):
+            ph = d['ph']
+            wsql, params = _lines_where(ph, marketplace, status, po, q)
+            cur.execute(
+                f"SELECT {', '.join(_LINE_VIEW_COLS)} FROM order_lines_full "
+                f"WHERE {wsql} ORDER BY line_id DESC", tuple(params))
+            return _tag_basis(_rows(cur, _LINE_VIEW_COLS))
+    except Exception:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).exception('line_items_export failed')
+        return []
+
+
 def run_detail(run_id: int) -> dict:
     """Run meta + order headers + full line items (+ affected subset) for one
     run_id. Line items come from ``order_lines`` (only confirmed web runs have

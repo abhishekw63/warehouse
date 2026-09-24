@@ -39,6 +39,7 @@ urlpatterns = [
     #    module/service/templates/sidebar link to remove the whole feature) ────
     # Channel SKU Map — per-channel vendor SKU-code → EAN → item (Swiggy/HG/…)
     path('channel-map/', views.channel_map_redirect, name='b2b_channel_map'),
+    path('channel-map/export/', views.channel_map_export, name='b2b_channel_map_export'),
     path('channel-map/upload/', views.channel_map_upload, name='b2b_channel_map_upload'),
     path('channel-map/add/', views.channel_map_add, name='b2b_channel_map_add'),
     path('channel-map/<int:row_id>/delete/', views.channel_map_delete,
@@ -106,6 +107,7 @@ urlpatterns = [
     path('tables/<int:table_id>/delete/', _tbl.TableDeleteView.as_view(), name='b2b_table_delete'),
     path('lines/', views.lines, name='b2b_lines'),
     path('lines/more/', views.lines_more, name='b2b_lines_more'),
+    path('lines/export/', views.lines_export, name='b2b_lines_export'),
     path('daily/', views.daily_tasks, name='b2b_daily'),
     path('daily/toggle/', views.daily_tasks_toggle, name='b2b_daily_toggle'),
     path('daily/hold-reason/', views.daily_hold_reason, name='b2b_daily_hold_reason'),

@@ -7,6 +7,8 @@ var CFG = JSON.parse(document.getElementById("lines-cfg").textContent);
   var spin = document.getElementById('ln-spin');
   var base = CFG["b2b_lines"];
   var moreUrl = CFG["b2b_lines_more"];
+  var exportUrl = CFG["b2b_lines_export"];
+  var exportLink = document.getElementById('ln-export');
   var timer = null, ctrl = null;
 
   function params(extra) {
@@ -20,6 +22,7 @@ var CFG = JSON.parse(document.getElementById("lines-cfg").textContent);
   }
   function load(push) {
     var p = params(); var qs = p.toString();
+    if (exportLink) { exportLink.href = exportUrl + (qs ? '?' + qs : ''); }
     if (ctrl) ctrl.abort(); ctrl = new AbortController();
     results.classList.add('loading'); spin.hidden = false;
     p.set('partial', '1');

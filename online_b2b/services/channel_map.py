@@ -298,3 +298,39 @@ def list_codes(channel: str = '', q: str = '', limit: int = 300) -> dict:
     except Exception:  # noqa: BLE001
         _log.exception('list_codes failed — returning empty result')
         return {'rows': [], 'total': 0, 'channels': [], 'channel': channel, 'q': q}
+
+
+def export_rows(channel: str = '', q: str = '') -> tuple:
+    """ALL matching rows (NO 300-row cap) for the Excel export, enriched with the
+    item description from ``item_master``. Honors the same channel + search filter
+    as :func:`list_codes`. Returns ``(headers, rows)`` (rows = lists of strings)."""
+    heads = ['Channel', 'Vendor SKU', 'EAN', 'Item No', 'Description', 'Source']
+    out: list = []
+    try:
+        with _conn() as (cur, d):
+            ph = d['ph']
+            where, args = [], []
+            if channel:
+                where.append(f"channel={ph}"); args.append(channel)
+            if q:
+                where.append(f"(sku_code LIKE {ph} OR ean LIKE {ph} OR item_no LIKE {ph})")
+                args += [f"%{q}%", f"%{q}%", f"%{q}%"]
+            wsql = ('WHERE ' + ' AND '.join(where)) if where else ''
+            cur.execute(f"SELECT channel, sku_code, ean, item_no, source FROM {_TABLE} "
+                        f"{wsql} ORDER BY channel, sku_code", args)
+            rows = cur.fetchall()
+            # description overlay from item_master (by item_no, fall back to EAN)
+            desc_by_item, desc_by_ean = {}, {}
+            cur.execute("SELECT item_no, ean, description FROM item_master")
+            for it, ean, ds in cur.fetchall():
+                if it:
+                    desc_by_item[str(it).strip()] = ds or ''
+                if ean:
+                    desc_by_ean[str(ean).strip()] = ds or ''
+            for ch, sku, ean, item, src in rows:
+                desc = (desc_by_item.get(str(item or '').strip())
+                        or desc_by_ean.get(str(ean or '').strip()) or '')
+                out.append([ch or '', sku or '', ean or '', item or '', desc, src or ''])
+    except Exception:  # noqa: BLE001
+        _log.exception('channel_map.export_rows failed')
+    return heads, out

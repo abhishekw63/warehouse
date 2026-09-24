@@ -1199,6 +1199,53 @@ def lines_more(request):
                   {'rows': page['rows']})
 
 
+@login_required
+def lines_export(request):
+    """Download the Line Items view as Excel — ALL matching rows (no pagination),
+    honoring the marketplace/status/PO/search filters. Includes vendor-vs-our
+    MRP/CP/Landing, Status, and the include/exclude/override Action + Exception."""
+    import datetime as _dt
+    import io as _io
+
+    import openpyxl
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    f = _line_filters(request)
+    rows = order_db.line_items_export(**f)
+    heads = ['Marketplace', 'PO', 'Item No', 'EAN', 'Recv EAN', 'Description', 'Qty',
+             'Unit Price', 'Our MRP', 'Their MRP', 'Our Landing', 'Their Landing',
+             'Our CP', 'Their CP', 'Diff', 'Basis', 'Status', 'Action', 'Exception', 'Remark']
+    keys = ['marketplace', 'po', 'item_no', 'ean', 'received_ean', 'description', 'qty',
+            'unit_price', 'our_mrp', 'vendor_mrp', 'our_landing', 'vendor_landing',
+            'our_cp', 'vendor_cp', 'diff', 'basis', 'status', 'action', 'exception_label', 'remark']
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Line Items'
+    ws.append(heads)
+    for r in rows:
+        ws.append([(r.get(k) if r.get(k) is not None else '') for k in keys])
+    navy = PatternFill('solid', fgColor='1A237E')
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = navy
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+    for i, w in enumerate([14, 14, 9, 15, 15, 40, 7, 10, 9, 9, 11, 12, 9, 9, 9, 8, 12, 10, 16, 20], 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = 'A2'
+    if ws.max_row > 1:
+        ws.auto_filter.ref = f"A1:{get_column_letter(len(heads))}{ws.max_row}"
+    buf = _io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    tag = '_'.join(v.replace(' ', '') for v in (f.get('marketplace'), f.get('status'),
+                                                f.get('po'), f.get('q')) if v) or 'all'
+    fname = f"line_items_{tag}_{_dt.datetime.now():%d-%m-%Y_%H%M%S}.xlsx"
+    return FileResponse(
+        buf, as_attachment=True, filename=fname,
+        content_type='application/vnd.openxmlformats-officedocument.'
+                     'spreadsheetml.sheet')
+
+
 def _issue_filters(request) -> dict:
     """Shared Issues filters (used by the page + the export)."""
     return {
@@ -3662,6 +3709,47 @@ def channel_map_delete(request, row_id):
     cm.delete_code(row_id)
     messages.info(request, 'Mapping deleted.')
     return redirect(request.META.get('HTTP_REFERER') or _channel_map_back())
+
+
+@login_required
+def channel_map_export(request):
+    """Download the Channel SKU Map as Excel — ALL rows (no 300 cap), enriched with
+    the item description, honoring the current cm_channel + cm_q filter."""
+    import datetime as _dt
+    import io as _io
+
+    import openpyxl
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+    from .services import channel_map as cm
+    channel = (request.GET.get('cm_channel') or request.GET.get('channel') or '').strip()
+    q = (request.GET.get('cm_q') or request.GET.get('q') or '').strip()
+    heads, rows = cm.export_rows(channel, q)
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = 'Channel SKU Map'
+    ws.append(heads)
+    for r in rows:
+        ws.append(r)
+    navy = PatternFill('solid', fgColor='1A237E')
+    for cell in ws[1]:
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = navy
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+    for i, w in enumerate([16, 22, 16, 10, 44, 10], 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = 'A2'
+    if ws.max_row > 1:
+        ws.auto_filter.ref = f"A1:{get_column_letter(len(heads))}{ws.max_row}"
+    buf = _io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    tag = (channel or 'all').replace(' ', '') + (f"_{q}" if q else '')
+    fname = f"channel_sku_map_{tag}_{_dt.datetime.now():%d-%m-%Y_%H%M%S}.xlsx"
+    return FileResponse(
+        buf, as_attachment=True, filename=fname,
+        content_type='application/vnd.openxmlformats-officedocument.'
+                     'spreadsheetml.sheet')
 
 
 # ── Ship-To Mapping (DB-backed; the bundled Ship to B2B.xlsx is retired) ─────

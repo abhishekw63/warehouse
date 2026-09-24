@@ -63,6 +63,8 @@ tab in item_master.html to drop the feature.
     </select>
     <input type="search" name="cm_q" value="{{ cm_data.q }}" placeholder="Search SKU code / EAN / item…">
     <button class="btn-ghost" type="submit">Filter</button>
+    <a class="btn-ghost cm-export" href="{% url 'b2b_channel_map_export' %}?cm_channel={{ cm_data.channel|urlencode }}&cm_q={{ cm_data.q|urlencode }}"
+       title="Download the Channel SKU Map as Excel (respects the current filter)">⬇ Export</a>
     <span class="cm-count">{{ cm_data.total }} row{{ cm_data.total|pluralize }}{% if cm_data.channel %} in {{ cm_data.channel }}{% endif %}</span>
   </form>
   <div class="cm-scroll">
